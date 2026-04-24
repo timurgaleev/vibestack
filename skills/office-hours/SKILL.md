@@ -1072,10 +1072,6 @@ Design trajectory with interpretation:
 **Accumulated signal visibility:** Read ACCUMULATED_SIGNALS from the profile.
 "Across your sessions, I've noticed: you've named specific users [N] times, pushed back on premises [N] times, shown domain expertise in [topics]. These patterns mean something."
 
-**Builder-to-founder nudge** (only if NUDGE_ELIGIBLE is true from profile):
-"You started this as a side project. But you've named specific users, pushed back when challenged, and your designs keep getting sharper each time. I don't think this is a side project anymore. Have you thought about whether this could be a company?"
-This must feel earned, not broadcast. If the evidence doesn't support it, skip entirely.
-
 **Builder Journey Summary** (session 5+): Auto-generate `~/.tstackvibe/builder-journey.md`
 with a narrative arc (not a data table). The arc tells the STORY of their journey in
 second person, referencing specific things they said across sessions. Then open it:
