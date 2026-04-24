@@ -1,53 +1,70 @@
 ---
 name: freeze
 description: |
-  Freeze scope — prevents new features or refactors from being added to the current
-  task. Only bug fixes and the originally defined work are allowed. Use when you
-  want to prevent scope creep: "freeze scope", "no new features", "stick to the plan".
+  Restrict file edits to a specific directory for the session. Blocks Edit and
+  Write outside the allowed path. Use when debugging to prevent accidentally
+  "fixing" unrelated code, or when you want to scope changes to one module.
+  Use when asked to "freeze", "restrict edits", "only edit this folder",
+  or "lock down edits".
 allowed-tools:
   - Bash
   - Read
   - AskUserQuestion
+hooks:
+  PreToolUse:
+    - matcher: "Edit"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/bin/check-freeze.sh"
+          statusMessage: "Checking freeze boundary..."
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/bin/check-freeze.sh"
+          statusMessage: "Checking freeze boundary..."
 triggers:
-  - freeze scope
-  - no new features
-  - stick to the plan
-  - scope freeze
+  - freeze edits to directory
+  - lock editing scope
+  - restrict file changes
+  - only edit this folder
 ---
 
-## Scope Freeze Active
+# /freeze — Restrict Edits to a Directory
 
-**The scope is now frozen.** Only the following are allowed:
-- Fixes to bugs introduced by the current work
-- Tests for the current work
-- Documentation for the current work
+Lock file edits to a specific directory. Any Edit or Write operation targeting
+a file outside the allowed path will be **blocked** (not just warned).
 
-### Blocked until /unfreeze
+## Setup
 
-- New features
-- Refactoring code outside the current task
-- "While I'm here" changes
-- Performance improvements not required by the current task
-- Dependency updates not required by the current task
+Ask the user which directory to restrict edits to:
 
-### When something outside scope is identified
+> "Which directory should I restrict edits to? Files outside this path will be blocked from editing."
 
-Instead of making the change, log it:
+Once the user provides a path:
 
 ```bash
-echo "DEFERRED: <description> — found during <current task>" >> docs/backlog.md
+FREEZE_DIR=$(cd "<user-provided-path>" 2>/dev/null && pwd)
+FREEZE_DIR="${FREEZE_DIR%/}/"
+STATE_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+mkdir -p "$STATE_DIR"
+echo "$FREEZE_DIR" > "$STATE_DIR/freeze-dir.txt"
+echo "Freeze boundary set: $FREEZE_DIR"
 ```
 
-Then continue with the frozen scope.
+Tell the user: "Edits are now restricted to `<path>/`. Any Edit or Write
+outside this directory will be blocked. To change the boundary, run `/freeze`
+again. To remove it, run `/unfreeze`."
 
-### Checklist for any proposed change
+## How it works
 
-```
-□ Is this change required to complete the current task? 
-  If yes: proceed
-  If no: defer it, log it, stay frozen
-```
+The hook reads `file_path` from each Edit/Write call and checks whether the path
+starts with the frozen directory. If not, it returns `permissionDecision: "deny"`.
 
-### Deactivate
+The freeze boundary persists for the session via `~/.tstackvibe/freeze-dir.txt`.
 
-Run `/unfreeze` to lift the freeze.
+## Notes
+
+- The trailing `/` prevents `/src` from matching `/src-old`
+- Applies to Edit and Write tools only — Read, Bash, Glob, Grep are unaffected
+- Bash commands like `sed -i` can still modify files outside the boundary
+- To deactivate: run `/unfreeze` or end the conversation

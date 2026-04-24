@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# tvibe-slug — emit SLUG=<project-slug> for eval
+# Usage: eval "$(tvibe-slug)"
+# Slug is derived from the git remote URL or the current directory name.
+set -euo pipefail
+
+_slug_from_remote() {
+  local url
+  url=$(git remote get-url origin 2>/dev/null) || return 1
+  # strip protocol, user@, .git suffix
+  url=$(echo "$url" | sed -E 's|^.*://||; s|^[^@]+@||; s|\.git$||; s|[^a-zA-Z0-9/_-]|-|g')
+  # last path component
+  echo "$url" | awk -F'/' '{print $NF}' | tr '[:upper:]' '[:lower:]'
+}
+
+_slug_from_dir() {
+  basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9-]/-/g; s/-+/-/g; s/^-|-$//g'
+}
+
+SLUG=$(_slug_from_remote 2>/dev/null || _slug_from_dir 2>/dev/null || echo "unknown")
+# sanitise
+SLUG=$(echo "$SLUG" | sed -E 's/[^a-z0-9-]/-/g; s/-+/-/g; s/^-|-$//g')
+[ -z "$SLUG" ] && SLUG="unknown"
+
+echo "SLUG=$SLUG"

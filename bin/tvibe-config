@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# tvibe-config — get/set tstackvibe configuration values
+# Usage: tvibe-config get <key>
+#        tvibe-config set <key> <value>
+set -euo pipefail
+
+CONFIG_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/config.json"
+mkdir -p "$(dirname "$CONFIG_FILE")"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo '{}' > "$CONFIG_FILE"
+fi
+
+case "${1:-}" in
+  get)
+    key="${2:-}"
+    [ -z "$key" ] && { echo "Usage: tvibe-config get <key>" >&2; exit 1; }
+    python3 -c "
+import json, sys
+try:
+    d = json.load(open('$CONFIG_FILE'))
+    v = d.get('$key')
+    if v is not None:
+        print(str(v).lower() if isinstance(v, bool) else v)
+except Exception:
+    pass
+" 2>/dev/null
+    ;;
+  set)
+    key="${2:-}"
+    val="${3:-}"
+    [ -z "$key" ] && { echo "Usage: tvibe-config set <key> <value>" >&2; exit 1; }
+    python3 -c "
+import json, sys
+try:
+    with open('$CONFIG_FILE') as f:
+        d = json.load(f)
+except Exception:
+    d = {}
+# coerce to bool for known bool keys
+val = '$val'
+if val in ('true', 'false'):
+    val = val == 'true'
+d['$key'] = val
+with open('$CONFIG_FILE', 'w') as f:
+    json.dump(d, f, indent=2)
+print('Set $key=$val')
+" 2>/dev/null
+    ;;
+  *)
+    echo "Usage: tvibe-config get <key> | set <key> <value>" >&2
+    exit 1
+    ;;
+esac

@@ -1,66 +1,55 @@
 ---
 name: careful
 description: |
-  Careful mode — activates extra caution for risky operations: database migrations,
-  auth changes, payment code, infrastructure changes, or anything where a mistake
-  is hard to reverse. Use when about to do something risky: "be careful", "careful mode",
-  "this is risky", "production change".
+  Safety guardrails for destructive commands. Warns before rm -rf, DROP TABLE,
+  force-push, git reset --hard, kubectl delete, and similar destructive operations.
+  User can override each warning. Use when touching prod, debugging live systems,
+  or working in a shared environment. Use when asked to "be careful", "safety mode",
+  "prod mode", or "careful mode".
 allowed-tools:
   - Bash
   - Read
-  - Grep
-  - Glob
-  - AskUserQuestion
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/bin/check-careful.sh"
+          statusMessage: "Checking for destructive commands..."
 triggers:
-  - careful mode
   - be careful
-  - this is risky
-  - production change
-  - handle with care
+  - warn before destructive
+  - safety mode
+  - prod mode
 ---
 
-## Careful Mode
+# /careful — Destructive Command Guardrails
 
-**Activated for the current session.** Extra checks apply to all operations.
+Safety mode is now **active**. Every bash command will be checked for destructive
+patterns before running. If a destructive command is detected, you will be warned
+and can choose to proceed or cancel.
 
-### What changes in careful mode
+## What's protected
 
-**Before any write operation:**
-1. State exactly what will change
-2. State what the rollback plan is
-3. Ask for confirmation before proceeding
+| Pattern | Example | Risk |
+|---------|---------|------|
+| `rm -rf` / `rm -r` / `rm --recursive` | `rm -rf /var/data` | Recursive delete |
+| `DROP TABLE` / `DROP DATABASE` | `DROP TABLE users;` | Data loss |
+| `TRUNCATE` | `TRUNCATE orders;` | Data loss |
+| `git push --force` / `-f` | `git push -f origin main` | History rewrite |
+| `git reset --hard` | `git reset --hard HEAD~3` | Uncommitted work loss |
+| `git checkout .` / `git restore .` | `git checkout .` | Uncommitted work loss |
+| `kubectl delete` | `kubectl delete pod` | Production impact |
+| `docker rm -f` / `docker system prune` | `docker system prune -a` | Container/image loss |
 
-**Before any database change:**
-- Read the migration fully
-- Verify there is a rollback migration
-- Estimate impact on existing data
-- Ask: "Is this reversible? What's the worst case?"
+## Safe exceptions (no warning)
 
-**Before any auth/security change:**
-- Read all affected auth middleware
-- Trace all code paths that touch the change
-- Verify no existing sessions are invalidated unexpectedly
+- `rm -rf node_modules` / `.next` / `dist` / `__pycache__` / `.cache` / `build` / `.turbo` / `coverage`
 
-**Before any infrastructure change:**
-- State current state and target state
-- Identify all systems affected
-- Confirm rollback procedure
+## How it works
 
-### Risk checklist (run before each operation)
+The hook reads the command from the tool input, checks it against the patterns
+above, and returns `permissionDecision: "ask"` with a warning message if a match
+is found. You can always override the warning and proceed.
 
-```
-□ What exactly changes?
-□ What stays the same?
-□ What's the rollback?
-□ Who/what is affected?
-□ Is this reversible in < 5 minutes?
-□ Is this tested in staging first?
-```
-
-### When in doubt
-
-Stop. Ask: "I'm about to do X. The risk is Y. Rollback is Z. Should I proceed?"
-
-### Deactivate
-
-Say "exit careful mode" or "/unfreeze" to return to normal operation.
+To deactivate: end the conversation or start a new one. Hooks are session-scoped.

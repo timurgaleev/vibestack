@@ -1,81 +1,69 @@
 ---
 name: guard
 description: |
-  Code guard — audits a file or module to define its invariants and contracts,
-  then monitors changes to catch violations. Use when you want to protect critical
-  code from accidental breakage: "guard this file", "protect this module", "audit invariants".
+  Full safety mode: destructive command warnings + directory-scoped edits.
+  Combines /careful (warns before rm -rf, DROP TABLE, force-push, etc.) with
+  /freeze (blocks edits outside a specified directory). Use for maximum safety
+  when touching prod or debugging live systems. Use when asked to "guard mode",
+  "full safety", "lock it down", or "maximum safety".
 allowed-tools:
   - Bash
   - Read
-  - Grep
-  - Glob
-  - Write
   - AskUserQuestion
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/../careful/bin/check-careful.sh"
+          statusMessage: "Checking for destructive commands..."
+    - matcher: "Edit"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          statusMessage: "Checking freeze boundary..."
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          statusMessage: "Checking freeze boundary..."
 triggers:
-  - guard this file
-  - protect this module
-  - audit invariants
-  - define contracts
+  - full safety mode
+  - guard against mistakes
+  - maximum safety
+  - guard mode
+  - lock it down
 ---
 
-## Guard Workflow
+# /guard — Full Safety Mode
 
-### Step 1 — Read the code
+Activates both destructive command warnings and directory-scoped edit restrictions.
+This is `/careful` + `/freeze` in a single command.
 
-Read the target file/module completely:
+## Setup
+
+Ask the user which directory to restrict edits to:
+
+> "Guard mode: which directory should edits be restricted to? Destructive command warnings are always on. Files outside the chosen path will be blocked from editing."
+
+Once the user provides a path:
 
 ```bash
-# Ask for the file path if not given
+FREEZE_DIR=$(cd "<user-provided-path>" 2>/dev/null && pwd)
+FREEZE_DIR="${FREEZE_DIR%/}/"
+STATE_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+mkdir -p "$STATE_DIR"
+echo "$FREEZE_DIR" > "$STATE_DIR/freeze-dir.txt"
+echo "Freeze boundary set: $FREEZE_DIR"
 ```
 
-### Step 2 — Extract invariants
+Tell the user:
+- "**Guard mode active.** Two protections are now running:"
+- "1. **Destructive command warnings** — rm -rf, DROP TABLE, force-push, etc. will warn before executing (you can override)"
+- "2. **Edit boundary** — file edits restricted to `<path>/`. Edits outside this directory are blocked."
+- "To remove the edit boundary, run `/unfreeze`. To deactivate everything, end the session."
 
-For each public function/class/API, define:
+## What's protected
 
-**Preconditions** — what must be true before calling
-**Postconditions** — what must be true after calling
-**Invariants** — what must always be true
-
-### Step 3 — Identify fragile points
-
-- Functions that silently fail
-- Shared state that could be corrupted
-- External dependencies with no fallback
-- Functions where argument order matters
-
-### Step 4 — Write the guard document
-
-Save to `docs/guards/<module-name>.md`:
-
-```markdown
-# Guard: <module name>
-
-## Purpose
-<one sentence — what this module does>
-
-## Invariants (must always be true)
-1. <invariant>
-2. <invariant>
-
-## Contracts
-
-### <function name>
-- **Preconditions:** <what caller must ensure>
-- **Postconditions:** <what this guarantees>
-- **Side effects:** <what changes in the world>
-- **Throws:** <error conditions>
-
-## Fragile points
-- <line/function>: <why it's fragile and how to handle>
-
-## Do not change without
-- [ ] Running test suite
-- [ ] Checking <dependency>
-- [ ] Notifying <team/person>
-
-## Last audited: YYYY-MM-DD
-```
-
-### Step 5 — Suggest tests
-
-For each fragile point, suggest a test that would catch breakage. Offer to write them.
+See `/careful` for the full list of destructive command patterns and safe exceptions.
+See `/freeze` for how edit boundary enforcement works.

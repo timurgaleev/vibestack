@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# tvibe-learnings-search — search/list project learnings
+# Usage:
+#   tvibe-learnings-search [--limit N] [--query TERMS] [--type TYPE]
+set -euo pipefail
+
+LIMIT=20
+QUERY=""
+FILTER_TYPE=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --limit) LIMIT="$2"; shift 2 ;;
+    --query) QUERY="$2"; shift 2 ;;
+    --type)  FILTER_TYPE="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+# Derive SLUG
+eval "$(bash "$(dirname "$0")/tvibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+
+TSTACKVIBE_HOME="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+LEARN_FILE="$TSTACKVIBE_HOME/projects/$SLUG/learnings.jsonl"
+
+if [ ! -f "$LEARN_FILE" ]; then
+  echo "No learnings yet for project: $SLUG"
+  exit 0
+fi
+
+python3 - <<PYEOF
+import json, sys
+
+learn_file = "$LEARN_FILE"
+limit = int("$LIMIT")
+query = "$QUERY".lower()
+filter_type = "$FILTER_TYPE".lower()
+
+lines = []
+try:
+    with open(learn_file) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    lines.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+except FileNotFoundError:
+    print("No learnings file found.")
+    sys.exit(0)
+
+# Dedup: last entry for each (key, type) pair wins
+seen = {}
+for e in lines:
+    dk = (e.get("key",""), e.get("type",""))
+    existing = seen.get(dk)
+    if not existing or e.get("ts","") >= existing.get("ts",""):
+        seen[dk] = e
+
+entries = list(seen.values())
+
+# Filter by type
+if filter_type:
+    entries = [e for e in entries if e.get("type","").lower() == filter_type]
+
+# Filter by query (search key + insight)
+if query:
+    terms = query.split()
+    def matches(e):
+        text = (e.get("key","") + " " + e.get("insight","")).lower()
+        return all(t in text for t in terms)
+    entries = [e for e in entries if matches(e)]
+
+# Sort by confidence desc, then ts desc
+entries.sort(key=lambda e: (-(e.get("confidence",0)), e.get("ts","")), reverse=False)
+entries = entries[:limit]
+
+if not entries:
+    print("No matching learnings.")
+    sys.exit(0)
+
+# Group by type
+groups = {}
+for e in entries:
+    t = e.get("type", "general")
+    groups.setdefault(t, []).append(e)
+
+for gtype, items in sorted(groups.items()):
+    print(f"\n### {gtype.title()}")
+    for e in items:
+        conf = e.get("confidence", "?")
+        key = e.get("key","?")
+        insight = e.get("insight","?")
+        src = e.get("source","?")
+        ts = e.get("ts","?")[:10]
+        print(f"  [{conf}/10] **{key}**: {insight}  _(source: {src}, {ts})_")
+        if e.get("files"):
+            print(f"    files: {', '.join(e['files'][:3])}")
+
+print(f"\n_Total: {len(entries)} learnings (project: $SLUG)_")
+PYEOF

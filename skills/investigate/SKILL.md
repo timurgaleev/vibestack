@@ -1,9 +1,13 @@
 ---
 name: investigate
 description: |
-  Systematic debugging with root cause analysis. Four phases: investigate, analyze,
-  hypothesize, implement. Iron Law: no fix without confirmed root cause. Use when
-  asked to "debug this", "fix this bug", "why is this broken", "investigate this error".
+  Systematic debugging with root cause investigation. Four phases: investigate,
+  analyze, hypothesize, implement. Iron Law: no fixes without root cause.
+  Use when asked to "debug this", "fix this bug", "why is this broken",
+  "investigate this error", or "root cause analysis".
+  Proactively invoke this skill (do NOT debug directly) when the user reports
+  errors, 500 errors, stack traces, unexpected behavior, "it was working
+  yesterday", or is troubleshooting why something stopped working.
 allowed-tools:
   - Bash
   - Read
@@ -19,76 +23,267 @@ triggers:
   - why is this broken
   - root cause analysis
   - investigate this error
+hooks:
+  PreToolUse:
+    - matcher: "Edit"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          statusMessage: "Checking debug scope boundary..."
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          statusMessage: "Checking debug scope boundary..."
 ---
+
+## Preamble
+
+```bash
+eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+if [ -f "$_LEARN_FILE" ]; then
+  _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
+  echo "LEARNINGS: $_LEARN_COUNT entries loaded"
+  if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
+    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+  fi
+else
+  echo "LEARNINGS: none yet"
+fi
+```
 
 ## Iron Law
 
-**Never implement a fix until the root cause is confirmed.** Treating symptoms without understanding the cause wastes time and introduces new bugs.
+**NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**
 
-## Phase 1 — Investigate
+Fixing symptoms creates whack-a-mole debugging. Every fix that doesn't address root cause makes the next bug harder to find. Find the root cause, then fix it.
 
-Reproduce first. Collect raw data before theorizing.
+---
+
+
+
+## Phase 1: Root Cause Investigation
+
+Gather context before forming any hypothesis.
+
+1. **Collect symptoms:** Read the error messages, stack traces, and reproduction steps. If the user hasn't provided enough context, ask ONE question at a time via AskUserQuestion.
+
+2. **Read the code:** Trace the code path from the symptom back to potential causes. Use Grep to find all references, Read to understand the logic.
+
+3. **Check recent changes:**
+   ```bash
+   git log --oneline -20 -- <affected-files>
+   ```
+   Was this working before? What changed? A regression means the root cause is in the diff.
+
+4. **Reproduce:** Can you trigger the bug deterministically? If not, gather more evidence before proceeding.
+
+5. **Check investigation history:** Search prior learnings for investigations on the same files. Recurring bugs in the same area are an architectural smell. If prior investigations exist, note patterns and check if the root cause was structural.
+
+## Prior Learnings
+
+Search for relevant learnings from previous sessions:
 
 ```bash
-# Read exact error messages
-# Check recent git changes that might have introduced the issue
-git log --oneline -20
-git diff HEAD~5 HEAD --stat
-
-# Check application logs
-# Identify entry point and trace execution path
+_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+echo "CROSS_PROJECT: $_CROSS_PROJ"
+if [ "$_CROSS_PROJ" = "true" ]; then
+  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+else
+  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+fi
 ```
 
-**Questions to answer:**
-- What exactly is the error? (exact message, stack trace, line number)
-- When did it start? (after which commit/deployment/change)
-- Is it reproducible? Under what conditions?
-- What environment? (production, staging, local — and do they differ?)
+If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-## Phase 2 — Analyze
+> tstackvibe can search learnings from your other projects on this machine to find
+> patterns that might apply here. This stays local (no data leaves your machine).
+> Recommended for solo developers. Skip if you work on multiple client codebases
+> where cross-contamination would be a concern.
 
-Read the code from entry point to failure point. Do not skip.
+Options:
+- A) Enable cross-project learnings (recommended)
+- B) Keep learnings project-scoped only
 
-- Read the full file containing the error
-- Read all files in the call chain
-- Check the git blame on failing lines
-- Look for similar patterns in the codebase that work correctly
+If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
+If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
 
-## Phase 3 — Hypothesize
+Then re-run the search with the appropriate flag.
 
-Form ranked hypotheses. State each as: "The bug is caused by X because Y."
+If learnings are found, incorporate them into your analysis. When a review finding
+matches a past learning, display:
 
-Test each hypothesis with the smallest possible experiment before accepting it.
+**"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-**Do not accept the first plausible explanation.** Ask "why?" five times.
+This makes the compounding visible. The user should see that tstackvibe is getting
+smarter on their codebase over time.
 
+Output: **"Root cause hypothesis: ..."** — a specific, testable claim about what is wrong and why.
+
+---
+
+## Scope Lock
+
+After forming your root cause hypothesis, lock edits to the affected module to prevent scope creep.
+
+```bash
+[ -x "${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh" ] && echo "FREEZE_AVAILABLE" || echo "FREEZE_UNAVAILABLE"
 ```
-Symptom → Cause 1 → Cause 2 → Cause 3 → Cause 4 → Root cause
+
+**If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Write it to the freeze state file:
+
+```bash
+STATE_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+mkdir -p "$STATE_DIR"
+echo "<detected-directory>/" > "$STATE_DIR/freeze-dir.txt"
+echo "Debug scope locked to: <detected-directory>/"
 ```
 
-## Phase 4 — Implement
+Substitute `<detected-directory>` with the actual directory path (e.g., `src/auth/`). Tell the user: "Edits restricted to `<dir>/` for this debug session. This prevents changes to unrelated code. Run `/unfreeze` to remove the restriction."
 
-Only after root cause is confirmed:
+If the bug spans the entire repo or the scope is genuinely unclear, skip the lock and note why.
 
-1. Fix the root cause, not the symptom
-2. Write a test that fails before the fix and passes after
-3. Verify the fix in the same environment where the bug appeared
-4. Check for similar bugs elsewhere in the codebase
+**If FREEZE_UNAVAILABLE:** Skip scope lock. Edits are unrestricted.
 
-## Output
+---
 
+## Phase 2: Pattern Analysis
+
+Check if this bug matches a known pattern:
+
+| Pattern | Signature | Where to look |
+|---------|-----------|---------------|
+| Race condition | Intermittent, timing-dependent | Concurrent access to shared state |
+| Nil/null propagation | NoMethodError, TypeError | Missing guards on optional values |
+| State corruption | Inconsistent data, partial updates | Transactions, callbacks, hooks |
+| Integration failure | Timeout, unexpected response | External API calls, service boundaries |
+| Configuration drift | Works locally, fails in staging/prod | Env vars, feature flags, DB state |
+| Stale cache | Shows old data, fixes on cache clear | Redis, CDN, browser cache, Turbo |
+
+Also check:
+- `TODOS.md` for related known issues
+- `git log` for prior fixes in the same area — **recurring bugs in the same files are an architectural smell**, not a coincidence
+
+**External pattern search:** If the bug doesn't match a known pattern above, WebSearch for:
+- "{framework} {generic error type}" — **sanitize first:** strip hostnames, IPs, file paths, SQL, customer data. Search the error category, not the raw message.
+- "{library} {component} known issues"
+
+If WebSearch is unavailable, skip this search and proceed with hypothesis testing. If a documented solution or known dependency bug surfaces, present it as a candidate hypothesis in Phase 3.
+
+---
+
+## Phase 3: Hypothesis Testing
+
+Before writing ANY fix, verify your hypothesis.
+
+1. **Confirm the hypothesis:** Add a temporary log statement, assertion, or debug output at the suspected root cause. Run the reproduction. Does the evidence match?
+
+2. **If the hypothesis is wrong:** Before forming the next hypothesis, consider searching for the error. **Sanitize first** — strip hostnames, IPs, file paths, SQL fragments, customer identifiers, and any internal/proprietary data from the error message. Search only the generic error type and framework context: "{component} {sanitized error type} {framework version}". If the error message is too specific to sanitize safely, skip the search. If WebSearch is unavailable, skip and proceed. Then return to Phase 1. Gather more evidence. Do not guess.
+
+3. **3-strike rule:** If 3 hypotheses fail, **STOP**. Use AskUserQuestion:
+   ```
+   3 hypotheses tested, none match. This may be an architectural issue
+   rather than a simple bug.
+
+   A) Continue investigating — I have a new hypothesis: [describe]
+   B) Escalate for human review — this needs someone who knows the system
+   C) Add logging and wait — instrument the area and catch it next time
+   ```
+
+**Red flags** — if you see any of these, slow down:
+- "Quick fix for now" — there is no "for now." Fix it right or escalate.
+- Proposing a fix before tracing data flow — you're guessing.
+- Each fix reveals a new problem elsewhere — wrong layer, not wrong code.
+
+---
+
+## Phase 4: Implementation
+
+Once root cause is confirmed:
+
+1. **Fix the root cause, not the symptom.** The smallest change that eliminates the actual problem.
+
+2. **Minimal diff:** Fewest files touched, fewest lines changed. Resist the urge to refactor adjacent code.
+
+3. **Write a regression test** that:
+   - **Fails** without the fix (proves the test is meaningful)
+   - **Passes** with the fix (proves the fix works)
+
+4. **Run the full test suite.** Paste the output. No regressions allowed.
+
+5. **If the fix touches >5 files:** Use AskUserQuestion to flag the blast radius:
+   ```
+   This fix touches N files. That's a large blast radius for a bug fix.
+   A) Proceed — the root cause genuinely spans these files
+   B) Split — fix the critical path now, defer the rest
+   C) Rethink — maybe there's a more targeted approach
+   ```
+
+---
+
+## Phase 5: Verification & Report
+
+**Fresh verification:** Reproduce the original bug scenario and confirm it's fixed. This is not optional.
+
+Run the test suite and paste the output.
+
+Output a structured debug report:
 ```
-## Investigation: <issue description>
-
-**Root Cause:** <one sentence>
-
-**Evidence:**
-- <what you observed>
-- <what confirmed the hypothesis>
-
-**Fix:** <what was changed and why>
-
-**Tests added:** <test description>
-
-**Similar issues to check:** <list if any>
+DEBUG REPORT
+════════════════════════════════════════
+Symptom:         [what the user observed]
+Root cause:      [what was actually wrong]
+Fix:             [what was changed, with file:line references]
+Evidence:        [test output, reproduction attempt showing fix works]
+Regression test: [file:line of the new test]
+Related:         [TODOS.md items, prior bugs in same area, architectural notes]
+Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
+════════════════════════════════════════
 ```
+
+Log the investigation as a learning for future sessions. Use `type: "investigation"` and include the affected files so future investigations on the same area can find this:
+
+```bash
+~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"investigate","type":"investigation","key":"ROOT_CAUSE_KEY","insight":"ROOT_CAUSE_SUMMARY","confidence":9,"source":"observed","files":["affected/file1.ts","affected/file2.ts"]}'
+```
+
+## Capture Learnings
+
+If you discovered a non-obvious pattern, pitfall, or architectural insight during
+this session, log it for future sessions:
+
+```bash
+~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"investigate","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+```
+
+**Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`
+(user stated), `architecture` (structural decision), `tool` (library/framework insight),
+`operational` (project environment/CLI/workflow knowledge).
+
+**Sources:** `observed` (you found this in the code), `user-stated` (user told you),
+`inferred` (AI deduction), `cross-model` (both Claude and Codex agree).
+
+**Confidence:** 1-10. Be honest. An observed pattern you verified in the code is 8-9.
+An inference you're not sure about is 4-5. A user preference they explicitly stated is 10.
+
+**files:** Include the specific file paths this learning references. This enables
+staleness detection: if those files are later deleted, the learning can be flagged.
+
+**Only log genuine discoveries.** Don't log obvious things. Don't log things the user
+already knows. A good test: would this insight save time in a future session? If yes, log it.
+
+
+
+---
+
+## Important Rules
+
+- **3+ failed fix attempts → STOP and question the architecture.** Wrong architecture, not failed hypothesis.
+- **Never apply a fix you cannot verify.** If you can't reproduce and confirm, don't ship it.
+- **Never say "this should fix it."** Verify and prove it. Run the tests.
+- **If fix touches >5 files → AskUserQuestion** about blast radius before proceeding.
+- **Completion status:**
+  - DONE — root cause found, fix applied, regression test written, all tests pass
+  - DONE_WITH_CONCERNS — fixed but cannot fully verify (e.g., intermittent bug, requires staging)
+  - BLOCKED — root cause unclear after investigation, escalated

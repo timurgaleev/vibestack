@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# tvibe-learnings-log — append a learning entry to the project's learnings.jsonl
+# Usage: tvibe-learnings-log '<json>'
+# JSON schema: {"skill":"<name>","type":"<type>","key":"<key>","insight":"<text>","confidence":<1-10>,"source":"<src>","files":[...]}
+set -euo pipefail
+
+if [ $# -eq 0 ]; then
+  echo "Usage: tvibe-learnings-log '<json>'" >&2
+  exit 1
+fi
+
+JSON="$1"
+
+# Validate it parses as JSON
+if ! echo "$JSON" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+  echo "Error: invalid JSON" >&2
+  exit 1
+fi
+
+# Derive SLUG
+eval "$(bash "$(dirname "$0")/tvibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+
+TSTACKVIBE_HOME="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+LEARN_DIR="$TSTACKVIBE_HOME/projects/$SLUG"
+mkdir -p "$LEARN_DIR"
+
+LEARN_FILE="$LEARN_DIR/learnings.jsonl"
+
+# Inject timestamp, branch, commit if not present
+BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+ENTRY=$(python3 - <<PYEOF
+import json, sys
+
+raw = '''$JSON'''
+entry = json.loads(raw)
+
+entry.setdefault("ts", "$TS")
+entry.setdefault("branch", "$BRANCH")
+entry.setdefault("commit", "$COMMIT")
+entry.setdefault("files", [])
+entry.setdefault("confidence", 5)
+entry.setdefault("source", "auto")
+
+print(json.dumps(entry, separators=(',', ':')))
+PYEOF
+)
+
+echo "$ENTRY" >> "$LEARN_FILE"
+echo "Logged: $(echo "$ENTRY" | python3 -c "import sys,json; e=json.load(sys.stdin); print(f\"{e.get('type','?')} / {e.get('key','?')} (confidence {e.get('confidence','?')}/10)\")")"

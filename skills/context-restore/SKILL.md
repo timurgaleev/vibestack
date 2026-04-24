@@ -1,10 +1,13 @@
 ---
 name: context-restore
 description: |
-  Restore working context saved by /context-save. Loads the most recent saved
-  state so you can pick up exactly where you left off — even across sessions.
-  Use when asked to "resume", "restore context", "where was I",
-  "pick up where I left off".
+  Restore working context saved earlier by /context-save. Loads the most recent
+  saved state (across all branches by default) so you can pick up where you
+  left off — even across Conductor workspace handoffs.
+  Use when asked to "resume", "restore context", "where was I", or
+  "pick up where I left off". Pair with /context-save.
+  Formerly /checkpoint resume — renamed because Claude Code treats /checkpoint
+  as a native rewind alias in current environments.
 allowed-tools:
   - Bash
   - Read
@@ -19,63 +22,125 @@ triggers:
   - context restore
 ---
 
-## Context Restore Workflow
-
-### Step 1 — Find saved contexts
+## Preamble
 
 ```bash
-# Look in current project
-find .tstackvibe/ -name "context-*.md" 2>/dev/null | sort -r | head -10
-
-# Also check if there's one for the current branch
-BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-find .tstackvibe/ -name "context-${BRANCH}-*.md" 2>/dev/null | sort -r | head -5
+eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+if [ -f "$_LEARN_FILE" ]; then
+  _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
+  echo "LEARNINGS: $_LEARN_COUNT entries loaded"
+  if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
+    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+  fi
+else
+  echo "LEARNINGS: none yet"
+fi
 ```
 
-### Step 2 — Select context
+## Detect command
 
-If multiple found, show the list and ask:
-> "Found these saved contexts. Which one? (default: most recent)"
+Parse the user's input:
 
-If none found:
-> "No saved context found in `.tstackvibe/`. Is the context file somewhere else, or should we start fresh?"
+- `/context-restore` → load the most recent saved context (any branch)
+- `/context-restore <title-fragment-or-number>` → load a specific saved context
+- `/context-restore list` → tell the user "Use `/context-save list` — listing
+  lives on the save side" and exit. No mode detection here.
 
-### Step 3 — Load and present
+---
 
-Read the selected context file completely.
+## Restore flow
 
-Present a structured summary:
-
-```
-## Resuming: <branch> — <saved date>
-
-**Task:** <what we were building>
-
-**Progress:**
-- Done: <list>
-- In progress: <list>
-- Remaining: <list>
-
-**Key decisions:**
-- <decisions>
-
-**Blockers (if any):**
-- <blockers>
-
-**First action to take now:**
-<suggested next step based on "remaining" and "in progress">
-```
-
-### Step 4 — Verify git state
+### Step 1: Find saved contexts
 
 ```bash
-git branch --show-current
-git status --short
-git log --oneline -5
+eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
+CHECKPOINT_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/$SLUG/checkpoints"
+if [ ! -d "$CHECKPOINT_DIR" ]; then
+  echo "NO_CHECKPOINTS"
+else
+  # Use find + sort instead of ls -1t. Two reasons:
+  # 1. Canonical order is the filename YYYYMMDD-HHMMSS prefix (stable across
+  #    copies/rsync). Filesystem mtime drifts and is not authoritative.
+  # 2. On macOS, `find ... | xargs ls -1t` with zero results falls back to
+  #    listing cwd. `sort -r` on empty input cleanly returns nothing.
+  # Cap at 20 most recent: a user with 10k saved files shouldn't blow the
+  # context window just listing them. /context-save list handles pagination.
+  FILES=$(find "$CHECKPOINT_DIR" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r | head -20)
+  if [ -z "$FILES" ]; then
+    echo "NO_CHECKPOINTS"
+  else
+    echo "$FILES"
+  fi
+fi
 ```
 
-If the current branch doesn't match the saved context: "Current branch is `<x>` but context was saved on `<y>`. Switch branches first?"
+**Candidates include every `.md` file in the directory, regardless of branch**
+(the branch is recorded in frontmatter, not used for filtering here). This
+enables Conductor workspace handoff.
 
-### Step 5 — Resume
+### Step 2: Load the right file
 
-Ask: "Ready to continue? I'll start with: <first remaining task>."
+- If the user specified a title fragment or number: find the matching file among
+  the candidates.
+- Otherwise: load the **first file returned by the `sort -r` above** — that is
+  the newest `YYYYMMDD-HHMMSS` prefix, which is the canonical "most recent."
+
+Read the chosen file and present a summary:
+
+```
+RESUMING CONTEXT
+════════════════════════════════════════
+Title:       {title}
+Branch:      {branch from frontmatter}
+Saved:       {timestamp, human-readable}
+Duration:    Last session was {formatted duration} (if available)
+Status:      {status}
+════════════════════════════════════════
+
+### Summary
+{summary from saved file}
+
+### Remaining Work
+{remaining work items}
+
+### Notes
+{notes}
+```
+
+If the current branch differs from the saved context's branch, note this:
+"This context was saved on branch `{branch}`. You are currently on
+`{current branch}`. You may want to switch branches before continuing."
+
+### Step 3: Offer next steps
+
+After presenting, ask via AskUserQuestion:
+
+- A) Continue working on the remaining items
+- B) Show the full saved file
+- C) Just needed the context, thanks
+
+If A, summarize the first remaining work item and suggest starting there.
+
+---
+
+## If no saved contexts exist
+
+If Step 1 printed `NO_CHECKPOINTS`, tell the user:
+
+"No saved contexts yet. Run `/context-save` first to save your current working
+state, then `/context-restore` will find it."
+
+---
+
+## Important Rules
+
+- **Never modify code.** This skill only reads saved files and presents them.
+- **Always search across all branches by default.** Cross-branch resume is the
+  whole point. Only filter by branch if the user explicitly asks via a
+  title-fragment match that happens to be branch-specific.
+- **"Most recent" means the filename `YYYYMMDD-HHMMSS` prefix**, not
+  `ls -1t` (filesystem mtime). Filenames are stable across file-system
+  operations; mtime is not.
+- **This is a tstackvibe skill, not a Claude Code built-in.** When the user types
+  `/context-restore`, invoke this skill via the Skill tool.

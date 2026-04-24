@@ -1,82 +1,281 @@
 ---
 name: canary
 description: |
-  Canary deploy health check. Monitors error rates, latency, and key metrics after
-  a deployment to verify the release is healthy before full rollout. Use when asked
-  to "check the canary", "is the deploy healthy", "verify the release", "canary check".
+  Post-deploy canary monitoring. Watches the live app for console errors,
+  performance regressions, and page failures using the browse daemon. Takes
+  periodic screenshots, compares against pre-deploy baselines, and alerts
+  on anomalies. Use when: "monitor deploy", "canary", "post-deploy check",
+  "watch production", "verify deploy".
 allowed-tools:
   - Bash
   - Read
+  - Write
+  - Glob
   - AskUserQuestion
-  - WebSearch
 triggers:
-  - check the canary
-  - is the deploy healthy
-  - verify the release
+  - monitor after deploy
   - canary check
+  - watch for errors post-deploy
 ---
 
-## Canary Check Workflow
-
-### Step 1 — Confirm context
-
-Ask if not clear:
-> "What was deployed? What's the canary URL/environment? What % of traffic is on canary?"
-
-### Step 2 — Baseline metrics
-
-Ask for or check:
-- Error rate before deploy (baseline)
-- Latency p50/p95/p99 before deploy
-- Key business metric baseline (conversion, throughput, etc.)
-
-### Step 3 — Current canary metrics
+## Preamble
 
 ```bash
-# Check logs for errors
-# Check monitoring/alerting systems
-# Look for 5xx errors
+eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+if [ -f "$_LEARN_FILE" ]; then
+  _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
+  echo "LEARNINGS: $_LEARN_COUNT entries loaded"
+  if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
+    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+  fi
+else
+  echo "LEARNINGS: none yet"
+fi
 ```
 
-Ask for the monitoring URL or credentials if needed.
+## SETUP
 
-### Step 4 — Compare
-
-For each metric:
-- Error rate: canary vs baseline (alert if >2x baseline)
-- Latency p99: alert if >1.5x baseline
-- Business metric: alert if >5% regression
-
-### Step 5 — Check logs for new errors
-
-Look for:
-- New error types not seen before deploy
-- Stack traces from new code paths
-- Database errors or timeouts
-- External service errors
-
-### Step 6 — Verdict
-
-```
-## Canary Health: <deploy description>
-
-**Deploy:** <version/commit>
-**Traffic:** X% on canary
-**Duration:** X minutes since deploy
-
-### Metrics
-| Metric | Baseline | Canary | Delta | Status |
-|--------|----------|--------|-------|--------|
-| Error rate | X% | Y% | +Z% | GREEN/YELLOW/RED |
-| Latency p99 | Xms | Yms | +Z% | GREEN/YELLOW/RED |
-| ... | | | | |
-
-### New errors in logs
-- None / List of new errors
-
-### Verdict: PROMOTE / HOLD / ROLLBACK
-
-**Reason:** <one sentence>
+```bash
+# tstackvibe does not include a browse daemon.
+echo "BROWSE_NOT_AVAILABLE"
 ```
 
-If RED: "I recommend rollback. Run: `git revert HEAD` or trigger rollback in your deploy system."
+If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
+
+## Step 0: Detect platform and base branch
+
+First, detect the git hosting platform from the remote URL:
+
+```bash
+git remote get-url origin 2>/dev/null
+```
+
+- If the URL contains "github.com" → platform is **GitHub**
+- If the URL contains "gitlab" → platform is **GitLab**
+- Otherwise, check CLI availability:
+  - `gh auth status 2>/dev/null` succeeds → platform is **GitHub** (covers GitHub Enterprise)
+  - `glab auth status 2>/dev/null` succeeds → platform is **GitLab** (covers self-hosted)
+  - Neither → **unknown** (use git-native commands only)
+
+Determine which branch this PR/MR targets, or the repo's default branch if no
+PR/MR exists. Use the result as "the base branch" in all subsequent steps.
+
+**If GitHub:**
+1. `gh pr view --json baseRefName -q .baseRefName` — if succeeds, use it
+2. `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` — if succeeds, use it
+
+**If GitLab:**
+1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
+2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
+
+**Git-native fallback (if unknown platform, or CLI commands fail):**
+1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
+2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
+3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
+
+If all fail, fall back to `main`.
+
+Print the detected base branch name. In every subsequent `git diff`, `git log`,
+`git fetch`, `git merge`, and PR/MR creation command, substitute the detected
+branch name wherever the instructions say "the base branch" or `<default>`.
+
+---
+
+# /canary — Post-Deploy Visual Monitor
+
+You are a **Release Reliability Engineer** watching production after a deploy. You've seen deploys that pass CI but break in production — a missing environment variable, a CDN cache serving stale assets, a database migration that's slower than expected on real data. Your job is to catch these in the first 10 minutes, not 10 hours.
+
+You use the browse daemon to watch the live app, take screenshots, check console errors, and compare against baselines. You are the safety net between "shipped" and "verified."
+
+## User-invocable
+When the user types `/canary`, run this skill.
+
+## Arguments
+- `/canary <url>` — monitor a URL for 10 minutes after deploy
+- `/canary <url> --duration 5m` — custom monitoring duration (1m to 30m)
+- `/canary <url> --baseline` — capture baseline screenshots (run BEFORE deploying)
+- `/canary <url> --pages /,/dashboard,/settings` — specify pages to monitor
+- `/canary <url> --quick` — single-pass health check (no continuous monitoring)
+
+## Instructions
+
+### Phase 1: Setup
+
+```bash
+eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null || echo "SLUG=unknown")"
+mkdir -p .tstackvibe/canary-reports
+mkdir -p .tstackvibe/canary-reports/baselines
+mkdir -p .tstackvibe/canary-reports/screenshots
+```
+
+Parse the user's arguments. Default duration is 10 minutes. Default pages: auto-discover from the app's navigation.
+
+### Phase 2: Baseline Capture (--baseline mode)
+
+If the user passed `--baseline`, capture the current state BEFORE deploying.
+
+For each page (either from `--pages` or the homepage):
+
+```bash
+$B goto <page-url>
+$B snapshot -i -a -o ".tstackvibe/canary-reports/baselines/<page-name>.png"
+$B console --errors
+$B perf
+$B text
+```
+
+Collect for each page: screenshot path, console error count, page load time from `perf`, and a text content snapshot.
+
+Save the baseline manifest to `.tstackvibe/canary-reports/baseline.json`:
+
+```json
+{
+  "url": "<url>",
+  "timestamp": "<ISO>",
+  "branch": "<current branch>",
+  "pages": {
+    "/": {
+      "screenshot": "baselines/home.png",
+      "console_errors": 0,
+      "load_time_ms": 450
+    }
+  }
+}
+```
+
+Then STOP and tell the user: "Baseline captured. Deploy your changes, then run `/canary <url>` to monitor."
+
+### Phase 3: Page Discovery
+
+If no `--pages` were specified, auto-discover pages to monitor:
+
+```bash
+$B goto <url>
+$B links
+$B snapshot -i
+```
+
+Extract the top 5 internal navigation links from the `links` output. Always include the homepage. Present the page list via AskUserQuestion:
+
+- **Context:** Monitoring the production site at the given URL after a deploy.
+- **Question:** Which pages should the canary monitor?
+- **RECOMMENDATION:** Choose A — these are the main navigation targets.
+- A) Monitor these pages: [list the discovered pages]
+- B) Add more pages (user specifies)
+- C) Monitor homepage only (quick check)
+
+### Phase 4: Pre-Deploy Snapshot (if no baseline exists)
+
+If no `baseline.json` exists, take a quick snapshot now as a reference point.
+
+For each page to monitor:
+
+```bash
+$B goto <page-url>
+$B snapshot -i -a -o ".tstackvibe/canary-reports/screenshots/pre-<page-name>.png"
+$B console --errors
+$B perf
+```
+
+Record the console error count and load time for each page. These become the reference for detecting regressions during monitoring.
+
+### Phase 5: Continuous Monitoring Loop
+
+Monitor for the specified duration. Every 60 seconds, check each page:
+
+```bash
+$B goto <page-url>
+$B snapshot -i -a -o ".tstackvibe/canary-reports/screenshots/<page-name>-<check-number>.png"
+$B console --errors
+$B perf
+```
+
+After each check, compare results against the baseline (or pre-deploy snapshot):
+
+1. **Page load failure** — `goto` returns error or timeout → CRITICAL ALERT
+2. **New console errors** — errors not present in baseline → HIGH ALERT
+3. **Performance regression** — load time exceeds 2x baseline → MEDIUM ALERT
+4. **Broken links** — new 404s not in baseline → LOW ALERT
+
+**Alert on changes, not absolutes.** A page with 3 console errors in the baseline is fine if it still has 3. One NEW error is an alert.
+
+**Don't cry wolf.** Only alert on patterns that persist across 2 or more consecutive checks. A single transient network blip is not an alert.
+
+**If a CRITICAL or HIGH alert is detected**, immediately notify the user via AskUserQuestion:
+
+```
+CANARY ALERT
+════════════
+Time:     [timestamp, e.g., check #3 at 180s]
+Page:     [page URL]
+Type:     [CRITICAL / HIGH / MEDIUM]
+Finding:  [what changed — be specific]
+Evidence: [screenshot path]
+Baseline: [baseline value]
+Current:  [current value]
+```
+
+- **Context:** Canary monitoring detected an issue on [page] after [duration].
+- **RECOMMENDATION:** Choose based on severity — A for critical, B for transient.
+- A) Investigate now — stop monitoring, focus on this issue
+- B) Continue monitoring — this might be transient (wait for next check)
+- C) Rollback — revert the deploy immediately
+- D) Dismiss — false positive, continue monitoring
+
+### Phase 6: Health Report
+
+After monitoring completes (or if the user stops early), produce a summary:
+
+```
+CANARY REPORT — [url]
+═════════════════════
+Duration:     [X minutes]
+Pages:        [N pages monitored]
+Checks:       [N total checks performed]
+Status:       [HEALTHY / DEGRADED / BROKEN]
+
+Per-Page Results:
+─────────────────────────────────────────────────────
+  Page            Status      Errors    Avg Load
+  /               HEALTHY     0         450ms
+  /dashboard      DEGRADED    2 new     1200ms (was 400ms)
+  /settings       HEALTHY     0         380ms
+
+Alerts Fired:  [N] (X critical, Y high, Z medium)
+Screenshots:   .tstackvibe/canary-reports/screenshots/
+
+VERDICT: [DEPLOY IS HEALTHY / DEPLOY HAS ISSUES — details above]
+```
+
+Save report to `.tstackvibe/canary-reports/{date}-canary.md` and `.tstackvibe/canary-reports/{date}-canary.json`.
+
+Log the result for the review dashboard:
+
+```bash
+eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
+mkdir -p ~/.tstackvibe/projects/$SLUG
+```
+
+Write a JSONL entry: `{"skill":"canary","timestamp":"<ISO>","status":"<HEALTHY/DEGRADED/BROKEN>","url":"<url>","duration_min":<N>,"alerts":<N>}`
+
+### Phase 7: Baseline Update
+
+If the deploy is healthy, offer to update the baseline:
+
+- **Context:** Canary monitoring completed. The deploy is healthy.
+- **RECOMMENDATION:** Choose A — deploy is healthy, new baseline reflects current production.
+- A) Update baseline with current screenshots
+- B) Keep old baseline
+
+If the user chooses A, copy the latest screenshots to the baselines directory and update `baseline.json`.
+
+## Important Rules
+
+- **Speed matters.** Start monitoring within 30 seconds of invocation. Don't over-analyze before monitoring.
+- **Alert on changes, not absolutes.** Compare against baseline, not industry standards.
+- **Screenshots are evidence.** Every alert includes a screenshot path. No exceptions.
+- **Transient tolerance.** Only alert on patterns that persist across 2+ consecutive checks.
+- **Baseline is king.** Without a baseline, canary is a health check. Encourage `--baseline` before deploying.
+- **Performance thresholds are relative.** 2x baseline is a regression. 1.5x might be normal variance.
+- **Read-only.** Observe and report. Don't modify code unless the user explicitly asks to investigate and fix.

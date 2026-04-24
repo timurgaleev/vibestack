@@ -1,17 +1,42 @@
 #!/usr/bin/env bash
-# tstackvibe install — register skills with Claude Code
+# tstackvibe install — register skills with Claude Code and install learnings tools
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
 CLAUDE_SKILLS="$HOME/.claude/skills"
+TVIBE_HOME="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+TVIBE_BIN="$TVIBE_HOME/bin"
 
-echo "Installing tstackvibe skills..."
+echo "Installing tstackvibe..."
 
+# Create tstackvibe state and bin directories
+mkdir -p "$TVIBE_BIN"
+mkdir -p "$TVIBE_HOME/projects"
+mkdir -p "$TVIBE_HOME/analytics"
+
+# Install bin/ scripts
+if [ -d "$REPO_DIR/bin" ]; then
+  for script in "$REPO_DIR/bin"/tvibe-*; do
+    [ -f "$script" ] || continue
+    name=$(basename "$script")
+    cp "$script" "$TVIBE_BIN/$name"
+    chmod +x "$TVIBE_BIN/$name"
+  done
+  echo "  + tstackvibe tools → $TVIBE_BIN"
+fi
+
+# Ensure $TVIBE_BIN is on PATH (print reminder if not)
+if ! echo "$PATH" | tr ':' '\n' | grep -qF "$TVIBE_BIN"; then
+  echo ""
+  echo "  NOTE: Add $TVIBE_BIN to your PATH:"
+  echo "    echo 'export PATH=\"$TVIBE_BIN:\$PATH\"' >> ~/.zshrc"
+fi
+
+# Install Claude Code skills
 mkdir -p "$CLAUDE_SKILLS"
 
 installed=0
-skipped=0
 
 for skill_dir in "$SKILLS_SRC"/*/; do
   if [ ! -f "$skill_dir/SKILL.md" ]; then
@@ -28,7 +53,24 @@ for skill_dir in "$SKILLS_SRC"/*/; do
   mkdir -p "$target"
   ln -sfn "${skill_dir%/}/SKILL.md" "$target/SKILL.md"
 
-  echo "  + $skill_name"
+  # Symlink bin/ directory if it exists (hook scripts)
+  if [ -d "${skill_dir%/}/bin" ]; then
+    ln -sfn "${skill_dir%/}/bin" "$target/bin"
+    chmod +x "${skill_dir%/}"/bin/*.sh 2>/dev/null || true
+  fi
+
+  # Symlink extra files: checklist.md, design-checklist.md, greptile-triage.md
+  for extra in checklist.md design-checklist.md greptile-triage.md; do
+    if [ -f "${skill_dir%/}/$extra" ]; then
+      ln -sfn "${skill_dir%/}/$extra" "$target/$extra"
+    fi
+  done
+
+  # Symlink specialists/ subdirectory if it exists
+  if [ -d "${skill_dir%/}/specialists" ]; then
+    ln -sfn "${skill_dir%/}/specialists" "$target/specialists"
+  fi
+
   installed=$((installed + 1))
 done
 
