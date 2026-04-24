@@ -59,17 +59,14 @@ for skill_dir in "$SKILLS_SRC"/*/; do
     chmod +x "${skill_dir%/}"/bin/*.sh 2>/dev/null || true
   fi
 
-  # Symlink extra files: checklist.md, design-checklist.md, greptile-triage.md
-  for extra in checklist.md design-checklist.md greptile-triage.md; do
-    if [ -f "${skill_dir%/}/$extra" ]; then
-      ln -sfn "${skill_dir%/}/$extra" "$target/$extra"
-    fi
+  # Symlink all extra files and subdirectories (SKILL.md and bin/ are handled above)
+  for item in "${skill_dir%/}"/*; do
+    [ -e "$item" ] || continue
+    item_name=$(basename "$item")
+    [ "$item_name" = "SKILL.md" ] && continue
+    [ "$item_name" = "bin" ] && continue
+    ln -sfn "$item" "$target/$item_name"
   done
-
-  # Symlink specialists/ subdirectory if it exists
-  if [ -d "${skill_dir%/}/specialists" ]; then
-    ln -sfn "${skill_dir%/}/specialists" "$target/specialists"
-  fi
 
   installed=$((installed + 1))
 done
