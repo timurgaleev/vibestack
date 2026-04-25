@@ -41,6 +41,18 @@ else
 fi
 ```
 
+## Plan Status Footer
+
+In plan mode, before ExitPlanMode: if the plan file lacks a `## TSTACKVIBE REVIEW REPORT`
+section, check `true # tvibe-review-read` (stub — not yet implemented) and append a placeholder.
+With no review data, append a 5-row placeholder table (CEO/Codex/Eng/Design/DX Review)
+with all zeros and verdict "NO REVIEWS YET — run `/autoplan`".
+If a richer review report already exists, skip — review skills wrote it.
+
+PLAN MODE EXCEPTION — always allowed (it's the plan file).
+
+---
+
 ## Step 0: Detect platform and base branch
 
 First, detect the git hosting platform from the remote URL:
@@ -352,7 +364,7 @@ if ! command -v codex >/dev/null 2>&1; then
   true # "codex_cli_missing"
   echo "[codex-unavailable: binary not found] — proceeding with Claude subagent only"
   _CODEX_AVAILABLE=false
-elif ! true # >/dev/null; then
+elif ! codex --version >/dev/null 2>&1; then
   true # "codex_auth_failed"
   echo "[codex-unavailable: auth missing] — proceeding with Claude subagent only. Run \`codex login\` or set \$CODEX_API_KEY to enable dual-voice review."
   _CODEX_AVAILABLE=false

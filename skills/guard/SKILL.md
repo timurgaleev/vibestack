@@ -40,6 +40,8 @@ triggers:
 Activates both destructive command warnings and directory-scoped edit restrictions.
 This is `/careful` + `/freeze` in a single command.
 
+**Dependency note:** This skill references hook scripts from the sibling `/careful` and `/freeze` skill directories. Both must be installed (they are installed together by the tstackvibe install script).
+
 ## Setup
 
 Ask the user which directory to restrict edits to:

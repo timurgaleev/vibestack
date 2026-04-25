@@ -111,6 +111,69 @@ Triggers: `security audit`, `cso`, `threat model`
 
 ---
 
+### `/code-audit`
+Deep code audit — analyze entire codebase for issues, root causes, and improvements.
+
+Systematic pass through architecture, code quality, security, performance, and maintainability. Produces a prioritized issue list with severity ratings and recommended fixes. Does not change code — audit only.
+
+Triggers: `code audit`, `audit the codebase`, `deep code review`
+
+---
+
+### `/validate`
+Run lint, typecheck, and tests. Fix all failures automatically.
+
+Detects project type (Node.js, Python, Go, Rust), runs all quality checks in sequence, identifies cascading failures with shared root causes, and fixes them. Repeats until all checks pass. Reports what was fixed.
+
+Triggers: `validate`, `run checks`, `lint and test`
+
+---
+
+### `/commit`
+Create a git commit with conventional format.
+
+Analyzes staged and unstaged changes, drafts a commit message in `<type>: <subject>` format, stages relevant files, and creates the commit. Refuses to commit secrets or generated files.
+
+Triggers: `commit`, `commit these changes`, `git commit`
+
+---
+
+### `/commit-push`
+Create a git commit and push to remote.
+
+Same as `/commit` but also pushes to the remote branch after committing. Confirms the push target before proceeding.
+
+Triggers: `commit and push`, `commit push`, `push this`
+
+---
+
+### `/pr-create`
+Create a pull request with proper format.
+
+Runs validation first, gathers the full diff, analyzes every changed file for purpose and impact, then creates a PR with summary, changes, and test plan. Uses `<type>(<scope>): <subject>` title format.
+
+Triggers: `create pr`, `open pr`, `pull request`
+
+---
+
+### `/pr-summary`
+Analyze all PR changes and update the PR description with an accurate summary.
+
+Reads the full diff across all commits in the PR (not just the latest), categorizes changes, and writes an accurate PR body with summary, changes, and test plan. Preserves existing author notes.
+
+Triggers: `update pr description`, `pr summary`, `summarize pr`
+
+---
+
+### `/resolve-coderabbit`
+Address CodeRabbit review comments on a PR.
+
+Fetches all CodeRabbit inline comments, evaluates each technically against the codebase (ACCEPT / SKIP / REJECT), applies fixes in severity order, and resolves GitHub review threads. Does not blindly accept suggestions — rejects YAGNI, scope creep, and architecture conflicts.
+
+Triggers: `resolve coderabbit`, `fix coderabbit comments`, `address review comments`
+
+---
+
 ## QA & Testing
 
 ### `/qa`
@@ -252,6 +315,24 @@ Triggers: `landing report`, `pr queue`, `what's ready to merge`
 
 ---
 
+### `/docs-sync`
+Analyze code and documentation, find gaps, update docs.
+
+Reads source files and existing documentation, identifies where docs are missing, stale, or inaccurate, and updates them. Covers README, API docs, inline comments, and guides. Does not invent content — only documents what the code actually does.
+
+Triggers: `docs sync`, `update documentation`, `sync docs`
+
+---
+
+### `/reroll-buddy`
+Reset the Claude Code `/buddy` companion pet so a new one can be picked.
+
+Removes the `companion` key from `~/.claude.json` after user confirmation. After reset, run `/buddy` to pick a new pet. Modifies only the companion key — all other Claude Code config is preserved.
+
+Triggers: `reroll buddy`, `reset pet`, `reset companion`, `new buddy`
+
+---
+
 ## Session & Context
 
 ### `/context-save`
@@ -269,6 +350,24 @@ Restore saved context and pick up where you left off.
 Reads the context file, summarizes the state, and picks up the active task. Use at the start of a session after `/context-save`.
 
 Triggers: `restore context`, `context restore`, `pick up where I left off`
+
+---
+
+### `/context-init`
+Initialize project context by reading docs and saving to `./context.md`.
+
+Reads the project's README, CLAUDE.md, docs, and key source files to build a structured context snapshot. Writes it to `./context.md` for use by `/context-load` in future sessions. Run once when starting a new project.
+
+Triggers: `init context`, `initialize context`, `context init`
+
+---
+
+### `/context-load`
+Load saved project context from `./context.md`.
+
+Reads the previously saved context snapshot and restores working state. Shorter than re-reading all docs from scratch. Use at the start of a session when `/context.md` already exists.
+
+Triggers: `load context`, `context load`, `restore saved context`
 
 ---
 
@@ -313,3 +412,102 @@ Activates destructive command warnings and edit-scope restriction in one command
 To remove the edit boundary: `/unfreeze`. To deactivate everything: end the session.
 
 Triggers: `full safety mode`, `guard against mistakes`, `maximum safety`, `guard mode`, `lock it down`
+
+---
+
+## Tooling & Integrations
+
+### `/codex`
+Second-opinion code reviewer via OpenAI Codex CLI.
+
+Three modes:
+- **Review** — runs `codex review` against the current branch diff, applies a pass/fail gate on `[P1]` critical findings. Includes cross-model comparison if `/review` was already run in the session.
+- **Challenge** — adversarial mode: Codex tries to find edge cases, race conditions, security holes, and failure modes that a normal review would miss.
+- **Consult** — ask Codex anything about the codebase. Supports session continuity so follow-up questions preserve context.
+
+Requires `codex` CLI (`npm install -g @openai/codex`) and an OpenAI API key.
+
+Triggers: `codex review`, `second opinion`, `outside voice challenge`
+
+---
+
+### `/make-pdf`
+Generate professional PDFs from markdown, code, or HTML.
+
+Supports cover pages, tables of contents, watermarks, custom margins, and page sizes. Includes a preview mode to open a temporary PDF in the system viewer, and a setup mode to configure per-project defaults.
+
+Requires the `make-pdf` binary at `~/.claude/skills/tstackvibe-repo/make-pdf/dist/pdf`, or override via `$MAKE_PDF_BIN`.
+
+Triggers: `make pdf`, `generate pdf`, `create pdf`, `export pdf`, `pdf preview`
+
+---
+
+### `/setup-deploy`
+Configure deployment settings for `/land-and-deploy`.
+
+Detects your deploy platform (Fly.io, Render, Vercel, Netlify, Heroku, GitHub Actions, custom), production URL, health check endpoints, and deploy status commands. Writes everything to the `## Deploy Configuration` section of `CLAUDE.md` so future deploys are automatic. Idempotent — safe to re-run if your setup changes.
+
+Triggers: `configure deploy`, `setup deployment`, `set deploy platform`
+
+---
+
+### `/benchmark-models`
+Compare AI model outputs side-by-side to find the best fit for a task.
+
+Run a prompt against multiple providers (OpenAI, Anthropic, Google, Mistral, Groq, Together, local Ollama), optionally judge results with a separate model. Saves results to `~/.tstackvibe/benchmarks/` for later comparison. Uses the `tvibe-model-benchmark` binary from `~/.tstackvibe/bin/`.
+
+Triggers: `benchmark models`, `compare models`, `test models`
+
+---
+
+### `/browse`
+Fast headless browser for QA testing and site dogfooding.
+
+Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires the browse binary at `~/.claude/skills/tstackvibe-repo/browse/dist/browse`. Build via `cd ~/.claude/skills/tstackvibe-repo && ./setup`.
+
+Triggers: `browse a page`, `headless browser`, `take page screenshot`
+
+---
+
+### `/claude`
+Get an independent second opinion from a nested Claude instance.
+
+Three modes: **Review** (brutally honest diff review via `claude -p`), **Challenge** (adversarial failure-mode analysis), **Consult** (read-only Q&A about the repo). All modes run nested Claude with `--disable-slash-commands`; review/challenge are tool-less, consult uses Read/Grep/Glob only. Session IDs saved for consult continuity.
+
+Triggers: `claude review`, `claude challenge`, `ask claude`
+
+---
+
+### `/open-browser`
+Launch tstackvibe Browser — AI-controlled Chromium with sidebar extension.
+
+Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires the browse binary at `~/.claude/skills/tstackvibe-repo/browse/dist/browse`. Build via `cd ~/.claude/skills/tstackvibe-repo && ./setup`.
+
+Triggers: `open browser`, `launch chromium`, `show me the browser`
+
+---
+
+### `/pair-agent`
+Pair a remote AI agent with your browser session.
+
+Generates a one-time setup key and instructions another agent can use to connect. Works with OpenClaw, Hermes, Codex, Cursor, or any agent that can make HTTP requests. Each paired agent gets its own tab with scoped access. Supports same-machine (direct credential write) and remote (ngrok tunnel) modes.
+
+Triggers: `pair with agent`, `connect remote agent`, `share my browser`
+
+---
+
+### `/setup-browser-cookies`
+Import cookies from your real Chromium browser into the headless browse session.
+
+Opens an interactive picker UI where you select which cookie domains to import. Use before QA testing authenticated pages. Supports direct domain import without the UI. Checks CDP mode first — skips import if already connected to real browser.
+
+Triggers: `import browser cookies`, `login to test site`, `setup authenticated session`
+
+---
+
+### `/setup-memory`
+Set up secondbrain persistent memory for this coding agent.
+
+Install the secondbrain CLI, initialize a local PGLite or Supabase brain, register as a Claude Code MCP tool, and capture per-remote trust policy. Three paths: PGLite local (zero accounts), Supabase existing URL, or Supabase auto-provision. Shortcut modes: `--repo` (policy only), `--switch` (engine migration), `--resume-provision`, `--cleanup-orphans`.
+
+Triggers: `setup memory`, `setup secondbrain`, `install secondbrain`, `connect secondbrain`

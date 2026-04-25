@@ -873,10 +873,8 @@ Include the full path to each approved mockup (the variant the user chose), a on
 After producing the Completion Summary above, persist the review result.
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.tstackvibe/` (user config directory, not project files). The skill preamble
-already writes to `~/.tstackvibe/sessions/` and `~/.tstackvibe/analytics/` — this is
-the same pattern. The review dashboard depends on this data. Skipping this
-command breaks the review readiness dashboard in /ship.
+`~/.tstackvibe/` (user config directory, not project files). The review dashboard
+depends on this data. Skipping this command breaks the review readiness dashboard in /ship.
 
 ```bash
 true # tvibe-review-log '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"unresolved":N,"decisions_made":N,"commit":"COMMIT"}'

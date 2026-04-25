@@ -1,6 +1,6 @@
 # tstackvibe
 
-A personal Claude Code skills pack — 23 specialist workflows as slash commands.
+A personal Claude Code skills pack — 53 specialist workflows as slash commands.
 
 **Requirements:** Claude Code, Git, Bash
 
@@ -90,6 +90,13 @@ cd ~/.claude/skills/tstackvibe-repo && git pull && ./install
 | `/unfreeze` | Lift scope freeze |
 | `/guard` | Audit invariants and contracts for a critical file or module |
 | `/plan-tune` | Tune skill question behavior — reduce confirmations, set defaults, terse mode |
+
+### Tooling & Integrations
+| Command | What it does |
+|---------|-------------|
+| `/codex` | Second-opinion AI reviewer via OpenAI Codex — code review (pass/fail gate), adversarial challenge, or consult |
+| `/make-pdf` | Generate professional PDFs from markdown, code, or HTML — cover page, TOC, watermark support |
+| `/setup-deploy` | Configure deployment settings (platform, URL, health check) for `/land-and-deploy` |
 
 ---
 

@@ -56,6 +56,8 @@ fi
 ```bash
 # tstackvibe does not include a browse daemon.
 echo "BROWSE_NOT_AVAILABLE"
+REPORT_DIR=".tstackvibe/qa-reports"
+mkdir -p "$REPORT_DIR/screenshots"
 ```
 
 If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).

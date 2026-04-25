@@ -1116,10 +1116,8 @@ rm -f ~/.tstackvibe/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || tru
 After producing the Completion Summary above, persist the review result.
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.tstackvibe/` (user config directory, not project files). The skill preamble
-already writes to `~/.tstackvibe/sessions/` and `~/.tstackvibe/analytics/` — this is
-the same pattern. The review dashboard depends on this data. Skipping this
-command breaks the review readiness dashboard in /ship.
+`~/.tstackvibe/` (user config directory, not project files). The review dashboard
+depends on this data. Skipping this command breaks the review readiness dashboard in /ship.
 
 ```bash
 true # tvibe-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
