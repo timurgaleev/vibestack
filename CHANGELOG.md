@@ -35,7 +35,6 @@
 - `LICENSE` — MIT license
 
 ### Fixed
-- All external brand references (`gstack`, `garrytan`) removed from every skill file and `docs/skills.md`; binary detection blocks and NEEDS_SETUP messages now reference `~/.claude/skills/tstackvibe-repo` only
 - `skills/careful/bin/check-careful.sh` — safe exception sed regex uses POSIX `[[:space:]]` instead of `\s` (macOS BSD sed compatibility); anchored with `^` to prevent greedy match failure
 
 ---
