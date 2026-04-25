@@ -40,6 +40,7 @@ cd ~/.claude/skills/tstackvibe-repo && git pull && ./install
 | `/plan-design-review` | UX plan review — flows, information architecture, interactions, accessibility |
 | `/plan-devex-review` | Developer experience plan review — APIs, CLIs, SDKs. 3 modes: expand/polish/triage |
 | `/autoplan` | Run all reviews automatically with auto-decisions. Surfaces only taste calls |
+| `/plan-tune` | Tune skill question behavior — reduce confirmations, set defaults, terse mode |
 
 ### Code Quality & Shipping
 | Command | What it does |
@@ -48,6 +49,13 @@ cd ~/.claude/skills/tstackvibe-repo && git pull && ./install
 | `/ship` | Full ship workflow — merge base, tests, review, version bump, PR |
 | `/investigate` | Systematic debugging — Iron Law: no fix without confirmed root cause |
 | `/cso` | Security audit — OWASP Top 10 + STRIDE threat model |
+| `/code-audit` | Deep code audit — architecture, quality, security, performance. Audit only. |
+| `/validate` | Run lint, typecheck, and tests. Fix all failures automatically. |
+| `/commit` | Create a git commit with conventional format |
+| `/commit-push` | Create a git commit and push to remote |
+| `/pr-create` | Create a pull request with full diff analysis and test plan |
+| `/pr-summary` | Analyze all PR changes and update the PR description |
+| `/resolve-coderabbit` | Address CodeRabbit review comments, evaluating each technically |
 
 ### QA & Testing
 | Command | What it does |
@@ -75,12 +83,16 @@ cd ~/.claude/skills/tstackvibe-repo && git pull && ./install
 | `/health` | Code quality dashboard — type errors, lint, tests, coverage, security, composite score |
 | `/benchmark` | Performance benchmarking — build size, test speed, regression detection |
 | `/landing-report` | PR queue dashboard — CI status, merge-ready list, recent merges |
+| `/docs-sync` | Analyze code and docs, find gaps, update stale documentation |
+| `/reroll-buddy` | Reset the Claude Code `/buddy` companion pet |
 
 ### Session & Context
 | Command | What it does |
 |---------|-------------|
 | `/context-save` | Save working context (git state, decisions, remaining work) to resume later |
 | `/context-restore` | Restore saved context and pick up exactly where you left off |
+| `/context-init` | Initialize project context by reading docs, save to `./context.md` |
+| `/context-load` | Load saved project context from `./context.md` |
 
 ### Safety & Scope Control
 | Command | What it does |
@@ -88,15 +100,21 @@ cd ~/.claude/skills/tstackvibe-repo && git pull && ./install
 | `/careful` | Activate extra caution for risky operations (migrations, auth, production) |
 | `/freeze` | Freeze scope — block new features and refactors until explicitly unfrozen |
 | `/unfreeze` | Lift scope freeze |
-| `/guard` | Audit invariants and contracts for a critical file or module |
-| `/plan-tune` | Tune skill question behavior — reduce confirmations, set defaults, terse mode |
+| `/guard` | Full safety mode: `/careful` + `/freeze` combined |
 
 ### Tooling & Integrations
 | Command | What it does |
 |---------|-------------|
-| `/codex` | Second-opinion AI reviewer via OpenAI Codex — code review (pass/fail gate), adversarial challenge, or consult |
+| `/codex` | Second-opinion AI reviewer via OpenAI Codex — review (pass/fail gate), challenge, or consult |
+| `/claude` | Independent second opinion from a nested Claude instance — review, challenge, or consult |
 | `/make-pdf` | Generate professional PDFs from markdown, code, or HTML — cover page, TOC, watermark support |
 | `/setup-deploy` | Configure deployment settings (platform, URL, health check) for `/land-and-deploy` |
+| `/benchmark-models` | Compare AI model outputs side-by-side across providers to find the best fit |
+| `/browse` | Fast headless browser: navigate, interact, screenshot, diff, assert element states |
+| `/open-browser` | Launch AI-controlled visible Chromium with real-time sidebar activity feed |
+| `/pair-agent` | Pair a remote AI agent with your browser session over a secure tunnel |
+| `/setup-browser-cookies` | Import cookies from your real browser into the headless browse session |
+| `/setup-memory` | Set up secondbrain persistent memory as a Claude Code MCP tool |
 
 ---
 
