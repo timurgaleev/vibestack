@@ -27,13 +27,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -162,8 +162,8 @@ Then read CLAUDE.md, TODOS.md, and any existing architecture docs.
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 If a design doc exists (from `/office-hours`), read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design.
@@ -171,7 +171,7 @@ If a design doc exists (from `/office-hours`), read it. Use it as the source of 
 **Handoff note check** (reuses $SLUG and $BRANCH from the design doc check above):
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-HANDOFF=$(ls -t ~/.tstackvibe/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null | head -1)
+HANDOFF=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null | head -1)
 [ -n "$HANDOFF" ] && echo "HANDOFF_FOUND: $HANDOFF" || echo "NO_HANDOFF"
 ```
 If this block runs in a separate shell from the design doc check, recompute $SLUG and $BRANCH first using the same commands from that block.
@@ -233,8 +233,8 @@ After /office-hours completes, re-run the design doc check:
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 
@@ -320,18 +320,18 @@ Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a
 Search for relevant learnings from previous sessions:
 
 ```bash
-_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
 else
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 2>/dev/null || true
 fi
 ```
 
 If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-> tstackvibe can search learnings from your other projects on this machine to find
+> vibestack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
 > Recommended for solo developers. Skip if you work on multiple client codebases
 > where cross-contamination would be a concern.
@@ -340,8 +340,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
-If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
+If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
+If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 
@@ -350,7 +350,7 @@ matches a past learning, display:
 
 **"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-This makes the compounding visible. The user should see that tstackvibe is getting
+This makes the compounding visible. The user should see that vibestack is getting
 smarter on their codebase over time.
 
 
@@ -450,17 +450,17 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 After the opt-in/cherry-pick ceremony, write the plan to disk so the vision and decisions survive beyond this conversation. Only run this step for EXPANSION and SELECTIVE EXPANSION modes.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG/ceo-plans
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG/ceo-plans
 ```
 
 Before writing, check for existing CEO plans in the ceo-plans/ directory. If any are >30 days old or their branch has been merged/deleted, offer to archive them:
 
 ```bash
-mkdir -p ~/.tstackvibe/projects/$SLUG/ceo-plans/archive
-# For each stale plan: mv ~/.tstackvibe/projects/$SLUG/ceo-plans/{old-plan}.md ~/.tstackvibe/projects/$SLUG/ceo-plans/archive/
+mkdir -p ~/.vibestack/projects/$SLUG/ceo-plans/archive
+# For each stale plan: mv ~/.vibestack/projects/$SLUG/ceo-plans/{old-plan}.md ~/.vibestack/projects/$SLUG/ceo-plans/archive/
 ```
 
-Write to `~/.tstackvibe/projects/$SLUG/ceo-plans/{date}-{feature-slug}.md` using this format:
+Write to `~/.vibestack/projects/$SLUG/ceo-plans/{date}-{feature-slug}.md` using this format:
 
 ```markdown
 ---
@@ -553,8 +553,8 @@ After the loop completes (PASS, max iterations, or convergence guard):
 
 3. Append metrics:
 ```bash
-mkdir -p ~/.tstackvibe/analytics
-echo '{"skill":"plan-ceo-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.tstackvibe/analytics/spec-review.jsonl 2>/dev/null || true
+mkdir -p ~/.vibestack/analytics
+echo '{"skill":"plan-ceo-review","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.vibestack/analytics/spec-review.jsonl 2>/dev/null || true
 ```
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
 
@@ -566,7 +566,7 @@ Think ahead to implementation: What decisions will need to be made during implem
   HOUR 4-5 (integration):  What will surprise them?
   HOUR 6+ (polish/tests):  What will they wish they'd planned for?
 ```
-NOTE: These represent human-team implementation hours. With CC + tstackvibe,
+NOTE: These represent human-team implementation hours. With CC + vibestack,
 6 hours of human implementation compresses to ~30-60 minutes. The decisions
 are identical — the implementation speed is 10-20x faster. Always present
 both scales when discussing effort.
@@ -977,7 +977,7 @@ If no tension points exist, note: "No cross-model tension — both reviewers agr
 
 **Persist the result:**
 ```bash
-true # tvibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+true # vibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
 Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.
@@ -1038,7 +1038,7 @@ For each TODO, describe:
 * **Pros:** What you gain by doing this work.
 * **Cons:** Cost, complexity, or risks of doing it.
 * **Context:** Enough detail that someone picking this up in 3 months understands the motivation, the current state, and where to start.
-* **Effort estimate:** S/M/L/XL (human team) → with Claude Code + tstackvibe: S→S, M→S, L→M, XL→L
+* **Effort estimate:** S/M/L/XL (human team) → with Claude Code + vibestack: S→S, M→S, L→M, XL→L
 * **Priority:** P1/P2/P3
 * **Depends on / blocked by:** Any prerequisites or ordering constraints.
 
@@ -1107,8 +1107,8 @@ the review is complete and the context is no longer needed.
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-rm -f ~/.tstackvibe/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+rm -f ~/.vibestack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 ```
 
 ## Review Log
@@ -1116,11 +1116,11 @@ rm -f ~/.tstackvibe/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || tru
 After producing the Completion Summary above, persist the review result.
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.tstackvibe/` (user config directory, not project files). The review dashboard
+`~/.vibestack/` (user config directory, not project files). The review dashboard
 depends on this data. Skipping this command breaks the review readiness dashboard in /ship.
 
 ```bash
-true # tvibe-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
+true # vibe-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}'
 ```
 
 Before running this command, substitute the placeholder values from the Completion Summary you just produced:
@@ -1139,7 +1139,7 @@ Before running this command, substitute the placeholder values from the Completi
 After completing the review, read the review log and config to display the dashboard.
 
 ```bash
-true # tvibe-review-read
+true # vibe-review-read
 ```
 
 Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
@@ -1167,7 +1167,7 @@ Display:
 ```
 
 **Review tiers:**
-- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`tvibe-config set skip_eng_review true\` (the "don't bother me" setting).
+- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`vibe-config set skip_eng_review true\` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
 - **Adversarial Review (automatic):** Always-on for every review. Every diff gets both Claude adversarial subagent and Codex adversarial challenge. Large diffs (200+ lines) additionally get Codex structured review with P1 gate. No configuration needed.
@@ -1222,7 +1222,7 @@ Summary. For prior reviews, use the JSONL fields directly — they contain all r
 Produce this markdown table:
 
 \`\`\`markdown
-## TSTACKVIBE REVIEW REPORT
+## VIBESTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
@@ -1247,9 +1247,9 @@ Below the table, add these lines (omit any that are empty/not applicable):
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-- Search the plan file for a \`## TSTACKVIBE REVIEW REPORT\` section **anywhere** in the file
+- Search the plan file for a \`## VIBESTACK REVIEW REPORT\` section **anywhere** in the file
   (not just at the end — content may have been added after it).
-- If found, **replace it** entirely using the Edit tool. Match from \`## TSTACKVIBE REVIEW REPORT\`
+- If found, **replace it** entirely using the Edit tool. Match from \`## VIBESTACK REVIEW REPORT\`
   through either the next \`## \` heading or end of file, whichever comes first. This ensures
   content added after the report section is preserved, not eaten. If the Edit fails
   (e.g., concurrent edit changed the content), re-read the plan file and retry once.
@@ -1278,7 +1278,7 @@ At the end of the review, if the vision produced a compelling feature direction,
 
 "The vision from this review produced {N} accepted scope expansions. Want to promote it to a design doc in the repo?"
 - **A)** Promote to `docs/designs/{FEATURE}.md` (committed to repo, visible to the team)
-- **B)** Keep in `~/.tstackvibe/projects/` only (local, personal reference)
+- **B)** Keep in `~/.vibestack/projects/` only (local, personal reference)
 - **C)** Skip
 
 If promoted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create the directory if needed) and update the `status` field in the original CEO plan from `ACTIVE` to `PROMOTED`.
@@ -1296,7 +1296,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"plan-ceo-review","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"plan-ceo-review","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

@@ -1,6 +1,6 @@
-# CLAUDE.md — tstackvibe Development Guide
+# CLAUDE.md — vibestack Development Guide
 
-This file guides development of tstackvibe itself. Read it before editing skills or tooling.
+This file guides development of vibestack itself. Read it before editing skills or tooling.
 
 ## Skill structure
 
@@ -82,10 +82,10 @@ echo '{"tool_input":{"file_path":"/tmp/test.txt"}}' \
 
 ## Session state
 
-Persistent state lives in `~/.tstackvibe/` (or `$TSTACKVIBE_HOME`):
+Persistent state lives in `~/.vibestack/` (or `$VIBESTACK_HOME`):
 
 ```
-~/.tstackvibe/
+~/.vibestack/
 └── freeze-dir.txt    # written by /freeze, read by check-freeze.sh
 ```
 

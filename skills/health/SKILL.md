@@ -23,13 +23,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -202,10 +202,10 @@ DETAILS: Lint (3 warnings)
 ## Step 5: Persist to Health History
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
 ```
 
-Append one JSONL line to `~/.tstackvibe/projects/$SLUG/health-history.jsonl`:
+Append one JSONL line to `~/.vibestack/projects/$SLUG/health-history.jsonl`:
 
 ```json
 {"ts":"2026-03-31T14:30:00Z","branch":"main","score":9.1,"typecheck":10,"lint":8,"test":10,"deadcode":7,"shell":10,"duration_s":23}
@@ -224,12 +224,12 @@ If a category was skipped, set its value to `null`.
 
 ## Step 6: Trend Analysis + Recommendations
 
-Read the last 10 entries from `~/.tstackvibe/projects/$SLUG/health-history.jsonl` (if the
+Read the last 10 entries from `~/.vibestack/projects/$SLUG/health-history.jsonl` (if the
 file exists and has prior entries).
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
-tail -10 ~/.tstackvibe/projects/$SLUG/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+tail -10 ~/.vibestack/projects/$SLUG/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
 ```
 
 **If prior entries exist, show the trend:**

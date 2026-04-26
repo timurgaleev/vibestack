@@ -28,13 +28,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -44,7 +44,7 @@ fi
 ## DESIGN SETUP
 
 ```bash
-# tstackvibe does not include a design daemon.
+# vibestack does not include a design daemon.
 echo "DESIGN_NOT_AVAILABLE"
 ```
 
@@ -138,7 +138,7 @@ else a few taps away with an obvious path to get there.
 ## SETUP
 
 ```bash
-# tstackvibe does not include a browse daemon.
+# vibestack does not include a browse daemon.
 echo "BROWSE_NOT_AVAILABLE"
 ```
 
@@ -147,32 +147,32 @@ If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (c
 ## Step 0: Input Detection
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 ```
 
 Detect what design context exists for this project. Run all four checks:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-_CEO=$(ls -t ~/.tstackvibe/projects/$SLUG/ceo-plans/*.md 2>/dev/null | head -1)
+_CEO=$(ls -t ~/.vibestack/projects/$SLUG/ceo-plans/*.md 2>/dev/null | head -1)
 [ -n "$_CEO" ] && echo "CEO_PLAN: $_CEO" || echo "NO_CEO_PLAN"
 ```
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-_APPROVED=$(ls -t ~/.tstackvibe/projects/$SLUG/designs/*/approved.json 2>/dev/null | head -1)
+_APPROVED=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/approved.json 2>/dev/null | head -1)
 [ -n "$_APPROVED" ] && echo "APPROVED: $_APPROVED" || echo "NO_APPROVED"
 ```
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-_VARIANTS=$(ls -t ~/.tstackvibe/projects/$SLUG/designs/*/variant-*.png 2>/dev/null | head -1)
+_VARIANTS=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/variant-*.png 2>/dev/null | head -1)
 [ -n "$_VARIANTS" ] && echo "VARIANTS: $_VARIANTS" || echo "NO_VARIANTS"
 ```
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-_FINALIZED=$(ls -t ~/.tstackvibe/projects/$SLUG/designs/*/finalized.html 2>/dev/null | head -1)
+_FINALIZED=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/finalized.html 2>/dev/null | head -1)
 [ -n "$_FINALIZED" ] && echo "FINALIZED: $_FINALIZED" || echo "NO_FINALIZED"
 [ -f DESIGN.md ] && echo "DESIGN_MD: exists" || echo "NO_DESIGN_MD"
 ```
@@ -347,10 +347,10 @@ Run the detected install command. Then use standard imports in the component.
 ### HTML Generation
 
 Write a single file using the Write tool. Save to:
-`~/.tstackvibe/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.html`
+`~/.vibestack/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.html`
 
 For framework output, save to:
-`~/.tstackvibe/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.[tsx|svelte|vue]`
+`~/.vibestack/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.[tsx|svelte|vue]`
 
 **Always include in vanilla HTML:**
 - Pretext source (inlined or CDN, see above)
@@ -572,9 +572,9 @@ If `$B` is available (browse binary), take verification screenshots at 3 viewpor
 
 ```bash
 $B goto "file://<path-to-finalized.html>"
-$B screenshot /tmp/tstackvibe-verify-mobile.png --width 375
-$B screenshot /tmp/tstackvibe-verify-tablet.png --width 768
-$B screenshot /tmp/tstackvibe-verify-desktop.png --width 1440
+$B screenshot /tmp/vibestack-verify-mobile.png --width 375
+$B screenshot /tmp/vibestack-verify-tablet.png --width 768
+$B screenshot /tmp/vibestack-verify-desktop.png --width 1440
 ```
 
 Show all three screenshots inline using the Read tool. Check for:

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# tvibe-config — get/set tstackvibe configuration values
-# Usage: tvibe-config get <key>
-#        tvibe-config set <key> <value>
+# vibe-config — get/set vibestack configuration values
+# Usage: vibe-config get <key>
+#        vibe-config set <key> <value>
 set -euo pipefail
 
-CONFIG_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/config.json"
+CONFIG_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/config.json"
 mkdir -p "$(dirname "$CONFIG_FILE")"
 
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -14,7 +14,7 @@ fi
 case "${1:-}" in
   get)
     key="${2:-}"
-    [ -z "$key" ] && { echo "Usage: tvibe-config get <key>" >&2; exit 1; }
+    [ -z "$key" ] && { echo "Usage: vibe-config get <key>" >&2; exit 1; }
     python3 -c "
 import json, sys
 try:
@@ -29,7 +29,7 @@ except Exception:
   set)
     key="${2:-}"
     val="${3:-}"
-    [ -z "$key" ] && { echo "Usage: tvibe-config set <key> <value>" >&2; exit 1; }
+    [ -z "$key" ] && { echo "Usage: vibe-config set <key> <value>" >&2; exit 1; }
     python3 -c "
 import json, sys
 try:
@@ -48,7 +48,7 @@ print('Set $key=$val')
 " 2>/dev/null
     ;;
   *)
-    echo "Usage: tvibe-config get <key> | set <key> <value>" >&2
+    echo "Usage: vibe-config get <key> | set <key> <value>" >&2
     exit 1
     ;;
 esac

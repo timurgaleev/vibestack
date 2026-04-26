@@ -21,13 +21,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -37,7 +37,7 @@ fi
 ## SETUP
 
 ```bash
-# tstackvibe does not include a browse daemon.
+# vibestack does not include a browse daemon.
 echo "BROWSE_NOT_AVAILABLE"
 ```
 
@@ -103,10 +103,10 @@ When the user types `/canary`, run this skill.
 ### Phase 1: Setup
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null || echo "SLUG=unknown")"
-mkdir -p .tstackvibe/canary-reports
-mkdir -p .tstackvibe/canary-reports/baselines
-mkdir -p .tstackvibe/canary-reports/screenshots
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null || echo "SLUG=unknown")"
+mkdir -p .vibestack/canary-reports
+mkdir -p .vibestack/canary-reports/baselines
+mkdir -p .vibestack/canary-reports/screenshots
 ```
 
 Parse the user's arguments. Default duration is 10 minutes. Default pages: auto-discover from the app's navigation.
@@ -119,7 +119,7 @@ For each page (either from `--pages` or the homepage):
 
 ```bash
 $B goto <page-url>
-$B snapshot -i -a -o ".tstackvibe/canary-reports/baselines/<page-name>.png"
+$B snapshot -i -a -o ".vibestack/canary-reports/baselines/<page-name>.png"
 $B console --errors
 $B perf
 $B text
@@ -127,7 +127,7 @@ $B text
 
 Collect for each page: screenshot path, console error count, page load time from `perf`, and a text content snapshot.
 
-Save the baseline manifest to `.tstackvibe/canary-reports/baseline.json`:
+Save the baseline manifest to `.vibestack/canary-reports/baseline.json`:
 
 ```json
 {
@@ -173,7 +173,7 @@ For each page to monitor:
 
 ```bash
 $B goto <page-url>
-$B snapshot -i -a -o ".tstackvibe/canary-reports/screenshots/pre-<page-name>.png"
+$B snapshot -i -a -o ".vibestack/canary-reports/screenshots/pre-<page-name>.png"
 $B console --errors
 $B perf
 ```
@@ -186,7 +186,7 @@ Monitor for the specified duration. Every 60 seconds, check each page:
 
 ```bash
 $B goto <page-url>
-$B snapshot -i -a -o ".tstackvibe/canary-reports/screenshots/<page-name>-<check-number>.png"
+$B snapshot -i -a -o ".vibestack/canary-reports/screenshots/<page-name>-<check-number>.png"
 $B console --errors
 $B perf
 ```
@@ -243,18 +243,18 @@ Per-Page Results:
   /settings       HEALTHY     0         380ms
 
 Alerts Fired:  [N] (X critical, Y high, Z medium)
-Screenshots:   .tstackvibe/canary-reports/screenshots/
+Screenshots:   .vibestack/canary-reports/screenshots/
 
 VERDICT: [DEPLOY IS HEALTHY / DEPLOY HAS ISSUES — details above]
 ```
 
-Save report to `.tstackvibe/canary-reports/{date}-canary.md` and `.tstackvibe/canary-reports/{date}-canary.json`.
+Save report to `.vibestack/canary-reports/{date}-canary.md` and `.vibestack/canary-reports/{date}-canary.json`.
 
 Log the result for the review dashboard:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-mkdir -p ~/.tstackvibe/projects/$SLUG
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+mkdir -p ~/.vibestack/projects/$SLUG
 ```
 
 Write a JSONL entry: `{"skill":"canary","timestamp":"<ISO>","status":"<HEALTHY/DEGRADED/BROKEN>","url":"<url>","duration_min":<N>,"alerts":<N>}`

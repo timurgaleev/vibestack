@@ -1,6 +1,6 @@
 # Skills Reference
 
-Full reference for all tstackvibe skills. For a quick overview, see the README.
+Full reference for all vibestack skills. For a quick overview, see the README.
 
 ---
 
@@ -387,7 +387,7 @@ Triggers: `careful mode`, `risky operation`, `be careful`, `extra caution`
 ### `/freeze`
 Restrict file edits to a specific directory.
 
-Writes the directory path to `~/.tstackvibe/freeze-dir.txt`. A PreToolUse hook then blocks any Edit or Write targeting a file outside that path. Prevents "fixing" unrelated code while debugging.
+Writes the directory path to `~/.vibestack/freeze-dir.txt`. A PreToolUse hook then blocks any Edit or Write targeting a file outside that path. Prevents "fixing" unrelated code while debugging.
 
 Read and Bash operations are unaffected.
 
@@ -398,7 +398,7 @@ Triggers: `freeze edits to directory`, `lock editing scope`, `restrict file chan
 ### `/unfreeze`
 Clear the freeze boundary.
 
-Removes `~/.tstackvibe/freeze-dir.txt`. Edits are allowed everywhere again. The hook remains registered for the session but allows all paths since no state file exists.
+Removes `~/.vibestack/freeze-dir.txt`. Edits are allowed everywhere again. The hook remains registered for the session but allows all paths since no state file exists.
 
 Triggers: `unfreeze edits`, `unlock all directories`, `remove edit restrictions`, `allow all edits`
 
@@ -436,7 +436,7 @@ Generate professional PDFs from markdown, code, or HTML.
 
 Supports cover pages, tables of contents, watermarks, custom margins, and page sizes. Includes a preview mode to open a temporary PDF in the system viewer, and a setup mode to configure per-project defaults.
 
-Requires the `make-pdf` binary at `~/.claude/skills/tstackvibe-repo/make-pdf/dist/pdf`, or override via `$MAKE_PDF_BIN`.
+Requires the `make-pdf` binary at `~/.claude/skills/vibestack/make-pdf/dist/pdf`, or override via `$MAKE_PDF_BIN`.
 
 Triggers: `make pdf`, `generate pdf`, `create pdf`, `export pdf`, `pdf preview`
 
@@ -454,7 +454,7 @@ Triggers: `configure deploy`, `setup deployment`, `set deploy platform`
 ### `/benchmark-models`
 Compare AI model outputs side-by-side to find the best fit for a task.
 
-Run a prompt against multiple providers (OpenAI, Anthropic, Google, Mistral, Groq, Together, local Ollama), optionally judge results with a separate model. Saves results to `~/.tstackvibe/benchmarks/` for later comparison. Uses the `tvibe-model-benchmark` binary from `~/.tstackvibe/bin/`.
+Run a prompt against multiple providers (OpenAI, Anthropic, Google, Mistral, Groq, Together, local Ollama), optionally judge results with a separate model. Saves results to `~/.vibestack/benchmarks/` for later comparison. Uses the `vibe-model-benchmark` binary from `~/.vibestack/bin/`.
 
 Triggers: `benchmark models`, `compare models`, `test models`
 
@@ -463,7 +463,7 @@ Triggers: `benchmark models`, `compare models`, `test models`
 ### `/browse`
 Fast headless browser for QA testing and site dogfooding.
 
-Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires the browse binary at `~/.claude/skills/tstackvibe-repo/browse/dist/browse`. Build via `cd ~/.claude/skills/tstackvibe-repo && ./setup`.
+Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires the browse binary at `~/.claude/skills/vibestack/browse/dist/browse`. Build via `cd ~/.claude/skills/vibestack && ./setup`.
 
 Triggers: `browse a page`, `headless browser`, `take page screenshot`
 
@@ -479,9 +479,9 @@ Triggers: `claude review`, `claude challenge`, `ask claude`
 ---
 
 ### `/open-browser`
-Launch tstackvibe Browser — AI-controlled Chromium with sidebar extension.
+Launch vibestack Browser — AI-controlled Chromium with sidebar extension.
 
-Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires the browse binary at `~/.claude/skills/tstackvibe-repo/browse/dist/browse`. Build via `cd ~/.claude/skills/tstackvibe-repo && ./setup`.
+Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires the browse binary at `~/.claude/skills/vibestack/browse/dist/browse`. Build via `cd ~/.claude/skills/vibestack && ./setup`.
 
 Triggers: `open browser`, `launch chromium`, `show me the browser`
 

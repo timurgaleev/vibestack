@@ -26,13 +26,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -116,18 +116,18 @@ This is NOT a checklist — it's a reasoning phase. The output is understanding,
 Search for relevant learnings from previous sessions:
 
 ```bash
-_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
 else
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 2>/dev/null || true
 fi
 ```
 
 If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-> tstackvibe can search learnings from your other projects on this machine to find
+> vibestack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
 > Recommended for solo developers. Skip if you work on multiple client codebases
 > where cross-contamination would be a concern.
@@ -136,8 +136,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
-If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
+If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
+If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 
@@ -146,7 +146,7 @@ matches a past learning, display:
 
 **"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-This makes the compounding visible. The user should see that tstackvibe is getting
+This makes the compounding visible. The user should see that vibestack is getting
 smarter on their codebase over time.
 
 ### Phase 1: Attack Surface Census
@@ -332,7 +332,7 @@ If approved, run the same Grep patterns on globally installed skill files and ch
 
 **Severity:** CRITICAL for credential exfiltration attempts / prompt injection in skill files. HIGH for suspicious network calls / overly broad tool permissions. MEDIUM for skills from unverified sources without review.
 
-**FP rules:** tstackvibe's own skills are trusted (check if skill path resolves to a known repo). Skills that use `curl` for legitimate purposes (downloading tools, health checks) need context — only flag when the target URL is suspicious or when the command includes credential variables.
+**FP rules:** vibestack's own skills are trusted (check if skill path resolves to a known repo). Skills that use `curl` for legitimate purposes (downloading tools, health checks) need context — only flag when the target URL is suspicious or when the command includes credential variables.
 
 ### Phase 9: OWASP Top 10 Assessment
 
@@ -465,7 +465,7 @@ Before producing findings, run every candidate through this filter.
 19. Dependency CVEs with CVSS < 4.0 and no known exploit
 20. Docker issues in files named `Dockerfile.dev` or `Dockerfile.local` unless referenced in prod deploy configs
 21. CI/CD findings on archived or disabled workflows
-22. Skill files that are part of tstackvibe itself (trusted source)
+22. Skill files that are part of vibestack itself (trusted source)
 
 **Precedents:**
 
@@ -582,7 +582,7 @@ For each finding:
 5. **Audit exposure window** — when committed? When removed? Was repo public?
 6. **Check for abuse** — review provider's audit logs
 
-**Trend Tracking:** If prior reports exist in `.tstackvibe/security-reports/`:
+**Trend Tracking:** If prior reports exist in `.vibestack/security-reports/`:
 ```
 SECURITY POSTURE TREND
 ══════════════════════
@@ -610,10 +610,10 @@ Match findings across reports using the `fingerprint` field (sha256 of category 
 ### Phase 14: Save Report
 
 ```bash
-mkdir -p .tstackvibe/security-reports
+mkdir -p .vibestack/security-reports
 ```
 
-Write findings to `.tstackvibe/security-reports/{date}-{HHMMSS}.json` using this schema:
+Write findings to `.vibestack/security-reports/{date}-{HHMMSS}.json` using this schema:
 
 ```json
 {
@@ -666,7 +666,7 @@ Write findings to `.tstackvibe/security-reports/{date}-{HHMMSS}.json` using this
 }
 ```
 
-If `.tstackvibe/` is not in `.gitignore`, note it in findings — security reports should stay local.
+If `.vibestack/` is not in `.gitignore`, note it in findings — security reports should stay local.
 
 ## Capture Learnings
 
@@ -674,7 +674,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"cso","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"cso","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

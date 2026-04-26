@@ -23,13 +23,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -39,7 +39,7 @@ fi
 ## DESIGN SETUP
 
 ```bash
-# tstackvibe does not include a design daemon.
+# vibestack does not include a design daemon.
 echo "DESIGN_NOT_AVAILABLE"
 ```
 
@@ -135,9 +135,9 @@ else a few taps away with an obvious path to get there.
 Check for prior design exploration sessions for this project:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_PREV=$(find ~/.tstackvibe/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
+_PREV=$(find ~/.vibestack/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
 [ -n "$_PREV" ] && echo "PREVIOUS_SESSIONS_FOUND" || echo "NO_PREVIOUS_SESSIONS"
 echo "$_PREV"
 ```
@@ -189,7 +189,7 @@ ls src/ app/ pages/ components/ 2>/dev/null | head -30
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-ls ~/.tstackvibe/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls ~/.vibestack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ```
 
 If DESIGN.md exists, tell the user: "I'll follow your design system in DESIGN.md by
@@ -221,12 +221,12 @@ Two rounds max of context gathering, then proceed with what you have and note as
 Read both the persistent taste profile (cross-session) AND the per-session approved
 designs to bias generation toward the user's demonstrated taste.
 
-**Persistent taste profile (v1 schema at `~/.tstackvibe/projects/$SLUG/taste-profile.json`):**
+**Persistent taste profile (v1 schema at `~/.vibestack/projects/$SLUG/taste-profile.json`):**
 
 Read the persistent taste profile if it exists:
 
 ```bash
-_TASTE_PROFILE=~/.tstackvibe/projects/$SLUG/taste-profile.json
+_TASTE_PROFILE=~/.vibestack/projects/$SLUG/taste-profile.json
 if [ -f "$_TASTE_PROFILE" ]; then
   # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
   # Each dimension has approved[] and rejected[] entries with
@@ -260,14 +260,14 @@ as a one-off?"
 happens at read time, not write time, so the file only grows on change.
 
 **Schema migration:** If the file has no `version` field or `version: 0`, it's
-the legacy approved.json aggregate (taste-update not available in tstackvibe)
+the legacy approved.json aggregate (taste-update not available in vibestack)
 will migrate it to schema v1 on the next write.
 
 **Per-session approved.json files (legacy, still supported):**
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-_TASTE=$(find ~/.tstackvibe/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
+_TASTE=$(find ~/.vibestack/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
 ```
 
 If prior sessions exist, read each `approved.json` and extract patterns from the
@@ -278,8 +278,8 @@ approved.json files add the specific recent approval context.
 Limit to last 10 sessions. Try/catch JSON parse on each (skip corrupted files).
 
 **Updating taste profile after a design-shotgun session:** When the user picks a
-variant, log the approval via tvibe-learnings-log. When they
-explicitly reject a variant, log the rejection via tvibe-learnings-log.
+variant, log the approval via vibe-learnings-log. When they
+explicitly reject a variant, log the rejection via vibe-learnings-log.
 The CLI handles schema migration from approved.json, decay, and conflict flagging.
 
 ## Step 3: Generate Variants
@@ -287,8 +287,8 @@ The CLI handles schema migration from approved.json, decay, and conflict flaggin
 Set up the output directory:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.tstackvibe/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="$HOME/.vibestack/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -384,7 +384,7 @@ For the evolve path, replace step 1 with:
 {$D path} evolve --screenshot {_DESIGN_DIR}/current.png --brief "{brief}" --output /tmp/variant-{letter}.png
 ```
 
-**Why /tmp/ then cp?** In observed sessions, `$D generate --output ~/.tstackvibe/...`
+**Why /tmp/ then cp?** In observed sessions, `$D generate --output ~/.vibestack/...`
 failed with "The operation was aborted" while `--output /tmp/...` succeeded. This is
 a sandbox restriction. Always generate to `/tmp/` first, then `cp`.
 
@@ -549,7 +549,7 @@ If standalone, offer next steps via AskUserQuestion:
 ## Important Rules
 
 1. **Never save to `.context/`, `docs/designs/`, or `/tmp/`.** All design artifacts go
-   to `~/.tstackvibe/projects/$SLUG/designs/`. This is enforced. See DESIGN_SETUP above.
+   to `~/.vibestack/projects/$SLUG/designs/`. This is enforced. See DESIGN_SETUP above.
 2. **Show variants inline before opening the board.** The user should see designs
    immediately in their terminal. The browser board is for detailed feedback.
 3. **Confirm feedback before saving.** Always summarize what you understood and verify.

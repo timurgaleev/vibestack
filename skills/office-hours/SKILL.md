@@ -39,13 +39,13 @@ You are a **brainstorming partner**. Your job is to ensure the problem is unders
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -55,7 +55,7 @@ fi
 ## SETUP
 
 ```bash
-# tstackvibe does not include a browse daemon.
+# vibestack does not include a browse daemon.
 echo "BROWSE_NOT_AVAILABLE"
 ```
 
@@ -66,7 +66,7 @@ If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (c
 Understand the project and the area the user wants to change.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 ```
 
 1. Read `CLAUDE.md`, `TODOS.md` (if they exist).
@@ -75,7 +75,7 @@ eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
 4. **List existing design docs for this project:**
    ```bash
    setopt +o nomatch 2>/dev/null || true  # zsh compat
-   ls -t ~/.tstackvibe/projects/$SLUG/*-design-*.md 2>/dev/null
+   ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null
    ```
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
@@ -84,18 +84,18 @@ eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
 Search for relevant learnings from previous sessions:
 
 ```bash
-_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
 else
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 2>/dev/null || true
 fi
 ```
 
 If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-> tstackvibe can search learnings from your other projects on this machine to find
+> vibestack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
 > Recommended for solo developers. Skip if you work on multiple client codebases
 > where cross-contamination would be a concern.
@@ -104,8 +104,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
-If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
+If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
+If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 
@@ -114,7 +114,7 @@ matches a past learning, display:
 
 **"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-This makes the compounding visible. The user should see that tstackvibe is getting
+This makes the compounding visible. The user should see that vibestack is getting
 smarter on their codebase over time.
 
 5. **Ask: what's your goal with this?** This is a real question, not a formality. The answer determines everything about how the session runs.
@@ -360,14 +360,14 @@ After the user states the problem (first question in Phase 2A or 2B), search exi
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-grep -li "<keyword1>\|<keyword2>\|<keyword3>" ~/.tstackvibe/projects/$SLUG/*-design-*.md 2>/dev/null
+grep -li "<keyword1>\|<keyword2>\|<keyword3>" ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null
 ```
 
 If matches found, read the matching design docs and surface them:
 - "FYI: Related design found — '{title}' by {user} on {date} (branch: {branch}). Key overlap: {1-line summary of relevant section}."
 - Ask via AskUserQuestion: "Should we build on this prior design or start fresh?"
 
-This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in `~/.tstackvibe/projects/`.
+This enables cross-team discovery — multiple users exploring the same project will see each other's design docs in `~/.vibestack/projects/`.
 
 If no matches found, proceed silently.
 
@@ -461,7 +461,7 @@ If B: skip Phase 3.5 entirely. Remember that the second opinion did NOT run (aff
 2. **Write the assembled prompt to a temp file** (prevents shell injection from user-derived content):
 
 ```bash
-CODEX_PROMPT_FILE=$(mktemp /tmp/tstackvibe-codex-oh-XXXXXXXX.txt)
+CODEX_PROMPT_FILE=$(mktemp /tmp/vibestack-codex-oh-XXXXXXXX.txt)
 ```
 
 Write the full prompt to this file. **Always start with the filesystem boundary:**
@@ -590,8 +590,8 @@ Generating visual mockups of the proposed design... (say "skip" if you don't nee
 **Step 1: Set up the design directory**
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.tstackvibe/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="$HOME/.vibestack/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -676,14 +676,14 @@ Generate a single-page HTML file with these constraints:
 
 Write to a temp file:
 ```bash
-SKETCH_FILE="/tmp/tstackvibe-sketch-$(date +%s).html"
+SKETCH_FILE="/tmp/vibestack-sketch-$(date +%s).html"
 ```
 
 **Step 3: Render and capture**
 
 ```bash
 $B goto "file://$SKETCH_FILE"
-$B screenshot /tmp/tstackvibe-sketch.png
+$B screenshot /tmp/vibestack-sketch.png
 ```
 
 If `$B` is not available (browse binary not set up), skip the render step. Tell the
@@ -699,7 +699,7 @@ If they approve or say "good enough," proceed.
 **Step 5: Include in design doc**
 
 Reference the wireframe screenshot in the design doc's "Recommended Approach" section.
-The screenshot file at `/tmp/tstackvibe-sketch.png` can be referenced by downstream skills
+The screenshot file at `/tmp/vibestack-sketch.png` can be referenced by downstream skills
 (`/plan-design-review`, `/design-review`) to see what was originally envisioned.
 
 **Step 6: Outside design voices** (optional)
@@ -756,7 +756,7 @@ After counting signals, append a session entry to the builder profile. This is t
 source of truth for all closing state (tier, journey tracking, resources shown).
 
 ```bash
-mkdir -p "${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}"
 ```
 
 Append one JSON line with these fields (substitute actual values from this session):
@@ -771,7 +771,7 @@ Append one JSON line with these fields (substitute actual values from this sessi
 - `topics`: array of 2-3 topic keywords that describe what this session was about
 
 ```bash
-echo '{"date":"TIMESTAMP","mode":"MODE","project_slug":"SLUG","signal_count":N,"signals":SIGNALS_ARRAY,"design_doc":"DOC_PATH","assignment":"ASSIGNMENT_TEXT","resources_shown":[],"topics":TOPICS_ARRAY}' >> "${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/builder-profile.jsonl"
+echo '{"date":"TIMESTAMP","mode":"MODE","project_slug":"SLUG","signal_count":N,"signals":SIGNALS_ARRAY,"design_doc":"DOC_PATH","assignment":"ASSIGNMENT_TEXT","resources_shown":[],"topics":TOPICS_ARRAY}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
 ```
 
 This entry is append-only. The `resources_shown` field will be updated via a second append
@@ -784,7 +784,7 @@ after resource selection in Phase 6.
 Write the design document to the project directory.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
@@ -792,11 +792,11 @@ DATETIME=$(date +%Y%m%d-%H%M%S)
 **Design lineage:** Before writing, check for existing design docs on this branch:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-PRIOR=$(ls -t ~/.tstackvibe/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+PRIOR=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 ```
 If `$PRIOR` exists, the new doc gets a `Supersedes:` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
-Write to `~/.tstackvibe/projects/{slug}/{user}-{branch}-design-{datetime}.md`.
+Write to `~/.vibestack/projects/{slug}/{user}-{branch}-design-{datetime}.md`.
 
 After writing the design doc, tell the user:
 **"Design doc saved to: {full path}. Other skills (/plan-ceo-review, /plan-eng-review) will find it automatically."**
@@ -976,8 +976,8 @@ After the loop completes (PASS, max iterations, or convergence guard):
 
 3. Append metrics:
 ```bash
-mkdir -p ~/.tstackvibe/analytics
-echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.tstackvibe/analytics/spec-review.jsonl 2>/dev/null || true
+mkdir -p ~/.vibestack/analytics
+echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.vibestack/analytics/spec-review.jsonl 2>/dev/null || true
 ```
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
 
@@ -1080,11 +1080,11 @@ Design trajectory with interpretation:
 **Accumulated signal visibility:** Read ACCUMULATED_SIGNALS from the profile.
 "Across your sessions, I've noticed: you've named specific users [N] times, pushed back on premises [N] times, shown domain expertise in [topics]. These patterns mean something."
 
-**Builder Journey Summary** (session 5+): Auto-generate `~/.tstackvibe/builder-journey.md`
+**Builder Journey Summary** (session 5+): Auto-generate `~/.vibestack/builder-journey.md`
 with a narrative arc (not a data table). The arc tells the STORY of their journey in
 second person, referencing specific things they said across sessions. Then open it:
 ```bash
-open "${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/builder-journey.md"
+open "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-journey.md"
 ```
 
 Then proceed to Resources below.
@@ -1097,7 +1097,7 @@ Then proceed to Resources below.
 
 Full accumulated signal summary from the profile.
 
-Auto-generate updated `~/.tstackvibe/builder-journey.md` with narrative arc. Open it.
+Auto-generate updated `~/.vibestack/builder-journey.md` with narrative arc. Open it.
 
 Then proceed to Resources below.
 
@@ -1128,13 +1128,13 @@ If WebSearch is unavailable, skip this section entirely.
 
 1. Log the selected resource URLs to the builder profile:
 ```bash
-echo '{"date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","mode":"resources","project_slug":"'"${SLUG:-unknown}"'","signal_count":0,"signals":[],"design_doc":"","assignment":"","resources_shown":["URL1","URL2","URL3"],"topics":[]}' >> "${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/builder-profile.jsonl"
+echo '{"date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","mode":"resources","project_slug":"'"${SLUG:-unknown}"'","signal_count":0,"signals":[],"design_doc":"","assignment":"","resources_shown":["URL1","URL2","URL3"],"topics":[]}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
 ```
 
 2. Log to analytics:
 ```bash
-mkdir -p ~/.tstackvibe/analytics
-echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> ~/.tstackvibe/analytics/skill-usage.jsonl 2>/dev/null || true
+mkdir -p ~/.vibestack/analytics
+echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> ~/.vibestack/analytics/skill-usage.jsonl 2>/dev/null || true
 ```
 
 3. Use AskUserQuestion to offer opening the resources:
@@ -1160,7 +1160,7 @@ After resources, suggest the next step:
 - **`/plan-eng-review`** for well-scoped implementation planning — lock in architecture, tests, edge cases
 - **`/plan-design-review`** for visual/UX design review
 
-The design doc at `~/.tstackvibe/projects/` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
+The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 
 ---
 
@@ -1170,7 +1170,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"office-hours","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"office-hours","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

@@ -19,13 +19,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -43,7 +43,7 @@ BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^re
 This skill wraps `claude -p` to get an independent Claude Code second opinion
 without allowing nested Claude to modify files.
 
-The generated external invocation name is `tvibe-claude`.
+The generated external invocation name is `vibe-claude`.
 
 ---
 
@@ -75,7 +75,7 @@ If `AUTH_MISSING`, stop and tell the user:
 ## Safety Boundary
 
 Nested Claude must stay focused on the user's repository and must not run
-tstackvibe skills from inside this skill.
+vibestack skills from inside this skill.
 
 All `claude -p` calls MUST include:
 
@@ -109,9 +109,9 @@ Use these shell snippets in every mode.
 Create temp files:
 
 ```bash
-PROMPT_FILE=$(mktemp /tmp/tvibe-claude-prompt-XXXXXX)
-RESP_FILE=$(mktemp /tmp/tvibe-claude-response-XXXXXX.json)
-ERR_FILE=$(mktemp /tmp/tvibe-claude-error-XXXXXX.txt)
+PROMPT_FILE=$(mktemp /tmp/vibe-claude-prompt-XXXXXX)
+RESP_FILE=$(mktemp /tmp/vibe-claude-response-XXXXXX.json)
+ERR_FILE=$(mktemp /tmp/vibe-claude-error-XXXXXX.txt)
 ```
 
 Cleanup at the end of every mode:
@@ -166,7 +166,7 @@ Review the current branch diff with nested Claude in tool-less mode.
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
-DIFF_FILE=$(mktemp /tmp/tvibe-claude-diff-XXXXXX.patch)
+DIFF_FILE=$(mktemp /tmp/vibe-claude-diff-XXXXXX.patch)
 git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
 git diff "origin/$BASE_BRANCH" > "$DIFF_FILE" 2>/dev/null || git diff "$BASE_BRANCH" > "$DIFF_FILE"
 ```
@@ -279,7 +279,7 @@ cat > "$PROMPT_FILE" <<'EOF'
 You are Claude Code acting as an independent outside voice for this repository.
 Answer the user's question directly. You may inspect repository files with Read,
 Grep, and Glob only. Do not use Bash. Do not edit or write files. Do not invoke
-slash commands or tstackvibe skills.
+slash commands or vibestack skills.
 
 USER QUESTION:
 <user prompt>

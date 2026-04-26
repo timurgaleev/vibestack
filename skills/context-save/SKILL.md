@@ -25,13 +25,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -58,7 +58,7 @@ If the user types `/context-save resume` or `/context-save restore`, tell them:
 ### Step 1: Gather state
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
 ```
 
 Collect the current working state:
@@ -118,8 +118,8 @@ inject shell metacharacters into any subsequent command. The sanitizer is an
 allowlist: only `a-z 0-9 - .` survive.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
-CHECKPOINT_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/$SLUG/checkpoints"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+CHECKPOINT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/checkpoints"
 mkdir -p "$CHECKPOINT_DIR"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 # Bash-side title sanitize. Pass the raw title as $1 when running this block.
@@ -204,8 +204,8 @@ Restore later with /context-restore.
 ### Step 1: Gather saved contexts
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
-CHECKPOINT_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/$SLUG/checkpoints"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+CHECKPOINT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/checkpoints"
 if [ -d "$CHECKPOINT_DIR" ]; then
   echo "CHECKPOINT_DIR=$CHECKPOINT_DIR"
   # Use find + sort instead of ls -1t: filename YYYYMMDD-HHMMSS prefix is the
@@ -267,6 +267,6 @@ If there are no saved contexts, tell the user: "No saved contexts yet. Run
   save creates a new file.
 - **Infer, don't interrogate.** Use git state and conversation context to fill in
   the file. Only use AskUserQuestion if the title genuinely cannot be inferred.
-- **This is a tstackvibe skill, not a Claude Code built-in.** When the user types
+- **This is a vibestack skill, not a Claude Code built-in.** When the user types
   `/context-save`, invoke this skill via the Skill tool. The old `/checkpoint`
   name collided with Claude Code's native `/rewind` alias — the rename fixed that.

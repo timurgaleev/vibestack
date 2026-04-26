@@ -1,7 +1,7 @@
 ---
 name: open-browser
 description: |
-  Launch tstackvibe Browser — AI-controlled Chromium with the sidebar extension baked in.
+  Launch vibestack Browser — AI-controlled Chromium with the sidebar extension baked in.
   Opens a visible browser window where you can watch every action in real time.
   The sidebar shows a live activity feed and chat. Anti-bot stealth built in.
   Use when asked to "open browser", "launch browser", "connect chrome",
@@ -19,22 +19,22 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
 fi
 ```
 
-# /open-browser — Launch tstackvibe Browser
+# /open-browser — Launch vibestack Browser
 
-Launch tstackvibe Browser — AI-controlled Chromium with the sidebar extension,
+Launch vibestack Browser — AI-controlled Chromium with the sidebar extension,
 anti-bot stealth, and real-time visibility. You see every action as it happens.
 
 ## SETUP (run this check BEFORE any browse command)
@@ -42,13 +42,13 @@ anti-bot stealth, and real-time visibility. You see every action as it happens.
 ```bash
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/tstackvibe-repo/browse/dist/browse" ] && B="$_ROOT/.claude/skills/tstackvibe-repo/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/tstackvibe-repo/browse/dist/browse"
+[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/vibestack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/vibestack/browse/dist/browse"
+[ -z "$B" ] && B="$HOME/.claude/skills/vibestack/browse/dist/browse"
 if [ -x "$B" ]; then echo "READY: $B"; else echo "NEEDS_SETUP"; fi
 ```
 
 If `NEEDS_SETUP`, stop and tell the user:
-"The browse binary is not installed. Build it by running: `cd ~/.claude/skills/tstackvibe-repo && ./setup` (~10 seconds)."
+"The browse binary is not installed. Build it by running: `cd ~/.claude/skills/vibestack && ./setup` (~10 seconds)."
 
 ---
 
@@ -62,8 +62,8 @@ positives and Chromium profile lock conflicts.
 # Kill any existing browse server
 _REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 _BROWSE_STATE=""
-[ -n "$_REPO_ROOT" ] && _BROWSE_STATE="$_REPO_ROOT/.tstackvibe/browse.json"
-[ -z "$_BROWSE_STATE" ] || [ ! -f "$_BROWSE_STATE" ] && _BROWSE_STATE="$HOME/.tstackvibe/browse.json"
+[ -n "$_REPO_ROOT" ] && _BROWSE_STATE="$_REPO_ROOT/.vibestack/browse.json"
+[ -z "$_BROWSE_STATE" ] || [ ! -f "$_BROWSE_STATE" ] && _BROWSE_STATE="$HOME/.vibestack/browse.json"
 if [ -f "$_BROWSE_STATE" ]; then
   _OLD_PID=$(grep -o '"pid":[0-9]*' "$_BROWSE_STATE" 2>/dev/null | grep -o '[0-9]*')
   [ -n "$_OLD_PID" ] && kill "$_OLD_PID" 2>/dev/null || true
@@ -72,7 +72,7 @@ if [ -f "$_BROWSE_STATE" ]; then
   rm -f "$_BROWSE_STATE"
 fi
 # Clean Chromium profile locks (can persist after crashes)
-_PROFILE_DIR="$HOME/.tstackvibe/chromium-profile"
+_PROFILE_DIR="$HOME/.vibestack/chromium-profile"
 for _LF in SingletonLock SingletonSocket SingletonCookie; do
   rm -f "$_PROFILE_DIR/$_LF" 2>/dev/null || true
 done
@@ -85,7 +85,7 @@ echo "Pre-flight cleanup done"
 $B connect
 ```
 
-This launches tstackvibe Browser (rebranded Chromium) in headed mode with:
+This launches vibestack Browser (rebranded Chromium) in headed mode with:
 - A visible window you can watch (not your regular Chrome — it stays untouched)
 - The sidebar extension auto-loaded via `launchPersistentContext`
 - Anti-bot stealth patches (sites like Google and NYTimes work without captchas)
@@ -112,8 +112,8 @@ Confirm the output shows `Mode: headed`. Read the port from the state file:
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 _STATE_FILE=""
-[ -n "$_REPO_ROOT" ] && [ -f "$_REPO_ROOT/.tstackvibe/browse.json" ] && _STATE_FILE="$_REPO_ROOT/.tstackvibe/browse.json"
-[ -z "$_STATE_FILE" ] && _STATE_FILE="$HOME/.tstackvibe/browse.json"
+[ -n "$_REPO_ROOT" ] && [ -f "$_REPO_ROOT/.vibestack/browse.json" ] && _STATE_FILE="$_REPO_ROOT/.vibestack/browse.json"
+[ -z "$_STATE_FILE" ] && _STATE_FILE="$HOME/.vibestack/browse.json"
 grep -o '"port":[0-9]*' "$_STATE_FILE" 2>/dev/null | grep -o '[0-9]*'
 ```
 
@@ -125,8 +125,8 @@ Also find the extension path so you can help the user if they need to load it ma
 ```bash
 _EXT_PATH=""
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-[ -n "$_ROOT" ] && [ -f "$_ROOT/.claude/skills/tstackvibe-repo/extension/manifest.json" ] && _EXT_PATH="$_ROOT/.claude/skills/tstackvibe-repo/extension"
-[ -z "$_EXT_PATH" ] && [ -f "$HOME/.claude/skills/tstackvibe-repo/extension/manifest.json" ] && _EXT_PATH="$HOME/.claude/skills/tstackvibe-repo/extension"
+[ -n "$_ROOT" ] && [ -f "$_ROOT/.claude/skills/vibestack/extension/manifest.json" ] && _EXT_PATH="$_ROOT/.claude/skills/vibestack/extension"
+[ -z "$_EXT_PATH" ] && [ -f "$HOME/.claude/skills/vibestack/extension/manifest.json" ] && _EXT_PATH="$HOME/.claude/skills/vibestack/extension"
 echo "EXTENSION_PATH: ${_EXT_PATH:-NOT FOUND}"
 ```
 
@@ -134,12 +134,12 @@ echo "EXTENSION_PATH: ${_EXT_PATH:-NOT FOUND}"
 
 Use AskUserQuestion:
 
-> Chrome is launched with tstackvibe control. You should see Playwright's Chromium
+> Chrome is launched with vibestack control. You should see Playwright's Chromium
 > (not your regular Chrome) with a shimmer line at the top of the page.
 >
 > The Side Panel extension should be auto-loaded. To open it:
 > 1. Look for the **puzzle piece icon** (Extensions) in the toolbar
-> 2. Click the **puzzle piece** → find **tstackvibe browse** → click the **pin icon**
+> 2. Click the **puzzle piece** → find **vibestack browse** → click the **pin icon**
 > 3. Click the pinned icon in the toolbar
 > 4. The Side Panel should open on the right showing a live activity feed
 >
@@ -157,7 +157,7 @@ If B: Tell the user:
 > sometimes it doesn't appear immediately. Try these steps:
 >
 > 1. Type `chrome://extensions` in the address bar
-> 2. Look for the **tstackvibe browse** extension — it should be listed and enabled
+> 2. Look for the **vibestack browse** extension — it should be listed and enabled
 > 3. If it's there but not pinned, go back to any page, click the puzzle piece
 >    icon, and pin it
 > 4. If it's NOT listed at all, click **"Load unpacked"** and navigate to:
@@ -215,7 +215,7 @@ Tell the user:
 > You're all set! Here's what you can do with the connected Chrome:
 >
 > **Watch Claude work in real time:**
-> - Run any tstackvibe skill (`/qa`, `/design-review`, `/benchmark`) and watch
+> - Run any vibestack skill (`/qa`, `/design-review`, `/benchmark`) and watch
 >   every action happen in the visible Chrome window + Side Panel feed
 > - No cookie import needed — the Playwright browser shares its own session
 >

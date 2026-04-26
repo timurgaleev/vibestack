@@ -20,13 +20,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -41,7 +41,7 @@ able to browse the web using YOUR browser. This skill makes that happen.
 
 ## How it works
 
-Your tstackvibe browser runs a local HTTP server. This skill creates a one-time setup
+Your vibestack browser runs a local HTTP server. This skill creates a one-time setup
 key, prints a block of instructions, and you paste those instructions into the other
 agent. The other agent exchanges the key for a session token, creates its own tab,
 and starts browsing. Each agent gets its own tab. They can't mess with each other's
@@ -62,13 +62,13 @@ The skill will tell you if one is needed and how to set it up.
 ```bash
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/tstackvibe-repo/browse/dist/browse" ] && B="$_ROOT/.claude/skills/tstackvibe-repo/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/tstackvibe-repo/browse/dist/browse"
+[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/vibestack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/vibestack/browse/dist/browse"
+[ -z "$B" ] && B="$HOME/.claude/skills/vibestack/browse/dist/browse"
 if [ -x "$B" ]; then echo "READY: $B"; else echo "NEEDS_SETUP"; fi
 ```
 
 If `NEEDS_SETUP`, stop and tell the user:
-"The browse binary is not installed. Build it by running: `cd ~/.claude/skills/tstackvibe-repo && ./setup` (~10 seconds)."
+"The browse binary is not installed. Build it by running: `cd ~/.claude/skills/vibestack && ./setup` (~10 seconds)."
 
 ## Step 1: Check prerequisites
 
@@ -218,7 +218,7 @@ $B status
 
 Look for the connected agent in the status output. If it appears, tell the user:
 "The remote agent is connected and has its own tab. You'll see its activity in the
-side panel if you have tstackvibe Browser open."
+side panel if you have vibestack Browser open."
 
 ## What the remote agent can do
 
@@ -255,19 +255,19 @@ generate a new setup key.
 
 OpenClaw agents use the `exec` tool instead of `Bash`. The instruction block uses
 `exec curl` syntax which OpenClaw understands natively. When using `--local openclaw`,
-credentials are written to `~/.openclaw/skills/tstackvibe-repo/browse-remote.json`.
+credentials are written to `~/.openclaw/skills/vibestack/browse-remote.json`.
 
 ### Codex
 
 Codex agents can execute shell commands via `codex exec`. The instruction block's
 curl commands work directly. When using `--local codex`, credentials are written
-to `~/.codex/skills/tstackvibe-repo/browse-remote.json`.
+to `~/.codex/skills/vibestack/browse-remote.json`.
 
 ### Cursor
 
 Cursor's AI can run terminal commands. The instruction block works as-is.
 When using `--local cursor`, credentials are written to
-`~/.cursor/skills/tstackvibe-repo/browse-remote.json`.
+`~/.cursor/skills/vibestack/browse-remote.json`.
 
 ## Revoking access
 

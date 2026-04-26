@@ -20,13 +20,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -36,7 +36,7 @@ fi
 ## SETUP
 
 ```bash
-# tstackvibe does not include a browse daemon.
+# vibestack does not include a browse daemon.
 echo "BROWSE_NOT_AVAILABLE"
 ```
 
@@ -165,12 +165,12 @@ Check whether this project has been through a successful `/land-and-deploy` befo
 and whether the deploy configuration has changed since then:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-if [ ! -f ~/.tstackvibe/projects/$SLUG/land-deploy-confirmed ]; then
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+if [ ! -f ~/.vibestack/projects/$SLUG/land-deploy-confirmed ]; then
   echo "FIRST_RUN"
 else
   # Check if deploy config has changed since confirmation
-  SAVED_HASH=$(cat ~/.tstackvibe/projects/$SLUG/land-deploy-confirmed 2>/dev/null)
+  SAVED_HASH=$(cat ~/.vibestack/projects/$SLUG/land-deploy-confirmed 2>/dev/null)
   CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
   # Also hash workflow files that affect deploy behavior
   WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
@@ -336,7 +336,7 @@ Tell the user: "Before I merge any PR, I run a series of readiness checks — co
 Preview the readiness checks that will run at Step 3.5 (without re-running tests):
 
 ```bash
-true # tvibe-review-read 2>/dev/null
+true # vibe-review-read 2>/dev/null
 ```
 
 Show a summary of review status: which reviews have been run, how stale they are.
@@ -364,10 +364,10 @@ Present the full dry-run results to the user via AskUserQuestion:
 
 Save the deploy config fingerprint so we can detect future changes:
 ```bash
-mkdir -p ~/.tstackvibe/projects/$SLUG
+mkdir -p ~/.vibestack/projects/$SLUG
 CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
 WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > ~/.tstackvibe/projects/$SLUG/land-deploy-confirmed
+echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > ~/.vibestack/projects/$SLUG/land-deploy-confirmed
 ```
 Continue to Step 2.
 
@@ -429,7 +429,7 @@ BASE_VERSION=$(git show origin/$BASE_BRANCH:VERSION 2>/dev/null | tr -d '\r\n[:s
 # We don't need the exact original level — we just need "a level" that passes to the util.
 # If the minor digit advanced, call it minor; patch digit, patch; etc. If base > branch, skip (not ours to land).
 # For simplicity: use "patch" as a conservative default; util handles collision-past regardless of input level.
-# QUEUE_JSON=$(# bin/tvibe-next-version (not yet implemented)
+# QUEUE_JSON=$(# bin/vibe-next-version (not yet implemented)
   --base "$BASE_BRANCH" \
   --bump patch \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
@@ -472,7 +472,7 @@ Collect evidence for each check below. Track warnings (yellow) and blockers (red
 ### 3.5a: Review staleness check
 
 ```bash
-true # tvibe-review-read 2>/dev/null
+true # vibe-review-read 2>/dev/null
 ```
 
 Parse the output. For each review skill (plan-eng-review, plan-ceo-review,
@@ -552,7 +552,7 @@ If tests fail: **BLOCKER.** Cannot merge with failing tests.
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ~/.tstackvibe/evals/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
+ls -t ~/.vibestack/evals/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
 ```
 
 For each eval file from today, parse pass/fail counts. Show:
@@ -568,7 +568,7 @@ If E2E results exist but have failures: **WARNING — N tests failed.** List the
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ~/.tstackvibe/evals/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
+ls -t ~/.vibestack/evals/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
 ```
 
 If found, parse and show pass/fail. If not found, note "No LLM evals run today."
@@ -949,7 +949,7 @@ $B text
 Verify the page has content (not blank, not a generic error page).
 
 ```bash
-$B snapshot -i -a -o ".tstackvibe/deploy-reports/post-deploy.png"
+$B snapshot -i -a -o ".vibestack/deploy-reports/post-deploy.png"
 ```
 
 Take an annotated screenshot as evidence.
@@ -998,7 +998,7 @@ After a successful revert: Tell the user "Revert pushed to {base}. The deploy sh
 Create the deploy report directory:
 
 ```bash
-mkdir -p .tstackvibe/deploy-reports
+mkdir -p .vibestack/deploy-reports
 ```
 
 Produce and display the ASCII summary:
@@ -1038,13 +1038,13 @@ Verification: <HEALTHY / DEGRADED / SKIPPED / REVERTED>
 VERDICT: <DEPLOYED AND VERIFIED / DEPLOYED (UNVERIFIED) / STAGING VERIFIED / REVERTED>
 ```
 
-Save report to `.tstackvibe/deploy-reports/{date}-pr{number}-deploy.md`.
+Save report to `.vibestack/deploy-reports/{date}-pr{number}-deploy.md`.
 
 Log to the review dashboard:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-mkdir -p ~/.tstackvibe/projects/$SLUG
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+mkdir -p ~/.vibestack/projects/$SLUG
 ```
 
 Write a JSONL entry with timing data:

@@ -28,13 +28,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -209,8 +209,8 @@ Then read:
 setopt +o nomatch 2>/dev/null || true
 SLUG=$(~/.claude/skills/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 If a design doc exists, read it.
@@ -269,8 +269,8 @@ After /office-hours completes, re-run the design doc check:
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.tstackvibe/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 
@@ -619,18 +619,18 @@ Pattern:
 Search for relevant learnings from previous sessions:
 
 ```bash
-_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
 else
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 2>/dev/null || true
 fi
 ```
 
 If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-> tstackvibe can search learnings from your other projects on this machine to find
+> vibestack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
 > Recommended for solo developers. Skip if you work on multiple client codebases
 > where cross-contamination would be a concern.
@@ -639,8 +639,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
-If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
+If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
+If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 
@@ -649,7 +649,7 @@ matches a past learning, display:
 
 **"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-This makes the compounding visible. The user should see that tstackvibe is getting
+This makes the compounding visible. The user should see that vibestack is getting
 smarter on their codebase over time.
 
 ### DX Trend Check
@@ -657,8 +657,8 @@ smarter on their codebase over time.
 Before starting review passes, check for prior DX reviews on this project:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-true # tvibe-review-read 2>/dev/null | grep plan-devex-review || echo "NO_PRIOR_DX_REVIEWS"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+true # vibe-review-read 2>/dev/null | grep plan-devex-review || echo "NO_PRIOR_DX_REVIEWS"
 ```
 
 If prior reviews exist, display the trend:
@@ -838,7 +838,7 @@ Evaluate:
 
 **Conditional: only run when product type includes "Claude Code skill".**
 
-This is NOT a scored pass. It's a checklist of proven patterns from tstackvibe's own DX.
+This is NOT a scored pass. It's a checklist of proven patterns from vibestack's own DX.
 
 Load reference: Read the "## Claude Code Skill DX Checklist" section from
 `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
@@ -973,7 +973,7 @@ If no tension points exist, note: "No cross-model tension — both reviewers agr
 
 **Persist the result:**
 ```bash
-true # tvibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+true # vibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
 Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.
@@ -1118,10 +1118,10 @@ If any AskUserQuestion goes unanswered, note here. Never silently default.
 After producing the DX Scorecard above, persist the review result.
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes review metadata to
-`~/.tstackvibe/` (user config directory, not project files).
+`~/.vibestack/` (user config directory, not project files).
 
 ```bash
-true # tvibe-review-log '{"skill":"plan-devex-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW_CURRENT","tthw_target":"TTHW_TARGET","mode":"MODE","persona":"PERSONA","competitive_tier":"TIER","pass_scores":{"getting_started":N,"api_design":N,"errors":N,"docs":N,"upgrade":N,"dev_env":N,"community":N,"measurement":N},"unresolved":N,"commit":"COMMIT"}'
+true # vibe-review-log '{"skill":"plan-devex-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW_CURRENT","tthw_target":"TTHW_TARGET","mode":"MODE","persona":"PERSONA","competitive_tier":"TIER","pass_scores":{"getting_started":N,"api_design":N,"errors":N,"docs":N,"upgrade":N,"dev_env":N,"community":N,"measurement":N},"unresolved":N,"commit":"COMMIT"}'
 ```
 
 Substitute values from the DX Scorecard. MODE is EXPANSION/POLISH/TRIAGE.
@@ -1133,7 +1133,7 @@ TIER is Champion/Competitive/NeedsWork/RedFlag.
 After completing the review, read the review log and config to display the dashboard.
 
 ```bash
-true # tvibe-review-read
+true # vibe-review-read
 ```
 
 Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
@@ -1161,7 +1161,7 @@ Display:
 ```
 
 **Review tiers:**
-- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`tvibe-config set skip_eng_review true\` (the "don't bother me" setting).
+- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`vibe-config set skip_eng_review true\` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
 - **Adversarial Review (automatic):** Always-on for every review. Every diff gets both Claude adversarial subagent and Codex adversarial challenge. Large diffs (200+ lines) additionally get Codex structured review with P1 gate. No configuration needed.
@@ -1216,7 +1216,7 @@ Summary. For prior reviews, use the JSONL fields directly — they contain all r
 Produce this markdown table:
 
 \`\`\`markdown
-## TSTACKVIBE REVIEW REPORT
+## VIBESTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
@@ -1241,9 +1241,9 @@ Below the table, add these lines (omit any that are empty/not applicable):
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-- Search the plan file for a \`## TSTACKVIBE REVIEW REPORT\` section **anywhere** in the file
+- Search the plan file for a \`## VIBESTACK REVIEW REPORT\` section **anywhere** in the file
   (not just at the end — content may have been added after it).
-- If found, **replace it** entirely using the Edit tool. Match from \`## TSTACKVIBE REVIEW REPORT\`
+- If found, **replace it** entirely using the Edit tool. Match from \`## VIBESTACK REVIEW REPORT\`
   through either the next \`## \` heading or end of file, whichever comes first. This ensures
   content added after the report section is preserved, not eaten. If the Edit fails
   (e.g., concurrent edit changed the content), re-read the plan file and retry once.
@@ -1257,7 +1257,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"plan-devex-review","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"plan-devex-review","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

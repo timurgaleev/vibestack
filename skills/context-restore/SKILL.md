@@ -25,13 +25,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -54,8 +54,8 @@ Parse the user's input:
 ### Step 1: Find saved contexts
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
-CHECKPOINT_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/$SLUG/checkpoints"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+CHECKPOINT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/checkpoints"
 if [ ! -d "$CHECKPOINT_DIR" ]; then
   echo "NO_CHECKPOINTS"
 else
@@ -142,5 +142,5 @@ state, then `/context-restore` will find it."
 - **"Most recent" means the filename `YYYYMMDD-HHMMSS` prefix**, not
   `ls -1t` (filesystem mtime). Filenames are stable across file-system
   operations; mtime is not.
-- **This is a tstackvibe skill, not a Claude Code built-in.** When the user types
+- **This is a vibestack skill, not a Claude Code built-in.** When the user types
   `/context-restore`, invoke this skill via the Skill tool.

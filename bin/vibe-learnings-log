@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# tvibe-learnings-log — append a learning entry to the project's learnings.jsonl
-# Usage: tvibe-learnings-log '<json>'
+# vibe-learnings-log — append a learning entry to the project's learnings.jsonl
+# Usage: vibe-learnings-log '<json>'
 # JSON schema: {"skill":"<name>","type":"<type>","key":"<key>","insight":"<text>","confidence":<1-10>,"source":"<src>","files":[...]}
 set -euo pipefail
 
 if [ $# -eq 0 ]; then
-  echo "Usage: tvibe-learnings-log '<json>'" >&2
+  echo "Usage: vibe-learnings-log '<json>'" >&2
   exit 1
 fi
 
@@ -18,10 +18,10 @@ if ! echo "$JSON" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/nu
 fi
 
 # Derive SLUG
-eval "$(bash "$(dirname "$0")/tvibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(bash "$(dirname "$0")/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 
-TSTACKVIBE_HOME="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
-LEARN_DIR="$TSTACKVIBE_HOME/projects/$SLUG"
+VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+LEARN_DIR="$VIBESTACK_HOME/projects/$SLUG"
 mkdir -p "$LEARN_DIR"
 
 LEARN_FILE="$LEARN_DIR/learnings.jsonl"

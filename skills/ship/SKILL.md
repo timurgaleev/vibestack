@@ -26,13 +26,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -134,7 +134,7 @@ Never skip a verification step because a prior `/ship` run already performed it.
 After completing the review, read the review log and config to display the dashboard.
 
 ```bash
-true # tvibe-review-read
+true # vibe-review-read
 ```
 
 Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
@@ -162,7 +162,7 @@ Display:
 ```
 
 **Review tiers:**
-- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`tvibe-config set skip_eng_review true\` (the "don't bother me" setting).
+- **Eng Review (required by default):** The only review that gates shipping. Covers architecture, code quality, tests, performance. Can be disabled globally with \`vibe-config set skip_eng_review true\` (the "don't bother me" setting).
 - **CEO Review (optional):** Use your judgment. Recommend it for big product/business changes, new user-facing features, or scope decisions. Skip for bug fixes, refactors, infra, and cleanup.
 - **Design Review (optional):** Use your judgment. Recommend it for UI/UX changes. Skip for backend-only, infra, or prompt-only changes.
 - **Adversarial Review (automatic):** Always-on for every review. Every diff gets both Claude adversarial subagent and Codex adversarial challenge. Large diffs (200+ lines) additionally get Codex structured review with P1 gate. No configuration needed.
@@ -259,7 +259,7 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini pyproject.toml phpunit.xml 2>/dev/null
 ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
 # Check opt-out marker
-[ -f .tstackvibe/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
+[ -f .vibestack/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
 ```
 
 **If test framework detected** (config files or test directories found):
@@ -272,7 +272,7 @@ Store conventions as prose context for use in Phase 8e.5 or Step 7. **Skip the r
 **If NO runtime detected** (no config files found): Use AskUserQuestion:
 "I couldn't detect your project's language. What runtime are you using?"
 Options: A) Node.js/TypeScript B) Ruby/Rails C) Python D) Go E) Rust F) PHP G) Elixir H) This project doesn't need tests.
-If user picks H → write `.tstackvibe/no-test-bootstrap` and continue without tests.
+If user picks H → write `.vibestack/no-test-bootstrap` and continue without tests.
 
 **If runtime detected but no test framework — bootstrap:**
 
@@ -304,7 +304,7 @@ B) [Alternative] — [rationale]. Includes: [packages]
 C) Skip — don't set up testing right now
 RECOMMENDATION: Choose A because [reason based on project context]"
 
-If user picks C → write `.tstackvibe/no-test-bootstrap`. Tell user: "If you change your mind later, delete `.tstackvibe/no-test-bootstrap` and re-run." Continue without tests.
+If user picks C → write `.vibestack/no-test-bootstrap`. Tell user: "If you change your mind later, delete `.vibestack/no-test-bootstrap` and re-run." Continue without tests.
 
 If multiple runtimes detected (monorepo) → ask which runtime to set up first, with option to do both sequentially.
 
@@ -499,14 +499,14 @@ Use AskUserQuestion:
     ```bash
     gh issue create \
       --title "Pre-existing test failure: <test-name>" \
-      --body "Found failing on branch <current-branch>. Failure is pre-existing.\n\n**Error:**\n```\n<first 10 lines>\n```\n\n**Last modified by:** <author>\n**Noticed by:** tstackvibe /ship on <date>" \
+      --body "Found failing on branch <current-branch>. Failure is pre-existing.\n\n**Error:**\n```\n<first 10 lines>\n```\n\n**Last modified by:** <author>\n**Noticed by:** vibestack /ship on <date>" \
       --assignee "<github-username>"
     ```
   - **If GitLab:**
     ```bash
     glab issue create \
       -t "Pre-existing test failure: <test-name>" \
-      -d "Found failing on branch <current-branch>. Failure is pre-existing.\n\n**Error:**\n```\n<first 10 lines>\n```\n\n**Last modified by:** <author>\n**Noticed by:** tstackvibe /ship on <date>" \
+      -d "Found failing on branch <current-branch>. Failure is pre-existing.\n\n**Error:**\n```\n<first 10 lines>\n```\n\n**Last modified by:** <author>\n**Noticed by:** vibestack /ship on <date>" \
       -a "<gitlab-username>"
     ```
 - If neither CLI is available or `--assignee`/`-a` fails (user not in org, etc.), create the issue without assignee and note who should look at it in the body.
@@ -802,12 +802,12 @@ Using the coverage percentage from the diagram in substep 4 (the `COVERAGE: X/Y 
 After producing the coverage diagram, write a test plan artifact so `/qa` and `/qa-only` can consume it:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
 
-Write to `~/.tstackvibe/projects/{slug}/{user}-{branch}-ship-test-plan-{datetime}.md`:
+Write to `~/.vibestack/projects/{slug}/{user}-{branch}-ship-test-plan-{datetime}.md`:
 
 ```markdown
 # Test Plan
@@ -860,11 +860,11 @@ Repo: {owner/repo}
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
-# Compute project slug for ~/.tstackvibe/projects/ lookup
+# Compute project slug for ~/.vibestack/projects/ lookup
 _PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
 _PLAN_SLUG="${_PLAN_SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
 # Search common plan file locations (project designs first, then personal/local)
-for PLAN_DIR in "$HOME/.tstackvibe/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".tstackvibe/plans"; do
+for PLAN_DIR in "$HOME/.vibestack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".vibestack/plans"; do
   [ -d "$PLAN_DIR" ] || continue
   PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$BRANCH" 2>/dev/null | head -1)
   [ -z "$PLAN" ] && PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$REPO" 2>/dev/null | head -1)
@@ -894,7 +894,7 @@ Read the plan file. Extract every actionable item — anything that describes wo
 **Ignore:**
 - Context/Background sections (`## Context`, `## Background`, `## Problem`)
 - Questions and open items (marked with ?, "TBD", "TODO: decide")
-- Review report sections (`## TSTACKVIBE REVIEW REPORT`)
+- Review report sections (`## VIBESTACK REVIEW REPORT`)
 - Explicitly deferred items ("Future:", "Out of scope:", "NOT in scope:", "P2:", "P3:", "P4:")
 - CEO Review Decisions sections (these record choices, not work items)
 
@@ -1044,18 +1044,18 @@ Add a `## Verification Results` section to the PR body (Step 19):
 Search for relevant learnings from previous sessions:
 
 ```bash
-_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
 else
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 2>/dev/null || true
 fi
 ```
 
 If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-> tstackvibe can search learnings from your other projects on this machine to find
+> vibestack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
 > Recommended for solo developers. Skip if you work on multiple client codebases
 > where cross-contamination would be a concern.
@@ -1064,8 +1064,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
-If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
+If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
+If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 
@@ -1074,7 +1074,7 @@ matches a past learning, display:
 
 **"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-This makes the compounding visible. The user should see that tstackvibe is getting
+This makes the compounding visible. The user should see that vibestack is getting
 smarter on their codebase over time.
 
 ## Step 8.2: Scope Drift Detection
@@ -1179,7 +1179,7 @@ Check if the diff touches frontend files using git diff:
 6. **Log the result** for the Review Readiness Dashboard:
 
 ```bash
-true # tvibe-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
+true # vibe-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
 ```
 
 Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of `git rev-parse --short HEAD`.
@@ -1240,7 +1240,7 @@ echo "TEST_FW: ${TEST_FW:-unknown}"
 ### Read specialist hit rates (adaptive gating)
 
 ```bash
-# specialist-stats not available in tstackvibe
+# specialist-stats not available in vibestack
 ```
 
 ### Select specialists
@@ -1290,7 +1290,7 @@ Construct the prompt for each specialist. The prompt includes:
 3. Past learnings for this domain (if any exist):
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-search --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
+~/.vibestack/bin/vibe-learnings-search --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
 ```
 
 If learnings are found, include them: "Past learnings for this domain: {learnings}"
@@ -1417,7 +1417,7 @@ If the Red Team subagent fails or times out, skip silently and continue.
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
 ```bash
-true # tvibe-review-read
+true # vibe-review-read
 ```
 
 Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
@@ -1468,7 +1468,7 @@ Output a summary header: `Pre-Landing Review: N issues (X critical, Y informatio
 
 9. Persist the review result to the review log:
 ```bash
-true # tvibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
+true # vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
 ```
 Substitute TIMESTAMP (ISO 8601), STATUS ("clean" if no issues, "issues_found" otherwise),
 and N values from the summary counts above. The `via:"ship"` distinguishes from standalone `/review` runs.
@@ -1542,7 +1542,7 @@ DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' 
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
 which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 # Legacy opt-out — only gates Codex passes, Claude always runs
-OLD_CFG=$(~/.tstackvibe/bin/tvibe-config get codex_reviews 2>/dev/null || true)
+OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
 echo "DIFF_SIZE: $DIFF_TOTAL"
 echo "OLD_CFG: ${OLD_CFG:-not_set}"
 ```
@@ -1630,7 +1630,7 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-true # tvibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+true # vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
@@ -1661,7 +1661,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"ship","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"ship","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`
@@ -1732,7 +1732,7 @@ fi
 Read the `STATE:` line and dispatch:
 
 - **FRESH** → proceed with the bump action below (steps 1–4).
-- **ALREADY_BUMPED** → skip the bump by default, BUT check for queue drift first: call `# bin/tvibe-next-version (not yet implemented)` with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`), compare its `.version` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
+- **ALREADY_BUMPED** → skip the bump by default, BUT check for queue drift first: call `# bin/vibe-next-version (not yet implemented)` with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`), compare its `.version` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
 - **DRIFT_STALE_PKG** → a prior `/ship` bumped `VERSION` but failed to update `package.json`. Run the sync-only repair block below (after step 4). Do NOT re-bump. Reuse `CURRENT_VERSION` for CHANGELOG and PR body. (Queue check still runs in ALREADY_BUMPED terms after repair.)
 - **DRIFT_UNEXPECTED** → `/ship` has halted (exit 1). Resolve manually; /ship cannot tell which file is authoritative.
 
@@ -1748,10 +1748,10 @@ Read the `STATE:` line and dispatch:
 
    Save the chosen level as `BUMP_LEVEL` (one of `major`, `minor`, `patch`, `micro`). This is the user-intended level. The next step decides *placement* — the level stays the same even if queue-aware allocation has to advance past a claimed slot.
 
-3. **Queue-aware version pick (workspace-aware ship, v1.6.4.0+).** Call `# bin/tvibe-next-version (not yet implemented)` to see what's already claimed by open PRs + active sibling Conductor worktrees, then render the queue state to the user:
+3. **Queue-aware version pick (workspace-aware ship, v1.6.4.0+).** Call `# bin/vibe-next-version (not yet implemented)` to see what's already claimed by open PRs + active sibling Conductor worktrees, then render the queue state to the user:
 
    ```bash
-   QUEUE_JSON=$(# bin/tvibe-next-version (not yet implemented) \
+   QUEUE_JSON=$(# bin/vibe-next-version (not yet implemented) \
      --base <base> \
      --bump "$BUMP_LEVEL" \
      --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
@@ -1877,7 +1877,7 @@ Read `.claude/skills/review/TODOS-format.md` for the canonical format reference.
 **1. Check if TODOS.md exists** in the repository root.
 
 **If TODOS.md does not exist:** Use AskUserQuestion:
-- Message: "tstackvibe recommends maintaining a TODOS.md organized by skill/component, then priority (P0 at top through P4, then Completed at bottom). See TODOS-format.md for the full format. Would you like to create one?"
+- Message: "vibestack recommends maintaining a TODOS.md organized by skill/component, then priority (P0 at top through P4, then Completed at bottom). See TODOS-format.md for the full format. Would you like to create one?"
 - Options: A) Create it now, B) Skip for now
 - If A: Create `TODOS.md` with a skeleton (# TODOS heading + ## Completed section). Continue to step 3.
 - If B: Skip the rest of Step 14. Continue to Step 15.
@@ -1943,11 +1943,11 @@ If `WIP_COUNT` is 0: skip this sub-step entirely.
 If `WIP_COUNT` > 0, collect the WIP context first so it survives the squash:
 
 ```bash
-# Export [tstackvibe-context] blocks from all WIP commits on this branch.
+# Export [vibestack-context] blocks from all WIP commits on this branch.
 # This file becomes input to the CHANGELOG entry and may inform PR body context.
-mkdir -p "$(git rev-parse --show-toplevel)/.tstackvibe"
+mkdir -p "$(git rev-parse --show-toplevel)/.vibestack"
 git log <base>..HEAD --grep="^WIP:" --format="%H%n%B%n---END---" > \
-  "$(git rev-parse --show-toplevel)/.tstackvibe/wip-context-before-squash.md" 2>/dev/null || true
+  "$(git rev-parse --show-toplevel)/.vibestack/wip-context-before-squash.md" 2>/dev/null || true
 ```
 
 **Non-destructive squash strategy:**
@@ -2212,13 +2212,13 @@ Print the branch name, remote URL, and instruct the user to create the PR/MR man
 Log coverage and plan completion data so `/retro` can track trends:
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" && mkdir -p ~/.tstackvibe/projects/$SLUG
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
 ```
 
-Append to `~/.tstackvibe/projects/$SLUG/$BRANCH-reviews.jsonl`:
+Append to `~/.vibestack/projects/$SLUG/$BRANCH-reviews.jsonl`:
 
 ```bash
-echo '{"skill":"ship","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"VERSION","branch":"BRANCH"}' >> ~/.tstackvibe/projects/$SLUG/$BRANCH-reviews.jsonl
+echo '{"skill":"ship","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"VERSION","branch":"BRANCH"}' >> ~/.vibestack/projects/$SLUG/$BRANCH-reviews.jsonl
 ```
 
 Substitute from earlier steps:

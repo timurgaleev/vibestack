@@ -40,7 +40,7 @@ triggers:
 Activates both destructive command warnings and directory-scoped edit restrictions.
 This is `/careful` + `/freeze` in a single command.
 
-**Dependency note:** This skill references hook scripts from the sibling `/careful` and `/freeze` skill directories. Both must be installed (they are installed together by the tstackvibe install script).
+**Dependency note:** This skill references hook scripts from the sibling `/careful` and `/freeze` skill directories. Both must be installed (they are installed together by the vibestack install script).
 
 ## Setup
 
@@ -53,7 +53,7 @@ Once the user provides a path:
 ```bash
 FREEZE_DIR=$(cd "<user-provided-path>" 2>/dev/null && pwd)
 FREEZE_DIR="${FREEZE_DIR%/}/"
-STATE_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+STATE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
 mkdir -p "$STATE_DIR"
 echo "$FREEZE_DIR" > "$STATE_DIR/freeze-dir.txt"
 echo "Freeze boundary set: $FREEZE_DIR"

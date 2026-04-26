@@ -23,13 +23,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -39,10 +39,10 @@ fi
 ## Step 0: Find the make-pdf binary
 
 ```bash
-# Check environment override first, then tstackvibe repo path as fallback
+# Check environment override first, then vibestack repo path as fallback
 P="${MAKE_PDF_BIN:-}"
 if [ -z "$P" ]; then
-  _TVIBE_PDF="$HOME/.claude/skills/tstackvibe-repo/make-pdf/dist/pdf"
+  _TVIBE_PDF="$HOME/.claude/skills/vibestack/make-pdf/dist/pdf"
   [ -x "$_TVIBE_PDF" ] && P="$_TVIBE_PDF"
 fi
 [ -n "$P" ] && echo "FOUND: $P" || echo "NOT_FOUND"
@@ -50,8 +50,8 @@ fi
 
 If `NOT_FOUND`, stop and tell the user:
 
-> make-pdf binary not found. The binary must be built from the tstackvibe repo.
-> Run: `cd ~/.claude/skills/tstackvibe-repo && bun install && bun run build:make-pdf`
+> make-pdf binary not found. The binary must be built from the vibestack repo.
+> Run: `cd ~/.claude/skills/vibestack && bun install && bun run build:make-pdf`
 > Or set `$MAKE_PDF_BIN` to the path of an existing `make-pdf` binary.
 >
 > After building, re-run `/make-pdf`.
@@ -245,7 +245,7 @@ If you discovered a non-obvious make-pdf behavior, flag pattern, or conversion q
 during this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"make-pdf","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"make-pdf","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `tool`

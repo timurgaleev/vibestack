@@ -6,7 +6,7 @@ set -euo pipefail
 
 INPUT=$(cat)
 
-STATE_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+STATE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
 FREEZE_FILE="$STATE_DIR/freeze-dir.txt"
 
 [ ! -f "$FREEZE_FILE" ] && echo '{}' && exit 0

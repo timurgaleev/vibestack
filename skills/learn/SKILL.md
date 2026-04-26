@@ -1,7 +1,7 @@
 ---
 name: learn
 description: |
-  Manage project learnings. Review, search, prune, and export what tstackvibe
+  Manage project learnings. Review, search, prune, and export what vibestack
   has learned across sessions. Use when asked to "what have we learned",
   "show learnings", "prune stale learnings", or "export learnings".
   Proactively suggest when the user asks about past patterns or wonders
@@ -23,13 +23,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -54,21 +54,21 @@ Parse the user's input to determine which command to run:
 Show the most recent 20 learnings, grouped by type.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-~/.tstackvibe/bin/tvibe-learnings-search --limit 20 2>/dev/null || echo "No learnings yet."
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+~/.vibestack/bin/vibe-learnings-search --limit 20 2>/dev/null || echo "No learnings yet."
 ```
 
 Present the output in a readable format. If no learnings exist, tell the user:
 "No learnings recorded yet. As you use /review, /ship, /investigate, and other skills,
-tstackvibe will automatically capture patterns, pitfalls, and insights it discovers."
+vibestack will automatically capture patterns, pitfalls, and insights it discovers."
 
 ---
 
 ## Search
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-~/.tstackvibe/bin/tvibe-learnings-search --query "USER_QUERY" --limit 20 2>/dev/null || echo "No matches."
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+~/.vibestack/bin/vibe-learnings-search --query "USER_QUERY" --limit 20 2>/dev/null || echo "No matches."
 ```
 
 Replace USER_QUERY with the user's search terms. Present results clearly.
@@ -80,8 +80,8 @@ Replace USER_QUERY with the user's search terms. Present results clearly.
 Check learnings for staleness and contradictions.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-~/.tstackvibe/bin/tvibe-learnings-search --limit 100 2>/dev/null
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+~/.vibestack/bin/vibe-learnings-search --limit 100 2>/dev/null
 ```
 
 For each learning in the output:
@@ -110,8 +110,8 @@ latest entry wins).
 Export learnings as markdown suitable for adding to CLAUDE.md or project documentation.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-~/.tstackvibe/bin/tvibe-learnings-search --limit 50 2>/dev/null
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+~/.vibestack/bin/vibe-learnings-search --limit 50 2>/dev/null
 ```
 
 Format the output as a markdown section:
@@ -142,9 +142,9 @@ or save it as a separate file.
 Show summary statistics about the project's learnings.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-TSTACKVIBE_HOME="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
-LEARN_FILE="$TSTACKVIBE_HOME/projects/$SLUG/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+LEARN_FILE="$VIBESTACK_HOME/projects/$SLUG/learnings.jsonl"
 if [ -f "$LEARN_FILE" ]; then
   TOTAL=$(wc -l < "$LEARN_FILE" | tr -d ' ')
   echo "TOTAL: $TOTAL entries"
@@ -198,5 +198,5 @@ The user wants to manually add a learning. Use AskUserQuestion to gather:
 Then log it:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"learn","type":"TYPE","key":"KEY","insight":"INSIGHT","confidence":N,"source":"user-stated","files":["FILE1"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"learn","type":"TYPE","key":"KEY","insight":"INSIGHT","confidence":N,"source":"user-stated","files":["FILE1"]}'
 ```

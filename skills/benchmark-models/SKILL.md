@@ -1,7 +1,7 @@
 ---
 name: benchmark-models
 description: |
-  Cross-model benchmark for tstackvibe skills. Runs the same prompt through Claude,
+  Cross-model benchmark for vibestack skills. Runs the same prompt through Claude,
   GPT (via Codex CLI), and Gemini side-by-side — compares latency, tokens, cost,
   and optionally quality via LLM judge. Answers "which model is actually best
   for this skill?" with data instead of vibes. Use when: "benchmark models",
@@ -20,13 +20,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -42,13 +42,13 @@ Different from `/benchmark` — that skill measures web page performance (Core W
 ## Step 0: Locate the binary
 
 ```bash
-BIN="$HOME/.tstackvibe/bin/tvibe-model-benchmark"
+BIN="$HOME/.vibestack/bin/vibe-model-benchmark"
 [ -x "$BIN" ] || { echo "ERROR: model benchmark binary not found." >&2; exit 1; }
 echo "BIN: $BIN"
 ```
 
 If not found, stop and tell the user:
-"Model benchmark binary not found at `~/.tstackvibe/bin/tvibe-model-benchmark`. Run `cd ~/.claude/skills/tstackvibe-repo && ./setup` to install tstackvibe tools."
+"Model benchmark binary not found at `~/.vibestack/bin/vibe-model-benchmark`. Run `cd ~/.claude/skills/vibestack && ./setup` to install vibestack tools."
 
 ---
 
@@ -63,7 +63,7 @@ Use AskUserQuestion with the preamble format:
   - B) Use an inline prompt — type it on the next turn. Completeness: 8/10.
   - C) Point at a prompt file on disk — specify path on the next turn. Completeness: 8/10.
 
-If A: list skills that have SKILL.md files (from `find ~/.claude/skills -name SKILL.md -not -path '*/tstackvibe-repo/*'`), ask the user to pick one via a second AskUserQuestion. Use the picked SKILL.md path as the prompt file.
+If A: list skills that have SKILL.md files (from `find ~/.claude/skills -name SKILL.md -not -path '*/vibestack/*'`), ask the user to pick one via a second AskUserQuestion. Use the picked SKILL.md path as the prompt file.
 
 If B: ask the user for the inline prompt. Use it verbatim via `--prompt "<text>"`.
 
@@ -140,7 +140,7 @@ AskUserQuestion:
 - **Simplify:** "Save this benchmark as JSON so you can compare future runs against it?"
 - **RECOMMENDATION:** A — skill performance drifts as providers update their models; a saved baseline catches quality regressions.
 - **Options:**
-  - A) Save to `~/.tstackvibe/benchmarks/<date>-<skill-or-prompt-slug>.json`. Completeness: 10/10.
+  - A) Save to `~/.vibestack/benchmarks/<date>-<skill-or-prompt-slug>.json`. Completeness: 10/10.
   - B) Just print, don't save. Completeness: 5/10 (loses trend data).
 
 If A: re-run with `--output json` and tee to the dated file. Print the path so the user can diff future runs against it.
@@ -162,7 +162,7 @@ If A: re-run with `--output json` and tee to the dated file. Print the path so t
 If you discovered a non-obvious pattern, pitfall, or insight during this session, log it:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"benchmark-models","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"benchmark-models","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern`, `pitfall`, `preference`, `architecture`, `operational`.

@@ -25,13 +25,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -72,9 +72,9 @@ implemented as a dispatcher binary.
 
 At skill start:
 ```bash
-mkdir ~/.tstackvibe/.setup-memory.lock.d 2>/dev/null || {
+mkdir ~/.vibestack/.setup-memory.lock.d 2>/dev/null || {
   echo "Another /setup-memory instance is running. Wait for it, or remove the lock with:"
-  echo "  rm -rf ~/.tstackvibe/.setup-memory.lock.d"
+  echo "  rm -rf ~/.vibestack/.setup-memory.lock.d"
   exit 1
 }
 ```
@@ -100,11 +100,11 @@ if $SBRAIN_CONFIG_EXISTS; then
   SBRAIN_ENGINE=$(python3 -c "import json; d=json.load(open('$HOME/.secondbrain/config.json')); print(d.get('engine',''))" 2>/dev/null || echo "")
 fi
 if $SBRAIN_ON_PATH; then
-  secondbrain doctor --json >/tmp/tvibe-memory-doctor.json 2>/dev/null
-  STATUS=$(python3 -c "import json; d=json.load(open('/tmp/tvibe-memory-doctor.json')); print(d.get('status',''))" 2>/dev/null || echo "")
+  secondbrain doctor --json >/tmp/vibe-memory-doctor.json 2>/dev/null
+  STATUS=$(python3 -c "import json; d=json.load(open('/tmp/vibe-memory-doctor.json')); print(d.get('status',''))" 2>/dev/null || echo "")
   [ "$STATUS" = "ok" ] || [ "$STATUS" = "warnings" ] && SBRAIN_DOCTOR_OK=true
 fi
-MEMORY_SYNC_MODE=$(tvibe-config get memory_sync_mode 2>/dev/null || echo "")
+MEMORY_SYNC_MODE=$(vibe-config get memory_sync_mode 2>/dev/null || echo "")
 
 echo "Detected: memory_engine=secondbrain on_path=$SBRAIN_ON_PATH version=${SBRAIN_VERSION:-none} engine=${SBRAIN_ENGINE:-none} doctor_ok=$SBRAIN_DOCTOR_OK sync=${MEMORY_SYNC_MODE:-off}"
 ```
@@ -263,11 +263,11 @@ export DB_PASS=$(openssl rand -base64 24)
 Set up a SIGINT trap:
 
 ```bash
-trap 'echo ""; echo "tvibe-setup-memory: interrupted. In-flight ref: $INFLIGHT_REF"; \
+trap 'echo ""; echo "vibe-setup-memory: interrupted. In-flight ref: $INFLIGHT_REF"; \
       echo "Resume: /setup-memory --resume-provision $INFLIGHT_REF"; \
       echo "Delete: https://supabase.com/dashboard/project/$INFLIGHT_REF"; \
       unset SUPABASE_ACCESS_TOKEN DB_PASS; \
-      rm -rf ~/.tstackvibe/.setup-memory.lock.d; exit 130' INT TERM
+      rm -rf ~/.vibestack/.setup-memory.lock.d; exit 130' INT TERM
 ```
 
 Create + wait + fetch:
@@ -385,7 +385,7 @@ If we're in a git repo with an `origin` remote, check the policy:
 
 ```bash
 REMOTE=$(git remote get-url origin 2>/dev/null | sed 's|\.git$||' | sed 's|.*[:/]||2')
-CURRENT_TIER=$(tvibe-config get "secondbrain_policy_$REMOTE" 2>/dev/null || echo "unset")
+CURRENT_TIER=$(vibe-config get "secondbrain_policy_$REMOTE" 2>/dev/null || echo "unset")
 echo "Current policy for $REMOTE: $CURRENT_TIER"
 ```
 
@@ -402,7 +402,7 @@ Branches:
 
   On answer (other than skip-for-now):
   ```bash
-  tvibe-config set "secondbrain_policy_$REMOTE" "$TIER"
+  vibe-config set "secondbrain_policy_$REMOTE" "$TIER"
   ```
   Then import if `read-write`.
 
@@ -414,7 +414,7 @@ For `/setup-memory --repo` invocations, execute ONLY Step 6 and exit.
 
 ## Step 7: Offer memory sync
 
-Separate AskUserQuestion: "Also sync your tstackvibe session memory (learnings,
+Separate AskUserQuestion: "Also sync your vibestack session memory (learnings,
 plans, retros) to a private git repo that the memory engine (secondbrain) can index across machines?"
 
 Options:
@@ -426,8 +426,8 @@ If yes:
 
 ```bash
 # Initialize a sync repo (user provides URL or we create one)
-# Then set the mode in tvibe-config
-tvibe-config set memory_sync_mode artifacts-only
+# Then set the mode in vibe-config
+vibe-config set memory_sync_mode artifacts-only
 # or "full" if user picked yes-full
 ```
 
@@ -513,7 +513,7 @@ Then fetch the pooler URL and continue from memory init (`secondbrain init`) onw
   by the secondbrain CLI's own `init` at mode 0600.
 - **STOP points are hard.** Memory doctor not healthy, PATH shadow, migrate
   timeout, smoke test failure — each is a STOP. Do not paper over.
-- **Concurrent-run lock.** Release `~/.tstackvibe/.setup-memory.lock.d` on
+- **Concurrent-run lock.** Release `~/.vibestack/.setup-memory.lock.d` on
   normal exit AND in the SIGINT trap.
 - **CLAUDE.md is the audit trail.** Always update it in Step 8 after a
   successful setup.

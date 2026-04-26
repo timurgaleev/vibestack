@@ -1,6 +1,6 @@
 # ETHOS.md — Core Principles
 
-Five principles that guide every skill in tstackvibe.
+Five principles that guide every skill in vibestack.
 
 ---
 

@@ -3,12 +3,12 @@
 ## Setup
 
 ```bash
-git clone https://github.com/timurgaleev/tstackvibe
-cd tstackvibe
+git clone https://github.com/timurgaleev/vibestack
+cd vibestack
 ./install
 ```
 
-No other dependencies. tstackvibe requires only Bash and Claude Code.
+No other dependencies. vibestack requires only Bash and Claude Code.
 
 ## Adding a skill
 

@@ -21,7 +21,7 @@ triggers:
 Remove the edit restriction set by `/freeze`, allowing edits to all directories.
 
 ```bash
-STATE_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+STATE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
 if [ -f "$STATE_DIR/freeze-dir.txt" ]; then
   PREV=$(cat "$STATE_DIR/freeze-dir.txt")
   rm -f "$STATE_DIR/freeze-dir.txt"

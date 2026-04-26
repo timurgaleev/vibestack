@@ -35,7 +35,7 @@ The `position != null` filter on line-level comments automatically skips outdate
 Derive the project-specific history path:
 ```bash
 REMOTE_SLUG=$(browse/bin/remote-slug 2>/dev/null || ~/.claude/skills/review/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-PROJECT_HISTORY="$HOME/.tstackvibe/projects/$REMOTE_SLUG/greptile-history.md"
+PROJECT_HISTORY="$HOME/.vibestack/projects/$REMOTE_SLUG/greptile-history.md"
 ```
 
 Read `$PROJECT_HISTORY` if it exists (per-project suppressions). Each line records a previous triage outcome:
@@ -134,7 +134,7 @@ Use these templates for every Greptile reply. Always include concrete evidence â
 
 ### Tier 2 (Greptile re-flags after prior reply) â€” Firm, overwhelming evidence
 
-Use Tier 2 when escalation detection (below) identifies a prior tstackvibe reply on the same thread. Include maximum evidence to close the discussion.
+Use Tier 2 when escalation detection (below) identifies a prior vibestack reply on the same thread. Include maximum evidence to close the discussion.
 
 ```
 **This has been reviewed and confirmed as [intentional/already-fixed/not-a-bug].**
@@ -155,15 +155,15 @@ Use Tier 2 when escalation detection (below) identifies a prior tstackvibe reply
 
 ## Escalation Detection
 
-Before composing a reply, check if a prior tstackvibe reply already exists on this comment thread:
+Before composing a reply, check if a prior vibestack reply already exists on this comment thread:
 
-1. **For line-level comments:** Fetch replies via `gh api repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies`. Check if any reply body contains tstackvibe markers: `**Fixed**`, `**Not a bug.**`, `**Already fixed**`.
+1. **For line-level comments:** Fetch replies via `gh api repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies`. Check if any reply body contains vibestack markers: `**Fixed**`, `**Not a bug.**`, `**Already fixed**`.
 
-2. **For top-level comments:** Scan the fetched issue comments for replies posted after the Greptile comment that contain tstackvibe markers.
+2. **For top-level comments:** Scan the fetched issue comments for replies posted after the Greptile comment that contain vibestack markers.
 
-3. **If a prior tstackvibe reply exists AND Greptile posted again on the same file+category:** Use Tier 2 (firm) templates.
+3. **If a prior vibestack reply exists AND Greptile posted again on the same file+category:** Use Tier 2 (firm) templates.
 
-4. **If no prior tstackvibe reply exists:** Use Tier 1 (friendly) templates.
+4. **If no prior vibestack reply exists:** Use Tier 1 (friendly) templates.
 
 If escalation detection fails (API error, ambiguous thread): default to Tier 1. Never escalate on ambiguity.
 
@@ -184,13 +184,13 @@ When classifying comments, also assess whether Greptile's implied severity match
 Before writing, ensure both directories exist:
 ```bash
 REMOTE_SLUG=$(browse/bin/remote-slug 2>/dev/null || ~/.claude/skills/review/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-mkdir -p "$HOME/.tstackvibe/projects/$REMOTE_SLUG"
-mkdir -p ~/.tstackvibe
+mkdir -p "$HOME/.vibestack/projects/$REMOTE_SLUG"
+mkdir -p ~/.vibestack
 ```
 
 Append one line per triage outcome to **both** files (per-project for suppressions, global for retro):
-- `~/.tstackvibe/projects/$REMOTE_SLUG/greptile-history.md` (per-project)
-- `~/.tstackvibe/greptile-history.md` (global aggregate)
+- `~/.vibestack/projects/$REMOTE_SLUG/greptile-history.md` (per-project)
+- `~/.vibestack/greptile-history.md` (global aggregate)
 
 Format:
 ```

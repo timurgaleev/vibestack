@@ -7,7 +7,7 @@
 ## 1.1.0 — 2026-04-26
 
 ### Added
-- `/benchmark-models` — compare AI model outputs side-by-side across OpenAI, Anthropic, Google, Mistral, Groq, Together, Ollama; optionally judge with a separate model; results saved to `~/.tstackvibe/benchmarks/`
+- `/benchmark-models` — compare AI model outputs side-by-side across OpenAI, Anthropic, Google, Mistral, Groq, Together, Ollama; optionally judge with a separate model; results saved to `~/.vibestack/benchmarks/`
 - `/browse` — persistent headless Chromium browser with ~100ms per command; navigate, interact, screenshot, diff, assert element states, test uploads and dialogs, responsive layouts, local HTML rendering, CSS inspector, Puppeteer migration cheatsheet
 - `/claude` — independent second opinion from a nested Claude instance; three modes: review (brutally honest diff review), challenge (adversarial failure-mode analysis), consult (read-only Q&A with session continuity)
 - `/open-browser` — launch AI-controlled visible Chromium with real-time sidebar activity feed and anti-bot stealth
@@ -46,4 +46,4 @@
 - `install` script — symlink-based install, no runtime dependencies beyond Bash
 - `uninstall` script — clean removal of symlinks and empty directories
 - Hook scripts for `/careful` (destructive command warnings) and `/freeze` (edit scope boundary) with full PreToolUse integration
-- State management via `~/.tstackvibe/` flat files
+- State management via `~/.vibestack/` flat files

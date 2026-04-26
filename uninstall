@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# tstackvibe uninstall — remove skills from Claude Code
+# vibestack uninstall — remove skills from Claude Code
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
 CLAUDE_SKILLS="$HOME/.claude/skills"
 
-echo "Uninstalling tstackvibe skills..."
+echo "Uninstalling vibestack skills..."
 
 removed=0
 not_found=0

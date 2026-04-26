@@ -1,8 +1,8 @@
 ---
 name: plan-tune
 description: |
-  Self-tuning question sensitivity + developer psychographic for tstackvibe (v1: observational).
-  Review which AskUserQuestion prompts fire across tstackvibe skills, set per-question preferences
+  Self-tuning question sensitivity + developer psychographic for vibestack (v1: observational).
+  Review which AskUserQuestion prompts fire across vibestack skills, set per-question preferences
   (never-ask / always-ask / ask-only-for-one-way), inspect the dual-track
   profile (what you declared vs what your behavior suggests), and enable/disable
   question tuning. Conversational interface — no CLI syntax required.
@@ -11,7 +11,7 @@ description: |
   "show my profile", "what questions have I been asked", "show my vibe",
   "developer profile", or "turn off question tuning".
 
-  Proactively suggest when the user says the same tstackvibe question has come up before,
+  Proactively suggest when the user says the same vibestack question has come up before,
   or when they explicitly override a recommendation for the Nth time.
 triggers:
   - tune questions
@@ -34,13 +34,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -62,8 +62,8 @@ Read the user's message. Route based on plain-English intent, not keywords:
 5. **"Update my profile" / "I'm more boil-the-ocean than that" / "I've changed
    my mind"** → run `Edit declared profile` (confirm before writing).
 6. **"Show the gap" / "how far off is my profile"** → run `Show gap`.
-7. **"Turn it off" / "disable"** → `~/.tstackvibe/bin/tvibe-config set question_tuning false`
-8. **"Turn it on" / "enable"** → `~/.tstackvibe/bin/tvibe-config set question_tuning true`
+7. **"Turn it off" / "disable"** → `~/.vibestack/bin/vibe-config set question_tuning false`
+8. **"Turn it on" / "enable"** → `~/.vibestack/bin/vibe-config set question_tuning true`
 9. **Clear ambiguity** — if you can't tell what the user wants, ask plainly:
    "Do you want to (a) see your profile, (b) review recent questions, (c) set
    a preference, (d) update your declared profile, or (e) turn it off?"
@@ -82,16 +82,16 @@ Power-user shortcuts (one-word invocations) — handle these too:
 
 1. Read the current state:
    ```bash
-   _QT=$(~/.tstackvibe/bin/tvibe-config get question_tuning 2>/dev/null || echo "false")
+   _QT=$(~/.vibestack/bin/vibe-config get question_tuning 2>/dev/null || echo "false")
    echo "QUESTION_TUNING: $_QT"
    ```
 
 2. If `false`, use AskUserQuestion:
 
-   > Question tuning is off. tstackvibe can learn which of its prompts you find
-   > valuable vs noisy — so over time, tstackvibe stops asking questions you've
+   > Question tuning is off. vibestack can learn which of its prompts you find
+   > valuable vs noisy — so over time, vibestack stops asking questions you've
    > already answered the same way. It takes about 2 minutes to set up your
-   > initial profile. v1 is observational: tstackvibe tracks your preferences
+   > initial profile. v1 is observational: vibestack tracks your preferences
    > and shows you a profile, but doesn't silently change skill behavior yet.
    >
    > RECOMMENDATION: Enable and set up your profile. Completeness: A=9/10.
@@ -102,7 +102,7 @@ Power-user shortcuts (one-word invocations) — handle these too:
 
 3. If A or B: enable:
    ```bash
-   ~/.tstackvibe/bin/tvibe-config set question_tuning true
+   ~/.vibestack/bin/vibe-config set question_tuning true
    ```
 
 4. If A (full setup), ask FIVE one-per-dimension declaration questions via
@@ -135,13 +135,13 @@ Power-user shortcuts (one-word invocations) — handle these too:
 
    After each answer, map A/B/C to the numeric value and save the declared
    dimension. Write each declaration directly into
-   `~/.tstackvibe/developer-profile.json` under `declared.{dimension}`:
+   `~/.vibestack/developer-profile.json` under `declared.{dimension}`:
 
    ```bash
    # Ensure profile exists
-   true  # profile read not needed in tstackvibe
+   true  # profile read not needed in vibestack
    # Update declared dimensions atomically
-   _PROFILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/developer-profile.json"
+   _PROFILE="${VIBESTACK_HOME:-$HOME/.vibestack}/developer-profile.json"
    python3 - <<'PYEOF'
 import json, os, sys
 profile_path = os.path.expanduser("$_PROFILE")
@@ -207,8 +207,8 @@ Parse the JSON. Present in **plain English**, not raw floats:
 ## Review question log
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-_LOG="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/$SLUG/question-log.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_LOG="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/question-log.jsonl"
 if [ ! -f "$_LOG" ]; then
   echo "NO_LOG"
 else
@@ -216,8 +216,8 @@ else
 fi
 ```
 
-If `NO_LOG`, tell the user: "No questions logged yet. As you use tstackvibe skills,
-tstackvibe will log them here."
+If `NO_LOG`, tell the user: "No questions logged yet. As you use vibestack skills,
+vibestack will log them here."
 
 Otherwise, present in plain English with counts and follow-rate. Highlight
 questions the user overrode frequently — those are candidates for setting a
@@ -249,7 +249,7 @@ scope expansion comes up", etc).
 
 4. Write:
    ```bash
-   ~/.tstackvibe/bin/tvibe-config set question_pref_<id> '<never-ask|always-ask|ask-only-for-one-way>'
+   ~/.vibestack/bin/vibe-config set question_pref_<id> '<never-ask|always-ask|ask-only-for-one-way>'
    ```
 
 5. Confirm: "Set `<id>` → `<preference>`. Active immediately. One-way doors
@@ -284,7 +284,7 @@ is a trust boundary (Codex #15 in the design doc).
 
 3. After Y, write:
    ```bash
-   _PROFILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/developer-profile.json"
+   _PROFILE="${VIBESTACK_HOME:-$HOME/.vibestack}/developer-profile.json"
    python3 - <<'PYEOF'
 import json, os, sys
 profile_path = os.path.expanduser("$_PROFILE")
@@ -333,9 +333,9 @@ the user decides whether declared is wrong or behavior is wrong.
 ## Stats
 
 ```bash
-# question preferences stored in ~/.tstackvibe/config.json
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-_LOG="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/$SLUG/question-log.jsonl"
+# question preferences stored in ~/.vibestack/config.json
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_LOG="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/question-log.jsonl"
 [ -f "$_LOG" ] && echo "TOTAL_LOGGED: $(wc -l < "$_LOG" | tr -d ' ')" || echo "TOTAL_LOGGED: 0"
 # developer-profile not available — read developer-profile.json directly |
 

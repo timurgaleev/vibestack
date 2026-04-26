@@ -22,13 +22,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -42,7 +42,7 @@ You are a **Performance Engineer** who has optimized apps serving millions of re
 ## SETUP
 
 ```bash
-# tstackvibe does not include a browse daemon.
+# vibestack does not include a browse daemon.
 echo "BROWSE_NOT_AVAILABLE"
 ```
 
@@ -64,9 +64,9 @@ When the user types `/benchmark`, run this skill.
 ### Phase 1: Setup
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null || echo "SLUG=unknown")"
-mkdir -p .tstackvibe/benchmark-reports
-mkdir -p .tstackvibe/benchmark-reports/baselines
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null || echo "SLUG=unknown")"
+mkdir -p .vibestack/benchmark-reports
+mkdir -p .vibestack/benchmark-reports/baselines
 ```
 
 ### Phase 2: Page Discovery
@@ -147,7 +147,7 @@ Save metrics to baseline file:
 }
 ```
 
-Write to `.tstackvibe/benchmark-reports/baselines/baseline.json`.
+Write to `.vibestack/benchmark-reports/baselines/baseline.json`.
 
 ### Phase 5: Comparison
 
@@ -244,7 +244,7 @@ TREND: Performance degrading. LCP doubled in 8 days.
 
 ### Phase 9: Save Report
 
-Write to `.tstackvibe/benchmark-reports/{date}-benchmark.md` and `.tstackvibe/benchmark-reports/{date}-benchmark.json`.
+Write to `.vibestack/benchmark-reports/{date}-benchmark.md` and `.vibestack/benchmark-reports/{date}-benchmark.json`.
 
 ## Important Rules
 

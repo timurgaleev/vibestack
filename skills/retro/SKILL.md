@@ -21,13 +21,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -118,18 +118,18 @@ Usage: /retro [window | compare | global]
 Search for relevant learnings from previous sessions:
 
 ```bash
-_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
 else
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 2>/dev/null || true
 fi
 ```
 
 If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-> tstackvibe can search learnings from your other projects on this machine to find
+> vibestack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
 > Recommended for solo developers. Skip if you work on multiple client codebases
 > where cross-contamination would be a concern.
@@ -138,8 +138,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
-If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
+If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
+If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 
@@ -148,7 +148,7 @@ matches a past learning, display:
 
 **"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-This makes the compounding visible. The user should see that tstackvibe is getting
+This makes the compounding visible. The user should see that vibestack is getting
 smarter on their codebase over time.
 
 ### Non-git context (optional)
@@ -156,10 +156,10 @@ smarter on their codebase over time.
 Check for non-git context that should be included in the retro:
 
 ```bash
-[ -f ~/.tstackvibe/retro-context.md ] && echo "RETRO_CONTEXT_FOUND" || echo "NO_RETRO_CONTEXT"
+[ -f ~/.vibestack/retro-context.md ] && echo "RETRO_CONTEXT_FOUND" || echo "NO_RETRO_CONTEXT"
 ```
 
-If `RETRO_CONTEXT_FOUND`: read `~/.tstackvibe/retro-context.md`. This file is user-authored and may contain meeting notes, calendar events, decisions, and other context that doesn't appear in git history. Incorporate this context into the retro narrative where relevant.
+If `RETRO_CONTEXT_FOUND`: read `~/.vibestack/retro-context.md`. This file is user-authored and may contain meeting notes, calendar events, decisions, and other context that doesn't appear in git history. Incorporate this context into the retro narrative where relevant.
 
 ### Step 1: Gather Raw Data
 
@@ -200,7 +200,7 @@ git log origin/<default> --since="<window>" --format="AUTHOR:%aN" --name-only
 git shortlog origin/<default> --since="<window>" -sn --no-merges
 
 # 8. Greptile triage history (if available)
-cat ~/.tstackvibe/greptile-history.md 2>/dev/null || true
+cat ~/.vibestack/greptile-history.md 2>/dev/null || true
 
 # 9. TODOS.md backlog (if available)
 cat TODOS.md 2>/dev/null || true
@@ -211,8 +211,8 @@ find . -name '*.test.*' -o -name '*.spec.*' -o -name '*_test.*' -o -name '*_spec
 # 11. Regression test commits in window
 git log origin/<default> --since="<window>" --oneline --grep="test(qa):" --grep="test(design):" --grep="test: coverage"
 
-# 12. tstackvibe skill usage telemetry (if available)
-cat ~/.tstackvibe/analytics/skill-usage.jsonl 2>/dev/null || true
+# 12. vibestack skill usage telemetry (if available)
+cat ~/.vibestack/analytics/skill-usage.jsonl 2>/dev/null || true
 
 # 12. Test files changed in window
 git log origin/<default> --since="<window>" --format="" --name-only | grep -E '\.(test|spec)\.' | sort -u | wc -l
@@ -259,7 +259,7 @@ bob                       3   +120/-40     tests/
 
 Sort by commits descending. The current user (from `git config user.name`) always appears first, labeled "You (name)".
 
-**Greptile signal (if history exists):** Read `~/.tstackvibe/greptile-history.md` (fetched in Step 1, command 8). Filter entries within the retro time window by date. Count entries by type: `fix`, `fp`, `already-fixed`. Compute signal ratio: `(fix + already-fixed) / (fix + already-fixed + fp)`. If no entries exist in the window or the file doesn't exist, skip the Greptile metric row. Skip unparseable lines silently.
+**Greptile signal (if history exists):** Read `~/.vibestack/greptile-history.md` (fetched in Step 1, command 8). Filter entries within the retro time window by date. Count entries by type: `fix`, `fp`, `already-fixed`. Compute signal ratio: `(fix + already-fixed) / (fix + already-fixed + fp)`. If no entries exist in the window or the file doesn't exist, skip the Greptile metric row. Skip unparseable lines silently.
 
 **Backlog Health (if TODOS.md exists):** Read `TODOS.md` (fetched in Step 1, command 9). Compute:
 - Total open TODOs (exclude items in `## Completed` section)
@@ -275,7 +275,7 @@ Include in the metrics table:
 
 If TODOS.md doesn't exist, skip the Backlog Health row.
 
-**Skill Usage (if analytics exist):** Read `~/.tstackvibe/analytics/skill-usage.jsonl` if it exists. Filter entries within the retro time window by `ts` field. Separate skill activations (no `event` field) from hook fires (`event: "hook_fire"`). Aggregate by skill name. Present as:
+**Skill Usage (if analytics exist):** Read `~/.vibestack/analytics/skill-usage.jsonl` if it exists. Filter entries within the retro time window by `ts` field. Separate skill activations (no `event` field) from hook fires (`event: "hook_fire"`). Aggregate by skill name. Present as:
 
 ```
 | Skill Usage | /ship(12) /qa(8) /review(5) · 3 safety hook fires |
@@ -283,7 +283,7 @@ If TODOS.md doesn't exist, skip the Backlog Health row.
 
 If the JSONL file doesn't exist or has no entries in the window, skip the Skill Usage row.
 
-**Eureka Moments (if logged):** Read `~/.tstackvibe/analytics/eureka.jsonl` if it exists. Filter entries within the retro time window by `ts` field. For each eureka moment, show the skill that flagged it, the branch, and a one-line summary of the insight. Present as:
+**Eureka Moments (if logged):** Read `~/.vibestack/analytics/eureka.jsonl` if it exists. Filter entries within the retro time window by `ts` field. For each eureka moment, show the skill that flagged it, the branch, and a one-line summary of the insight. Present as:
 
 ```
 | Eureka Moments | 2 this period |
@@ -395,7 +395,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"retro","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"retro","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`
@@ -521,7 +521,7 @@ Use the Write tool to save the JSON file with this schema:
 }
 ```
 
-**Note:** Only include the `greptile` field if `~/.tstackvibe/greptile-history.md` exists and has entries within the time window. Only include the `backlog` field if `TODOS.md` exists. Only include the `test_health` field if test files were found (command 10 returns > 0). If any has no data, omit the field entirely.
+**Note:** Only include the `greptile` field if `~/.vibestack/greptile-history.md` exists and has entries within the time window. Only include the `backlog` field if `TODOS.md` exists. Only include the `test_health` field if test files were found (command 10 returns > 0). If any has no data, omit the field entirely.
 
 Include test health data in the JSON when test files exist:
 ```json
@@ -598,8 +598,8 @@ Check review JSONL logs for plan completion data from /ship runs this period:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-cat ~/.tstackvibe/projects/$SLUG/*-reviews.jsonl 2>/dev/null | grep '"skill":"ship"' | grep '"plan_items_total"' || echo "NO_PLAN_DATA"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+cat ~/.vibestack/projects/$SLUG/*-reviews.jsonl 2>/dev/null | grep '"skill":"ship"' | grep '"plan_items_total"' || echo "NO_PLAN_DATA"
 ```
 
 If plan completion data exists within the retro time window:
@@ -681,7 +681,7 @@ Locate and run the discovery script using this fallback chain:
 
 ```bash
 DISCOVER_BIN=""
-# global-discover not available in tstackvibe — skip global discovery
+# global-discover not available in vibestack — skip global discovery
 DISCOVER_BIN=""
 echo "DISCOVER_BIN: $DISCOVER_BIN"
 ```
@@ -690,10 +690,10 @@ If no binary is found, skip global discovery silently.
 
 Run the discovery:
 ```bash
-$DISCOVER_BIN --since "<window>" --format json 2>/tmp/tstackvibe-discover-stderr
+$DISCOVER_BIN --since "<window>" --format json 2>/tmp/vibestack-discover-stderr
 ```
 
-Read the stderr output from `/tmp/tstackvibe-discover-stderr` for diagnostic info. Parse the JSON output from stdout.
+Read the stderr output from `/tmp/vibestack-discover-stderr` for diagnostic info. Parse the JSON output from stdout.
 
 If `total_sessions` is 0, say: "No AI coding sessions found in the last <window>. Try a longer window: `/retro global 30d`" and stop.
 
@@ -800,7 +800,7 @@ align cleanly. Never truncate project names.
 ║  • [1-line description of second theme]
 ║  • [1-line description of third theme]
 ║
-║  Powered by tstackvibe
+║  Powered by vibestack
 ╚═══════════════════════════════════════════════════════════════
 ```
 
@@ -816,7 +816,7 @@ align cleanly. Never truncate project names.
 - Top Work: 3 bullet points summarizing the user's major themes, inferred from
   commit messages. Not individual commits — synthesize into themes.
   E.g., "Built /retro global — cross-project retrospective with AI session discovery"
-  not "feat: tvibe-global-discover" + "feat: /retro global template".
+  not "feat: vibe-global-discover" + "feat: /retro global template".
 - The card must be self-contained. Someone seeing ONLY this block should understand
   the user's week without any surrounding context.
 - Do NOT include team members, project totals, or context switching data here.
@@ -898,7 +898,7 @@ Considering the full cross-project picture.
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ~/.tstackvibe/retros/global-*.json 2>/dev/null | head -5
+ls -t ~/.vibestack/retros/global-*.json 2>/dev/null | head -5
 ```
 
 **Only compare against a prior retro with the same `window` value** (e.g., 7d vs 7d). If the most recent prior retro has a different window, skip comparison and note: "Prior global retro used a different window — skipping comparison."
@@ -910,18 +910,18 @@ If no prior global retros exist, append: "First global retro recorded — run ag
 ### Global Step 9: Save snapshot
 
 ```bash
-mkdir -p ~/.tstackvibe/retros
+mkdir -p ~/.vibestack/retros
 ```
 
 Determine the next sequence number for today:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 today=$(date +%Y-%m-%d)
-existing=$(ls ~/.tstackvibe/retros/global-${today}-*.json 2>/dev/null | wc -l | tr -d ' ')
+existing=$(ls ~/.vibestack/retros/global-${today}-*.json 2>/dev/null | wc -l | tr -d ' ')
 next=$((existing + 1))
 ```
 
-Use the Write tool to save JSON to `~/.tstackvibe/retros/global-${today}-${next}.json`:
+Use the Write tool to save JSON to `~/.vibestack/retros/global-${today}-${next}.json`:
 
 ```json
 {
@@ -930,7 +930,7 @@ Use the Write tool to save JSON to `~/.tstackvibe/retros/global-${today}-${next}
   "window": "7d",
   "projects": [
     {
-      "name": "tstackvibe",
+      "name": "vibestack",
       "remote": "<detected from git remote get-url origin, normalized to HTTPS>",
       "commits": 47,
       "insertions": 3200,
@@ -948,7 +948,7 @@ Use the Write tool to save JSON to `~/.tstackvibe/retros/global-${today}-${next}
     "global_streak_days": 52,
     "avg_context_switches_per_day": 2.1
   },
-  "tweetable": "Week of Mar 14: 5 projects, 182 commits, 15.3k LOC | CC: 48, Codex: 8, Gemini: 3 | Focus: tstackvibe (58%) | Streak: 52d"
+  "tweetable": "Week of Mar 14: 5 projects, 182 commits, 15.3k LOC | CC: 48, Codex: 8, Gemini: 3 | Focus: vibestack (58%) | Streak: 52d"
 }
 ```
 
@@ -987,4 +987,4 @@ When the user runs `/retro compare` (or `/retro compare 14d`):
 - Treat merge commits as PR boundaries
 - Do not read CLAUDE.md or other docs — this skill is self-contained
 - On first run (no prior retros), skip comparison sections gracefully
-- **Global mode:** Does NOT require being inside a git repo. Saves snapshots to `~/.tstackvibe/retros/` (not `.context/retros/`). Gracefully skip AI tools that aren't installed. Only compare against prior global retros with the same window value. If streak hits 365d cap, display as "365+ days".
+- **Global mode:** Does NOT require being inside a git repo. Saves snapshots to `~/.vibestack/retros/` (not `.context/retros/`). Gracefully skip AI tools that aren't installed. Only compare against prior global retros with the same window value. If streak hits 365d cap, display as "365+ days".

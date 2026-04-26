@@ -22,13 +22,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -324,7 +324,7 @@ After displaying the review output, update the active **plan file** if one exist
 3. Produce this markdown table:
 
 ```markdown
-## TSTACKVIBE REVIEW REPORT
+## VIBESTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
@@ -337,7 +337,7 @@ After displaying the review output, update the active **plan file** if one exist
 
 Below the table, add: **UNRESOLVED:** total unresolved decisions, **VERDICT:** which reviews are CLEAR.
 
-4. Find `## TSTACKVIBE REVIEW REPORT` in the plan file and replace it, or append it at the end.
+4. Find `## VIBESTACK REVIEW REPORT` in the plan file and replace it, or append it at the end.
 
 ---
 
@@ -379,7 +379,7 @@ Parse token count from stderr (`tokens used\nN`). Display as: `Tokens: N`. If un
 - **Add synthesis after, not instead of.** Any Claude commentary comes after the full output.
 - **5-minute timeout** on all Bash calls to codex.
 - **No double-reviewing.** If the user already ran `/review`, Codex provides a second independent opinion — do not re-run Claude's own review.
-- **Detect skill-file rabbit holes.** If Codex output contains `SKILL.md`, `tvibe-config`, or `skills/tstackvibe` — append a warning that Codex may have read skill files instead of reviewing code and suggest retrying.
+- **Detect skill-file rabbit holes.** If Codex output contains `SKILL.md`, `vibe-config`, or `skills/vibestack` — append a warning that Codex may have read skill files instead of reviewing code and suggest retrying.
 
 ## Capture Learnings
 
@@ -387,7 +387,7 @@ If you discovered a non-obvious codex behavior, prompt pattern, or review insigh
 during this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"codex","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"codex","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `tool`

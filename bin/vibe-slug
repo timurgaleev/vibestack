@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tvibe-slug — emit SLUG=<project-slug> for eval
-# Usage: eval "$(tvibe-slug)"
+# vibe-slug — emit SLUG=<project-slug> for eval
+# Usage: eval "$(vibe-slug)"
 # Slug is derived from the git remote URL or the current directory name.
 set -euo pipefail
 

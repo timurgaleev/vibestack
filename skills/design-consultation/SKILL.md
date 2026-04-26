@@ -26,13 +26,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -62,8 +62,8 @@ Look for office-hours output:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-ls ~/.tstackvibe/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+ls ~/.vibestack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ls .context/*office-hours* .context/attachments/*office-hours* 2>/dev/null | head -5
 ```
 
@@ -76,7 +76,7 @@ If the codebase is empty and purpose is unclear, say: *"I don't have a clear pic
 ## SETUP
 
 ```bash
-# tstackvibe does not include a browse daemon.
+# vibestack does not include a browse daemon.
 echo "BROWSE_NOT_AVAILABLE"
 ```
 
@@ -85,7 +85,7 @@ If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (c
 ## DESIGN SETUP
 
 ```bash
-# tstackvibe does not include a design daemon.
+# vibestack does not include a design daemon.
 echo "DESIGN_NOT_AVAILABLE"
 ```
 
@@ -96,18 +96,18 @@ If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-b
 Search for relevant learnings from previous sessions:
 
 ```bash
-_CROSS_PROJ=$(~/.tstackvibe/bin/tvibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 --cross-project 2>/dev/null || true
 else
-  ~/.tstackvibe/bin/tvibe-learnings-search --limit 10 2>/dev/null || true
+  ~/.vibestack/bin/vibe-learnings-search --limit 10 2>/dev/null || true
 fi
 ```
 
 If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
 
-> tstackvibe can search learnings from your other projects on this machine to find
+> vibestack can search learnings from your other projects on this machine to find
 > patterns that might apply here. This stays local (no data leaves your machine).
 > Recommended for solo developers. Skip if you work on multiple client codebases
 > where cross-contamination would be a concern.
@@ -116,8 +116,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings true`
-If B: run `~/.tstackvibe/bin/tvibe-config set cross_project_learnings false`
+If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
+If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 
@@ -126,7 +126,7 @@ matches a past learning, display:
 
 **"Prior learning applied: [key] (confidence N/10, from [date])"**
 
-This makes the compounding visible. The user should see that tstackvibe is getting
+This makes the compounding visible. The user should see that vibestack is getting
 smarter on their codebase over time.
 
 ## Phase 1: Product Context
@@ -155,7 +155,7 @@ everything is memorable for nothing.
 Read the persistent taste profile if it exists:
 
 ```bash
-_TASTE_PROFILE=~/.tstackvibe/projects/$SLUG/taste-profile.json
+_TASTE_PROFILE=~/.vibestack/projects/$SLUG/taste-profile.json
 if [ -f "$_TASTE_PROFILE" ]; then
   # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
   # Each dimension has approved[] and rejected[] entries with
@@ -189,7 +189,7 @@ as a one-off?"
 happens at read time, not write time, so the file only grows on change.
 
 **Schema migration:** If the file has no `version` field or `version: 0`, it's
-the legacy approved.json aggregate (taste-update not available in tstackvibe)
+the legacy approved.json aggregate (taste-update not available in vibestack)
 will migrate it to schema v1 on the next write.
 
 If a taste profile exists for this project, factor it into your Phase 3 proposal.
@@ -310,7 +310,7 @@ Present subagent output under a `CLAUDE SUBAGENT (design direction):` header.
 
 **Log the result:**
 ```bash
-true # tvibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+true # vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".
 
@@ -429,15 +429,15 @@ Each drill-down is one focused AskUserQuestion. After the user decides, re-check
 
 ## Phase 5: Design System Preview (default ON)
 
-This phase generates visual previews of the proposed design system. Two paths depending on whether the tstackvibe designer is available.
+This phase generates visual previews of the proposed design system. Two paths depending on whether the vibestack designer is available.
 
 ### Path A: AI Mockups (if DESIGN_READY)
 
 Generate AI-rendered mockups showing the proposed design system applied to realistic screens for this product. This is far more powerful than an HTML preview — the user sees what their product could actually look like.
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.tstackvibe/projects/$SLUG/designs/design-system-$(date +%Y%m%d)"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="$HOME/.vibestack/projects/$SLUG/designs/design-system-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -714,7 +714,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"design-consultation","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"design-consultation","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

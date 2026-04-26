@@ -1,36 +1,36 @@
 #!/usr/bin/env bash
-# tstackvibe install — register skills with Claude Code and install learnings tools
+# vibestack install — register skills with Claude Code and install learnings tools
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
 CLAUDE_SKILLS="$HOME/.claude/skills"
-TVIBE_HOME="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
-TVIBE_BIN="$TVIBE_HOME/bin"
+VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+VIBE_BIN="$VIBE_HOME/bin"
 
-echo "Installing tstackvibe..."
+echo "Installing vibestack..."
 
-# Create tstackvibe state and bin directories
-mkdir -p "$TVIBE_BIN"
-mkdir -p "$TVIBE_HOME/projects"
-mkdir -p "$TVIBE_HOME/analytics"
+# Create vibestack state and bin directories
+mkdir -p "$VIBE_BIN"
+mkdir -p "$VIBE_HOME/projects"
+mkdir -p "$VIBE_HOME/analytics"
 
 # Install bin/ scripts
 if [ -d "$REPO_DIR/bin" ]; then
-  for script in "$REPO_DIR/bin"/tvibe-*; do
+  for script in "$REPO_DIR/bin"/vibe-*; do
     [ -f "$script" ] || continue
     name=$(basename "$script")
-    cp "$script" "$TVIBE_BIN/$name"
-    chmod +x "$TVIBE_BIN/$name"
+    cp "$script" "$VIBE_BIN/$name"
+    chmod +x "$VIBE_BIN/$name"
   done
-  echo "  + tstackvibe tools → $TVIBE_BIN"
+  echo "  + vibestack tools → $VIBE_BIN"
 fi
 
-# Ensure $TVIBE_BIN is on PATH (print reminder if not)
-if ! echo "$PATH" | tr ':' '\n' | grep -qF "$TVIBE_BIN"; then
+# Ensure $VIBE_BIN is on PATH (print reminder if not)
+if ! echo "$PATH" | tr ':' '\n' | grep -qF "$VIBE_BIN"; then
   echo ""
-  echo "  NOTE: Add $TVIBE_BIN to your PATH:"
-  echo "    echo 'export PATH=\"$TVIBE_BIN:\$PATH\"' >> ~/.zshrc"
+  echo "  NOTE: Add $VIBE_BIN to your PATH:"
+  echo "    echo 'export PATH=\"$VIBE_BIN:\$PATH\"' >> ~/.zshrc"
 fi
 
 # Install Claude Code skills

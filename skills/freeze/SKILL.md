@@ -45,7 +45,7 @@ Once the user provides a path:
 ```bash
 FREEZE_DIR=$(cd "<user-provided-path>" 2>/dev/null && pwd)
 FREEZE_DIR="${FREEZE_DIR%/}/"
-STATE_DIR="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
+STATE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
 mkdir -p "$STATE_DIR"
 echo "$FREEZE_DIR" > "$STATE_DIR/freeze-dir.txt"
 echo "Freeze boundary set: $FREEZE_DIR"
@@ -60,7 +60,7 @@ again. To remove it, run `/unfreeze`."
 The hook reads `file_path` from each Edit/Write call and checks whether the path
 starts with the frozen directory. If not, it returns `permissionDecision: "deny"`.
 
-The freeze boundary persists for the session via `~/.tstackvibe/freeze-dir.txt`.
+The freeze boundary persists for the session via `~/.vibestack/freeze-dir.txt`.
 
 ## Notes
 

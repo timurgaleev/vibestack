@@ -2,7 +2,7 @@ SYNC_GUIDE.md
 .env
 node_modules/
 dist/
-.tstackvibe/
+.vibestack/
 .claude/skills/
 .claude/scheduled_tasks.lock
 .claude/*.lock

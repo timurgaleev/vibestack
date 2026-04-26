@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# tvibe-learnings-search — search/list project learnings
+# vibe-learnings-search — search/list project learnings
 # Usage:
-#   tvibe-learnings-search [--limit N] [--query TERMS] [--type TYPE]
+#   vibe-learnings-search [--limit N] [--query TERMS] [--type TYPE]
 set -euo pipefail
 
 LIMIT=20
@@ -18,10 +18,10 @@ while [ $# -gt 0 ]; do
 done
 
 # Derive SLUG
-eval "$(bash "$(dirname "$0")/tvibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(bash "$(dirname "$0")/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 
-TSTACKVIBE_HOME="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}"
-LEARN_FILE="$TSTACKVIBE_HOME/projects/$SLUG/learnings.jsonl"
+VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+LEARN_FILE="$VIBESTACK_HOME/projects/$SLUG/learnings.jsonl"
 
 if [ ! -f "$LEARN_FILE" ]; then
   echo "No learnings yet for project: $SLUG"

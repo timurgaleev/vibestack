@@ -23,13 +23,13 @@ triggers:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -127,7 +127,7 @@ git diff <base>...HEAD --name-only
 3. Discover all documentation files in the repo:
 
 ```bash
-find . -maxdepth 2 -name "*.md" -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.tstackvibe/*" -not -path "./.context/*" | sort
+find . -maxdepth 2 -name "*.md" -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.vibestack/*" -not -path "./.context/*" | sort
 ```
 
 4. Classify the changes into categories relevant to documentation:
@@ -143,7 +143,7 @@ find . -maxdepth 2 -name "*.md" -not -path "./.git/*" -not -path "./node_modules
 ## Step 2: Per-File Documentation Audit
 
 Read each documentation file and cross-reference it against the diff. Use these generic heuristics
-(adapt to whatever project you're in — these are not tstackvibe-specific):
+(adapt to whatever project you're in — these are not vibestack-specific):
 
 **README.md:**
 - Does it describe all features and capabilities visible in the diff?
@@ -350,12 +350,12 @@ git push
 
 **If GitHub:**
 ```bash
-gh pr view --json body -q .body > /tmp/tstackvibe-pr-body-$$.md
+gh pr view --json body -q .body > /tmp/vibestack-pr-body-$$.md
 ```
 
 **If GitLab:**
 ```bash
-glab mr view -F json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('description',''))" > /tmp/tstackvibe-pr-body-$$.md
+glab mr view -F json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('description',''))" > /tmp/vibestack-pr-body-$$.md
 ```
 
 2. If the tempfile already contains a `## Documentation` section, replace that section with the
@@ -369,11 +369,11 @@ glab mr view -F json 2>/dev/null | python3 -c "import sys,json; print(json.load(
 
 **If GitHub:**
 ```bash
-gh pr edit --body-file /tmp/tstackvibe-pr-body-$$.md
+gh pr edit --body-file /tmp/vibestack-pr-body-$$.md
 ```
 
 **If GitLab:**
-Read the contents of `/tmp/tstackvibe-pr-body-$$.md` using the Read tool, then pass it to `glab mr update` using a heredoc to avoid shell metacharacter issues:
+Read the contents of `/tmp/vibestack-pr-body-$$.md` using the Read tool, then pass it to `glab mr update` using a heredoc to avoid shell metacharacter issues:
 ```bash
 glab mr update -d "$(cat <<'MRBODY'
 <paste the file contents here>
@@ -384,7 +384,7 @@ MRBODY
 5. Clean up the tempfile:
 
 ```bash
-rm -f /tmp/tstackvibe-pr-body-$$.md
+rm -f /tmp/vibestack-pr-body-$$.md
 ```
 
 6. If `gh pr view` / `glab mr view` fails (no PR/MR exists): skip with message "No PR/MR found — skipping body update."

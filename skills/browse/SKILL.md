@@ -20,13 +20,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -43,8 +43,8 @@ State persists between calls (cookies, tabs, login sessions).
 ```bash
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/tstackvibe-repo/browse/dist/browse" ] && B="$_ROOT/.claude/skills/tstackvibe-repo/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/tstackvibe-repo/browse/dist/browse"
+[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/vibestack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/vibestack/browse/dist/browse"
+[ -z "$B" ] && B="$HOME/.claude/skills/vibestack/browse/dist/browse"
 if [ -x "$B" ]; then
   echo "READY: $B"
 else
@@ -53,8 +53,8 @@ fi
 ```
 
 If `NEEDS_SETUP`:
-1. Tell the user: "The browse binary is not installed. Build it by running: `cd ~/.claude/skills/tstackvibe-repo && ./setup` (~10 seconds)." Then STOP and wait.
-2. Run: `cd ~/.claude/skills/tstackvibe-repo && ./setup`
+1. Tell the user: "The browse binary is not installed. Build it by running: `cd ~/.claude/skills/vibestack && ./setup` (~10 seconds)." Then STOP and wait.
+2. Run: `cd ~/.claude/skills/vibestack && ./setup`
 3. If `bun` is not installed:
    ```bash
    if ! command -v bun >/dev/null 2>&1; then
@@ -430,7 +430,7 @@ $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero
 If you discovered a non-obvious pattern, pitfall, or insight during this session, log it:
 
 ```bash
-~/.tstackvibe/bin/tvibe-learnings-log '{"skill":"browse","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.vibestack/bin/vibe-learnings-log '{"skill":"browse","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern`, `pitfall`, `preference`, `architecture`, `operational`.

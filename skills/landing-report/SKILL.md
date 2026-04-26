@@ -20,13 +20,13 @@ allowed-tools:
 ## Preamble
 
 ```bash
-eval "$(~/.tstackvibe/bin/tvibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-_LEARN_FILE="${TSTACKVIBE_HOME:-$HOME/.tstackvibe}/projects/${SLUG:-unknown}/learnings.jsonl"
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.tstackvibe/bin/tvibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -38,14 +38,14 @@ fi
 When you're running 5-10 parallel Conductor workspaces, it helps to see — at a
 glance — which version numbers are claimed, by whom, and what slot your next
 `/ship` would land in. This skill is a read-only call into the same
-`# bin/tvibe-next-version (not yet implemented)` utility `/ship` uses, but with nothing mutating.
+`# bin/vibe-next-version (not yet implemented)` utility `/ship` uses, but with nothing mutating.
 Think of it as `gh pr list` for VERSION numbers.
 
 ---
 
 ## Step 1: Detect platform and base branch
 
-Same detection as other tstackvibe skills.
+Same detection as other vibestack skills.
 
 ```bash
 BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || \
@@ -75,7 +75,7 @@ they'd claim for micro/patch/minor/major. Cheap (same gh call cached by bun).
 
 ```bash
 for LEVEL in micro patch minor major; do
-  # bin/tvibe-next-version (not yet implemented) \
+  # bin/vibe-next-version (not yet implemented) \
     --base "$BASE_BRANCH" \
     --bump "$LEVEL" \
     --current-version "$BASE_VERSION" \
@@ -102,7 +102,7 @@ Render in this exact format:
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║                   TSTACKVIBE LANDING REPORT                      ║
+║                   VIBESTACK LANDING REPORT                      ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║ Repo:    <owner/repo>                                            ║
 ║ Base:    <base> @ v<base-version>                                ║
@@ -136,7 +136,7 @@ For offline / unknown-host output, print a shorter block:
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║                   TSTACKVIBE LANDING REPORT                      ║
+║                   VIBESTACK LANDING REPORT                      ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║ Status:  OFFLINE — queue-awareness unavailable                   ║
 ║ Reason:  <offline reason from warnings>                          ║

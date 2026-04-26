@@ -1,4 +1,4 @@
-# tstackvibe
+# vibestack
 
 A personal Claude Code skills pack — 53 specialist workflows as slash commands.
 
@@ -9,8 +9,8 @@ A personal Claude Code skills pack — 53 specialist workflows as slash commands
 ## Install (30 seconds)
 
 ```bash
-git clone https://github.com/timurgaleev/tstackvibe ~/.claude/skills/tstackvibe-repo
-~/.claude/skills/tstackvibe-repo/install
+git clone https://github.com/timurgaleev/vibestack ~/.claude/skills/vibestack
+~/.claude/skills/vibestack/install
 ```
 
 Start a new Claude Code session. Skills are immediately available.
@@ -18,13 +18,13 @@ Start a new Claude Code session. Skills are immediately available.
 ## Uninstall
 
 ```bash
-~/.claude/skills/tstackvibe-repo/uninstall
+~/.claude/skills/vibestack/uninstall
 ```
 
 ## Update
 
 ```bash
-cd ~/.claude/skills/tstackvibe-repo && git pull && ./install
+cd ~/.claude/skills/vibestack && git pull && ./install
 ```
 
 ---
