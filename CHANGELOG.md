@@ -1,19 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Removed
-- `/commit`, `/commit-push`, `/pr-create` — git/PR flow consolidated into `/ship` and `/pr-summary`
-- `/code-audit` — overlapped with `/review` and `/cso`
-- `/validate` — out of scope; project-level lint/typecheck commands are owned by each repo
-- `/docs-sync` — out of scope for vibestack
-- `/context-init`, `/context-load` — duplicated by `/context-save` and `/context-restore`
-- `/resolve-coderabbit` — review-tool-specific; out of scope
-
-Skill count: 53 → 44.
-
----
-
 ## 1.1.0 — 2026-04-26
 
 ### Added
@@ -36,7 +22,18 @@ Skill count: 53 → 44.
 - `LICENSE` — MIT license
 
 ### Fixed
+- `skills/freeze/bin/check-freeze.sh` — `_resolve_path` now resolves symlinks for the boundary itself, not just the incoming file path, so `/freeze` works correctly when the frozen directory is or contains a symlink (e.g. `/tmp` → `/private/tmp` on macOS); also eliminates `//foo` double-slash artifact in deny messages
 - `skills/careful/bin/check-careful.sh` — safe exception sed regex uses POSIX `[[:space:]]` instead of `\s` (macOS BSD sed compatibility); anchored with `^` to prevent greedy match failure
+
+### Removed
+- `/commit`, `/commit-push`, `/pr-create` — git/PR flow consolidated into `/ship` and `/pr-summary`
+- `/code-audit` — overlapped with `/review` and `/cso`
+- `/validate` — out of scope; project-level lint/typecheck commands are owned by each repo
+- `/docs-sync` — out of scope for vibestack
+- `/context-init`, `/context-load` — duplicated by `/context-save` and `/context-restore`
+- `/resolve-coderabbit` — review-tool-specific; out of scope
+
+Skill count: 53 → 44.
 
 ---
 
