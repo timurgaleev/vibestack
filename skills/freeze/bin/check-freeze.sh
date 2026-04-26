@@ -33,13 +33,32 @@ esac
 # Normalize: remove double slashes and trailing slash
 FILE_PATH=$(printf '%s' "$FILE_PATH" | sed 's|/\+|/|g;s|/$||')
 
-# Resolve symlinks and .. sequences (POSIX-portable, works on macOS)
+# Resolve symlinks for the full path (POSIX-portable, works on macOS).
+# When the path is itself a directory (e.g. the freeze boundary, or /tmp which
+# symlinks to /private/tmp), cd into it directly so the leaf component is
+# resolved too. Otherwise fall back to resolving the parent and appending the
+# basename. Guards against the "//foo" double-slash that occurs when the
+# resolved parent is the root directory.
 _resolve_path() {
-  local _dir _base
-  _dir="$(dirname "$1")"
-  _base="$(basename "$1")"
-  _dir="$(cd "$_dir" 2>/dev/null && pwd -P || printf '%s' "$_dir")"
-  printf '%s/%s' "$_dir" "$_base"
+  local _path="$1"
+  local _resolved=""
+  if [ -d "$_path" ]; then
+    _resolved="$(cd "$_path" 2>/dev/null && pwd -P)" || _resolved=""
+  fi
+  if [ -z "$_resolved" ]; then
+    local _dir _base
+    _dir="$(dirname "$_path")"
+    _base="$(basename "$_path")"
+    if [ -d "$_dir" ]; then
+      _dir="$(cd "$_dir" 2>/dev/null && pwd -P)" || _dir="$(dirname "$_path")"
+    fi
+    if [ "$_dir" = "/" ]; then
+      _resolved="/$_base"
+    else
+      _resolved="$_dir/$_base"
+    fi
+  fi
+  printf '%s' "$_resolved"
 }
 FILE_PATH=$(_resolve_path "$FILE_PATH")
 FREEZE_DIR=$(_resolve_path "$FREEZE_DIR")
