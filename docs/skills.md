@@ -111,66 +111,12 @@ Triggers: `security audit`, `cso`, `threat model`
 
 ---
 
-### `/code-audit`
-Deep code audit — analyze entire codebase for issues, root causes, and improvements.
-
-Systematic pass through architecture, code quality, security, performance, and maintainability. Produces a prioritized issue list with severity ratings and recommended fixes. Does not change code — audit only.
-
-Triggers: `code audit`, `audit the codebase`, `deep code review`
-
----
-
-### `/validate`
-Run lint, typecheck, and tests. Fix all failures automatically.
-
-Detects project type (Node.js, Python, Go, Rust), runs all quality checks in sequence, identifies cascading failures with shared root causes, and fixes them. Repeats until all checks pass. Reports what was fixed.
-
-Triggers: `validate`, `run checks`, `lint and test`
-
----
-
-### `/commit`
-Create a git commit with conventional format.
-
-Analyzes staged and unstaged changes, drafts a commit message in `<type>: <subject>` format, stages relevant files, and creates the commit. Refuses to commit secrets or generated files.
-
-Triggers: `commit`, `commit these changes`, `git commit`
-
----
-
-### `/commit-push`
-Create a git commit and push to remote.
-
-Same as `/commit` but also pushes to the remote branch after committing. Confirms the push target before proceeding.
-
-Triggers: `commit and push`, `commit push`, `push this`
-
----
-
-### `/pr-create`
-Create a pull request with proper format.
-
-Runs validation first, gathers the full diff, analyzes every changed file for purpose and impact, then creates a PR with summary, changes, and test plan. Uses `<type>(<scope>): <subject>` title format.
-
-Triggers: `create pr`, `open pr`, `pull request`
-
----
-
 ### `/pr-summary`
 Analyze all PR changes and update the PR description with an accurate summary.
 
 Reads the full diff across all commits in the PR (not just the latest), categorizes changes, and writes an accurate PR body with summary, changes, and test plan. Preserves existing author notes.
 
 Triggers: `update pr description`, `pr summary`, `summarize pr`
-
----
-
-### `/resolve-coderabbit`
-Address CodeRabbit review comments on a PR.
-
-Fetches all CodeRabbit inline comments, evaluates each technically against the codebase (ACCEPT / SKIP / REJECT), applies fixes in severity order, and resolves GitHub review threads. Does not blindly accept suggestions — rejects YAGNI, scope creep, and architecture conflicts.
-
-Triggers: `resolve coderabbit`, `fix coderabbit comments`, `address review comments`
 
 ---
 
@@ -315,15 +261,6 @@ Triggers: `landing report`, `pr queue`, `what's ready to merge`
 
 ---
 
-### `/docs-sync`
-Analyze code and documentation, find gaps, update docs.
-
-Reads source files and existing documentation, identifies where docs are missing, stale, or inaccurate, and updates them. Covers README, API docs, inline comments, and guides. Does not invent content — only documents what the code actually does.
-
-Triggers: `docs sync`, `update documentation`, `sync docs`
-
----
-
 ### `/reroll-buddy`
 Reset the Claude Code `/buddy` companion pet so a new one can be picked.
 
@@ -350,24 +287,6 @@ Restore saved context and pick up where you left off.
 Reads the context file, summarizes the state, and picks up the active task. Use at the start of a session after `/context-save`.
 
 Triggers: `restore context`, `context restore`, `pick up where I left off`
-
----
-
-### `/context-init`
-Initialize project context by reading docs and saving to `./context.md`.
-
-Reads the project's README, CLAUDE.md, docs, and key source files to build a structured context snapshot. Writes it to `./context.md` for use by `/context-load` in future sessions. Run once when starting a new project.
-
-Triggers: `init context`, `initialize context`, `context init`
-
----
-
-### `/context-load`
-Load saved project context from `./context.md`.
-
-Reads the previously saved context snapshot and restores working state. Shorter than re-reading all docs from scratch. Use at the start of a session when `/context.md` already exists.
-
-Triggers: `load context`, `context load`, `restore saved context`
 
 ---
 
