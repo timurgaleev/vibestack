@@ -120,6 +120,24 @@ Triggers: `update pr description`, `pr summary`, `summarize pr`
 
 ---
 
+### `/tdd`
+Test-driven development with the red-green-refactor loop, vertical-slice tracer bullets.
+
+Tests verify behavior through public interfaces, not implementation details — so they survive refactors. Anti-pattern: horizontal slicing (write all tests then all code). Workflow: plan behaviors → tracer bullet test → incremental RED→GREEN cycles → refactor only when GREEN. Sub-docs: `deep-modules.md`, `interface-design.md`, `mocking.md`, `refactoring.md`, `tests.md`.
+
+Triggers: `tdd`, `red-green-refactor`, `test-first development`, `build with tdd`, `test-driven`
+
+---
+
+### `/improve-arch`
+Find deepening opportunities in an existing codebase — refactor shallow modules into deep ones (small interface, deep implementation) for testability and AI-navigability.
+
+Glossary-first approach: uses precise terms (module, interface, depth, seam, adapter, leverage, locality) and avoids drifting into "component/service/boundary." Three phases: explore (deletion test, friction notes), present numbered candidates, grilling loop on the chosen candidate. Optional integration with project `CONTEXT.md` domain glossary and `docs/adr/`. Sub-docs: `DEEPENING.md`, `INTERFACE-DESIGN.md`, `LANGUAGE.md`.
+
+Triggers: `improve architecture`, `find refactoring opportunities`, `deepen modules`, `architecture review`, `make this more testable`
+
+---
+
 ## QA & Testing
 
 ### `/qa`

@@ -1,6 +1,6 @@
 # vibestack
 
-A personal Claude Code skills pack — 44 specialist workflows as slash commands.
+A personal Claude Code skills pack — 46 specialist workflows as slash commands.
 
 **Requirements:** Claude Code, Git, Bash
 
@@ -50,6 +50,8 @@ cd ~/.claude/skills/vibestack && git pull && ./install
 | `/investigate` | Systematic debugging — Iron Law: no fix without confirmed root cause |
 | `/cso` | Security audit — OWASP Top 10 + STRIDE threat model |
 | `/pr-summary` | Analyze all PR changes and update the PR description |
+| `/tdd` | Test-driven development — vertical-slice red-green-refactor; tests as behavior specs |
+| `/improve-arch` | Find deepening opportunities — turn shallow modules into deep ones (Ousterhout) |
 
 ### QA & Testing
 | Command | What it does |
