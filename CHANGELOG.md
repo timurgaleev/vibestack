@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.1 — 2026-05-03
+
+`/ship` now auto-tags and auto-publishes a GitHub/GitLab Release. No more manual `gh release create` after every merge.
+
+### Changed
+- `skills/ship/SKILL.md` — three additions:
+  - **Step 15.2** — annotated-tag the version-bump commit (`v$NEW_VERSION`). Idempotent: skips if already at HEAD, moves if at a different commit, creates if absent.
+  - **Step 17** — `git push -u origin <branch> --follow-tags` so the new tag goes up with the branch (plus an explicit fallback push if the branch was already pushed).
+  - **Step 19.5** — extract the CHANGELOG section for the new version and create (or update) a GitHub/GitLab Release pointing at the tag. Idempotent — re-running `/ship` updates the notes instead of erroring.
+- Documents the merge-strategy tradeoff: tags placed on the feature branch survive merge-commits; squash-merges orphan the tag and need a manual re-tag against `main`.
+
+### Notes
+- This is the only `/ship` run since `/ship` was modified — the tag and release for v1.2.1 itself need to be created manually (or by re-running `/ship` once the merged change is on main, since Step 19.5 is idempotent).
+
+---
+
 ## 1.2.0 — 2026-05-03
 
 DX overhaul driven by `/plan-devex-review` + Codex outside-voice. Champion-tier TTHW target for an OSS contributor cloning vibestack from GitHub.

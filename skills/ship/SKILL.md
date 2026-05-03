@@ -2028,6 +2028,45 @@ EOF
 
 ---
 
+## Step 15.2: Tag the version-bump commit
+
+After Step 15.1's bisectable commits land, the final commit is the `chore: bump version and changelog (vX.Y.Z)` commit. Tag it with an annotated tag so the release shows in `git log --decorate` and on the GitHub Releases page.
+
+**Idempotency:**
+- If the tag already exists locally and points at the current HEAD, skip silently.
+- If the tag exists but points at a different commit (e.g., user re-ran `/ship` after fixing something), move it to the current HEAD with `git tag -fa`.
+- If the tag doesn't exist, create it.
+
+```bash
+NEW_VERSION=$(cat VERSION | tr -d '[:space:]')
+TAG_NAME="v$NEW_VERSION"
+
+if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+  EXISTING_COMMIT=$(git rev-parse "$TAG_NAME")
+  CURRENT_COMMIT=$(git rev-parse HEAD)
+  if [ "$EXISTING_COMMIT" != "$CURRENT_COMMIT" ]; then
+    echo "Tag $TAG_NAME exists at $EXISTING_COMMIT but HEAD is $CURRENT_COMMIT — moving tag to HEAD"
+    git tag -fa "$TAG_NAME" -m "$TAG_NAME — see CHANGELOG.md for details"
+  else
+    echo "Tag $TAG_NAME already at HEAD — keeping"
+  fi
+else
+  git tag -a "$TAG_NAME" -m "$TAG_NAME — see CHANGELOG.md for details"
+  echo "Tagged $TAG_NAME at $(git rev-parse --short HEAD)"
+fi
+```
+
+**Merge strategy note:** This step assumes the PR will be merged via **merge-commit** (the default for vibestack and most repos). The bump commit (and its tag) stays reachable from `main` after the merge.
+
+If the project uses **squash-merge**, the tag will be orphaned post-merge — pointing at a commit that's no longer reachable from `main`. After the squash merge, fix it manually:
+```bash
+git fetch origin main
+git tag -fa "$TAG_NAME" origin/main -m "$TAG_NAME — see CHANGELOG.md for details"
+git push --force origin "$TAG_NAME"
+```
+
+---
+
 ## Step 16: Verification Gate
 
 **IRON LAW: NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.**
@@ -2062,10 +2101,16 @@ echo "LOCAL: $LOCAL  REMOTE: $REMOTE"
 [ "$LOCAL" = "$REMOTE" ] && echo "ALREADY_PUSHED" || echo "PUSH_NEEDED"
 ```
 
-If `ALREADY_PUSHED`, skip the push but continue to Step 18. Otherwise push with upstream tracking:
+If `ALREADY_PUSHED`, skip the push but continue to Step 18. Otherwise push with upstream tracking. Use `--follow-tags` so the annotated tag created in Step 15.2 is pushed alongside the branch:
 
 ```bash
-git push -u origin <branch-name>
+git push -u origin <branch-name> --follow-tags
+```
+
+If the branch was already pushed but the tag was created in this run, push the tag explicitly:
+
+```bash
+git push origin "$TAG_NAME" 2>/dev/null || true
 ```
 
 **You are NOT done.** The code is pushed but documentation sync and PR creation are mandatory final steps. Continue to Step 18.
@@ -2203,7 +2248,74 @@ EOF
 **If neither CLI is available:**
 Print the branch name, remote URL, and instruct the user to create the PR/MR manually via the web UI. Do not stop — the code is pushed and ready.
 
-**Output the PR/MR URL** — then proceed to Step 20.
+**Output the PR/MR URL** — then proceed to Step 19.5.
+
+---
+
+## Step 19.5: Create GitHub/GitLab Release
+
+The tag was pushed in Step 17. Now create a Release pointing at it, with notes extracted from the CHANGELOG section that Step 13 just wrote.
+
+**Idempotency:** if a release already exists for the tag, update its notes. Never error on a re-run.
+
+**Platform note:** the platform was detected in Step 0. Use `gh` for GitHub, `glab` for GitLab. If neither CLI is available, print the manual-create URL and continue — the tag is pushed, the user can fill in notes via the web UI.
+
+```bash
+NEW_VERSION=$(cat VERSION | tr -d '[:space:]')
+TAG_NAME="v$NEW_VERSION"
+
+# Extract CHANGELOG section for this version into a temp file
+TMPNOTES=$(mktemp /tmp/ship-release-notes-XXXXXX)
+awk -v v="$NEW_VERSION" '
+  $0 ~ "^## "v"( |\\b)" {flag=1}
+  flag && /^## [0-9]/ && $0 !~ "^## "v"( |\\b)" {exit}
+  flag {print}
+' CHANGELOG.md > "$TMPNOTES"
+
+# Fall back to a stub if the section couldn't be located
+if [ ! -s "$TMPNOTES" ]; then
+  printf '## %s\n\nRelease notes pending — see CHANGELOG.md.\n' "$NEW_VERSION" > "$TMPNOTES"
+fi
+
+# Detect platform (GitHub vs GitLab)
+PLATFORM=""
+gh repo view --json url -q .url >/dev/null 2>&1 && PLATFORM="github"
+[ -z "$PLATFORM" ] && glab repo view -F json >/dev/null 2>&1 && PLATFORM="gitlab"
+
+case "$PLATFORM" in
+  github)
+    if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+      gh release edit "$TAG_NAME" --notes-file "$TMPNOTES"
+      echo "Release $TAG_NAME updated"
+    else
+      gh release create "$TAG_NAME" \
+        --title "$TAG_NAME" \
+        --notes-file "$TMPNOTES" \
+        --latest
+      echo "Release $TAG_NAME created"
+    fi
+    ;;
+  gitlab)
+    NOTES_INLINE=$(cat "$TMPNOTES")
+    if glab release view "$TAG_NAME" >/dev/null 2>&1; then
+      glab release update "$TAG_NAME" --notes "$NOTES_INLINE" 2>&1 | tail -3
+      echo "Release $TAG_NAME updated"
+    else
+      glab release create "$TAG_NAME" --notes "$NOTES_INLINE" 2>&1 | tail -3
+      echo "Release $TAG_NAME created"
+    fi
+    ;;
+  *)
+    echo "Platform unknown — Release not auto-created."
+    echo "  Manual: open the project's Releases page, create a new release pointing at tag $TAG_NAME, paste the contents of:"
+    echo "  $TMPNOTES"
+    ;;
+esac
+
+rm -f "$TMPNOTES"
+```
+
+**Output the Release URL** alongside the PR URL — then proceed to Step 20.
 
 ---
 
