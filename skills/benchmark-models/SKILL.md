@@ -48,7 +48,7 @@ echo "BIN: $BIN"
 ```
 
 If not found, stop and tell the user:
-"Model benchmark binary not found at `~/.vibestack/bin/vibe-model-benchmark`. Run `cd ~/.claude/skills/vibestack && ./setup` to install vibestack tools."
+"`vibe-model-benchmark` is required for this skill but is not installed at `~/.vibestack/bin/vibe-model-benchmark`. **vibestack does not bundle this binary** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#vibe-model-benchmark) for current options."
 
 ---
 
