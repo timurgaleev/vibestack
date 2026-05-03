@@ -15,17 +15,67 @@ git clone https://github.com/timurgaleev/vibestack ~/.claude/skills/vibestack
 
 Start a new Claude Code session. Skills are immediately available.
 
+### What `./install` modifies on your machine
+
+| Path | What lands there | Type |
+|---|---|---|
+| `~/.claude/skills/<each-skill>/` | One directory per skill (46 total). Each contains a symlink to its `SKILL.md` and any sub-docs/hook scripts in this repo. | symlinks |
+| `~/.vibestack/bin/` | `vibe-config`, `vibe-slug`, `vibe-learnings-log`, `vibe-learnings-search` | copies |
+| `~/.vibestack/projects/` | Per-project state (learnings, test plans, QA reports). Created empty. | directory |
+| `~/.vibestack/analytics/` | Local-only analytics. Created empty. | directory |
+
+`./install` is idempotent — re-running it after `git pull` updates the symlinks. To remove everything, see [Uninstall](#uninstall) below.
+
 ## Uninstall
 
 ```bash
 ~/.claude/skills/vibestack/uninstall
 ```
 
+Removes all 46 skill directories from `~/.claude/skills/` and the `vibe-*` binaries from `~/.vibestack/bin/`. Asks before deleting `~/.vibestack/` (which contains your local learnings, analytics, and project state) — keeps it by default. The cloned repo at `~/.claude/skills/vibestack/` itself stays; delete it manually with `rm -rf ~/.claude/skills/vibestack` for a full removal. Pass `--delete-state` for a non-interactive full state wipe.
+
 ## Update
 
 ```bash
 cd ~/.claude/skills/vibestack && git pull && ./install
 ```
+
+---
+
+## Try `/office-hours` in 30 seconds
+
+After install, open a new Claude Code session and type `/office-hours`. You'll see something like:
+
+```
+LEARNINGS: none yet
+
+Before we dig in — what's your goal with this?
+
+  Building a startup (or thinking about it)
+  Intrapreneurship — internal project at a company, need to ship fast
+  Hackathon / demo — time-boxed, need to impress
+  Open source / research — building for a community or exploring an idea
+  Learning — teaching yourself to code, vibe coding, leveling up
+```
+
+Pick a mode and `/office-hours` walks you through targeted prompts — six forcing questions for startup mode, design-thinking flow for builder mode. The output is a saved design doc you can hand to `/plan-eng-review` next.
+
+This is the shape of every skill in vibestack: opinionated, structured, no LLM-flavored mush. If `/office-hours` clicks, the other 45 will too.
+
+---
+
+## By workflow
+
+| If you're... | Try |
+|---|---|
+| Brainstorming a new idea | `/office-hours` → `/plan-ceo-review` → `/plan-eng-review` |
+| Debugging a bug | `/investigate` → `/freeze` (locks scope) → fix → `/learn` |
+| Shipping a feature | `/tdd` → `/review` → `/ship` → `/pr-summary` |
+| Hardening a codebase | `/improve-arch` → `/cso` → `/health` |
+| Polishing a UI | `/design-consultation` → `/design-html` → `/design-review` |
+| Capturing the week | `/retro` → `/learn` → `/document-release` |
+
+Full reference of all 46 skills is below. See [`docs/skills.md`](docs/skills.md) for detailed descriptions.
 
 ---
 
@@ -138,3 +188,58 @@ EOF
 ```
 
 Then use `/my-skill` in Claude Code.
+
+---
+
+## Data written locally
+
+vibestack writes a small amount of state to your machine. **No data leaves your machine.** vibestack has no telemetry, no analytics endpoint, no remote logging.
+
+| Path | What's written | When |
+|---|---|---|
+| `~/.vibestack/projects/<slug>/learnings.jsonl` | Learnings explicitly captured by `/learn` and the optional logging in skill bodies | When you run a skill that captures a learning |
+| `~/.vibestack/analytics/skill-usage.jsonl` | One line per **explicit** `/skill-name` invocation: `{ts, skill, slug}`. Auto-invokes (where the LLM matches a skill by description without `/`) are **not** captured. | Only when the optional `vibe-skill-track` hook is wired in (see below). Off by default. |
+| `~/.vibestack/hook.log` | Hook decision audit (which `/careful` warning fired, which `/freeze` block triggered, payload) | Only when `VIBESTACK_DEBUG=1` is set in your shell. Off by default. |
+| `~/.vibestack/freeze-dir.txt` | The currently-frozen directory boundary | While `/freeze` is active |
+
+**Disabling:**
+- Skill invocation log: don't wire the `vibe-skill-track` hook, or set `VIBESTACK_TRACK=0` if it is wired.
+- Hook decision audit: simply don't set `VIBESTACK_DEBUG=1`.
+- Learnings: don't run `/learn`, or delete `~/.vibestack/projects/<slug>/learnings.jsonl`.
+
+**Wiring `vibe-skill-track` (optional skill-usage analytics):**
+
+Add this entry to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.vibestack/bin/vibe-skill-track"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Then `~/.vibestack/analytics/skill-usage.jsonl` will record one line per explicit `/skill` invocation. Useful as input to `/devex-review` and `/retro` so you can see which skills you actually use.
+
+> **Limitation (by design):** this hook captures explicit `/skill-name` invocations only. Skills that the LLM auto-invokes by description-match without you typing `/` are **not** logged. Claude Code does not currently expose a deterministic skill-start event.
+
+---
+
+## More
+
+- [`ETHOS.md`](ETHOS.md) — five principles guiding skill design
+- [`CHANGELOG.md`](CHANGELOG.md) — version history, including [removed skills](CHANGELOG.md#removed)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to add a skill
+- [`docs/skills.md`](docs/skills.md) — full skills reference with descriptions and triggers
+- [`docs/external-tools.md`](docs/external-tools.md) — what vibestack does **not** bundle
+- [`LICENSE`](LICENSE) — MIT
+

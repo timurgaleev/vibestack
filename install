@@ -72,14 +72,8 @@ for skill_dir in "$SKILLS_SRC"/*/; do
 done
 
 echo ""
-echo "Done. $installed skills installed to $CLAUDE_SKILLS"
+echo "Installed $installed skills → $CLAUDE_SKILLS"
 echo ""
-echo "Available skills:"
-for skill_dir in "$SKILLS_SRC"/*/; do
-  [ -f "$skill_dir/SKILL.md" ] || continue
-  name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
-  [ -z "$name" ] && name="$(basename "$skill_dir")"
-  echo "  /$name"
-done
-echo ""
-echo "Start a new Claude Code session to use them."
+echo "Try /office-hours first in a new Claude Code session."
+echo "Full skill list: ~/.claude/skills/vibestack/docs/skills.md"
+echo "Uninstall: ~/.claude/skills/vibestack/uninstall"
