@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# vibe-skill-track — UserPromptSubmit hook that logs explicit slash-command
+# invocations to ~/.vibestack/analytics/skill-usage.jsonl
+#
+# Usage (registered as a Claude Code UserPromptSubmit hook):
+#   stdin = JSON payload from Claude Code with the user's prompt text
+#   stdout = "{}" (always — this hook never blocks anything)
+#
+# What this captures: explicit slash-command invocations like "/freeze src/"
+# at the start of the prompt.
+# What this does NOT capture: skills auto-invoked by the LLM based on
+# description-match without the user typing /skill-name.
+#
+# All side effects are subshell-isolated and errors swallowed — this hook
+# must never affect user-prompt processing.
+set -euo pipefail
+
+INPUT=$(cat)
+
+# Always emit allow — analytics must not block prompt submission
+trap 'echo "{}"; exit 0' EXIT
+
+# Off-switch: respect VIBESTACK_TRACK=0 to disable
+if [ "${VIBESTACK_TRACK:-1}" = "0" ]; then
+  exit 0
+fi
+
+(
+  set +e
+
+  # Extract prompt + leading slash command in a single Python pass.
+  # Returns just the skill name on stdout, or nothing if no match.
+  SKILL=$(printf '%s' "$INPUT" | python3 -c '
+import sys, json, re
+try:
+    d = json.loads(sys.stdin.read())
+    # UserPromptSubmit hook payload shape varies across Claude Code versions
+    p = d.get("prompt") or d.get("user_prompt") or d.get("text") or d.get("message", "")
+    if isinstance(p, dict):
+        p = p.get("content", "") or p.get("text", "")
+    if not isinstance(p, str):
+        sys.exit(0)
+    m = re.match(r"^\s*/([a-z][a-z0-9-]*)(?:\s|$)", p)
+    if m:
+        print(m.group(1))
+except Exception:
+    pass
+' 2>/dev/null)
+
+  [ -z "$SKILL" ] && exit 0
+
+  # Resolve project slug (best-effort)
+  SLUG=""
+  if [ -x "$HOME/.vibestack/bin/vibe-slug" ]; then
+    eval "$("$HOME/.vibestack/bin/vibe-slug" 2>/dev/null)" 2>/dev/null
+  fi
+  SLUG="${SLUG:-unknown}"
+
+  # Compose log entry
+  LOG_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/analytics"
+  LOG_FILE="$LOG_DIR/skill-usage.jsonl"
+  LOCK_FILE="$LOG_DIR/skill-usage.lock"
+  mkdir -p "$LOG_DIR" 2>/dev/null
+
+  TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  ENTRY=$(printf '{"ts":"%s","skill":"%s","slug":"%s"}' "$TS" "$SKILL" "$SLUG")
+
+  if command -v flock >/dev/null 2>&1; then
+    (
+      flock 9
+      printf '%s\n' "$ENTRY" >> "$LOG_FILE"
+    ) 9>"$LOCK_FILE"
+  else
+    printf '%s\n' "$ENTRY" >> "$LOG_FILE"
+  fi
+) 2>/dev/null
+
+# Trap above emits "{}" and exits 0
