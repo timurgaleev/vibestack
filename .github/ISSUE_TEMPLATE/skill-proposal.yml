@@ -1,0 +1,87 @@
+name: Skill proposal
+description: Propose a new slash command for vibestack.
+title: "[skill] /"
+labels: ["skill-proposal", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        vibestack adds skills only when they solve a real, recurring problem. Per ETHOS.md:
+        > Would you reach for this command at least once a week? If no, don't propose it.
+
+  - type: input
+    id: name
+    attributes:
+      label: Proposed slash command
+      description: Lowercase, hyphenated. Will become `/your-name`.
+      placeholder: example-skill
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What this skill does
+      description: One clear sentence. Same shape as other skills' frontmatter `description:` field.
+      placeholder: Capture and persist project decisions to a structured log.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it deserve to exist?
+      description: What recurring problem does this solve? What do you do today without it?
+      placeholder: |
+        Today I lose context between sessions because decisions only live in chat. I want a
+        single command that records the decision, the alternatives considered, and the rationale.
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Concrete use case
+      description: Walk through one real moment when you'd invoke it. The more specific, the better.
+      placeholder: |
+        After /plan-eng-review picks an architecture, I run /this-skill to log: "chose pgvector
+        over qdrant because we already operate Postgres" — file persists across sessions.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: overlap
+    attributes:
+      label: Could an existing skill do this with a different invocation?
+      description: ETHOS.md rule. Check this list first — see [`docs/skills.md`](https://github.com/timurgaleev/vibestack/blob/main/docs/skills.md).
+      options:
+        - "No — checked all 46, none cover this"
+        - "Maybe — overlaps with X but the angle is different"
+        - "Possibly yes — open to advice"
+    validations:
+      required: true
+
+  - type: textarea
+    id: triggers
+    attributes:
+      label: Trigger phrases
+      description: Phrases that should auto-invoke the skill, one per line. Drives the `triggers:` frontmatter list.
+      placeholder: |
+        log decision
+        record this choice
+        capture rationale
+
+  - type: textarea
+    id: hooks
+    attributes:
+      label: Does it need PreToolUse hooks?
+      description: Most skills don't. Hooks intercept tool calls and have a real footprint. Per ETHOS.md, prefer skill body instructions over hooks.
+      placeholder: No / Yes — explain.
+
+  - type: textarea
+    id: weekly
+    attributes:
+      label: Honest answer — would you reach for this at least once a week?
+      description: ETHOS rule #5. If no, don't propose it.
+    validations:
+      required: true
