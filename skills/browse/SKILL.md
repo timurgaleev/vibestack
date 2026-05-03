@@ -53,26 +53,8 @@ fi
 ```
 
 If `NEEDS_SETUP`:
-1. Tell the user: "The browse binary is not installed. Build it by running: `cd ~/.claude/skills/vibestack && ./setup` (~10 seconds)." Then STOP and wait.
-2. Run: `cd ~/.claude/skills/vibestack && ./setup`
-3. If `bun` is not installed:
-   ```bash
-   if ! command -v bun >/dev/null 2>&1; then
-     BUN_VERSION="1.3.10"
-     BUN_INSTALL_SHA="bab8acfb046aac8c72407bdcce903957665d655d7acaa3e11c7c4616beae68dd"
-     tmpfile=$(mktemp)
-     curl -fsSL "https://bun.sh/install" -o "$tmpfile"
-     actual_sha=$(shasum -a 256 "$tmpfile" | awk '{print $1}')
-     if [ "$actual_sha" != "$BUN_INSTALL_SHA" ]; then
-       echo "ERROR: bun install script checksum mismatch" >&2
-       echo "  expected: $BUN_INSTALL_SHA" >&2
-       echo "  got:      $actual_sha" >&2
-       rm "$tmpfile"; exit 1
-     fi
-     BUN_VERSION="$BUN_VERSION" bash "$tmpfile"
-     rm "$tmpfile"
-   fi
-   ```
+1. Tell the user: "The browse daemon is required for this skill but is not installed. **vibestack does not bundle the browse daemon** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon) for current options. STOP."
+2. If the user has supplied their own browse daemon, ask them where the binary lives and re-run the SETUP check above. Otherwise, fall back to text-only QA (curl, structural HTTP checks) and report `BROWSE_NOT_AVAILABLE`.
 
 ## Core QA Patterns
 

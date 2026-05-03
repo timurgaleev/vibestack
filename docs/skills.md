@@ -391,7 +391,7 @@ Triggers: `configure deploy`, `setup deployment`, `set deploy platform`
 ### `/benchmark-models`
 Compare AI model outputs side-by-side to find the best fit for a task.
 
-Run a prompt against multiple providers (OpenAI, Anthropic, Google, Mistral, Groq, Together, local Ollama), optionally judge results with a separate model. Saves results to `~/.vibestack/benchmarks/` for later comparison. Uses the `vibe-model-benchmark` binary from `~/.vibestack/bin/`.
+Run a prompt against multiple providers (OpenAI, Anthropic, Google, Mistral, Groq, Together, local Ollama), optionally judge results with a separate model. Saves results to `~/.vibestack/benchmarks/` for later comparison. Uses the `vibe-model-benchmark` binary from `~/.vibestack/bin/` — vibestack does not bundle this binary; see [`external-tools.md`](external-tools.md#vibe-model-benchmark).
 
 Triggers: `benchmark models`, `compare models`, `test models`
 
@@ -400,7 +400,7 @@ Triggers: `benchmark models`, `compare models`, `test models`
 ### `/browse`
 Fast headless browser for QA testing and site dogfooding.
 
-Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires the browse binary at `~/.claude/skills/vibestack/browse/dist/browse`. Build via `cd ~/.claude/skills/vibestack && ./setup`.
+Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires a browse daemon binary at `~/.claude/skills/vibestack/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `browse a page`, `headless browser`, `take page screenshot`
 
@@ -418,7 +418,7 @@ Triggers: `claude review`, `claude challenge`, `ask claude`
 ### `/open-browser`
 Launch vibestack Browser — AI-controlled Chromium with sidebar extension.
 
-Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires the browse binary at `~/.claude/skills/vibestack/browse/dist/browse`. Build via `cd ~/.claude/skills/vibestack && ./setup`.
+Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires a browse daemon binary at `~/.claude/skills/vibestack/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `open browser`, `launch chromium`, `show me the browser`
 

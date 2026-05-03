@@ -63,7 +63,7 @@ if [ -x "$B" ]; then echo "READY: $B"; else echo "NEEDS_SETUP"; fi
 ```
 
 If `NEEDS_SETUP`, stop and tell the user:
-"The browse binary is not installed. Build it by running: `cd ~/.claude/skills/vibestack && ./setup` (~10 seconds)."
+"The browse daemon is required for this skill but is not installed. **vibestack does not bundle the browse daemon** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon) for current options."
 
 ### 2. Open the cookie picker
 

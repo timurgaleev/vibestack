@@ -4,6 +4,46 @@
 # Returns {"permissionDecision":"ask","message":"..."} to warn, or {} to allow.
 set -euo pipefail
 
+# Opt-in debug logging. No-op unless VIBESTACK_DEBUG=1.
+# All side effects run in a subshell so errors never propagate back into the
+# hook's decision flow (preserves set -euo pipefail safety).
+# WARNING: when enabled, this records the full bash command being evaluated.
+# Commands may contain secrets. Only enable on machines where ~/.vibestack/hook.log
+# is acceptable as an audit trail.
+_vibestack_log() {
+  [ "${VIBESTACK_DEBUG:-0}" = "1" ] || return 0
+  (
+    set +e
+    local hook="$1" decision="$2" reason="$3" payload="${4:-}"
+    local log_dir="${VIBESTACK_HOME:-$HOME/.vibestack}"
+    local log_file="$log_dir/hook.log"
+    local lock_file="$log_dir/hook.log.lock"
+    mkdir -p "$log_dir" 2>/dev/null
+    # Rotate at >1MB via atomic rename (never truncate-in-place)
+    if [ -f "$log_file" ]; then
+      local size
+      size=$(wc -c < "$log_file" 2>/dev/null || echo 0)
+      if [ "$size" -gt 1048576 ] 2>/dev/null; then
+        mv "$log_file" "$log_file.1" 2>/dev/null
+      fi
+    fi
+    local ts
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local line
+    line=$(printf '%s hook=%s decision=%s reason=%s payload=%q\n' \
+      "$ts" "$hook" "$decision" "$reason" "$payload")
+    if command -v flock >/dev/null 2>&1; then
+      (
+        flock 9
+        printf '%s\n' "$line" >> "$log_file"
+      ) 9>"$lock_file"
+    else
+      printf '%s\n' "$line" >> "$log_file"
+    fi
+  ) 2>/dev/null
+  return 0
+}
+
 INPUT=$(cat)
 
 # Extract "command" field — grep/sed first, python fallback for escaped quotes
@@ -13,7 +53,11 @@ if [ -z "$CMD" ]; then
   CMD=$(printf '%s' "$INPUT" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read()).get("tool_input",{}).get("command",""))' 2>/dev/null || true)
 fi
 
-[ -z "$CMD" ] && echo '{}' && exit 0
+if [ -z "$CMD" ]; then
+  _vibestack_log careful allow no-command ""
+  echo '{}'
+  exit 0
+fi
 
 CMD_LOWER=$(printf '%s' "$CMD" | tr '[:upper:]' '[:lower:]')
 
@@ -34,7 +78,11 @@ if printf '%s' "$CMD" | grep -qE 'rm[[:space:]]+(-[a-zA-Z]*r[a-zA-Z]*[[:space:]]
         ;;
     esac
   done
-  [ "$SAFE_ONLY" = true ] && echo '{}' && exit 0
+  if [ "$SAFE_ONLY" = true ]; then
+    _vibestack_log careful allow safe-build-artifact "$CMD"
+    echo '{}'
+    exit 0
+  fi
 fi
 
 WARN=""
@@ -72,8 +120,10 @@ if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'docker\s+(rm\s+-f|system\s+p
 fi
 
 if [ -n "$WARN" ]; then
+  _vibestack_log careful ask "$WARN" "$CMD"
   WARN_ESCAPED=$(printf '%s' "$WARN" | sed 's/"/\\"/g')
   printf '{"permissionDecision":"ask","message":"[careful] %s"}\n' "$WARN_ESCAPED"
 else
+  _vibestack_log careful allow no-pattern-match "$CMD"
   echo '{}'
 fi

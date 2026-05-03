@@ -1,45 +1,116 @@
 #!/usr/bin/env bash
-# vibestack uninstall — remove skills from Claude Code
+# vibestack uninstall — remove skill symlinks, vibe-* binaries, and (optionally) state
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
 CLAUDE_SKILLS="$HOME/.claude/skills"
+VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+VIBE_BIN="$VIBE_HOME/bin"
 
-echo "Uninstalling vibestack skills..."
+echo "Uninstalling vibestack..."
+echo ""
 
+# 1. Remove skill directories under ~/.claude/skills/<name>/
 removed=0
 not_found=0
+not_empty=0
 
 for skill_dir in "$SKILLS_SRC"/*/; do
-  if [ ! -f "$skill_dir/SKILL.md" ]; then
-    continue
-  fi
+  [ -f "$skill_dir/SKILL.md" ] || continue
 
   skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
   [ -z "$skill_name" ] && skill_name="$(basename "$skill_dir")"
 
   target="$CLAUDE_SKILLS/$skill_name"
 
-  if [ -d "$target" ]; then
-    # Only remove the SKILL.md symlink we created, then remove dir if empty
-    symlink="$target/SKILL.md"
-    if [ -L "$symlink" ]; then
-      rm -f "$symlink"
-    fi
-    # Remove directory if now empty
-    if [ -z "$(ls -A "$target" 2>/dev/null)" ]; then
-      rmdir "$target"
-    fi
-    echo "  - $skill_name"
-    removed=$((removed + 1))
-  else
+  if [ ! -d "$target" ]; then
     not_found=$((not_found + 1))
+    continue
   fi
+
+  # Remove every symlink we created (SKILL.md, sub-docs, bin/). Leave any
+  # non-symlink files alone (they didn't come from us).
+  for item in "$target"/* "$target"/.[!.]* "$target"/..?*; do
+    [ -e "$item" ] || [ -L "$item" ] || continue
+    if [ -L "$item" ]; then
+      rm -f "$item"
+    fi
+  done
+
+  # Try to remove the directory. If it's not empty (user added files), leave it.
+  if [ -z "$(ls -A "$target" 2>/dev/null)" ]; then
+    rmdir "$target"
+    echo "  - removed $skill_name"
+  else
+    echo "  - kept $skill_name (contains non-vibestack files)"
+    not_empty=$((not_empty + 1))
+  fi
+  removed=$((removed + 1))
 done
 
 echo ""
-echo "Done. $removed skills removed."
-[ "$not_found" -gt 0 ] && echo "($not_found skills were already absent)"
+echo "Skills: $removed processed, $not_found already absent, $not_empty kept (had user files)"
+
+# 2. Remove vibe-* binary copies under ~/.vibestack/bin/
+echo ""
+bin_removed=0
+if [ -d "$VIBE_BIN" ]; then
+  for bin_file in "$VIBE_BIN"/vibe-*; do
+    [ -f "$bin_file" ] || continue
+    rm -f "$bin_file"
+    bin_removed=$((bin_removed + 1))
+  done
+  echo "Binaries: $bin_removed removed from $VIBE_BIN"
+  # Remove bin dir if now empty
+  if [ -z "$(ls -A "$VIBE_BIN" 2>/dev/null)" ]; then
+    rmdir "$VIBE_BIN"
+  fi
+fi
+
+# 3. Decide whether to remove ~/.vibestack/ state.
+# --delete-state flag (if present) bypasses the prompt entirely.
+DELETE_STATE_FLAG=0
+for arg in "$@"; do
+  [ "$arg" = "--delete-state" ] && DELETE_STATE_FLAG=1
+done
+
+echo ""
+if [ -d "$VIBE_HOME" ] && [ -n "$(ls -A "$VIBE_HOME" 2>/dev/null)" ]; then
+  echo "State directory: $VIBE_HOME"
+  echo "  Contents:"
+  for item in "$VIBE_HOME"/*; do
+    [ -e "$item" ] || continue
+    echo "    $(basename "$item")"
+  done
+  echo ""
+
+  reply="n"
+  if [ "$DELETE_STATE_FLAG" = "1" ]; then
+    reply="y"
+    echo "(--delete-state flag set; deleting without prompting)"
+  elif [ -r /dev/tty ] && [ -t 0 ]; then
+    printf "Delete state directory including learnings and analytics? [y/N] "
+    read -r reply </dev/tty || reply="n"
+  else
+    echo "(non-interactive run — keeping state. Pass --delete-state to force removal.)"
+  fi
+
+  case "$reply" in
+    y|Y|yes|YES)
+      rm -rf "$VIBE_HOME"
+      echo "  - deleted $VIBE_HOME"
+      ;;
+    *)
+      echo "  - kept $VIBE_HOME"
+      ;;
+  esac
+fi
+
+# 4. Tell the user what remains
+echo ""
+echo "What stays (delete manually if you want a full removal):"
+echo "  $REPO_DIR    (the cloned repo)"
+[ -d "$VIBE_HOME" ] && echo "  $VIBE_HOME    (kept above)"
 echo ""
 echo "Start a new Claude Code session for changes to take effect."

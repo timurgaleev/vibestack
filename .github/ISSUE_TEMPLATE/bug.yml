@@ -1,0 +1,79 @@
+name: Bug report
+description: Something in vibestack didn't work the way the docs said it would.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more concrete the repro, the faster the fix.
+
+  - type: input
+    id: skill
+    attributes:
+      label: Which skill (or part of vibestack) misbehaved?
+      description: Slash command name, e.g. `/freeze`, `/ship`, or `install` / `uninstall`.
+      placeholder: /freeze
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal sequence to trigger the bug. Include exact commands.
+      placeholder: |
+        1. Run `/freeze src/auth/`
+        2. Try to edit `src/billing/charge.ts`
+        3. Observe: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Edit should be blocked and the deny message should reference src/auth/.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste error messages, output, or describe what happened. Sanitize anything sensitive.
+      placeholder: Edit was allowed and no hook fired.
+    validations:
+      required: true
+
+  - type: input
+    id: vibestack-version
+    attributes:
+      label: vibestack version (from `cat ~/.claude/skills/vibestack/VERSION`)
+      placeholder: "1.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: claude-code
+    attributes:
+      label: Claude Code version (from `claude --version` if available)
+      placeholder: "leave blank if unknown"
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Workarounds tried, related issues, screenshots, related learnings from `~/.vibestack/projects/<slug>/learnings.jsonl`.
