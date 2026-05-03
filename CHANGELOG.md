@@ -1,10 +1,24 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-05-03
+
+DX overhaul driven by `/plan-devex-review` + Codex outside-voice. Champion-tier TTHW target for an OSS contributor cloning vibestack from GitHub.
 
 ### Added
 - `/tdd` — test-driven development with vertical-slice red-green-refactor loop. Tests verify behavior through public interfaces (so they survive refactors); anti-pattern callout for horizontal slicing; per-cycle checklist. Sub-docs: `deep-modules.md`, `interface-design.md`, `mocking.md`, `refactoring.md`, `tests.md`.
 - `/improve-arch` — find deepening opportunities in an existing codebase: turn shallow modules into deep ones (small interface, deep implementation) for testability and AI-navigability. Precise glossary (module, interface, depth, seam, adapter, leverage, locality); deletion test; explore → present candidates → grilling loop. Optional `CONTEXT.md` and `docs/adr/` integration. Sub-docs: `DEEPENING.md`, `INTERFACE-DESIGN.md`, `LANGUAGE.md`.
+- README — `Try /office-hours in 30 seconds` magical-moment section with rendered terminal output (Stripe-style inline receipt).
+- README — `By workflow` navigation table mapping 6 use-cases to skill chains.
+- README — `What ./install modifies on your machine` table for install-trust transparency.
+- README — `Data written locally` disclosure section (no telemetry; documents `~/.vibestack/projects/`, `~/.vibestack/analytics/`, `~/.vibestack/hook.log`, `~/.vibestack/freeze-dir.txt`).
+- `docs/external-tools.md` — honest disclosure that vibestack does not bundle the browse daemon or `vibe-model-benchmark`. Affected 5 SKILL.md NEEDS_SETUP blocks and 3 `docs/skills.md` descriptions rewritten to point here instead of the non-existent `./setup`.
+- `bin/vibe-skill-track` — opt-in UserPromptSubmit hook that logs explicit `/skill-name` invocations to `~/.vibestack/analytics/skill-usage.jsonl`. Off by default; user wires it into `~/.claude/settings.json`. `VIBESTACK_TRACK=0` disables. Auto-invokes not captured (Claude Code does not expose a `SkillStart` event — limitation documented).
+- `.github/ISSUE_TEMPLATE/bug.yml`, `.github/ISSUE_TEMPLATE/skill-proposal.yml`, `.github/pull_request_template.md` — community contribution scaffolding.
+
+### Changed
+- `install` — final-line output replaced ("Installed N skills → ~/.claude/skills. Try /office-hours first.") and the verbose 46-line skill list removed (was noise on every re-install).
+- `uninstall` — now removes ALL skill symlinks (not just `SKILL.md`), removes `vibe-*` binary copies, prompts before deleting `~/.vibestack/` state, prints what stays. Added `--delete-state` flag for non-interactive runs.
+- `skills/careful/bin/check-careful.sh`, `skills/freeze/bin/check-freeze.sh` — added opt-in `_vibestack_log` decision audit (controlled by `VIBESTACK_DEBUG=1`). Subshell-isolated so logging errors never propagate to hook decision flow. `flock`-guarded for concurrent writes; rotation at 1MB via atomic rename.
 
 Skill count: 44 → 46.
 
