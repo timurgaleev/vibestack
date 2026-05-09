@@ -8,7 +8,9 @@ cd vibestack
 ./install
 ```
 
-No other dependencies. vibestack requires only Bash and Claude Code.
+No other dependencies. vibestack requires only Bash and at least one
+[Agent Skills standard](https://agentskills.io/specification) host —
+Claude Code, Cursor, or Kiro. The install asks per target.
 
 ## Adding a skill
 
@@ -37,7 +39,7 @@ triggers:
 
 ## What this skill does
 
-Natural language instructions to Claude. Write like you're briefing a smart colleague.
+Natural language instructions to the host agent. Write like you're briefing a smart colleague.
 
 ## Output
 
@@ -108,8 +110,10 @@ echo '{"tool_input":{"command":"safe command"}}' | bash skills/my-skill/bin/chec
 echo '{"tool_input":{"command":"dangerous command"}}' | bash skills/my-skill/bin/check-my-skill.sh
 # Expected: {"permissionDecision":"ask","message":"..."}
 
-# Test the full skill in Claude Code:
+# Test the full skill in your agent (Claude Code, Cursor, or Kiro):
 # Start a new session and invoke /my-skill
+# For hook-bearing skills, see docs/hook-verification.md to confirm
+# the hook actually fires in non-Claude targets.
 ```
 
 ### 5. Update documentation
@@ -140,5 +144,6 @@ Before submitting:
 - [ ] `allowed-tools:` contains only tools the skill actually uses
 - [ ] Body is prose instructions, not bash
 - [ ] If hooks: scripts are POSIX-portable and tested directly
-- [ ] Invoked at least once in a real Claude Code session
+- [ ] Invoked at least once in a real agent session (Claude Code, Cursor, or Kiro)
+- [ ] If hook-bearing: hook tier documented in `docs/agent-skills-compatibility-audit.md`
 - [ ] README and docs/skills.md updated
