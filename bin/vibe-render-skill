@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# vibe-render-skill — expand {{include lib/snippets/X.md}} directives in a SKILL.md
+# Spec: ~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md
+# Exit codes: 0 ok, 2 validation, 3 infrastructure.
+
+set -euo pipefail
+
+usage() {
+  echo "usage: vibe-render-skill SOURCE DEST" >&2
+  echo "       vibe-render-skill --check SOURCE INSTALLED_PATH" >&2
+  exit 2
+}
+
+CHECK_MODE=0
+if [ "${1:-}" = "--check" ]; then
+  CHECK_MODE=1
+  shift
+fi
+[ $# -eq 2 ] || usage
+SOURCE="$1"
+
+# Cleanup trap installed BEFORE any resource creation so early-exit paths
+# (validation errors before TMP/CHECK_TMPDIR exist) don't leak temp resources.
+TMP=""
+CHECK_TMPDIR=""
+cleanup() {
+  [ -n "${TMP:-}" ] && rm -f "$TMP"
+  [ -n "${CHECK_TMPDIR:-}" ] && rm -rf "$CHECK_TMPDIR"
+  return 0
+}
+trap cleanup EXIT INT TERM
+
+if [ "$CHECK_MODE" = "1" ]; then
+  CHECK_INSTALLED="$2"
+  CHECK_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/vibe-check.XXXXXX")" || {
+    echo "render: infra: cannot create temp dir for --check" >&2; exit 3; }
+  DEST="$CHECK_TMPDIR/SKILL.md"
+else
+  DEST="$2"
+  CHECK_INSTALLED=""
+fi
+
+# Repo root: this script lives at <REPO>/bin/vibe-render-skill.
+# VIBESTACK_REPO_ROOT env var overrides for testing (snippets resolved against it).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="${VIBESTACK_REPO_ROOT:-$(dirname "$SCRIPT_DIR")}"
+
+[ -r "$SOURCE" ] || { echo "render: validation: cannot read source: $SOURCE" >&2; exit 2; }
+
+SKILL_NAME="$(basename "$(dirname "$SOURCE")")"
+DEST_DIR="$(dirname "$DEST")"
+mkdir -p "$DEST_DIR" || { echo "render: infra: cannot create dest dir: $DEST_DIR" >&2; exit 3; }
+
+TMP="$(mktemp "$DEST_DIR/.SKILL.XXXXXX")" || {
+  echo "render: infra: cannot create temp file in $DEST_DIR (disk full?)" >&2
+  exit 3
+}
+
+# Directive regex. Anchored line; only `lib/snippets/<name>.md` allowed.
+DIRECTIVE_RE='^\{\{include lib/snippets/[A-Za-z0-9_-]+\.md\}\}$'
+
+# Pass 1: scan source to learn if any expansion will happen.
+# This decides whether we write a sidecar JSON.
+EXPANDED_PARTS=""
+in_fence=0
+while IFS= read -r line || [ -n "$line" ]; do
+  if [[ "$line" =~ ^\`\`\` ]] || [[ "$line" =~ ^~~~ ]]; then
+    in_fence=$((1 - in_fence))
+    continue
+  fi
+  [ "$in_fence" -eq 1 ] && continue
+  if [[ "$line" =~ $DIRECTIVE_RE ]]; then
+    # Extract path (strip {{include  and }}).
+    part="${line#\{\{include }"
+    part="${part%\}\}}"
+    EXPANDED_PARTS="$EXPANDED_PARTS $part"
+  fi
+done < "$SOURCE"
+
+# Pass 2: emit content. Track fence state again; expand directives.
+in_fence=0
+while IFS= read -r line || [ -n "$line" ]; do
+  if [[ "$line" =~ ^\`\`\` ]] || [[ "$line" =~ ^~~~ ]]; then
+    in_fence=$((1 - in_fence))
+    printf '%s\n' "$line" >> "$TMP"
+    continue
+  fi
+  if [ "$in_fence" -eq 0 ] && [[ "$line" =~ $DIRECTIVE_RE ]]; then
+    part="${line#\{\{include }"
+    part="${part%\}\}}"
+    snippet_path="$REPO_ROOT/$part"
+    [ -r "$snippet_path" ] || {
+      echo "render: validation: snippet missing: $part (referenced in $SOURCE)" >&2
+      exit 2
+    }
+    # Reject nested includes: a snippet containing its own directive is out of v1 scope.
+    snippet_in_fence=0
+    snippet_lineno=0
+    while IFS= read -r snippet_line || [ -n "$snippet_line" ]; do
+      snippet_lineno=$((snippet_lineno + 1))
+      if [[ "$snippet_line" =~ ^\`\`\` ]] || [[ "$snippet_line" =~ ^~~~ ]]; then
+        snippet_in_fence=$((1 - snippet_in_fence))
+        continue
+      fi
+      if [ "$snippet_in_fence" -eq 0 ] && [[ "$snippet_line" =~ $DIRECTIVE_RE ]]; then
+        echo "render: validation: nested include in $part:$snippet_lineno (v1 disallows snippet-includes-snippet)" >&2
+        exit 2
+      fi
+    done < "$snippet_path"
+    # Substitute {SKILL_NAME} in snippet content. Use awk for safe text handling.
+    awk -v name="$SKILL_NAME" '{ gsub(/\{SKILL_NAME\}/, name); print }' "$snippet_path" >> "$TMP"
+  else
+    printf '%s\n' "$line" >> "$TMP"
+  fi
+done < "$SOURCE"
+
+# Atomic move into place. mktemp creates 0600; normalize to 0644 to match install conventions.
+mv "$TMP" "$DEST" || { echo "render: infra: cannot move into $DEST (perms?)" >&2; exit 3; }
+chmod 0644 "$DEST" 2>/dev/null || true
+TMP=""
+
+# Sidecar JSON metadata if any expansion happened.
+# In --check mode, sidecar goes to the temp dir alongside the rendered file
+# (and is cleaned up by trap); we don't compare it.
+SIDECAR="$DEST_DIR/.vibe-render.json"
+if [ -n "$EXPANDED_PARTS" ]; then
+  parts_json=""
+  sep=""
+  for p in $(printf '%s\n' $EXPANDED_PARTS | sort -u); do
+    parts_json="${parts_json}${sep}\"$p\""
+    sep=","
+  done
+  source_rel="${SOURCE#$REPO_ROOT/}"
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"source":"%s","parts":[%s],"rendered_at":"%s","renderer_version":"1.0.0"}\n' \
+    "$source_rel" "$parts_json" "$ts" > "$SIDECAR"
+elif [ "$CHECK_MODE" = "0" ]; then
+  rm -f "$SIDECAR"
+fi
+
+if [ "$CHECK_MODE" = "1" ]; then
+  if diff -q "$DEST" "$CHECK_INSTALLED" >/dev/null 2>&1; then
+    exit 0
+  else
+    echo "render: --check: drift detected for $CHECK_INSTALLED" >&2
+    diff -u "$CHECK_INSTALLED" "$DEST" >&2 || true
+    exit 1
+  fi
+fi
