@@ -1,5 +1,62 @@
 # Changelog
 
+## 1.4.0 — 2026-05-09
+
+Multi-target install: vibestack now installs into Cursor and Kiro alongside
+Claude Code, all from a single source. Same SKILL.md, three folders. Built on
+the Agent Skills open standard ([agentskills.io](https://agentskills.io/specification))
+which Claude Code, Cursor (`~/.cursor/skills/`), and Kiro (`~/.kiro/skills/`)
+all implement. No format translation, no per-target writers — the spec already
+guarantees portability at the file-shape layer.
+
+### Added
+- `./install --target=<list>` — install into one or more agents.
+  Accepts `claude`, `cursor`, `kiro`, `all`, or any comma-separated subset.
+- `./install` (interactive default) — TTY mode prompts per-target with Y default.
+  Three separate Y/n prompts so you opt into each agent independently.
+- `./install --yes` / `-y` — non-interactive shorthand for `--target=all`.
+- `./install --dry-run` — preview the 138 outputs (46 skills × 3 targets) without
+  writing any files. Composes with `--target=`.
+- `./uninstall --target=<list>` — symmetric multi-target removal.
+- `docs/agent-skills-compatibility-audit.md` — full per-skill compatibility
+  matrix from Day 0 spec audit (all 46 skills are spec-compliant on file
+  shape; 4 hook-bearing skills flagged for runtime verification).
+- `docs/hook-verification.md` — manual procedure for verifying hooks fire
+  correctly under Cursor and Kiro per (target × skill).
+- `test/test-install-integration.sh` — 13 integration tests covering
+  regression (Claude byte-identical), multi-target install, dry-run,
+  idempotency, install/uninstall round-trip, hook warning, bin symlinks.
+
+### Changed
+- **BREAKING for CI users:** `./install` with no flags now defaults to
+  installing into ALL THREE targets (claude + cursor + kiro). v1.3.x default
+  was claude-only. CI scripts that want claude-only behavior must now pass
+  `--target=claude` explicitly. Interactive (TTY) usage is unaffected — you
+  get prompted per target.
+- `./install` and `./uninstall` switched from `set -e` to `set -uo pipefail`
+  with explicit error handling per critical operation. Per-target failures
+  surface clearly without silent abort mid-loop.
+- The per-skill install body was extracted into `install_skill_to_target()`
+  (Beck refactor — make the change easy first, then make the easy change).
+  Same logic, parameterized destination root.
+- `bin/vibe-render-skill` is **unchanged** from v1.3.0. Multi-target reuses
+  the v1.3.0 renderer 1:1.
+- `lib/snippets/` is **unchanged**. Same snippets compile to identical
+  SKILL.md content for all three targets.
+- All 46 `skills/<n>/SKILL.md` source files are **unchanged**.
+
+### Notes
+- For hook-bearing skills (`careful`, `freeze`, `guard`, `investigate`),
+  Cursor and Kiro support is best-effort: the SKILL.md installs and
+  the body is read by each agent, but per-skill `PreToolUse` hooks may
+  or may not fire identically to Claude Code. Run
+  `docs/hook-verification.md` after install to confirm. The install
+  prints a one-line warning when these skills are installed into
+  non-Claude targets.
+- Tier classification per-skill is in `docs/agent-skills-compatibility-audit.md`.
+- v1.4.0 designed by `/office-hours` + `/plan-eng-review` + Codex outside-voice
+  cross-model challenge.
+
 ## 1.3.0 — 2026-05-09
 
 SKILL.md composition pipeline. Shared markdown sections now live in
