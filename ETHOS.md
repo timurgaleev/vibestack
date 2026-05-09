@@ -6,7 +6,7 @@ Five principles that guide every skill in vibestack.
 
 ## 1. Natural language first
 
-Skills are prose instructions to an AI, not bash scripts with some text around them. If a skill reads like a shell script, it belongs in a hook — not the body. The model follows well-written instructions better than it follows terse commands.
+Skills are prose instructions to an AI agent, not bash scripts with some text around them. If a skill reads like a shell script, it belongs in a hook — not the body. The model follows well-written instructions better than it follows terse commands. This applies whether the host is Claude Code, Cursor, Kiro, or any other Agent-Skills-compatible runtime.
 
 Write like you're briefing a smart colleague, not programming a machine.
 
@@ -15,7 +15,7 @@ Write like you're briefing a smart colleague, not programming a machine.
 Before creating a new skill, check what already exists. Ask: could an existing skill handle this with a different invocation? Could it be a trigger alias rather than a new file? Three layers to check:
 
 1. Existing skills in this repo
-2. Claude Code built-in behaviors
+2. Built-in behaviors of your agent (Claude Code, Cursor, or Kiro all ship native commands)
 3. Whether it's actually a problem worth solving
 
 Skills multiply complexity. Add one only when you'd reach for it repeatedly.
@@ -34,6 +34,8 @@ A hook intercepts every matching tool call for the duration of a session. That i
 - Is the check fast? Hooks run synchronously before every tool call.
 - Does the script fail safe? A crash should return `{}` (allow), not block the session.
 - Is it POSIX-portable? The scripts run on macOS and Linux without modification.
+
+**Cross-agent caveat:** hooks are the most agent-specific runtime feature in vibestack. Claude Code intercepts deterministically; Cursor and Kiro have hook frameworks but use different env-var conventions, so vibestack's hook commands degrade to soft-tier (LLM-instruction-only) in those targets. See `docs/agent-skills-compatibility-audit.md`. If a skill must be deterministic across all agents, design it without hooks.
 
 Add hooks sparingly. Write them defensively.
 

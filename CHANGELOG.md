@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.4.2 — 2026-05-09
+
+Multi-agent positioning rewrite. Docs-only patch — no code changes.
+v1.4.x is the multi-agent release; the previous README still framed
+vibestack as "a personal Claude Code skills pack" which under-sold what
+shipped. v1.4.2 fixes the framing.
+
+### Changed
+- **README.md** rewritten with hybrid hero/measured-detail tone:
+  - New tagline: "46 opinionated AI coding workflows. One install.
+    Works in **Claude Code**, **Cursor**, and **Kiro**."
+  - Badges row (release, license, Agent Skills standard, stars).
+  - "Why vibestack" section with 5 bullets focused on multi-agent +
+    no lock-in + opinionated.
+  - "How vibestack compares" table vs. awesome lists, plugin
+    marketplaces, and `.cursorrules` files.
+  - `/reroll-buddy` row updated from "Claude Code `/buddy`" to
+    "your agent's `/buddy`" since the skill is portable.
+  - `/setup-memory` row updated from "Claude Code MCP tool" to
+    "an MCP tool" (MCP is multi-agent).
+  - Telemetry/analytics section flagged as Claude-Code-only with
+    forward-looking note for Cursor/Kiro.
+  - Closing call-to-action for stars + forks.
+- **CONTRIBUTING.md**: dependency line now mentions all three agents,
+  not "only Bash and Claude Code". Test step calls out the multi-agent
+  install path. Quality bar checklist gains a hook-tier requirement
+  for hook-bearing skills.
+- **ETHOS.md**: "Natural language first" extended to call out
+  multi-agent applicability. "Hooks with care" gets a cross-agent
+  caveat warning that hook determinism degrades in Cursor/Kiro.
+- The two remaining "Claude Code" mentions in `docs/skills.md` (in
+  `/reroll-buddy` and `/setup-memory`) are factually scoped and stay —
+  those skills genuinely target Claude-Code-specific config files.
+
+### Why a patch, not a minor?
+No behavior change. Same 46 skills, same install pipeline, same tests
+pass. The release artifact (rendered SKILL.md content) is byte-identical
+to v1.4.1. This is purely how we describe what shipped.
+
 ## 1.4.1 — 2026-05-09
 
 Docs-only patch. Closes the gap between the v1.4.0 tag and the merged
