@@ -49,9 +49,15 @@ for skill_dir in "$SKILLS_SRC"/*/; do
 
   target="$CLAUDE_SKILLS/$skill_name"
 
-  # Create real directory, symlink SKILL.md inside it
+  # Create real directory; render SKILL.md into it as a regular file.
+  # The renderer expands {{include lib/snippets/X.md}} directives and writes
+  # a sidecar .vibe-render.json metadata file when expansion happens.
+  # Sub-docs and bin/ stay symlinked below (unchanged).
+  # If a prior install left a symlink at the destination, remove it so the
+  # renderer's atomic mv replaces the path cleanly.
   mkdir -p "$target"
-  ln -sfn "${skill_dir%/}/SKILL.md" "$target/SKILL.md"
+  [ -L "$target/SKILL.md" ] && rm -f "$target/SKILL.md"
+  "$REPO_DIR/bin/vibe-render-skill" "${skill_dir%/}/SKILL.md" "$target/SKILL.md"
 
   # Symlink bin/ directory if it exists (hook scripts)
   if [ -d "${skill_dir%/}/bin" ]; then
