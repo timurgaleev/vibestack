@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.1 — 2026-05-09
+
+Docs-only patch. Closes the gap between the v1.4.0 tag and the merged
+state on main: the `a0e5b52` Track B verification commit landed after
+v1.4.0 was tagged but before the PR merged, so `git checkout v1.4.0`
+shipped the pre-verification ("pending Track B") version of the audit
+doc. This patch re-tags so the v1.4.x release matches what's actually
+on main.
+
+### Changed
+- No code changes. Docs only.
+- v1.4.0 → v1.4.1: `git checkout v1.4.1` now matches the merged main
+  state, including the Track B verification section in
+  `docs/agent-skills-compatibility-audit.md`, the empirical per-target
+  table in README, and the Kiro-no-sandbox warning in CHANGELOG notes.
+
 ## 1.4.0 — 2026-05-09
 
 Multi-target install: vibestack now installs into Cursor and Kiro alongside
