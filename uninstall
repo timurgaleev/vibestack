@@ -1,32 +1,112 @@
 #!/usr/bin/env bash
-# vibestack uninstall — remove skill symlinks, vibe-* binaries, and (optionally) state
-set -e
+# vibestack uninstall — remove skills from selected targets, vibe-* binaries,
+# and (optionally) state.
+# v1.4.0: multi-target uninstall mirrors install --target= semantics.
+set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
-CLAUDE_SKILLS="$HOME/.claude/skills"
 VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 VIBE_BIN="$VIBE_HOME/bin"
 
-echo "Uninstalling vibestack..."
-echo ""
+usage() {
+  cat <<'EOF'
+Usage: ./uninstall [options]
 
-# 1. Remove skill directories under ~/.claude/skills/<name>/
-removed=0
-not_found=0
-not_empty=0
+Options:
+  --target=<list>     Comma-separated targets: claude, cursor, kiro, or all.
+                      Default: claude (preserves v1.3.x behavior).
+  --delete-state      Bypass the prompt and delete ~/.vibestack/ (learnings,
+                      analytics, project state).
+  -h, --help          Show this help and exit.
 
-for skill_dir in "$SKILLS_SRC"/*/; do
-  [ -f "$skill_dir/SKILL.md" ] || continue
+Examples:
+  ./uninstall                          # Claude Code only
+  ./uninstall --target=all             # Claude + Cursor + Kiro
+  ./uninstall --target=cursor          # Cursor only
+  ./uninstall --target=all --delete-state  # full removal, non-interactive
+EOF
+}
 
-  skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
+# Parse args
+TARGETS_RAW=""
+DELETE_STATE_FLAG=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --target=*)
+      TARGETS_RAW="${arg#*=}"
+      ;;
+    --delete-state)
+      DELETE_STATE_FLAG=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown argument: $arg" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+# Resolve target list
+declare -a TARGETS
+if [ -z "$TARGETS_RAW" ]; then
+  TARGETS=("claude")
+else
+  if [ "$TARGETS_RAW" = "all" ]; then
+    TARGETS=("claude" "cursor" "kiro")
+  else
+    IFS=',' read -ra TARGETS <<< "$TARGETS_RAW"
+  fi
+  for t in "${TARGETS[@]}"; do
+    case "$t" in
+      claude|cursor|kiro) ;;
+      *)
+        echo "ERROR: unknown target '$t'. Valid: claude, cursor, kiro, all." >&2
+        exit 2
+        ;;
+    esac
+  done
+fi
+
+# Map target → root (must match install's mapping)
+target_root() {
+  case "$1" in
+    claude) echo "$HOME/.claude/skills" ;;
+    cursor) echo "$HOME/.cursor/skills" ;;
+    kiro)   echo "$HOME/.kiro/skills" ;;
+    *)      echo "" ;;
+  esac
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# Per-skill uninstall (v1.4.0 — mirrors install_skill_to_target's split)
+# Removes:
+#   - <root>/<skill_name>/SKILL.md (regular file written by renderer)
+#   - <root>/<skill_name>/.vibe-render.json (sidecar, no-op if absent)
+#   - All symlinks in <root>/<skill_name>/ (bin/, sub-docs)
+#   - <root>/<skill_name>/ if empty
+# Preserves:
+#   - Any non-symlink files the user manually placed in <root>/<skill_name>/
+#     (per the v1.3.0 contract — see learning vibestack_uninstall_only_removes_symlinks)
+# ───────────────────────────────────────────────────────────────────────────
+uninstall_skill_from_target() {
+  local skill_dir="$1"
+  local target_root="$2"
+  local skill_name target
+
+  skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null \
+    | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
   [ -z "$skill_name" ] && skill_name="$(basename "$skill_dir")"
 
-  target="$CLAUDE_SKILLS/$skill_name"
+  target="$target_root/$skill_name"
 
   if [ ! -d "$target" ]; then
-    not_found=$((not_found + 1))
-    continue
+    return 1  # not found
   fi
 
   # Remove every symlink we created (sub-docs, bin/). Leave any other
@@ -39,8 +119,7 @@ for skill_dir in "$SKILLS_SRC"/*/; do
   done
 
   # Remove the rendered SKILL.md (regular file) and its sidecar JSON, if present.
-  # Scoped narrowly to the canonical paths we created; other regular files in
-  # $target/ are still preserved.
+  # Scoped narrowly to the canonical paths we created.
   if [ -f "$target/SKILL.md" ] && [ ! -L "$target/SKILL.md" ]; then
     rm -f "$target/SKILL.md"
   fi
@@ -48,19 +127,69 @@ for skill_dir in "$SKILLS_SRC"/*/; do
 
   # Try to remove the directory. If it's not empty (user added files), leave it.
   if [ -z "$(ls -A "$target" 2>/dev/null)" ]; then
-    rmdir "$target"
+    rmdir "$target" 2>/dev/null
     echo "  - removed $skill_name"
+    return 0
   else
     echo "  - kept $skill_name (contains non-vibestack files)"
-    not_empty=$((not_empty + 1))
+    return 2  # kept (had user files)
   fi
-  removed=$((removed + 1))
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# Main uninstall flow
+# ───────────────────────────────────────────────────────────────────────────
+
+echo "Uninstalling vibestack..."
+echo ""
+
+total_removed=0
+total_not_found=0
+total_not_empty=0
+
+for target in "${TARGETS[@]}"; do
+  root=$(target_root "$target")
+  if [ -z "$root" ]; then
+    echo "ERROR: could not resolve root for target '$target'" >&2
+    exit 3
+  fi
+
+  if [ ! -d "$root" ]; then
+    echo "Target: $target ($root) — not found, skipping"
+    continue
+  fi
+
+  echo "Target: $target ($root)"
+
+  removed=0
+  not_found=0
+  not_empty=0
+
+  for skill_dir in "$SKILLS_SRC"/*/; do
+    [ -f "$skill_dir/SKILL.md" ] || continue
+
+    set +e
+    uninstall_skill_from_target "$skill_dir" "$root"
+    rc=$?
+    set -e
+
+    case "$rc" in
+      0) removed=$((removed + 1)) ;;
+      1) not_found=$((not_found + 1)) ;;
+      2) removed=$((removed + 1)); not_empty=$((not_empty + 1)) ;;
+    esac
+  done
+
+  echo "  $target: $removed processed, $not_found already absent, $not_empty kept (had user files)"
+  total_removed=$((total_removed + removed))
+  total_not_found=$((total_not_found + not_found))
+  total_not_empty=$((total_not_empty + not_empty))
 done
 
 echo ""
-echo "Skills: $removed processed, $not_found already absent, $not_empty kept (had user files)"
+echo "Skills total: $total_removed processed across ${#TARGETS[@]} target(s), $total_not_found already absent, $total_not_empty kept (had user files)"
 
-# 2. Remove vibe-* binary copies under ~/.vibestack/bin/
+# Remove vibe-* binary copies under ~/.vibestack/bin/
 echo ""
 bin_removed=0
 if [ -d "$VIBE_BIN" ]; then
@@ -70,19 +199,12 @@ if [ -d "$VIBE_BIN" ]; then
     bin_removed=$((bin_removed + 1))
   done
   echo "Binaries: $bin_removed removed from $VIBE_BIN"
-  # Remove bin dir if now empty
   if [ -z "$(ls -A "$VIBE_BIN" 2>/dev/null)" ]; then
-    rmdir "$VIBE_BIN"
+    rmdir "$VIBE_BIN" 2>/dev/null || true
   fi
 fi
 
-# 3. Decide whether to remove ~/.vibestack/ state.
-# --delete-state flag (if present) bypasses the prompt entirely.
-DELETE_STATE_FLAG=0
-for arg in "$@"; do
-  [ "$arg" = "--delete-state" ] && DELETE_STATE_FLAG=1
-done
-
+# Decide whether to remove ~/.vibestack/ state.
 echo ""
 if [ -d "$VIBE_HOME" ] && [ -n "$(ls -A "$VIBE_HOME" 2>/dev/null)" ]; then
   echo "State directory: $VIBE_HOME"
@@ -115,10 +237,10 @@ if [ -d "$VIBE_HOME" ] && [ -n "$(ls -A "$VIBE_HOME" 2>/dev/null)" ]; then
   esac
 fi
 
-# 4. Tell the user what remains
+# Tell the user what remains
 echo ""
 echo "What stays (delete manually if you want a full removal):"
 echo "  $REPO_DIR    (the cloned repo)"
 [ -d "$VIBE_HOME" ] && echo "  $VIBE_HOME    (kept above)"
 echo ""
-echo "Start a new Claude Code session for changes to take effect."
+echo "Start a new session of your chosen agent for changes to take effect."
