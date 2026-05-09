@@ -91,14 +91,57 @@ Persistent state lives in `~/.vibestack/` (or `$VIBESTACK_HOME`):
 
 Naming: descriptive flat files with a `.txt` extension. Always guard reads with `[ -f "$file" ]`. Provide a paired "off" skill to clean up.
 
+## Using shared snippets
+
+Skills can pull in shared markdown sections via include directives.
+Put the canonical content in `lib/snippets/<name>.md`, then reference
+it from any skill source file:
+
+```
+{{include lib/snippets/<name>.md}}
+```
+
+Rules for the include directive:
+
+- The directive line must match the regex
+  `^\{\{include lib/snippets/[A-Za-z0-9_-]+\.md\}\}$` exactly — no
+  leading/trailing whitespace, no comment characters.
+- Indented or fenced occurrences are treated as content (so you can
+  document the directive inside a ```` ``` ```` code block without
+  triggering it).
+- Snippets must NOT contain other include directives — v1 supports
+  one level only. The renderer detects nested includes and exits 2.
+- One token substitution: `{SKILL_NAME}` in snippet content is
+  replaced with the source skill's directory basename at render
+  time. Use it when a snippet's content needs to embed the skill's
+  own name (e.g., the JSON `"skill"` field in a logging command).
+
+When `./install` runs, `bin/vibe-render-skill` expands directives
+and writes the rendered file to `~/.claude/skills/<name>/SKILL.md`
+as a regular file. A sidecar `.vibe-render.json` is also written
+when expansion happened, listing the source path and included parts.
+
+To check whether installed output has drifted from sources:
+
+```bash
+bin/vibe-render-skill --check skills/<name>/SKILL.md ~/.claude/skills/<name>/SKILL.md
+# exit 0 = no drift; exit 1 = drift; the diff is printed to stderr.
+```
+
 ## Install and update
 
 ```bash
-./install     # creates ~/.claude/skills/<name>/, symlinks SKILL.md + bin/
-./uninstall   # removes symlinks and empty skill directories
+./install     # renders skills into ~/.claude/skills/<name>/SKILL.md
+              # (regular files); symlinks bin/ + sub-docs (unchanged)
+./uninstall   # removes rendered SKILL.md, sidecar JSON, and symlinks
 ```
 
-The install script symlinks — it never copies. The canonical source is always in this repo. Update flow: `git pull && ./install`. No restart needed if Claude Code supports hot-reload; otherwise start a new session.
+The install script renders `SKILL.md` files via `bin/vibe-render-skill`
+and symlinks everything else (`bin/`, sub-docs) for the
+"edit source, immediately reflected" workflow. The canonical source
+is always in this repo. Update flow: `git pull && ./install`. No
+restart needed if Claude Code supports hot-reload; otherwise start
+a new session.
 
 ## Commit discipline
 
@@ -115,6 +158,8 @@ The install script symlinks — it never copies. The canonical source is always 
 - [ ] `allowed-tools:` lists only what the skill uses
 - [ ] If hooks: `bin/` scripts exist, are executable, use POSIX-safe patterns
 - [ ] Hook scripts tested manually with `echo '{...}' | bash skills/.../check-*.sh`
+- [ ] If using shared snippets: directive matches the grammar above; no nested includes
 - [ ] New session confirms slash command works
 - [ ] README skills table updated
 - [ ] `./install` runs without errors
+- [ ] `bash test/test-render-skill.sh` passes if the renderer or any snippet was touched

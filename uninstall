@@ -29,7 +29,7 @@ for skill_dir in "$SKILLS_SRC"/*/; do
     continue
   fi
 
-  # Remove every symlink we created (SKILL.md, sub-docs, bin/). Leave any
+  # Remove every symlink we created (sub-docs, bin/). Leave any other
   # non-symlink files alone (they didn't come from us).
   for item in "$target"/* "$target"/.[!.]* "$target"/..?*; do
     [ -e "$item" ] || [ -L "$item" ] || continue
@@ -37,6 +37,14 @@ for skill_dir in "$SKILLS_SRC"/*/; do
       rm -f "$item"
     fi
   done
+
+  # Remove the rendered SKILL.md (regular file) and its sidecar JSON, if present.
+  # Scoped narrowly to the canonical paths we created; other regular files in
+  # $target/ are still preserved.
+  if [ -f "$target/SKILL.md" ] && [ ! -L "$target/SKILL.md" ]; then
+    rm -f "$target/SKILL.md"
+  fi
+  rm -f "$target/.vibe-render.json"
 
   # Try to remove the directory. If it's not empty (user added files), leave it.
   if [ -z "$(ls -A "$target" 2>/dev/null)" ]; then
