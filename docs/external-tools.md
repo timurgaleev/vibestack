@@ -1,8 +1,26 @@
 # External tools
 
-vibestack ships 4 binaries (`vibe-config`, `vibe-slug`, `vibe-learnings-log`, `vibe-learnings-search`). A handful of skills depend on **external tools that vibestack does not bundle**. Those skills detect availability at runtime and degrade to text-only operation when the dependency is missing.
+vibestack ships 6 binaries (`vibe-config`, `vibe-slug`, `vibe-learnings-log`, `vibe-learnings-search`, `vibe-render-skill`, `vibe-skill-track`). A handful of skills depend on **external tools that vibestack does not bundle**. Those skills detect availability at runtime and degrade to text-only operation when the dependency is missing.
 
 This page documents the gap honestly so you can decide whether to install the dependency or skip the affected skills.
+
+---
+
+## Supported agent runtimes
+
+As of v1.4.0, vibestack installs into three agent runtimes that all implement
+the [Agent Skills open standard](https://agentskills.io/specification):
+
+- **Claude Code** — `~/.claude/skills/`. Full feature support (hooks, subagents).
+- **Cursor** — `~/.cursor/skills/`. SKILL.md content portable; hook-bearing
+  skills' runtime behavior verified manually per `docs/hook-verification.md`.
+- **Kiro** — `~/.kiro/skills/`. Same status as Cursor; runtime hooks pending
+  per-target verification.
+
+Other Agent-Skills-compatible runtimes (Codex CLI, Gemini CLI, Antigravity,
+OpenCode, Windsurf — all of which use `.agents/skills/`) are not yet a `--target=`
+option. The SKILL.md files would work; the only blocker is wiring up an
+additional case in `./install`. Tracked as a v1.5+ candidate.
 
 ---
 
