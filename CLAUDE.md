@@ -131,17 +131,48 @@ bin/vibe-render-skill --check skills/<name>/SKILL.md ~/.claude/skills/<name>/SKI
 ## Install and update
 
 ```bash
-./install     # renders skills into ~/.claude/skills/<name>/SKILL.md
-              # (regular files); symlinks bin/ + sub-docs (unchanged)
-./uninstall   # removes rendered SKILL.md, sidecar JSON, and symlinks
+./install                          # interactive: asks per-target (claude, cursor, kiro)
+./install --target=all             # all three, non-interactive
+./install --target=claude          # claude only
+./install --target=cursor,kiro     # cursor + kiro
+./install --yes                    # all three, skip prompts (CI-friendly)
+./install --dry-run --target=all   # preview, no writes
+
+./uninstall                        # claude only (default for v1.3.x compat)
+./uninstall --target=all           # remove from all three
+./uninstall --target=cursor        # cursor only
 ```
 
-The install script renders `SKILL.md` files via `bin/vibe-render-skill`
-and symlinks everything else (`bin/`, sub-docs) for the
-"edit source, immediately reflected" workflow. The canonical source
-is always in this repo. Update flow: `git pull && ./install`. No
-restart needed if Claude Code supports hot-reload; otherwise start
-a new session.
+vibestack supports three agent runtimes via the [Agent Skills open
+standard](https://agentskills.io/specification): Claude Code
+(`~/.claude/skills/`), Cursor (`~/.cursor/skills/`), and Kiro
+(`~/.kiro/skills/`). The same rendered `SKILL.md` is written to each
+target's directory — no format translation. `bin/` and sub-doc symlinks
+are installed per target so the "edit source, immediately reflected"
+workflow works in any chosen target.
+
+Update flow: `git pull && ./install`. The install is idempotent — re-runs
+produce identical bytes. No restart needed if your agent supports
+hot-reload; otherwise start a new session.
+
+## Multi-target output
+
+When adding a new skill, remember it'll install into Claude Code, Cursor,
+and Kiro by default. Three implications:
+
+1. **Write skill bodies in tool-name terms that modern LLMs understand.**
+   Claude Code tools like `AskUserQuestion`, `Agent`, `Read`, `Edit` are
+   recognized by Cursor/Kiro's hosted LLMs and mapped to native equivalents.
+   Don't worry about per-target tool-name translation in v1.
+
+2. **Hook-bearing skills (`hooks:` frontmatter) get a tier disclosure.**
+   Claude Code intercepts via `PreToolUse`. Cursor/Kiro behavior is
+   verified manually per `docs/hook-verification.md`. The install prints
+   a one-line warning when hook-bearing skills land in non-Claude targets.
+
+3. **Run `bash test/test-install-integration.sh` after touching install/
+   uninstall.** Covers regression (claude byte-identical), multi-target
+   install, idempotency, dry-run, hook warnings, uninstall round-trip.
 
 ## Commit discipline
 
@@ -163,3 +194,8 @@ a new session.
 - [ ] README skills table updated
 - [ ] `./install` runs without errors
 - [ ] `bash test/test-render-skill.sh` passes if the renderer or any snippet was touched
+- [ ] `bash test/test-install-integration.sh` passes if install/uninstall was touched
+- [ ] `docs/agent-skills-compatibility-audit.md` updated if the new skill uses
+      `${CLAUDE_SKILL_DIR}`, declares `hooks:`, or otherwise has Claude-Code-
+      specific runtime dependencies (so the per-skill compatibility row is
+      accurate for Cursor/Kiro users)

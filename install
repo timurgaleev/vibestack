@@ -1,71 +1,205 @@
 #!/usr/bin/env bash
-# vibestack install — register skills with Claude Code and install learnings tools
-set -e
+# vibestack install — register skills with Claude Code, Cursor, and Kiro
+# v1.4.0: multi-target install via Agent Skills open standard (agentskills.io)
+set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
-CLAUDE_SKILLS="$HOME/.claude/skills"
 VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 VIBE_BIN="$VIBE_HOME/bin"
 
-echo "Installing vibestack..."
+# ───────────────────────────────────────────────────────────────────────────
+# Multi-target configuration (v1.4.0)
+#
+# vibestack installs into one or more agent runtimes that adopt the Agent
+# Skills open standard (agentskills.io): Claude Code, Cursor, Kiro. The same
+# rendered SKILL.md file is written to each target's conventional skills path.
+# No format translation — the spec ensures portability at the file-shape
+# layer. See docs/agent-skills-compatibility-audit.md for the runtime caveats.
+#
+# DEFAULT BEHAVIOR (changed in v1.4.0): install asks the user per-target,
+# defaulting Y for each. In non-TTY mode (CI, piped input), default is all
+# three. Pass --target=<list> for explicit non-interactive control.
+# ───────────────────────────────────────────────────────────────────────────
 
-# Create vibestack state and bin directories
-mkdir -p "$VIBE_BIN"
-mkdir -p "$VIBE_HOME/projects"
-mkdir -p "$VIBE_HOME/analytics"
+usage() {
+  cat <<'EOF'
+Usage: ./install [options]
 
-# Install bin/ scripts
-if [ -d "$REPO_DIR/bin" ]; then
-  for script in "$REPO_DIR/bin"/vibe-*; do
-    [ -f "$script" ] || continue
-    name=$(basename "$script")
-    cp "$script" "$VIBE_BIN/$name"
-    chmod +x "$VIBE_BIN/$name"
-  done
-  echo "  + vibestack tools → $VIBE_BIN"
-fi
+Options:
+  --target=<list>   Comma-separated targets: claude, cursor, kiro, or all.
+                    Bypasses the interactive prompt. Default behavior asks.
+  --yes, -y         Non-interactive: install into all three targets.
+                    Equivalent to --target=all.
+  --dry-run         Print what would be installed without writing any files.
+  -h, --help        Show this help and exit.
 
-# Ensure $VIBE_BIN is on PATH (print reminder if not)
-if ! echo "$PATH" | tr ':' '\n' | grep -qF "$VIBE_BIN"; then
-  echo ""
-  echo "  NOTE: Add $VIBE_BIN to your PATH:"
-  echo "    echo 'export PATH=\"$VIBE_BIN:\$PATH\"' >> ~/.zshrc"
-fi
+Default behavior:
+  Interactive (TTY):     asks Y/n per target, default Y for all three
+  Non-interactive (CI):  installs into all three targets
 
-# Install Claude Code skills
-mkdir -p "$CLAUDE_SKILLS"
+Examples:
+  ./install                          # Interactive: asks per target
+  ./install --target=all             # All three, skip prompts
+  ./install --target=cursor          # Cursor only
+  ./install --target=cursor,kiro     # Cursor + Kiro
+  ./install --yes                    # All three, skip prompts (CI-friendly)
+  ./install --dry-run                # Interactive + preview, no writes
+EOF
+}
 
-installed=0
+# All known targets (3 separate applications — Cursor, Kiro, Claude Code).
+# Each target installs to its own independent path.
+ALL_TARGETS=("claude" "cursor" "kiro")
 
-for skill_dir in "$SKILLS_SRC"/*/; do
-  if [ ! -f "$skill_dir/SKILL.md" ]; then
-    continue
+# Pretty-printed name + path per target
+target_label() {
+  case "$1" in
+    claude) echo "Claude Code" ;;
+    cursor) echo "Cursor" ;;
+    kiro)   echo "Kiro" ;;
+    *)      echo "$1" ;;
+  esac
+}
+
+target_root() {
+  case "$1" in
+    claude) echo "$HOME/.claude/skills" ;;
+    cursor) echo "$HOME/.cursor/skills" ;;
+    kiro)   echo "$HOME/.kiro/skills" ;;
+    *)      echo "" ;;
+  esac
+}
+
+# Parse args
+TARGETS_RAW=""
+DRY_RUN=0
+YES_FLAG=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --target=*)
+      TARGETS_RAW="${arg#*=}"
+      ;;
+    --yes|-y)
+      YES_FLAG=1
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown argument: $arg" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+# ───────────────────────────────────────────────────────────────────────────
+# Resolve target list
+#
+# Priority order:
+#   1. --target=<list>  → use as-is (validated)
+#   2. --yes / -y       → all three
+#   3. TTY available    → interactive per-target prompt (default Y)
+#   4. Non-TTY (CI)     → all three (the v1.4.0 default)
+# ───────────────────────────────────────────────────────────────────────────
+declare -a TARGETS
+
+if [ -n "$TARGETS_RAW" ]; then
+  # Explicit --target=<list> — bypass everything
+  if [ "$TARGETS_RAW" = "all" ]; then
+    TARGETS=("${ALL_TARGETS[@]}")
+  else
+    IFS=',' read -ra TARGETS <<< "$TARGETS_RAW"
   fi
+  for t in "${TARGETS[@]}"; do
+    case "$t" in
+      claude|cursor|kiro) ;;
+      *)
+        echo "ERROR: unknown target '$t'. Valid: claude, cursor, kiro, all." >&2
+        exit 2
+        ;;
+    esac
+  done
+elif [ "$YES_FLAG" = "1" ]; then
+  TARGETS=("${ALL_TARGETS[@]}")
+elif [ -r /dev/tty ] && [ -t 0 ]; then
+  # Interactive — ask per-target, default Y for all (per user request:
+  # "by default it should be all. and 3 targets. but this should be asked")
+  echo "vibestack supports 3 separate agent runtimes."
+  echo "Each lives in its own directory; you can install into any subset."
+  echo ""
+  declare -a chosen
+  for t in "${ALL_TARGETS[@]}"; do
+    label=$(target_label "$t")
+    root=$(target_root "$t")
+    detected=""
+    if [ -d "$HOME/.${t}" ] || command -v "$t" >/dev/null 2>&1; then
+      detected=" [detected]"
+    fi
+    printf "  Install into %s (%s)%s? [Y/n] " "$label" "$root" "$detected"
+    reply=""
+    read -r reply </dev/tty || reply=""
+    case "$reply" in
+      n|N|no|NO) ;;
+      *) chosen+=("$t") ;;
+    esac
+  done
+  echo ""
+  if [ "${#chosen[@]}" = "0" ]; then
+    echo "No targets selected. Nothing to install."
+    exit 0
+  fi
+  TARGETS=("${chosen[@]}")
+else
+  # Non-TTY (CI, piped) — default to all three per user spec.
+  # CI users wanting a single target should pass --target=<name> explicitly.
+  TARGETS=("${ALL_TARGETS[@]}")
+fi
 
-  # Read skill name from frontmatter, fall back to directory name
-  skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
+# ───────────────────────────────────────────────────────────────────────────
+# Per-skill install (extracted in v1.4.0 — Beck refactor: make the change easy
+# first, then make the easy change). The body is unchanged from v1.3.0; only
+# the destination root is parameterized.
+# ───────────────────────────────────────────────────────────────────────────
+install_skill_to_target() {
+  local skill_dir="$1"
+  local target_root="$2"
+  local skill_name target
+
+  skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null \
+    | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
   [ -z "$skill_name" ] && skill_name="$(basename "$skill_dir")"
 
-  target="$CLAUDE_SKILLS/$skill_name"
+  target="$target_root/$skill_name"
 
-  # Create real directory; render SKILL.md into it as a regular file.
-  # The renderer expands {{include lib/snippets/X.md}} directives and writes
-  # a sidecar .vibe-render.json metadata file when expansion happens.
-  # Sub-docs and bin/ stay symlinked below (unchanged).
-  # If a prior install left a symlink at the destination, remove it so the
-  # renderer's atomic mv replaces the path cleanly.
-  mkdir -p "$target"
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "  would render: $skill_dir → $target/SKILL.md"
+    return 0
+  fi
+
+  if ! mkdir -p "$target"; then
+    echo "ERROR: cannot create $target" >&2
+    return 3
+  fi
+
   [ -L "$target/SKILL.md" ] && rm -f "$target/SKILL.md"
-  "$REPO_DIR/bin/vibe-render-skill" "${skill_dir%/}/SKILL.md" "$target/SKILL.md"
 
-  # Symlink bin/ directory if it exists (hook scripts)
+  if ! "$REPO_DIR/bin/vibe-render-skill" "${skill_dir%/}/SKILL.md" "$target/SKILL.md"; then
+    echo "ERROR: render failed for $skill_name → $target" >&2
+    return 2
+  fi
+
   if [ -d "${skill_dir%/}/bin" ]; then
     ln -sfn "${skill_dir%/}/bin" "$target/bin"
     chmod +x "${skill_dir%/}"/bin/*.sh 2>/dev/null || true
   fi
 
-  # Symlink all extra files and subdirectories (SKILL.md and bin/ are handled above)
   for item in "${skill_dir%/}"/*; do
     [ -e "$item" ] || continue
     item_name=$(basename "$item")
@@ -74,12 +208,123 @@ for skill_dir in "$SKILLS_SRC"/*/; do
     ln -sfn "$item" "$target/$item_name"
   done
 
-  installed=$((installed + 1))
+  return 0
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# Main install flow
+# ───────────────────────────────────────────────────────────────────────────
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "Installing vibestack (DRY RUN — no files will be written)..."
+else
+  echo "Installing vibestack..."
+fi
+
+# Create vibestack state and bin directories (skip in dry-run)
+if [ "$DRY_RUN" != "1" ]; then
+  mkdir -p "$VIBE_BIN"
+  mkdir -p "$VIBE_HOME/projects"
+  mkdir -p "$VIBE_HOME/analytics"
+
+  if [ -d "$REPO_DIR/bin" ]; then
+    for script in "$REPO_DIR/bin"/vibe-*; do
+      [ -f "$script" ] || continue
+      name=$(basename "$script")
+      cp "$script" "$VIBE_BIN/$name"
+      chmod +x "$VIBE_BIN/$name"
+    done
+    echo "  + vibestack tools → $VIBE_BIN"
+  fi
+
+  if ! echo "$PATH" | tr ':' '\n' | grep -qF "$VIBE_BIN"; then
+    echo ""
+    echo "  NOTE: Add $VIBE_BIN to your PATH:"
+    echo "    echo 'export PATH=\"$VIBE_BIN:\$PATH\"' >> ~/.zshrc"
+  fi
+fi
+
+# Per-target install — each is independent. Cursor and Kiro are different
+# applications; the install just routes the same SKILL.md to each one's
+# native skills directory. They run in separate sessions.
+total_installed=0
+declare -a per_target_summary
+hook_skills_installed_non_claude=0
+
+for target in "${TARGETS[@]}"; do
+  root=$(target_root "$target")
+  label=$(target_label "$target")
+  if [ -z "$root" ]; then
+    echo "ERROR: could not resolve root for target '$target'" >&2
+    exit 3
+  fi
+
+  if [ "$DRY_RUN" != "1" ]; then
+    if ! mkdir -p "$root"; then
+      echo "ERROR: cannot create target root $root" >&2
+      exit 3
+    fi
+  fi
+
+  echo ""
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "── $label ($root) [DRY RUN]"
+  else
+    echo "── $label ($root)"
+  fi
+
+  installed=0
+  for skill_dir in "$SKILLS_SRC"/*/; do
+    [ -f "$skill_dir/SKILL.md" ] || continue
+
+    if ! install_skill_to_target "$skill_dir" "$root"; then
+      echo "ERROR: install failed at skill $(basename "$skill_dir") for $label" >&2
+      exit 2
+    fi
+
+    installed=$((installed + 1))
+
+    if [ "$target" != "claude" ] && grep -q "^hooks:" "$skill_dir/SKILL.md" 2>/dev/null; then
+      hook_skills_installed_non_claude=$((hook_skills_installed_non_claude + 1))
+    fi
+  done
+
+  total_installed=$((total_installed + installed))
+  if [ "$DRY_RUN" = "1" ]; then
+    per_target_summary+=("  $label: $installed skills (would write)")
+  else
+    per_target_summary+=("  $label: $installed skills → $root")
+  fi
 done
 
+# ───────────────────────────────────────────────────────────────────────────
+# Summary
+# ───────────────────────────────────────────────────────────────────────────
 echo ""
-echo "Installed $installed skills → $CLAUDE_SKILLS"
-echo ""
-echo "Try /office-hours first in a new Claude Code session."
-echo "Full skill list: ~/.claude/skills/vibestack/docs/skills.md"
-echo "Uninstall: ~/.claude/skills/vibestack/uninstall"
+if [ "$DRY_RUN" = "1" ]; then
+  echo "Dry run complete. Would install:"
+else
+  echo "Installation complete:"
+fi
+for line in "${per_target_summary[@]}"; do
+  echo "$line"
+done
+
+# Post-install reminder for non-claude targets with hook-bearing skills
+# (Day 0 Track A finding F2 — runtime behavior of `${CLAUDE_SKILL_DIR}` and
+# `hooks:` is unverified for Cursor/Kiro).
+if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
+  echo ""
+  echo "  ⚠ Hook-bearing skills (careful, freeze, guard, investigate) were"
+  echo "    installed into non-Claude targets. Their PreToolUse hooks may"
+  echo "    not fire identically across Cursor/Kiro."
+  echo "    Verify per: docs/hook-verification.md"
+fi
+
+if [ "$DRY_RUN" != "1" ]; then
+  echo ""
+  echo "Try /office-hours first in a new session of your chosen agent."
+  echo "Full skill list: docs/skills.md"
+  echo "Compatibility matrix: docs/agent-skills-compatibility-audit.md"
+  echo "Uninstall: $REPO_DIR/uninstall"
+fi

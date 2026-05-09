@@ -2,6 +2,45 @@
 
 ## Open
 
+### v1.5+ candidates from multi-target install eng review (2026-05-09)
+
+Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260509-101119.md` (APPROVED, multi-target install for Cursor + Kiro). Ship target: v1.4.0.
+
+6. **`vibe certify` cross-runtime conformance harness** — a command
+   that renders all 46 skills, installs into temp fixtures per target,
+   runs smoke prompts, and prints a parity report
+   (identical / soft-enforced / hard-enforced / broken). Codex
+   outside-voice idea, validated independently. Turns "multi-target
+   support" from a claim into a measurable badge; catches regressions
+   when Cursor/Kiro change their spec.
+   Effort: M (~3 days).
+   Priority: P3.
+   Depends on: v1.4 ship + a few months of real usage to know which
+   conformance signals actually matter.
+
+7. **`./install --scope=user|project` flag** — install to project-local
+   `.cursor/skills/` etc. instead of `~/.cursor/skills/`. Locks
+   vibestack version per repo for teams that want pinned workflow.
+   Needs clear `VIBESTACK_PROJECT_ROOT` convention to resolve `$PWD`
+   ambiguity (the install runs from the cloned vibestack dir, not
+   the user's project).
+   Effort: S (~1 day).
+   Priority: P3.
+   Depends on: v1.4 ship + at least one user requesting it.
+
+8. **`./install` auto-detect + interactive prompt + per-target
+   progress UX** — the original UX-rich install flow deferred per
+   eng review Tension 2 (Codex outside-voice argued: prove runtime
+   first, polish UX after). Makes `./install` one-keystroke for the
+   common case ("Found Claude+Cursor, install both? [Y/n]").
+   Per-target progress reporter + fail-summary line on partial
+   failure.
+   Effort: M (~1.5 days).
+   Priority: P2 (matches user's original requirement).
+   Depends on: v1.4 ship AND Day 0 verifying skills actually load
+   correctly in cursor/kiro. If Day 0 surfaces broken behavior in
+   a target, this UX work is wasted until that target is fixed.
+
 ### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).

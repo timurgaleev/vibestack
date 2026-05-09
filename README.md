@@ -13,26 +13,86 @@ git clone https://github.com/timurgaleev/vibestack ~/.claude/skills/vibestack
 ~/.claude/skills/vibestack/install
 ```
 
-Start a new Claude Code session. Skills are immediately available.
+Interactive — `./install` asks per-target whether to install into Claude Code,
+Cursor, and Kiro. Default is all three. Start a new session of whichever agent
+you chose; skills are immediately available.
+
+**Non-interactive (CI):**
+```bash
+./install --target=all              # all three
+./install --target=cursor           # Cursor only
+./install --target=cursor,kiro      # Cursor + Kiro
+./install --yes                     # all three, skip prompts (CI-friendly)
+./install --dry-run --target=all    # preview, no writes
+```
+
+`./install` builds on the [Agent Skills open standard](https://agentskills.io/specification),
+which Claude Code, Cursor, and Kiro all implement. Same `SKILL.md` source,
+three folders. See `docs/agent-skills-compatibility-audit.md` for the per-skill
+compatibility matrix.
 
 ### What `./install` modifies on your machine
 
 | Path | What lands there | Type |
 |---|---|---|
-| `~/.claude/skills/<each-skill>/` | One directory per skill (46 total). Each contains a symlink to its `SKILL.md` and any sub-docs/hook scripts in this repo. | symlinks |
-| `~/.vibestack/bin/` | `vibe-config`, `vibe-slug`, `vibe-learnings-log`, `vibe-learnings-search` | copies |
+| `~/.claude/skills/<each-skill>/` | If claude target chosen: 46 skill directories. Each contains a regular SKILL.md + symlinks to sub-docs and hook scripts. | regular file (SKILL.md) + symlinks (rest) |
+| `~/.cursor/skills/<each-skill>/` | If cursor target chosen: same 46 skill directories. | regular file + symlinks |
+| `~/.kiro/skills/<each-skill>/` | If kiro target chosen: same 46 skill directories. | regular file + symlinks |
+| `~/.vibestack/bin/` | `vibe-config`, `vibe-slug`, `vibe-learnings-log`, `vibe-learnings-search`, `vibe-render-skill`, `vibe-skill-track` | copies |
 | `~/.vibestack/projects/` | Per-project state (learnings, test plans, QA reports). Created empty. | directory |
 | `~/.vibestack/analytics/` | Local-only analytics. Created empty. | directory |
 
-`./install` is idempotent — re-running it after `git pull` updates the symlinks. To remove everything, see [Uninstall](#uninstall) below.
+`./install` is idempotent — re-running it after `git pull` updates the
+content. To remove everything, see [Uninstall](#uninstall) below.
+
+### Cross-target compatibility
+
+The Agent Skills standard guarantees portability of the SKILL.md file shape.
+Claude-Code-specific runtime features (the `${CLAUDE_SKILL_DIR}` env var,
+per-skill `PreToolUse` hooks, the `Agent` and `AskUserQuestion` tools) are
+NOT covered by the spec.
+
+For most skills (42 of 46), this is fine — modern LLMs map "ask the user"
+or "dispatch a subagent" to whatever native equivalent exists in their host
+agent.
+
+For the 4 hook-bearing safety skills (`careful`, `freeze`, `guard`,
+`investigate`), the SKILL.md installs into Cursor and Kiro but their hooks
+do **not** fire identically to Claude Code. Empirically verified against
+Cursor `2026.05.07-42ddaca` and Kiro CLI `2.2.2`:
+
+| Target | careful / freeze / guard / investigate behavior |
+|---|---|
+| **Claude Code** | **Hard tier.** `PreToolUse` hook intercepts dangerous commands deterministically. |
+| **Cursor** | **Soft tier.** Our hook does not fire (Cursor uses `${skillDir}`, not `${CLAUDE_SKILL_DIR}`). However, **Cursor's native shell sandbox blocks `rm -rf` and similar dangerous commands independently** — so you're protected, just not by our hook. |
+| **Kiro** | **Soft tier — no fallback protection.** Our hook does not fire AND Kiro has no equivalent shell sandbox. `rm -rf` runs without any prompt. The `/careful` skill body still instructs the LLM to warn you, but enforcement is non-deterministic. |
+
+The install prints a one-line warning when hook-bearing skills are installed
+into Cursor or Kiro. Full empirical results: [`docs/agent-skills-compatibility-audit.md`](docs/agent-skills-compatibility-audit.md).
+Verification procedure for re-running on future Cursor/Kiro versions:
+[`docs/hook-verification.md`](docs/hook-verification.md).
+
+⚠️ **If you rely on `/careful`, `/freeze`, `/guard`, or `/investigate` as a
+real safety net (not just an LLM nudge), use them in Claude Code.** Cursor
+gives you partial protection via its own sandbox; Kiro gives none.
 
 ## Uninstall
 
 ```bash
-~/.claude/skills/vibestack/uninstall
+~/.claude/skills/vibestack/uninstall                    # Claude only (default)
+~/.claude/skills/vibestack/uninstall --target=all       # all three targets
+~/.claude/skills/vibestack/uninstall --target=cursor    # Cursor only
+~/.claude/skills/vibestack/uninstall --target=all --delete-state  # full wipe
 ```
 
-Removes all 46 skill directories from `~/.claude/skills/` and the `vibe-*` binaries from `~/.vibestack/bin/`. Asks before deleting `~/.vibestack/` (which contains your local learnings, analytics, and project state) — keeps it by default. The cloned repo at `~/.claude/skills/vibestack/` itself stays; delete it manually with `rm -rf ~/.claude/skills/vibestack` for a full removal. Pass `--delete-state` for a non-interactive full state wipe.
+Mirrors `./install`'s `--target=` semantics. Removes the rendered `SKILL.md`
+file, `.vibe-render.json` sidecar, bin/sub-doc symlinks, and the per-skill
+directory (if empty) for each chosen target. Removes the `vibe-*` binaries
+from `~/.vibestack/bin/`. Asks before deleting `~/.vibestack/` (your local
+learnings, analytics, project state) — keeps it by default. The cloned repo
+at `~/.claude/skills/vibestack/` stays; delete it manually with
+`rm -rf ~/.claude/skills/vibestack` for a full removal. Pass `--delete-state`
+for a non-interactive full state wipe.
 
 ## Update
 
