@@ -58,9 +58,23 @@ agent.
 
 For the 4 hook-bearing safety skills (`careful`, `freeze`, `guard`,
 `investigate`), the SKILL.md installs into Cursor and Kiro but their hooks
-may not fire identically to Claude Code. The install prints a one-line
-warning when this is relevant. See `docs/hook-verification.md` for a
-5-minute manual procedure to verify hook behavior in your installation.
+do **not** fire identically to Claude Code. Empirically verified against
+Cursor `2026.05.07-42ddaca` and Kiro CLI `2.2.2`:
+
+| Target | careful / freeze / guard / investigate behavior |
+|---|---|
+| **Claude Code** | **Hard tier.** `PreToolUse` hook intercepts dangerous commands deterministically. |
+| **Cursor** | **Soft tier.** Our hook does not fire (Cursor uses `${skillDir}`, not `${CLAUDE_SKILL_DIR}`). However, **Cursor's native shell sandbox blocks `rm -rf` and similar dangerous commands independently** — so you're protected, just not by our hook. |
+| **Kiro** | **Soft tier — no fallback protection.** Our hook does not fire AND Kiro has no equivalent shell sandbox. `rm -rf` runs without any prompt. The `/careful` skill body still instructs the LLM to warn you, but enforcement is non-deterministic. |
+
+The install prints a one-line warning when hook-bearing skills are installed
+into Cursor or Kiro. Full empirical results: [`docs/agent-skills-compatibility-audit.md`](docs/agent-skills-compatibility-audit.md).
+Verification procedure for re-running on future Cursor/Kiro versions:
+[`docs/hook-verification.md`](docs/hook-verification.md).
+
+⚠️ **If you rely on `/careful`, `/freeze`, `/guard`, or `/investigate` as a
+real safety net (not just an LLM nudge), use them in Claude Code.** Cursor
+gives you partial protection via its own sandbox; Kiro gives none.
 
 ## Uninstall
 

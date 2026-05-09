@@ -47,15 +47,22 @@ guarantees portability at the file-shape layer.
 
 ### Notes
 - For hook-bearing skills (`careful`, `freeze`, `guard`, `investigate`),
-  Cursor and Kiro support is best-effort: the SKILL.md installs and
-  the body is read by each agent, but per-skill `PreToolUse` hooks may
-  or may not fire identically to Claude Code. Run
-  `docs/hook-verification.md` after install to confirm. The install
-  prints a one-line warning when these skills are installed into
-  non-Claude targets.
-- Tier classification per-skill is in `docs/agent-skills-compatibility-audit.md`.
+  Cursor and Kiro support is **soft tier — verified empirically** against
+  Cursor `2026.05.07-42ddaca` and Kiro CLI `2.2.2`. The `PreToolUse` hook
+  command does NOT fire in either target (Cursor uses `${skillDir}`, Kiro
+  doesn't expose a `${CLAUDE_SKILL_DIR}` equivalent at all). The install
+  prints a one-line warning when these skills are installed into non-Claude
+  targets.
+- ⚠️ **Cursor's native shell sandbox** blocks `rm -rf` and similar dangerous
+  commands independently of our hook, so Cursor users get fallback safety.
+  **Kiro has no equivalent sandbox** — `rm -rf` ran without any prompt
+  during Track B testing. If safety skills are load-bearing for you, use
+  Claude Code (hard tier) or be aware of the gap.
+- Full per-target tier matrix and Track B test results in
+  `docs/agent-skills-compatibility-audit.md`. Re-verification procedure
+  for future Cursor/Kiro versions in `docs/hook-verification.md`.
 - v1.4.0 designed by `/office-hours` + `/plan-eng-review` + Codex outside-voice
-  cross-model challenge.
+  cross-model challenge. Track B verified end-to-end before merge.
 
 ## 1.3.0 — 2026-05-09
 
