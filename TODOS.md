@@ -2,7 +2,58 @@
 
 ## Open
 
-(none)
+### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
+
+Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
+
+1. **Migrate remaining shared sections to `lib/snippets/`** —
+   Codex outside-voice fallback (×9), Review Readiness Dashboard (×6),
+   Spec Review Loop (×2). Each needs a per-section drift-reconciliation
+   pass (same methodology as v1 Day 0). Defer until v1 ships and the
+   render pipeline is proven on `capture-learnings` + `prior-learnings`.
+   Effort: M (per snippet, ~3 days).
+   Priority: P2.
+   Depends on: v1 ship.
+
+2. **Lint rules for `lib/snippets/`** — no duplicate headings, no
+   runtime-execution instructions (a snippet should not contain
+   "you must do X" runtime directives that conflict with the parent
+   skill), max line count. Run as part of `./install --check`.
+   Effort: S.
+   Priority: P3.
+   Depends on: v1 ship + at least 4 snippets in `lib/snippets/` so
+   patterns are visible.
+
+3. **Renderer infra-error fuzz tests** — PATH-shimmed mocks that
+   force `mktemp`/`mv` to fail and assert exit 3 + clean error
+   messages. Add iff a future refactor of error handling regresses
+   silently (i.e., add reactively, not pre-emptively).
+   Effort: S.
+   Priority: P3.
+   Depends on: nothing (can be done anytime if motivated).
+
+4. **`./install --staged` (atomic stage-and-swap)** — surface from
+   eng review's Codex pass: v1 install is best-effort
+   (per-file atomic mv, but per-run partial). For users on shared
+   CI infra or shared workstations who need true all-or-nothing
+   install, add `./install --staged`: render all 46 skills to
+   `~/.claude/skills.staging/`, then `mv ~/.claude/skills{,.old}`
+   and `mv ~/.claude/skills.staging ~/.claude/skills`. Edge case:
+   power failure mid-rename leaves `.old` behind; recovery on next
+   run.
+   Effort: M (~30 lines + power-failure handling).
+   Priority: P3.
+   Depends on: v1 ship.
+
+5. **Lint rule for unbalanced markdown fences in skill sources** —
+   v1's renderer uses minimal fence-state tracking (toggles `in_fence`
+   on `^\`\`\``). An unbalanced fence in a skill source would silently
+   swallow real directives. Add `./install --check` validation that
+   walks each skill source and asserts even-numbered fence count.
+   Catches the failure mode without adopting a markdown AST parser.
+   Effort: S.
+   Priority: P3.
+   Depends on: v1 ship.
 
 ## Completed
 

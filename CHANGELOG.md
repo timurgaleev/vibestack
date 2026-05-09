@@ -1,5 +1,74 @@
 # Changelog
 
+## 1.3.0 — 2026-05-09
+
+SKILL.md composition pipeline. Shared markdown sections now live in
+`lib/snippets/` and are expanded into installed `SKILL.md` files via a
+tiny `{{include lib/snippets/X.md}}` directive resolved at install time.
+Designed by `/office-hours` + `/plan-ceo-review` + `/plan-eng-review`.
+
+### Added
+- `bin/vibe-render-skill` — install-time markdown renderer. Expands include
+  directives, substitutes `{SKILL_NAME}` per skill, writes a sidecar
+  `.vibe-render.json` metadata file, supports `--check` mode, idempotent.
+  ~150 lines bash 3.2-portable; uses `set -euo pipefail`, atomic
+  `mktemp`+`mv`, signal trap for cleanup. Exit codes: 0 success / 2 validation
+  / 3 infrastructure.
+- `lib/snippets/capture-learnings.md` — canonical "Capture Learnings"
+  block. Used in 14 skills (cso, design-consultation, design-review,
+  plan-ceo-review, plan-eng-review, qa, retro, ship, devex-review,
+  office-hours, plan-design-review, plan-devex-review, qa-only,
+  investigate). 8 other skills retained inlined variants per Day 0
+  drift audit (4 short-form, 4 domain-customized).
+- `lib/snippets/prior-learnings.md` — canonical "Prior Learnings"
+  search block. Used in 14 skills (all skills that previously had it).
+- `test/fixtures/render/` — 11 fixtures covering byte-identical
+  fallback, single/multi include, missing/nested include rejection,
+  fence-state tracking (codefenced and indented directives stay literal),
+  no-frontmatter handling, idempotency, --check mode (drift detected /
+  no drift), and arg parsing (5 invalid invocations).
+- `test/test-render-skill.sh` — fixture-driven harness; 16 test cases
+  pass on first run.
+
+### Changed
+- `./install` — `SKILL.md` no longer symlinked; rendered into a regular
+  file via `vibe-render-skill`. `bin/` and per-skill sub-doc symlinks are
+  unchanged. Renderer invoked via absolute repo path so a fresh install
+  works before `$VIBE_BIN` exists.
+- `./uninstall` — patched to remove regular-file `SKILL.md` and
+  `.vibe-render.json` sidecar at canonical paths. Existing
+  symlink-removal loop unchanged. User-placed regular files at other
+  paths are still preserved.
+- 28 skills migrated (14 each for capture-learnings and prior-learnings;
+  13 skills got both). Total: 874 lines removed from sources;
+  installed-output content unchanged for 40 of 46 skills (byte-identical
+  P3 baseline). 6 skills harmonize +2 trailing blank lines as predicted
+  by the Day 0 drift audit (purely whitespace, LLM-invisible).
+
+### Architecture
+- Render-at-install treats SKILL.md authoring as a build step rather
+  than verbatim source. Skill authors can now keep shared logic in one
+  place and reference it via include directives.
+- `{SKILL_NAME}` token substitution is the v1's only renderer-side
+  variable — narrowly scoped, not a general templating system.
+- `.vibe-render.json` sidecar replaces an inline HTML-comment header
+  (which would have leaked into LLM prompt content). Sidecars are
+  LLM-invisible and tool-readable.
+- Code-fence state tracking prevents directive expansion inside ```
+  blocks, so skills can document the include syntax without triggering
+  it.
+
+### Verified
+- `bash -n` syntax check on renderer + install + uninstall.
+- 16 fixture tests pass (`bash test/test-render-skill.sh`).
+- P3 baseline: 46 source skills install with the expected output diff
+  pre-vs-post migration (0 unintended changes, 6 expected
+  whitespace-only harmonizations).
+- Round-trip: `./install` then `./uninstall` against fresh `$HOME`
+  leaves zero residual files in `~/.claude/skills/<name>/`.
+
+---
+
 ## 1.2.1 — 2026-05-03
 
 `/ship` now auto-tags and auto-publishes a GitHub/GitLab Release. No more manual `gh release create` after every merge.
