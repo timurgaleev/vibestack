@@ -1,5 +1,82 @@
 # Changelog
 
+## 1.5.0 — 2026-05-10
+
+Install UX polish (TODO #8) + per-target atomic stage-and-swap (TODO #4).
+Closes the deferred UX work from v1.4.0 eng review and the atomicity work
+from v1.3.0 SKILL.md composition CEO review in one release.
+
+### Added
+- **Install plan + Enter UX.** `./install` (interactive TTY) now shows a
+  write plan listing each target's path and detection status, then a
+  single prompt: `Press Enter to install.  a=all  e=edit  d=dry-run  q=quit`.
+  The common case is one keystroke. `e` falls through to the v1.4.0
+  per-target prompts with detection-flipped defaults (`[Y/n]` for detected,
+  `[y/N]` for not). `d` triggers an in-prompt dry-run preview. `q`/`n`
+  exits cleanly.
+- **`Installation incomplete:` outcome header.** When any target fails,
+  the summary changes from "complete" to "incomplete", lists successful
+  targets first with `✓` then failed targets with `✗` and the failed
+  skill's path, and suppresses the happy-path CTA. Hook warning still
+  prints on partial success (so users see safety info even when other
+  targets failed).
+- **Per-target atomic stage-and-swap.** Each target's install renders to
+  `~/.<target>/skills.staging.<pid>/` first, then atomically swaps via
+  `mv skills{,.old}` + `mv staging skills`. On staging failure, the
+  partial render is parked as `.staging.failed.<ts>` for debugging and
+  the production `~/.<target>/skills/` is left untouched. Recovery pass
+  on each run cleans orphaned staging dirs and restores from `.old` if
+  a prior interrupted swap left `skills/` missing.
+- **SIGINT/SIGTERM trap.** Ctrl-C mid-install exits 130 with
+  `Installation interrupted (SIGINT); some targets may be partially
+  updated.` SIGTERM exits 143 with the equivalent message. Re-run
+  converges (idempotent staging cleanup).
+- **PTY test harness** (`test/pty-run.py`) for exercising TTY-gated
+  prompt branches in `test/test-install-integration.sh`. 15 new
+  integration tests cover the prompt branches, atomic-swap behavior,
+  staging-failure preservation of production, and recovery from
+  orphaned `.old` / `.staging` dirs.
+- **Test seam:** `VIBE_TEST_MODE=1` disables the `command -v` half of
+  target detection so tests can control detection precisely via
+  `$HOME/.<target>/` directory presence without picking up real
+  agent binaries on the dev machine.
+
+### Changed
+- **`./install` now requires bash 4+ explicitly** (de facto since v1.4.0;
+  the new outcome accumulator uses associative arrays). On stock macOS
+  bash 3.2.57 the install exits 4 with a Homebrew install hint instead
+  of failing later with a cryptic `declare: -A: invalid option`.
+- **Failure mode pivots from fail-fast to per-target fail-fast +
+  cross-target fail-soft.** A single per-skill failure within a target
+  no longer aborts the whole install — remaining targets continue. The
+  failed target's production `skills/` stays untouched (atomic-swap
+  blocked by the failure). Exit code is non-zero on any failure, so CI
+  still breaks correctly. Recovery is idempotent: re-run after fixing
+  the underlying error.
+- Output strings preserved verbatim where v1.4.x prints them
+  (`Installation complete:` colon-form). `--target=<list>` and `--yes`
+  paths are byte-identical to v1.4.x for backward compatibility.
+- README "Try it in 30 seconds" copy updated to describe the new
+  install plan UX.
+
+### Behind the change
+- Codex outside-voice (in `/plan-eng-review`) flagged that fail-soft
+  alone leaves users in a mixed state on partial failure. Per-target
+  staged-install closes that gap: production `skills/` is only ever
+  modified by an atomic mv chain, so partial failures leave the prior
+  install intact.
+- The same outside-voice round caught: SIGTERM ≠ 130 (now correctly 143),
+  hook warning shouldn't be suppressed on partial success (now prints
+  whenever hook-bearing skills landed in any successful non-Claude
+  target), and the test harness was unable to reach TTY-gated prompt
+  code with `< /dev/null` (now uses a Python `pty` harness).
+
+### Why a minor (1.4.2 → 1.5.0)?
+Additive UX (install plan, atomic swap, recovery, SIGINT trap) plus a
+flagged behavior change (fail-fast → fail-soft per-target, with CI
+exit-code semantics preserved). No breaking flag changes. Same
+`git pull && ./install` distribution.
+
 ## 1.4.2 — 2026-05-09
 
 Multi-agent positioning rewrite. Docs-only patch — no code changes.

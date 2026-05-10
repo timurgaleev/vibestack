@@ -23,9 +23,10 @@ git clone https://github.com/timurgaleev/vibestack ~/.claude/skills/vibestack
 ~/.claude/skills/vibestack/install
 ```
 
-Interactive — `./install` asks per-target whether to install into Claude
-Code, Cursor, and Kiro. Default is all three. Open a new session of
-whichever agent you chose, type `/office-hours`, and you'll see this:
+Interactive — `./install` shows a write plan and installs into detected
+agents on Enter (or `a` for all, `e` to choose per-target). Open a new
+session of whichever agent you chose, type `/office-hours`, and you'll
+see this:
 
 ```
 LEARNINGS: none yet
