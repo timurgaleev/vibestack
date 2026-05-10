@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 # vibestack install — register skills with Claude Code, Cursor, and Kiro
-# v1.4.0: multi-target install via Agent Skills open standard (agentskills.io)
+# v1.5.0: install plan UX + per-target atomic stage-and-swap
+
 set -uo pipefail
+
+# ───────────────────────────────────────────────────────────────────────────
+# Bash 4+ guard (v1.5.0). Associative arrays are used for per-target state
+# accumulation; vibestack already shipped bash-4-only patterns since v1.4.0,
+# so this just makes an existing implicit requirement explicit.
+# ───────────────────────────────────────────────────────────────────────────
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "ERROR: ./install requires bash 4+. Detected: ${BASH_VERSION:-unknown}" >&2
+  echo "On macOS, install via Homebrew: brew install bash" >&2
+  exit 4
+fi
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$REPO_DIR/skills"
@@ -9,17 +21,12 @@ VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 VIBE_BIN="$VIBE_HOME/bin"
 
 # ───────────────────────────────────────────────────────────────────────────
-# Multi-target configuration (v1.4.0)
+# Multi-target configuration (v1.4.0+)
 #
 # vibestack installs into one or more agent runtimes that adopt the Agent
-# Skills open standard (agentskills.io): Claude Code, Cursor, Kiro. The same
-# rendered SKILL.md file is written to each target's conventional skills path.
-# No format translation — the spec ensures portability at the file-shape
-# layer. See docs/agent-skills-compatibility-audit.md for the runtime caveats.
-#
-# DEFAULT BEHAVIOR (changed in v1.4.0): install asks the user per-target,
-# defaulting Y for each. In non-TTY mode (CI, piped input), default is all
-# three. Pass --target=<list> for explicit non-interactive control.
+# Skills open standard (agentskills.io): Claude Code, Cursor, Kiro. Same
+# rendered SKILL.md to each target's conventional skills path. See
+# docs/agent-skills-compatibility-audit.md for runtime caveats.
 # ───────────────────────────────────────────────────────────────────────────
 
 usage() {
@@ -31,28 +38,25 @@ Options:
                     Bypasses the interactive prompt. Default behavior asks.
   --yes, -y         Non-interactive: install into all three targets.
                     Equivalent to --target=all.
-  --dry-run         Print what would be installed without writing any files.
+  --dry-run         Preview every output, write nothing.
   -h, --help        Show this help and exit.
 
 Default behavior:
-  Interactive (TTY):     asks Y/n per target, default Y for all three
+  Interactive (TTY):     shows write plan + Enter installs detected
   Non-interactive (CI):  installs into all three targets
 
 Examples:
-  ./install                          # Interactive: asks per target
+  ./install                          # Interactive: install plan + Enter
   ./install --target=all             # All three, skip prompts
   ./install --target=cursor          # Cursor only
   ./install --target=cursor,kiro     # Cursor + Kiro
   ./install --yes                    # All three, skip prompts (CI-friendly)
-  ./install --dry-run                # Interactive + preview, no writes
+  ./install --dry-run                # Interactive preview, write nothing
 EOF
 }
 
-# All known targets (3 separate applications — Cursor, Kiro, Claude Code).
-# Each target installs to its own independent path.
 ALL_TARGETS=("claude" "cursor" "kiro")
 
-# Pretty-printed name + path per target
 target_label() {
   case "$1" in
     claude) echo "Claude Code" ;;
@@ -71,7 +75,29 @@ target_root() {
   esac
 }
 
-# Parse args
+# Detection heuristic (v1.4.0 logic, extracted v1.5.0).
+# Proxy check — see TODO #9 (detection refinement) for v1.6+ candidate.
+#
+# VIBE_TEST_MODE=1 disables the `command -v` half (test-only seam) so the
+# integration suite can control detection precisely via $HOME/.<target>/
+# directory presence without picking up real binaries on the dev machine.
+target_detected() {
+  local t="$1"
+  if [ "${VIBE_TEST_MODE:-0}" = "1" ]; then
+    [ -d "$HOME/.${t}" ]
+    return $?
+  fi
+  [ -d "$HOME/.${t}" ] || command -v "$t" >/dev/null 2>&1
+}
+
+# Total skill count, computed once. Strip BSD `wc -l` whitespace.
+total_skills=$(find "$SKILLS_SRC" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+  | wc -l | tr -d '[:space:]')
+: "${total_skills:=0}"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Argument parsing
+# ───────────────────────────────────────────────────────────────────────────
 TARGETS_RAW=""
 DRY_RUN=0
 YES_FLAG=0
@@ -100,18 +126,76 @@ for arg in "$@"; do
 done
 
 # ───────────────────────────────────────────────────────────────────────────
-# Resolve target list
+# Signal handlers (placed AFTER arg parsing per eng-review R2).
+# Per Codex outside-voice (R14): SIGINT exits 130, SIGTERM exits 143.
+# ───────────────────────────────────────────────────────────────────────────
+on_interrupt() {
+  echo "" >&2
+  echo "Installation interrupted (SIGINT); some targets may be partially updated." >&2
+  echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)." >&2
+  exit 130
+}
+on_terminate() {
+  echo "" >&2
+  echo "Installation terminated (SIGTERM); some targets may be partially updated." >&2
+  echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)." >&2
+  exit 143
+}
+trap on_interrupt INT
+trap on_terminate TERM
+
+# ───────────────────────────────────────────────────────────────────────────
+# Install plan printer (v1.5.0)
+# Prints the write plan + prompt line. Wording adapts when DRY_RUN=1
+# (eng-review R4: "preview" not "install" when --dry-run is set).
+# ───────────────────────────────────────────────────────────────────────────
+print_install_plan() {
+  local default_targets_csv="$1"  # comma-separated names, possibly empty
+  local verb="install"
+  local prompt_options="a=all  e=edit  d=dry-run  q=quit"
+  if [ "$DRY_RUN" = "1" ]; then
+    verb="preview installing"
+    prompt_options="a=preview all  e=edit  q=quit"  # `d` dropped — dry-run already on
+  fi
+
+  echo "vibestack will $verb $total_skills skills into:"
+  echo ""
+  local t label root marker
+  for t in "${ALL_TARGETS[@]}"; do
+    label=$(target_label "$t")
+    root=$(target_root "$t")
+    if echo ",$default_targets_csv," | grep -q ",$t,"; then
+      marker="✓"
+    else
+      marker="-"
+    fi
+    # Pad columns: marker(1) + label(13) + root(28) + status
+    if target_detected "$t"; then
+      printf "  %s %-13s %-28s detected\n" "$marker" "$label" "$root"
+    else
+      printf "  %s %-13s %-28s not found\n" "$marker" "$label" "$root"
+    fi
+  done
+  echo ""
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "Press Enter to preview.  $prompt_options"
+  else
+    echo "Press Enter to install.  $prompt_options"
+  fi
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# Resolve TARGETS
 #
-# Priority order:
-#   1. --target=<list>  → use as-is (validated)
-#   2. --yes / -y       → all three
-#   3. TTY available    → interactive per-target prompt (default Y)
-#   4. Non-TTY (CI)     → all three (the v1.4.0 default)
+# Priority order (eng-review R2 ordering preserved):
+#   1. --target=<list>   → use as-is (validated)
+#   2. --yes / -y        → all three
+#   3. TTY available     → install plan + Enter UX (NEW v1.5.0)
+#   4. Non-TTY (CI)      → all three
 # ───────────────────────────────────────────────────────────────────────────
 declare -a TARGETS
 
 if [ -n "$TARGETS_RAW" ]; then
-  # Explicit --target=<list> — bypass everything
   if [ "$TARGETS_RAW" = "all" ]; then
     TARGETS=("${ALL_TARGETS[@]}")
   else
@@ -129,43 +213,122 @@ if [ -n "$TARGETS_RAW" ]; then
 elif [ "$YES_FLAG" = "1" ]; then
   TARGETS=("${ALL_TARGETS[@]}")
 elif [ -r /dev/tty ] && [ -t 0 ]; then
-  # Interactive — ask per-target, default Y for all (per user request:
-  # "by default it should be all. and 3 targets. but this should be asked")
-  echo "vibestack supports 3 separate agent runtimes."
-  echo "Each lives in its own directory; you can install into any subset."
-  echo ""
-  declare -a chosen
+  # ─── New v1.5.0 install plan + Enter UX ──────────────────────────────
+  declare -a default_targets=()
   for t in "${ALL_TARGETS[@]}"; do
-    label=$(target_label "$t")
-    root=$(target_root "$t")
-    detected=""
-    if [ -d "$HOME/.${t}" ] || command -v "$t" >/dev/null 2>&1; then
-      detected=" [detected]"
+    if target_detected "$t"; then
+      default_targets+=("$t")
     fi
-    printf "  Install into %s (%s)%s? [Y/n] " "$label" "$root" "$detected"
+  done
+  default_csv=""
+  if [ "${#default_targets[@]}" -gt 0 ]; then
+    default_csv=$(IFS=','; echo "${default_targets[*]}")
+  fi
+
+  print_install_plan "$default_csv"
+
+  # Two-strike unknown-input retry handler.
+  attempt=0
+  TARGETS=()
+  while [ "$attempt" -lt 2 ]; do
+    attempt=$((attempt + 1))
     reply=""
-    read -r reply </dev/tty || reply=""
+    if ! read -r reply </dev/tty; then
+      reply=""  # EOF (Ctrl-D) — treat as unknown input
+    fi
     case "$reply" in
-      n|N|no|NO) ;;
-      *) chosen+=("$t") ;;
+      ""|y|Y)
+        if [ "${#default_targets[@]}" -eq 0 ]; then
+          echo ""
+          echo "No targets detected. Run with \`a\` to install all three, or pass" >&2
+          echo "\`--target=<list>\` explicitly." >&2
+          exit 0
+        fi
+        TARGETS=("${default_targets[@]}")
+        break
+        ;;
+      a|A)
+        TARGETS=("${ALL_TARGETS[@]}")
+        break
+        ;;
+      e|E)
+        # Fall through to per-target loop with detection-flipped defaults.
+        # Reuses v1.4.0 prompt body; defaults flip per eng-review R7
+        # ([detected] annotation dropped).
+        echo ""
+        declare -a chosen=()
+        for t in "${ALL_TARGETS[@]}"; do
+          label=$(target_label "$t")
+          root=$(target_root "$t")
+          if target_detected "$t"; then
+            printf "  Install into %s (%s)? [Y/n] " "$label" "$root"
+            default_yes=1
+          else
+            printf "  Install into %s (%s)? [y/N] " "$label" "$root"
+            default_yes=0
+          fi
+          edit_reply=""
+          if ! read -r edit_reply </dev/tty; then
+            edit_reply=""
+          fi
+          case "$edit_reply" in
+            y|Y|yes|YES) chosen+=("$t") ;;
+            n|N|no|NO)   ;;
+            "")          [ "$default_yes" = "1" ] && chosen+=("$t") ;;
+            *)           [ "$default_yes" = "1" ] && chosen+=("$t") ;;
+          esac
+        done
+        echo ""
+        if [ "${#chosen[@]}" -eq 0 ]; then
+          echo "No targets selected. Nothing to install."
+          exit 0
+        fi
+        TARGETS=("${chosen[@]}")
+        break
+        ;;
+      d|D)
+        # Dry-run from prompt (eng-review R3: empty defaults → exit with hint).
+        if [ "${#default_targets[@]}" -eq 0 ]; then
+          echo ""
+          echo "Nothing to dry-run — no targets detected. Use \`a\` to preview all 3," >&2
+          echo "or pass \`--target=<list>\` explicitly." >&2
+          exit 0
+        fi
+        DRY_RUN=1
+        TARGETS=("${default_targets[@]}")
+        break
+        ;;
+      n|N|q|Q)
+        echo ""
+        echo "Nothing to install."
+        exit 0
+        ;;
+      *)
+        if [ "$attempt" -ge 2 ]; then
+          echo "" >&2
+          echo "Two unknown inputs in a row. Aborting." >&2
+          echo "Valid: Enter / a / e / d / q (or n)." >&2
+          exit 1
+        fi
+        echo "  (unknown input — try a/e/d/q or Enter)" >&2
+        ;;
     esac
   done
-  echo ""
-  if [ "${#chosen[@]}" = "0" ]; then
-    echo "No targets selected. Nothing to install."
-    exit 0
-  fi
-  TARGETS=("${chosen[@]}")
 else
-  # Non-TTY (CI, piped) — default to all three per user spec.
-  # CI users wanting a single target should pass --target=<name> explicitly.
+  # Non-TTY (CI, piped) → install all three (v1.4.0 default preserved).
   TARGETS=("${ALL_TARGETS[@]}")
 fi
 
+# Empty TARGETS guard (defensive — shouldn't reach here but just in case).
+if [ "${#TARGETS[@]}" -eq 0 ]; then
+  echo "ERROR: no targets resolved. Re-run with --target=<list> or --yes." >&2
+  exit 2
+fi
+
 # ───────────────────────────────────────────────────────────────────────────
-# Per-skill install (extracted in v1.4.0 — Beck refactor: make the change easy
-# first, then make the easy change). The body is unchanged from v1.3.0; only
-# the destination root is parameterized.
+# Per-skill install — renders SKILL.md to a target dir + symlinks bin/ and
+# sub-docs. Body unchanged from v1.4.0; v1.5.0 just calls it with a staging
+# dir as the second arg instead of the production target_root.
 # ───────────────────────────────────────────────────────────────────────────
 install_skill_to_target() {
   local skill_dir="$1"
@@ -212,6 +375,53 @@ install_skill_to_target() {
 }
 
 # ───────────────────────────────────────────────────────────────────────────
+# Recovery pass for a target (v1.5.0).
+#
+# Cleans orphaned staging/.old directories from prior failed/interrupted runs.
+# Power-failure recovery: if production skills/ is missing AND .old exists,
+# restore .old → skills (rollback the partial mv chain).
+# ───────────────────────────────────────────────────────────────────────────
+recover_target_state() {
+  local root="$1"
+  local parent staging_glob old_dir
+  parent="$(dirname "$root")"
+  [ -d "$parent" ] || return 0
+
+  old_dir="${root}.old"
+
+  # Power-failure recovery: skills/ missing but .old present → restore.
+  if [ ! -d "$root" ] && [ -d "$old_dir" ]; then
+    if mv "$old_dir" "$root" 2>/dev/null; then
+      echo "  (recovered from prior interrupted install: restored $root)" >&2
+    fi
+  fi
+
+  # Clean stale .old directories older than 1 hour (3600s).
+  if [ -d "$old_dir" ]; then
+    local age_seconds=0
+    if [ -n "$(find "$old_dir" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+      rm -rf "$old_dir"
+    fi
+  fi
+
+  # Clean ALL orphaned staging dirs (any age — they're transient).
+  for staging_glob in "${root}.staging."*; do
+    [ -d "$staging_glob" ] || continue
+    # Keep .staging.failed.* under 24h for debugging; remove older than that.
+    case "$staging_glob" in
+      *.staging.failed.*)
+        if [ -n "$(find "$staging_glob" -maxdepth 0 -mmin +1440 2>/dev/null)" ]; then
+          rm -rf "$staging_glob"
+        fi
+        ;;
+      *)
+        rm -rf "$staging_glob"
+        ;;
+    esac
+  done
+}
+
+# ───────────────────────────────────────────────────────────────────────────
 # Main install flow
 # ───────────────────────────────────────────────────────────────────────────
 
@@ -221,7 +431,7 @@ else
   echo "Installing vibestack..."
 fi
 
-# Create vibestack state and bin directories (skip in dry-run)
+# Create vibestack state and bin directories (skip in dry-run).
 if [ "$DRY_RUN" != "1" ]; then
   mkdir -p "$VIBE_BIN"
   mkdir -p "$VIBE_HOME/projects"
@@ -244,11 +454,13 @@ if [ "$DRY_RUN" != "1" ]; then
   fi
 fi
 
-# Per-target install — each is independent. Cursor and Kiro are different
-# applications; the install just routes the same SKILL.md to each one's
-# native skills directory. They run in separate sessions.
-total_installed=0
-declare -a per_target_summary
+# Per-target staging + atomic swap.
+# Single source of truth: target_status, target_count, target_failed_at,
+# hook_count maps (eng-review R1).
+declare -A target_status      # target → ok|failed
+declare -A target_count       # target → "N/M"
+declare -A target_failed_at   # target → skill name (only on failure)
+declare -A hook_count         # target → number of hook-bearing skills installed
 hook_skills_installed_non_claude=0
 
 for target in "${TARGETS[@]}"; do
@@ -256,14 +468,10 @@ for target in "${TARGETS[@]}"; do
   label=$(target_label "$target")
   if [ -z "$root" ]; then
     echo "ERROR: could not resolve root for target '$target'" >&2
-    exit 3
-  fi
-
-  if [ "$DRY_RUN" != "1" ]; then
-    if ! mkdir -p "$root"; then
-      echo "ERROR: cannot create target root $root" >&2
-      exit 3
-    fi
+    target_status["$target"]="failed"
+    target_failed_at["$target"]="(invalid target name)"
+    target_count["$target"]="0/$total_skills"
+    continue
   fi
 
   echo ""
@@ -273,46 +481,165 @@ for target in "${TARGETS[@]}"; do
     echo "── $label ($root)"
   fi
 
+  # Recovery pass before this target's install.
+  if [ "$DRY_RUN" != "1" ]; then
+    recover_target_state "$root"
+  fi
+
+  # Determine where renders go: staging dir for atomic swap, or directly to
+  # root for dry-run (which doesn't write anyway).
+  if [ "$DRY_RUN" = "1" ]; then
+    staging_dir="$root"
+  else
+    staging_dir="${root}.staging.$$"
+    if ! mkdir -p "$staging_dir"; then
+      echo "ERROR: cannot create staging dir $staging_dir" >&2
+      target_status["$target"]="failed"
+      target_failed_at["$target"]="(staging mkdir)"
+      target_count["$target"]="0/$total_skills"
+      hook_count["$target"]=0
+      continue
+    fi
+  fi
+
   installed=0
+  failed_skill=""
+  this_target_hooks=0
+
   for skill_dir in "$SKILLS_SRC"/*/; do
     [ -f "$skill_dir/SKILL.md" ] || continue
 
-    if ! install_skill_to_target "$skill_dir" "$root"; then
-      echo "ERROR: install failed at skill $(basename "$skill_dir") for $label" >&2
-      exit 2
+    if ! install_skill_to_target "$skill_dir" "$staging_dir"; then
+      failed_skill=$(basename "$skill_dir")
+      break  # Per-target fail-fast; cross-target continue.
     fi
 
     installed=$((installed + 1))
 
     if [ "$target" != "claude" ] && grep -q "^hooks:" "$skill_dir/SKILL.md" 2>/dev/null; then
-      hook_skills_installed_non_claude=$((hook_skills_installed_non_claude + 1))
+      this_target_hooks=$((this_target_hooks + 1))
     fi
   done
 
-  total_installed=$((total_installed + installed))
-  if [ "$DRY_RUN" = "1" ]; then
-    per_target_summary+=("  $label: $installed skills (would write)")
+  target_count["$target"]="$installed/$total_skills"
+  hook_count["$target"]=$this_target_hooks
+
+  # Resolve outcome for this target.
+  if [ -n "$failed_skill" ]; then
+    target_status["$target"]="failed"
+    target_failed_at["$target"]="$failed_skill"
+    # Park staging dir as .staging.failed.<ts> for debugging — don't touch prod.
+    if [ "$DRY_RUN" != "1" ] && [ -d "$staging_dir" ]; then
+      mv "$staging_dir" "${root}.staging.failed.$(date +%s)" 2>/dev/null || rm -rf "$staging_dir"
+    fi
+    echo "  installing $total_skills skills... failed at /${failed_skill}"
   else
-    per_target_summary+=("  $label: $installed skills → $root")
+    target_status["$target"]="ok"
+    if [ "$DRY_RUN" != "1" ]; then
+      # Hook count attaches to the global counter ONLY on successful targets
+      # (R15: warn about hooks that actually landed, even on partial success).
+      hook_skills_installed_non_claude=$((hook_skills_installed_non_claude + this_target_hooks))
+      # Atomic swap: rename current root aside, swap staging in.
+      if [ -d "$root" ]; then
+        # Remove any prior .old first — recovery only cleans .old >1h old, so
+        # rapid reruns can leave a recent .old in place. Without this, `mv root
+        # .old` would move root INSIDE the existing .old dir (POSIX mv behavior
+        # when target is a non-empty dir), corrupting the rollback layout and
+        # accumulating nested backups across reruns.
+        rm -rf "${root}.old" 2>/dev/null
+        if ! mv "$root" "${root}.old" 2>/dev/null; then
+          echo "ERROR: cannot move $root aside for atomic swap" >&2
+          target_status["$target"]="failed"
+          target_failed_at["$target"]="(swap-aside)"
+          rm -rf "$staging_dir"
+          echo "  installing $total_skills skills... failed at swap"
+          continue
+        fi
+      fi
+      if ! mv "$staging_dir" "$root" 2>/dev/null; then
+        echo "ERROR: cannot swap staging $staging_dir → $root" >&2
+        # Try to roll back .old → root.
+        [ -d "${root}.old" ] && mv "${root}.old" "$root" 2>/dev/null
+        target_status["$target"]="failed"
+        target_failed_at["$target"]="(swap-in)"
+        echo "  installing $total_skills skills... failed at swap"
+        continue
+      fi
+      # Old install lingers as .old until next run's recovery pass cleans it.
+    fi
+    echo "  installing $total_skills skills... done ($installed/$total_skills)"
   fi
 done
 
 # ───────────────────────────────────────────────────────────────────────────
-# Summary
+# Outcome summary (v1.5.0)
+#
+# Compute any_failed. Output strings preserve v1.4.x form on the all-success
+# path ("Installation complete:" colon-form). Failure path uses
+# "Installation incomplete:" header. Hook warning fires when ANY successful
+# non-claude target landed hook-bearing skills (R15 — surfaces safety info
+# even on partial success). Happy-path CTA suppressed on any failure.
 # ───────────────────────────────────────────────────────────────────────────
+any_failed=0
+for t in "${TARGETS[@]}"; do
+  [ "${target_status[$t]:-}" = "failed" ] && any_failed=1
+done
+
 echo ""
+if [ "$any_failed" = "1" ]; then
+  echo "Installation incomplete:"
+  # Successes first.
+  for t in "${TARGETS[@]}"; do
+    if [ "${target_status[$t]:-}" = "ok" ]; then
+      label=$(target_label "$t")
+      root=$(target_root "$t")
+      if [ "$DRY_RUN" = "1" ]; then
+        echo "  ✓ $label: ${target_count[$t]} skills (would write)"
+      else
+        echo "  ✓ $label: ${target_count[$t]} skills → $root"
+      fi
+    fi
+  done
+  # Failures last (eye-anchored at bottom).
+  for t in "${TARGETS[@]}"; do
+    if [ "${target_status[$t]:-}" = "failed" ]; then
+      label=$(target_label "$t")
+      root=$(target_root "$t")
+      failed_at="${target_failed_at[$t]:-?}"
+      echo "  ✗ $label: failed at /${failed_at} ($root/${failed_at}/SKILL.md)"
+    fi
+  done
+  echo ""
+  echo "Re-run ./install after fixing the underlying error (idempotent)."
+  # Hook warning STILL fires if hooks landed in successful targets (R15).
+  if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
+    echo ""
+    echo "  ⚠ Hook-bearing skills (careful, freeze, guard, investigate) were"
+    echo "    installed into non-Claude targets that completed. Their PreToolUse"
+    echo "    hooks may not fire identically across Cursor/Kiro."
+    echo "    Verify per: docs/hook-verification.md"
+  fi
+  # Happy-path CTA suppressed on partial failure.
+  exit 1
+fi
+
+# All targets succeeded — preserve v1.4.x output form exactly.
 if [ "$DRY_RUN" = "1" ]; then
   echo "Dry run complete. Would install:"
 else
   echo "Installation complete:"
 fi
-for line in "${per_target_summary[@]}"; do
-  echo "$line"
+for t in "${TARGETS[@]}"; do
+  label=$(target_label "$t")
+  root=$(target_root "$t")
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "  $label: ${target_count[$t]} skills (would write)"
+  else
+    echo "  $label: ${target_count[$t]} skills → $root"
+  fi
 done
 
-# Post-install reminder for non-claude targets with hook-bearing skills
-# (Day 0 Track A finding F2 — runtime behavior of `${CLAUDE_SKILL_DIR}` and
-# `hooks:` is unverified for Cursor/Kiro).
+# Hook warning preserved on success path.
 if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo ""
   echo "  ⚠ Hook-bearing skills (careful, freeze, guard, investigate) were"
@@ -321,6 +648,7 @@ if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo "    Verify per: docs/hook-verification.md"
 fi
 
+# Happy-path CTA preserved.
 if [ "$DRY_RUN" != "1" ]; then
   echo ""
   echo "Try /office-hours first in a new session of your chosen agent."
@@ -328,3 +656,5 @@ if [ "$DRY_RUN" != "1" ]; then
   echo "Compatibility matrix: docs/agent-skills-compatibility-audit.md"
   echo "Uninstall: $REPO_DIR/uninstall"
 fi
+
+exit 0
