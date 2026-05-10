@@ -28,19 +28,6 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Priority: P3.
    Depends on: v1.4 ship + at least one user requesting it.
 
-8. **`./install` auto-detect + interactive prompt + per-target
-   progress UX** — the original UX-rich install flow deferred per
-   eng review Tension 2 (Codex outside-voice argued: prove runtime
-   first, polish UX after). Makes `./install` one-keystroke for the
-   common case ("Found Claude+Cursor, install both? [Y/n]").
-   Per-target progress reporter + fail-summary line on partial
-   failure.
-   Effort: M (~1.5 days).
-   Priority: P2 (matches user's original requirement).
-   Depends on: v1.4 ship AND Day 0 verifying skills actually load
-   correctly in cursor/kiro. If Day 0 surfaces broken behavior in
-   a target, this UX work is wasted until that target is fixed.
-
 ### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
@@ -71,19 +58,6 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Priority: P3.
    Depends on: nothing (can be done anytime if motivated).
 
-4. **`./install --staged` (atomic stage-and-swap)** — surface from
-   eng review's Codex pass: v1 install is best-effort
-   (per-file atomic mv, but per-run partial). For users on shared
-   CI infra or shared workstations who need true all-or-nothing
-   install, add `./install --staged`: render all 46 skills to
-   `~/.claude/skills.staging/`, then `mv ~/.claude/skills{,.old}`
-   and `mv ~/.claude/skills.staging ~/.claude/skills`. Edge case:
-   power failure mid-rename leaves `.old` behind; recovery on next
-   run.
-   Effort: M (~30 lines + power-failure handling).
-   Priority: P3.
-   Depends on: v1 ship.
-
 5. **Lint rule for unbalanced markdown fences in skill sources** —
    v1's renderer uses minimal fence-state tracking (toggles `in_fence`
    on `^\`\`\``). An unbalanced fence in a skill source would silently
@@ -94,7 +68,57 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Priority: P3.
    Depends on: v1 ship.
 
+### From v1.5 install UX polish eng review (2026-05-10)
+
+Source design doc:
+`~/.vibestack/projects/vibestack/timurgaleev-main-design-20260510-182355.md`
+(APPROVED, eng-review CLEARED with atomic-install pivot per Codex outside-voice).
+
+9. **Detection heuristic refinement** — Codex outside-voice flagged that
+   the v1.4.x detection check (`[ -d "$HOME/.${t}" ] || command -v "$t"
+   >/dev/null 2>&1`) is a proxy, not real detection. An old uninstalled
+   Cursor leaves `~/.cursor/`. A stale Homebrew binary on PATH isn't real
+   detection. With v1.5's "Enter installs detected" default, false positives
+   surprise users (`why did it install Cursor when I uninstalled it months
+   ago?`). Tighten detection: app version metadata (e.g.,
+   `~/.cursor/User/globalStorage/storage.json` recency), recent-mtime on
+   target dir, or an interactive confirmation. OS-specific app-detection
+   logic adds surface; defer until a real false-positive is reported.
+   Effort: M (~1 day, target-by-target detection refinement).
+   Priority: P3.
+   Depends on: v1.5 ship + at least one user report.
+
 ## Completed
+
+### Install UX polish + atomic install — shipped in v1.5.0 (2026-05-10)
+
+Driven by `/office-hours` (TODO #8 source design), refined through `/plan-eng-review`
+with a Codex outside-voice that produced a strategic pivot from fail-soft polish
+to per-target staged/atomic install. v1.5.0 closes both deferred items.
+
+Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260510-182355.md`
+(APPROVED, 8.5/10 spec-review, ENG-REVIEW CLEARED with 17 resolutions).
+
+1. **`./install` auto-detect + interactive prompt + per-target progress UX** (was Open #8).
+   Shipped as the install plan + Enter UX: write plan listing each target's path
+   and detection status, single prompt with `Enter / a / e / d / q` branches,
+   per-target counter (`installing 46 skills... done (46/46)`), `Installation
+   complete:` / `Installation incomplete:` outcome headers, fail-summary with
+   ✓/✗ per target. Hook warning preserved on partial success (R15 — Codex
+   outside-voice catch).
+2. **`./install --staged` (atomic stage-and-swap)** (was Open #4). Implemented
+   inline as the v1.5 default — every install renders to
+   `~/.<target>/skills.staging.<pid>/` then atomically swaps via
+   `mv skills{,.old}` + `mv staging skills`. Per-target atomicity. Recovery
+   pass cleans orphaned `.staging` dirs and restores from `.old` on power-failure
+   detection. No separate `--staged` flag needed; the behavior is the default.
+3. **PTY test harness + 15 integration tests.** `test/pty-run.py` (Python `pty`
+   module) exercises TTY-gated install paths; new tests cover prompt branches,
+   atomic-swap, staging-failure preservation, recovery, SIGINT.
+4. **Bash 4+ now enforced** with a `BASH_VERSINFO` guard at install start
+   (de facto since v1.4.0; v1.5.0 surfaces it explicitly with a Homebrew hint).
+5. **SIGINT/SIGTERM trap** with separate exit codes (130 for INT, 143 for TERM
+   per Codex outside-voice; the design's original `INT TERM → 130` was wrong).
 
 ### DX Review — shipped in v1.2.0 (2026-05-03)
 
