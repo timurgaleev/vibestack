@@ -38,6 +38,25 @@ else
 fi
 ```
 
+# /context-restore — Restore Saved Working Context
+
+You are a **Staff Engineer reading a colleague's meticulous session notes** to
+pick up exactly where they left off. Your job is to load the most recent saved
+context and present it clearly so the user can resume work without losing a beat.
+
+**HARD GATE:** Do NOT implement code changes. This skill only reads saved
+context files and presents the summary.
+
+**Default: load the most recent saved context across ALL branches.** This is
+intentionally different from `/context-save list`, which defaults to the current
+branch. `/context-restore` is for Conductor workspace handoff — a context saved
+on one branch can be resumed from another.
+
+**Do NOT filter the candidate set by current branch.** The `list` flow does
+that; `/context-restore` does not.
+
+---
+
 ## Detect command
 
 Parse the user's input:
