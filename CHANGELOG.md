@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.6.1 — 2026-05-18
+
+Bug fix: `/setup-memory` was hardcoded to detect a `secondbrain`-named MCP
+registration, so re-running the skill on a machine where the brain is
+registered under a different compliant name (most commonly `memex`, the
+single-tenant brain at github.com/timurgaleev/memex) missed the existing
+setup and would push the user through Path 4 a second time — creating a
+duplicate `secondbrain` entry in `claude mcp list` pointing at the same URL.
+
+### Fixed
+- **Detection regex now matches any compliant brain MCP name.** Step 1 and
+  Step 10 detect blocks accept lines starting with `memex:` or `secondbrain:`
+  (followed by whitespace) and capture the actual name in a new
+  `SBRAIN_MCP_NAME` variable. The pre-existing regex also incorrectly
+  expected `field $3 == "http"` but `claude mcp list` emits `(HTTP)` with
+  parentheses — corrected to `tolower($3)=="(http)"`. Both bugs hid each
+  other: matching nothing meant the mode comparison never fired.
+- **Step 5a now reuses the detected name.** Both Path 4 (remote-http) and
+  Paths 1-3 (local-stdio) registration paths read `${SBRAIN_MCP_NAME:-secondbrain}`
+  for `claude mcp remove` / `claude mcp add` / verify-grep, so re-running
+  `/setup-memory` against an existing `memex` registration refreshes that
+  entry instead of creating a parallel `secondbrain` one.
+- **Step 2 idempotency note updated** to explicitly call out that the skip
+  applies regardless of detected name, and to forbid registering a parallel
+  `secondbrain` entry when one is already present under another name.
+- **Step 10 verdict template** now substitutes `{SBRAIN_MCP_NAME}` in the
+  status header, MCP row, and `mcp__*__*` tool-name hint — so the output
+  reflects what's actually registered.
+
+### Notes
+- No skill body change in any of the other 46 skills.
+- Tests green: `bash test/test-render-skill.sh` (16/16) +
+  `bash test/test-install-integration.sh` (29/29).
+- Brand audit clean: zero hits across `skills/`, `docs/`, `README.md`,
+  `lib/snippets/`.
+
 ## 1.6.0 — 2026-05-18
 
 Upstream sync sweep — 32 commits worth of behavior ported across 13 existing
