@@ -129,7 +129,7 @@ shape. Claude-Code-specific runtime extensions (the `${CLAUDE_SKILL_DIR}`
 env var, per-skill `PreToolUse` hooks, the `Agent` and `AskUserQuestion`
 tools) are NOT covered by the spec.
 
-For 42 of 46 skills (pure-prose workflows), this is fine — modern LLMs
+For 43 of 47 skills (pure-prose workflows), this is fine — modern LLMs
 map "ask the user" or "dispatch a subagent" to whatever native equivalent
 exists in the host agent. Empirically verified across all three targets.
 
@@ -188,7 +188,7 @@ the install updates every chosen target.
 
 ## What's in the box
 
-46 skills in seven categories. Full reference: [`docs/skills.md`](docs/skills.md).
+47 skills in seven categories. Full reference: [`docs/skills.md`](docs/skills.md).
 
 ### Product & Planning
 | Command | What it does |
@@ -233,7 +233,8 @@ the install updates every chosen target.
 |---------|-------------|
 | `/retro` | Weekly engineering retrospective — shipped, broke, blocked, action items |
 | `/learn` | Capture and persist project learnings to prevent solving the same problem twice |
-| `/document-release` | Write release notes and update CHANGELOG |
+| `/document-release` | Post-ship doc sweep — Diataxis coverage map, CHANGELOG voice, PR title sync |
+| `/document-generate` | Generate complete Diataxis docs (tutorial / how-to / reference / explanation) for a feature, module, or project |
 | `/devex-review` | Developer experience review — setup, CI, tooling, onboarding |
 | `/health` | Code quality dashboard — type errors, lint, tests, coverage, security, composite score |
 | `/benchmark` | Performance benchmarking — build size, test speed, regression detection |
