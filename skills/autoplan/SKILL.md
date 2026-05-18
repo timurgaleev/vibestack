@@ -882,6 +882,8 @@ noting which items are incomplete. Do not loop indefinitely.
 
 ## Phase 4: Final Approval Gate
 
+{{include lib/snippets/tasks-section-aggregate.md}}
+
 **STOP here and present the final state to the user.**
 
 Present as a message, then use AskUserQuestion:
@@ -932,6 +934,13 @@ I recommend [X] — [principle]. But [Y] is also viable:
 
 ### Deferred to TODOS.md
 [Items auto-deferred with reasons]
+
+### Implementation Tasks (aggregated across phases)
+[Substitute the contents of $AGGREGATED_TASKS computed by the aggregator above.
+ Each line is a markdown checkbox derived from the per-phase JSONL artifacts
+ written by plan-ceo-review, plan-design-review, plan-eng-review, and
+ plan-devex-review. If $AGGREGATED_TASKS is empty, render the no-tasks fallback
+ message described in the aggregator block.]
 ```
 
 **Cognitive load management:**

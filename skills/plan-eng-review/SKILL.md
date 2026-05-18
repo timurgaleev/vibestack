@@ -576,6 +576,8 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * **Coverage vs kind:** for every per-issue AskUserQuestion you raise in this review, decide whether the options differ in coverage or in kind. If coverage (e.g., more tests vs fewer, complete error handling vs happy-path-only, full edge-case coverage vs shortcut), include `Completeness: N/10` on each option. If kind (e.g., architectural choice between two different systems, posture-over-posture, A/B/C where each is a different kind of thing), skip the score and add one line: `Note: options differ in kind, not coverage — no completeness score.` Do NOT fabricate scores on kind-differentiated questions — filler scores are worse than no score.
 * **Escape hatch (tightened):** If a section has zero findings, state "No issues, moving on" and proceed. If it has findings, use AskUserQuestion for each — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Only skip AskUserQuestion when the decision is genuinely trivial (e.g., a typo fix) AND there are no meaningful alternatives. When in doubt, ask.
 
+{{include lib/snippets/tasks-section-emit.md}}
+
 ## Required outputs
 
 ### "NOT in scope" section
