@@ -1,6 +1,6 @@
 # vibestack
 
-> 46 opinionated AI coding workflows. One install. Works in **Claude Code**, **Cursor**, and **Kiro**.
+> 47 opinionated AI coding workflows. One install. Works in **Claude Code**, **Cursor**, and **Kiro**.
 
 [![GitHub Release](https://img.shields.io/github/v/release/timurgaleev/vibestack?style=flat-square&color=000)](https://github.com/timurgaleev/vibestack/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-000?style=flat-square)](LICENSE)
