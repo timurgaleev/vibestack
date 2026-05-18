@@ -2,10 +2,10 @@
 
 **Generated:** 2026-05-09 (Day 0 Track A of v1.4.0 multi-target install)
 **Track B verified:** 2026-05-09 (Cursor 2026.05.07-42ddaca, Kiro CLI 2.2.2)
-**Skills audited:** 46
+**Skills audited:** 47 (originally 46 on 2026-05-09; `/document-generate` added in v1.6.0 with same compliance profile as `/document-release`)
 **Spec reference:** [agentskills.io/specification](https://agentskills.io/specification)
 
-This audit verifies vibestack's 46 skills against the Agent Skills open standard,
+This audit verifies vibestack's 47 skills against the Agent Skills open standard,
 which Claude Code, Cursor (`~/.cursor/skills/`), and Kiro (`~/.kiro/skills/`) all
 implement. The spec standardizes the SKILL.md **file shape** — frontmatter +
 markdown body. It does **not** standardize runtime behavior (hooks, env vars,
@@ -19,17 +19,17 @@ results are in the new "Track B — Empirical Verification" section near the end
 
 | Audit dimension | Pass/Fail | Skills affected |
 |---|---|---|
-| Required `name` field present | 46/46 PASS | — |
-| `name` matches directory basename | 46/46 PASS | — |
-| Required `description` field present | 46/46 PASS | — |
-| Description ≤ 1024 chars (spec limit) | 46/46 PASS | — |
-| YAML frontmatter parseable | 46/46 PASS | — |
+| Required `name` field present | 47/47 PASS | — |
+| `name` matches directory basename | 47/47 PASS | — |
+| Required `description` field present | 47/47 PASS | — |
+| Description ≤ 1024 chars (spec limit) | 47/47 PASS | — |
+| YAML frontmatter parseable | 47/47 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
 | Skills using `${CLAUDE_SKILL_DIR}` substitution | 5 skills | careful, freeze, guard, investigate, ship |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
 | Skills using `AskUserQuestion` (Claude-specific) | ~44 skills | most of the pack |
 
-**Verdict:** All 46 skills are **spec-compliant for file shape**. Cross-target
+**Verdict:** All 47 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
 runtime verification (manual, requires Cursor/Kiro running on the user's machine).
 
@@ -53,6 +53,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | design-review | — | — | yes | full / instr-only / instr-only |
 | design-shotgun | — | — | yes | full / instr-only / instr-only |
 | devex-review | — | — | — | full / full / full |
+| document-generate | — | — | — | full / full / full |
 | document-release | — | — | — | full / full / full |
 | freeze | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | guard | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
@@ -96,7 +97,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 
 ## Findings
 
-### F1 — All 46 skills are spec-compliant on file shape (PASS)
+### F1 — All 47 skills are spec-compliant on file shape (PASS)
 
 Every skill has a parseable YAML frontmatter block, a required `name` matching
 its directory basename, a required `description` under the spec's 1024-char
