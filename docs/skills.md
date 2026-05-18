@@ -235,11 +235,20 @@ Triggers: `learn`, `save learning`, `capture this`
 ---
 
 ### `/document-release`
-Write release notes and update CHANGELOG.
+Post-ship documentation sweep.
 
-Reads git log since last tag, groups changes by type (feat/fix/perf/breaking), writes human-readable release notes, and updates CHANGELOG.md. Outputs a draft you review before committing.
+Builds a Diataxis coverage map of what shipped vs what's documented (reference / how-to / tutorial / explanation), detects architecture-diagram drift, polishes the CHANGELOG entry against a 0-3 sell-test rubric, syncs the PR title to `v<VERSION>`, and surfaces "Documentation Debt" in the PR body when gaps are found. Auto-updates factual content; asks for narrative changes.
 
-Triggers: `document release`, `write release notes`, `update changelog`
+Triggers: `update docs after ship`, `document what changed`, `post-ship docs`
+
+---
+
+### `/document-generate`
+Generate complete documentation from scratch.
+
+Uses the Diataxis framework to produce structured documentation for a feature, module, or entire project: tutorials (learning-oriented), how-tos (task-oriented), reference (information-oriented), and explanation (understanding-oriented). Researches the full codebase surface first, then writes — accuracy over elegance. Can be invoked standalone or by `/document-release` to fill coverage gaps.
+
+Triggers: `write docs for this`, `generate documentation`, `document this feature`, `create a tutorial`, `write a how-to`, `explain this module`
 
 ---
 
