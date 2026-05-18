@@ -115,8 +115,10 @@ Branch on the `--repo`, `--switch`, `--resume-provision`, `--cleanup-orphans`
 invocation flags here and skip to the matching step.
 
 Also capture `sbrain_local_status` (one of `ok`, `broken-db`, `broken-config`,
-`no-cli`, `missing-config`) and `sbrain_mcp_mode` (`local-stdio`, `remote-http`,
-or empty) so Step 1.5 and Step 2 can branch on them. Compute them inline:
+`no-cli`, `missing-config`), `sbrain_mcp_name` (the registered MCP name —
+`memex`, `secondbrain`, or other compliant brand) and `sbrain_mcp_mode`
+(`local-stdio`, `remote-http`, or empty) so Step 1.5 and Step 2 can branch on
+them. Compute them inline:
 
 ```bash
 SBRAIN_LOCAL_STATUS="ok"
@@ -129,8 +131,18 @@ elif ! $SBRAIN_DOCTOR_OK; then
   # (config malformed). Falls back to broken-db if json parse worked at Step 1.
   if [ -n "$SBRAIN_ENGINE" ]; then SBRAIN_LOCAL_STATUS="broken-db"; else SBRAIN_LOCAL_STATUS="broken-config"; fi
 fi
-SBRAIN_MCP_MODE=$(claude mcp list 2>/dev/null | awk '/^secondbrain[[:space:]]/{print ($3=="http" || $3=="HTTP")?"remote-http":"local-stdio"}' | head -1)
-echo "sbrain_local_status=$SBRAIN_LOCAL_STATUS sbrain_mcp_mode=${SBRAIN_MCP_MODE:-none}"
+# Detect any compliant brain MCP — backend-agnostic per vibestack policy.
+# `claude mcp list` lines look like:
+#   memex: https://brain.example.com/mcp (HTTP) - ✓ Connected
+#   secondbrain: /Users/foo/.bun/bin/secondbrain serve - ✓ Connected
+# Match either name, strip the trailing colon, and infer mode from the (HTTP)
+# marker. First match wins; downstream code should NOT assume the name is
+# `secondbrain`.
+_BRAIN_LINE=$(claude mcp list 2>/dev/null | awk '/^(memex|secondbrain):[[:space:]]/{print; exit}')
+SBRAIN_MCP_NAME=$(printf '%s\n' "$_BRAIN_LINE" | awk '{name=$1; sub(/:$/, "", name); print name}')
+SBRAIN_MCP_MODE=$(printf '%s\n' "$_BRAIN_LINE" | awk '{print (tolower($3)=="(http)")?"remote-http":"local-stdio"}')
+[ -z "$_BRAIN_LINE" ] && SBRAIN_MCP_MODE=""
+echo "sbrain_local_status=$SBRAIN_LOCAL_STATUS sbrain_mcp_name=${SBRAIN_MCP_NAME:-none} sbrain_mcp_mode=${SBRAIN_MCP_MODE:-none}"
 ```
 
 ---
@@ -207,9 +219,13 @@ Step 1.5 — fall through to Step 2 (where `no-cli` triggers Step 3 install and
 
 Only fire this if Step 1 shows no existing working config AND no shortcut
 flag was passed. **Special case:** if `sbrain_mcp_mode=remote-http` in the
-detect output, an HTTP MCP is already registered — skip directly to Step 5a
-verification (re-test the registration) and Step 6 onward, treating this run
-as idempotent. Don't ask Step 2 again.
+detect output (regardless of whether `sbrain_mcp_name` is `memex`,
+`secondbrain`, or another compliant brand), an HTTP MCP brain is already
+registered — skip directly to Step 5a verification (re-test the existing
+registration under its detected name) and Step 6 onward, treating this run
+as idempotent. Don't ask Step 2 again, and **never register a parallel
+`secondbrain` entry pointing at the same URL** — that creates a duplicate
+brain in `claude mcp list`.
 
 The question title: "Where should your brain live?"
 
@@ -606,17 +622,21 @@ The registration form depends on the path picked in Step 2:
 
 ### Path 4 (Remote MCP — HTTP transport with bearer)
 
-Tear down any prior registration (could be local-stdio from an old setup, or
-stale remote-http with a rotated token), then register with HTTP + bearer at
-user scope:
+Reuse the detected MCP name when one already exists; otherwise default to
+`secondbrain`. This prevents the skill from creating a duplicate `secondbrain`
+registration when the user already has a brain wired under a different name
+(typically `memex`).
 
 ```bash
-claude mcp remove secondbrain -s user 2>/dev/null || true
-claude mcp remove secondbrain 2>/dev/null || true
-claude mcp add --scope user --transport http secondbrain "$MCP_URL" \
+TARGET_NAME="${SBRAIN_MCP_NAME:-secondbrain}"
+# Tear down any prior registration under the same name (could be local-stdio
+# from an old setup, or stale remote-http with a rotated token).
+claude mcp remove "$TARGET_NAME" -s user 2>/dev/null || true
+claude mcp remove "$TARGET_NAME" 2>/dev/null || true
+claude mcp add --scope user --transport http "$TARGET_NAME" "$MCP_URL" \
   --header "Authorization: Bearer $SBRAIN_MCP_TOKEN"
 unset SBRAIN_MCP_TOKEN  # zero from process env after registration
-claude mcp list | grep secondbrain  # verify: should show "✓ Connected"
+claude mcp list | grep "$TARGET_NAME"  # verify: should show "✓ Connected"
 ```
 
 **Token-storage note:** `claude mcp add --header "Authorization: Bearer ..."`
@@ -633,13 +653,14 @@ this machine, not just the current workspace. Absolute path avoids PATH
 resolution issues when Claude Code spawns `secondbrain serve` as a subprocess.
 
 ```bash
+TARGET_NAME="${SBRAIN_MCP_NAME:-secondbrain}"
 SBRAIN_BIN=$(command -v secondbrain)
 [ -z "$SBRAIN_BIN" ] && SBRAIN_BIN="$HOME/.bun/bin/secondbrain"
-# Remove any existing local-scope registration to avoid conflicts
-claude mcp remove secondbrain -s user 2>/dev/null || true
-claude mcp remove secondbrain 2>/dev/null || true
-claude mcp add --scope user secondbrain -- "$SBRAIN_BIN" serve
-claude mcp list | grep secondbrain  # verify: should show "✓ Connected"
+# Remove any existing local-scope registration under the same name
+claude mcp remove "$TARGET_NAME" -s user 2>/dev/null || true
+claude mcp remove "$TARGET_NAME" 2>/dev/null || true
+claude mcp add --scope user "$TARGET_NAME" -- "$SBRAIN_BIN" serve
+claude mcp list | grep "$TARGET_NAME"  # verify: should show "✓ Connected"
 ```
 
 ### Both paths
@@ -908,8 +929,13 @@ Mac is a first-class doctor path: every step detects existing state, repairs
 only what's missing, and reports here.
 
 ```bash
-# Re-detect to surface fresh state
-SBRAIN_MCP_MODE=$(claude mcp list 2>/dev/null | awk '/^secondbrain[[:space:]]/{print ($3=="http" || $3=="HTTP")?"remote-http":"local-stdio"}' | head -1)
+# Re-detect to surface fresh state (matches the Step 1 detection block —
+# accept any compliant brain MCP name, strip trailing colon, infer mode from
+# the (HTTP) marker).
+_BRAIN_LINE=$(claude mcp list 2>/dev/null | awk '/^(memex|secondbrain):[[:space:]]/{print; exit}')
+SBRAIN_MCP_NAME=$(printf '%s\n' "$_BRAIN_LINE" | awk '{name=$1; sub(/:$/, "", name); print name}')
+SBRAIN_MCP_MODE=$(printf '%s\n' "$_BRAIN_LINE" | awk '{print (tolower($3)=="(http)")?"remote-http":"local-stdio"}')
+[ -z "$_BRAIN_LINE" ] && { SBRAIN_MCP_NAME=""; SBRAIN_MCP_MODE=""; }
 TRANSCRIPT_INGEST=$(vibe-config get transcript_ingest_mode 2>/dev/null || echo "off")
 MEMORY_SYNC=$(vibe-config get memory_sync_mode 2>/dev/null || echo "off")
 ```
@@ -919,13 +945,17 @@ Pick the right verdict template based on `SBRAIN_MCP_MODE`. Each row is
 
 ### Path 4 (Remote MCP)
 
-```
-secondbrain status: GREEN  (mode: remote-http)
+Substitute `{SBRAIN_MCP_NAME}` with the detected MCP name (e.g. `memex` or
+`secondbrain`) so the verdict reflects what's actually registered. The
+`mcp__*__*` tool prefix follows the same name.
 
-  MCP ............. OK   secondbrain v{SERVER_VERSION} at {MCP_URL}
+```
+{SBRAIN_MCP_NAME} status: GREEN  (mode: remote-http)
+
+  MCP ............. OK   {SBRAIN_MCP_NAME} v{SERVER_VERSION} at {MCP_URL}
   Auth ............ OK   bearer accepted (verified via /tools/list)
   Engine .......... N/A  remote mode
-  Doctor .......... N/A  remote mode (brain admin runs `secondbrain doctor`)
+  Doctor .......... N/A  remote mode (brain admin runs the engine's own doctor)
   Repo policy ..... OK   {read-write|read-only|deny}
   Memory sync ..... OK   {memory_sync_mode}
   Transcripts ..... {OK|N/A declined at Step 4d}
@@ -933,7 +963,7 @@ secondbrain status: GREEN  (mode: remote-http)
   CLAUDE.md ....... OK
   Smoke test ...... INFO printed for post-restart manual verification
 
-Restart Claude Code to pick up the `mcp__secondbrain__*` tools.
+Restart Claude Code to pick up the `mcp__{SBRAIN_MCP_NAME}__*` tools.
 Re-run `/setup-memory` any time the bearer rotates or the URL moves.
 ```
 
