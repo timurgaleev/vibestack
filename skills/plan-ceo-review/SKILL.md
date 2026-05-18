@@ -814,6 +814,8 @@ If this plan has significant UI scope, recommend: "Consider running /plan-design
 **STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY. If this section turned up zero findings, state "No issues, moving on" and proceed. If the section has findings, you MUST call AskUserQuestion as a tool_use — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Do NOT proceed until the user responds.
 **Reminder: Do NOT make any code changes. Review only.**
 
+{{include lib/snippets/tasks-section-emit.md}}
+
 ## Outside Voice — Independent Plan Challenge (optional, recommended)
 
 After all review sections are complete, offer an independent second opinion from a

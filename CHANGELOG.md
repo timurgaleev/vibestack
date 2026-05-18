@@ -1,5 +1,89 @@
 # Changelog
 
+## 1.6.0 — 2026-05-18
+
+Upstream sync sweep — 32 commits worth of behavior ported across 13 existing
+skills and 1 new skill. Pulls the latest review/codex/document-release/
+setup-memory improvements into vibestack while staying backend-agnostic.
+
+### Added
+- **`/document-generate` (new skill).** Generate complete documentation from
+  scratch using the Diataxis framework (tutorial / how-to / reference /
+  explanation). Researches the full codebase surface before writing — accuracy
+  over elegance. Can be invoked standalone or by `/document-release` to fill
+  coverage gaps. Skill count now 47.
+- **Per-phase Implementation Tasks aggregation.** New shared snippets
+  `lib/snippets/tasks-section-emit.md` and `tasks-section-aggregate.md` wire
+  the four `/plan-*` review skills to emit per-phase JSONL task artifacts
+  scoped to branch + recent commits, which `/autoplan` Phase 4 reads, dedupes
+  by `(component, files, title)`, sorts by priority, and renders as an
+  `### Implementation Tasks (aggregated across phases)` block in the Final
+  Approval Gate output.
+- **`/browse` Headed Mode + Proxy + Anti-Bot Sites.** New section documents
+  `--headed`, `--proxy socks5|http`, `download --navigate`, the
+  URL-vs-env-var credential policy, daemon-startup discipline,
+  `navigator.webdriver` stealth, container Xvfb auto-spawn, and the SOCKS5
+  fail-fast failure modes.
+- **Staff Engineer persona + HARD GATE** on `/context-save`, `/context-restore`,
+  and `/learn`. Sets a clear behavioral tone before the workflow starts. The
+  cross-branch default for `/context-restore` is now restated at the top.
+- **CSO persona on `/cso`.** Adds the "Chief Security Officer who has led
+  incident response on real breaches" framing and the "real attack surface is
+  your dependencies" opening. Subtitle bumped to "(v2)".
+- **`/investigate` hypothesis-keyed learnings re-search.** After naming a root
+  cause hypothesis, re-pulls learnings keyed to a single keyword from the
+  hypothesis with strict keyword discipline (alphanumeric/hyphen only). Mirrors
+  the same pattern in `/ship`.
+- **`/make-pdf` flag table.** Adds `--tagged` (accessible PDF), `--outline`
+  (PDF bookmarks), and `--allow-network` (fetch external images) to the
+  documented flag reference.
+
+### Changed
+- **`/codex` major rewrite (critical for Codex CLI ≥0.130.0).** New Step 0.5
+  multi-signal auth probe accepting any of `$CODEX_API_KEY`, `$OPENAI_API_KEY`,
+  or `~/.codex/auth.json`. Known-bad CLI version warning for `0.120.0/.1/.2`.
+  Portable `$PLAN_ROOT`/`$TMP_ROOT` (no more hardcoded `/tmp`/`~/.claude/plans`).
+  **Review Mode now dual-path:** bare `codex review --base` preserves the CLI's
+  built-in review template; `codex exec` with `DIFF_START`/`DIFF_END` markers
+  takes over when custom instructions are passed (Codex ≥0.130.0 rejects
+  prompt + `--base` together — the previous single-path implementation was
+  broken there). Synthesis Recommendation line is now REQUIRED in all three
+  modes with a canonical format the AskUserQuestion judge can grade.
+  Resume-session block added for Consult mode (`codex exec resume <session-id>`).
+  Hang detection + auth-error surfacing from captured stderr.
+- **`/document-release` major rewrite.** New Step 1.5 Coverage Map applies
+  Diataxis as an audit lens — extracts new public-surface items from the diff
+  and assesses each against reference / how-to / tutorial / explanation
+  coverage. Architecture diagram drift detection cross-references entity names
+  in ASCII/Mermaid blocks against the diff. Sell-test upgraded to a 0-3
+  Diataxis rubric (1 point each for "What changed?" / "Why care?" / "How to
+  use?"). PR body now grows a `### Documentation Debt` subsection when gaps
+  are found, with a suggested `docs-debt` label. New PR/MR title sync sub-step
+  rewrites titles to start with `v<VERSION>` (idempotent).
+- **`/setup-memory` major rewrite (single-machine, backend-agnostic).** New
+  Step 1.5 broken-engine remediation flow (Retry / Switch-to-PGLite / Switch
+  mode / Quit). **Path 4 Remote MCP** (HTTP transport with bearer token) for
+  users whose brain runs on another machine — registers via
+  `claude mcp add --transport http --header "Authorization: Bearer …"`, with
+  a verify round-trip against `tools/list` before registration. New Step 7.5
+  single-machine transcript ingest gate. Step 8 now writes a `## Memory Search
+  Guidance` block (HTML-delimited) into CLAUDE.md after the smoke test passes,
+  teaching the agent when to prefer secondbrain over Grep. New Step 10
+  GREEN/YELLOW/RED verdict block makes re-running `/setup-memory` a
+  first-class doctor path. PATH-shadow validation in Step 3 catches stale
+  global installs.
+- **`/ship` doc surfaces.** README skill table and `docs/skills.md` entries
+  for `/document-release` and `/document-generate` rewritten to reflect the
+  Diataxis coverage map and the new generation workflow.
+
+### Notes
+- All changes keep vibestack's skills backend-agnostic. The `/setup-memory`
+  Path 4 flow works against any compliant MCP-HTTP brain.
+- Tests green: `bash test/test-render-skill.sh` (16/16),
+  `bash test/test-install-integration.sh` (29/29).
+- Brand audit clean: zero hits for upstream identifiers across `skills/`,
+  `docs/`, `README.md`, `lib/snippets/`.
+
 ## 1.5.0 — 2026-05-10
 
 Install UX polish (TODO #8) + per-target atomic stage-and-swap (TODO #4).
