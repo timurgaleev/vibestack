@@ -972,6 +972,8 @@ DX reviews:
   genuinely trivial AND there are no meaningful DX alternatives. When in doubt, ask.
 * Assume the user hasn't looked at this window in 20 minutes. Re-ground every question.
 
+{{include lib/snippets/tasks-section-emit.md}}
+
 ## Required Outputs
 
 ### Developer Persona Card
