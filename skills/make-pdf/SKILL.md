@@ -190,8 +190,14 @@ Branding:
 
 Output:
   --page-numbers             "N of M" footer (default on)
+  --tagged                   Accessible PDF (default on)
+  --outline                  PDF bookmarks from headings (default on)
   --quiet                    Suppress progress on stderr
   --verbose                  Per-stage timings
+
+Network:
+  --allow-network            Fetch external images. Off by default
+                             (blocks tracking pixels).
 
 Metadata:
   --title "..."              Document title (defaults to first H1)
@@ -223,7 +229,7 @@ stderr: Rendering HTML...        ← progress (unless --quiet)
         Generating PDF...
         Done in 1.5s. 43 words · 22KB · /tmp/letter.pdf
 
-exit code: 0 success / 1 bad args / 2 render error / 3 timeout / 4 binary unavailable
+exit code: 0 success / 1 bad args / 2 render error / 3 Paged.js timeout / 4 binary unavailable
 ```
 
 Capture the path: `PDF=$("$P" generate letter.md)` — then use `$PDF`.

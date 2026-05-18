@@ -114,12 +114,104 @@ Report the detected state in one line. Skip downstream steps that are already do
 Branch on the `--repo`, `--switch`, `--resume-provision`, `--cleanup-orphans`
 invocation flags here and skip to the matching step.
 
+Also capture `sbrain_local_status` (one of `ok`, `broken-db`, `broken-config`,
+`no-cli`, `missing-config`) and `sbrain_mcp_mode` (`local-stdio`, `remote-http`,
+or empty) so Step 1.5 and Step 2 can branch on them. Compute them inline:
+
+```bash
+SBRAIN_LOCAL_STATUS="ok"
+if ! $SBRAIN_ON_PATH; then
+  SBRAIN_LOCAL_STATUS="no-cli"
+elif ! $SBRAIN_CONFIG_EXISTS; then
+  SBRAIN_LOCAL_STATUS="missing-config"
+elif ! $SBRAIN_DOCTOR_OK; then
+  # Distinguish broken-db (config valid but engine unreachable) from broken-config
+  # (config malformed). Falls back to broken-db if json parse worked at Step 1.
+  if [ -n "$SBRAIN_ENGINE" ]; then SBRAIN_LOCAL_STATUS="broken-db"; else SBRAIN_LOCAL_STATUS="broken-config"; fi
+fi
+SBRAIN_MCP_MODE=$(claude mcp list 2>/dev/null | awk '/^secondbrain[[:space:]]/{print ($3=="http" || $3=="HTTP")?"remote-http":"local-stdio"}' | head -1)
+echo "sbrain_local_status=$SBRAIN_LOCAL_STATUS sbrain_mcp_mode=${SBRAIN_MCP_MODE:-none}"
+```
+
+---
+
+## Step 1.5: Broken-local-engine remediation
+
+If `SBRAIN_LOCAL_STATUS` is `broken-db` or `broken-config` AND no shortcut flag
+was passed, the user has a non-working local engine (config exists but the
+engine it points at isn't reachable, OR the config itself is malformed). Fire
+a targeted AskUserQuestion BEFORE Step 2:
+
+> D# — Your local secondbrain engine isn't responding. How do you want to fix it?
+> Project/branch/task: <one-sentence grounding using detected slug + branch>
+> ELI10: secondbrain has a config at `~/.secondbrain/config.json` but the engine
+> it points at isn't reachable. That could be a transient outage (Postgres container
+> stopped, Tailscale down) OR a stale config you want to abandon. Different
+> remediation for each case.
+> Stakes if we pick wrong: "Switch to PGLite" overwrites your existing config
+> (one-way door if the user actually wanted the broken engine). "Retry" preserves
+> existing state for transient cases.
+> Recommendation: A (Retry) — always try the cheap option first; if engine is
+> just temporarily down it'll come back without any destructive change.
+> Note: options differ in kind, not coverage — no completeness score.
+> A) Retry — re-probe the engine (recommended; ~80ms)
+>   ✅ Cheapest test: re-runs `secondbrain doctor --json` to see if engine is back
+>   ✅ Zero side effects; existing config preserved
+>   ❌ If engine is permanently dead, retries forever; user must choose another option
+> B) Switch to local PGLite (one-way — moves existing config to .bak)
+>   ✅ Fastest path to a working local engine if user has abandoned the old one
+>   ✅ ~30s; no accounts; private to this machine
+>   ❌ Destructive — existing config moved to ~/.secondbrain/config.json.vibestack-bak-{ts}
+> C) Switch brain mode (continue to Step 2 path picker)
+>   ✅ Lets user pick Path 1/2/3/4 to re-init from scratch
+>   ✅ Preserves existing config until they explicitly init the new one
+>   ❌ Longer flow if user just wants to repair to PGLite
+> D) Quit (do nothing)
+>   ✅ No cons — this is a hard-stop choice
+>   ❌ N/A
+> Net: A is the right starting move; B/C are explicit destructive paths; D bails.
+
+**If A (Retry)**: re-run the detect block from Step 1. If the new
+`sbrain_local_status` is `ok`, continue to Step 2. If still `broken-db` or
+`broken-config`, fire the same AskUserQuestion again (the user picks again).
+
+**If B (Switch to PGLite)** — execute the rollback-safe init sequence:
+
+```bash
+BACKUP="$HOME/.secondbrain/config.json.vibestack-bak-$(date +%s)"
+mv "$HOME/.secondbrain/config.json" "$BACKUP"
+if ! secondbrain init --pglite --json; then
+  # Restore on failure
+  mv "$BACKUP" "$HOME/.secondbrain/config.json"
+  echo "secondbrain init failed. Your previous config was restored at $HOME/.secondbrain/config.json." >&2
+  echo "PGLite directory at ~/.secondbrain/pglite/ may be in a partial state — \`rm -rf ~/.secondbrain/pglite\` if needed before retrying." >&2
+  exit 1
+fi
+echo "Switched to local PGLite. Previous config saved at $BACKUP — review before deleting."
+```
+
+Then jump to Step 5a (MCP registration; the new PGLite engine is registered as
+local-stdio).
+
+**If C (Switch brain mode)**: continue to Step 2's normal path picker.
+
+**If D (Quit)**: STOP the skill cleanly.
+
+For `SBRAIN_LOCAL_STATUS` values of `no-cli` or `missing-config`, do NOT fire
+Step 1.5 — fall through to Step 2 (where `no-cli` triggers Step 3 install and
+`missing-config` triggers Step 4 init).
+
 ---
 
 ## Step 2: Pick a path (AskUserQuestion)
 
 Only fire this if Step 1 shows no existing working config AND no shortcut
-flag was passed. The question title: "Where should your brain live?"
+flag was passed. **Special case:** if `sbrain_mcp_mode=remote-http` in the
+detect output, an HTTP MCP is already registered — skip directly to Step 5a
+verification (re-test the registration) and Step 6 onward, treating this run
+as idempotent. Don't ask Step 2 again.
+
+The question title: "Where should your brain live?"
 
 Options (present based on detected state):
 
@@ -136,6 +228,11 @@ Options (present based on detected state):
   yourself; paste the URL back when ready.
 - **3 — PGLite local.** Zero accounts, ~30 seconds. Isolated brain on this
   Mac only. Best for try-first.
+- **4 — Remote secondbrain MCP.** Someone else (or another machine of yours) is
+  already running `secondbrain serve` with HTTP transport. You paste the MCP URL
+  + a bearer token; this skill registers it as your MCP. No local brain DB,
+  no local install needed. Recommended when the brain is shared across
+  machines or run by a teammate.
 - **Switch** (only if Step 1 detected an existing engine): "You already have
   a `<engine>` brain. Migrate it to the other engine?" → runs
   `secondbrain migrate --to <other>` wrapped in `timeout 180s`.
@@ -146,7 +243,11 @@ Do NOT silently pick; fire the AskUserQuestion.
 
 ## Step 3: Install memory CLI (secondbrain)
 
-Only if `SBRAIN_ON_PATH=false`:
+**SKIP entirely on Path 4 (Remote MCP).** Path 4 doesn't need a local secondbrain
+binary — all calls go through MCP to the remote server. Jump to Step 4 (the
+Path 4 subsection).
+
+For Paths 1, 2a, 2b, 3, switch — only if `SBRAIN_ON_PATH=false`:
 
 ```bash
 # Try bun first, fall back to npm
@@ -174,6 +275,28 @@ secondbrain --version
 
 If it still fails, surface the error and STOP — the environment is broken until
 the user fixes PATH. Do not continue the skill.
+
+**PATH-shadow validation.** Even when `secondbrain --version` succeeds, another
+binary earlier on `$PATH` may be shadowing the one we just installed (a stale
+global from a prior install, a colleague's fork checked into `~/bin/`, etc.).
+Validate that the resolved `secondbrain` lives in the expected install
+directory:
+
+```bash
+RESOLVED=$(command -v secondbrain)
+EXPECTED_DIRS=("$HOME/.bun/install/global/node_modules/secondbrain" "$HOME/.npm/global/node_modules/secondbrain" "$(npm prefix -g 2>/dev/null)/lib/node_modules/secondbrain")
+SHADOWED=true
+for d in "${EXPECTED_DIRS[@]}"; do
+  if printf '%s' "$RESOLVED" | grep -q "$(dirname "$d")"; then SHADOWED=false; break; fi
+done
+if $SHADOWED; then
+  echo "WARN: \`secondbrain\` resolves to $RESOLVED, which is outside the expected global install paths."
+  echo "      Another binary may be shadowing your install. Check \`type -a secondbrain\` and rearrange PATH if needed."
+fi
+```
+
+The warning is non-blocking — the user may have intentionally installed a fork —
+but surface it before continuing so half-broken setups don't get silently wired.
 
 ---
 
@@ -325,6 +448,120 @@ secondbrain init --pglite --json
 
 Done. No network, no secrets.
 
+### Path 4 (Remote secondbrain MCP — HTTP transport with bearer token)
+
+For users whose brain runs on another machine (Tailscale, ngrok, internal
+LAN, or a teammate's server). No local secondbrain CLI install, no local DB.
+This skill registers the remote MCP and stops; ingestion + indexing happens
+on the brain host.
+
+**4a. Collect MCP URL.** Prompt the user:
+
+```
+Paste your secondbrain MCP URL (e.g. https://wintermute.tail554574.ts.net:3131/mcp):
+```
+
+Read with plain `read -r` (no secret hygiene needed — the URL alone isn't
+a credential). Validate it starts with `https://` (require TLS for any
+non-loopback host); refuse `http://` for non-localhost.
+
+```bash
+printf "Paste secondbrain MCP URL: "
+read -r MCP_URL
+case "$MCP_URL" in
+  https://*) ;;
+  http://localhost*|http://127.0.0.1*) ;;
+  *) echo "ERROR: Non-localhost URLs must use https://. Got: $MCP_URL"; exit 1 ;;
+esac
+```
+
+**4b. Collect bearer token securely (never argv).**
+
+```bash
+printf "Paste bearer token: "
+read -rs SBRAIN_MCP_TOKEN
+echo
+printf "Token received (redacted): %s***\n" "$(printf '%s' "$SBRAIN_MCP_TOKEN" | head -c 4)"
+export SBRAIN_MCP_TOKEN
+```
+
+**4c. Verify the MCP server is reachable + authed + on a compatible protocol.**
+
+```bash
+verify_resp=$(curl -sS -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H "Authorization: Bearer $SBRAIN_MCP_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  "$MCP_URL" 2>&1)
+verify_exit=$?
+if [ "$verify_exit" -ne 0 ]; then
+  echo "ERROR: Could not reach $MCP_URL (curl exit $verify_exit). Network/DNS/firewall?"
+  echo "       Raw: $verify_resp"
+  unset SBRAIN_MCP_TOKEN
+  exit 1
+fi
+if printf '%s' "$verify_resp" | grep -q '"error"'; then
+  echo "ERROR: MCP server rejected the request. Likely auth failure (bad/expired token) or unsupported method."
+  echo "       Raw: $verify_resp"
+  unset SBRAIN_MCP_TOKEN
+  exit 1
+fi
+SERVER_VERSION=$(printf '%s' "$verify_resp" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('result',{}).get('serverInfo',{}).get('version','unknown'))" 2>/dev/null || echo "unknown")
+echo "Verified: secondbrain server v$SERVER_VERSION reachable at $MCP_URL"
+```
+
+If verify fails, surface the classified failure (network / auth / malformed)
+and STOP with a clear "fix and re-run /setup-memory" message. Do NOT continue
+to Step 5a on a failed verify — partial registration would leave the user
+with a half-broken state.
+
+**4d. (Path 4) Offer local PGLite for code search.** Ask:
+
+> D# — Want symbol-aware code search on this machine?
+> ELI10: The remote brain at `<MCP_URL>` is great for cross-machine knowledge,
+> but symbol queries like `secondbrain code-def` / `code-refs` / `code-callers`
+> need a local index of THIS machine's code. We can spin up a tiny isolated
+> PGLite database (~30 seconds, no accounts, ~120 MB disk) just for code,
+> separate from your remote brain. Local PGLite stays code-only.
+> Stakes: without it, semantic code search in this repo's worktrees falls
+> back to Grep.
+> Recommendation: A — 30 seconds, no ongoing cost, unlocks the symbol tools.
+> A) Yes, set up local PGLite for code (recommended)
+> B) No, remote MCP only
+
+**If A (Yes)**: install + init local PGLite with rollback-safe semantics:
+
+```bash
+# Install secondbrain CLI per Step 3 (skipped above for Path 4 — run it now).
+if ! command -v secondbrain >/dev/null 2>&1; then
+  if command -v bun >/dev/null 2>&1; then bun install -g secondbrain; else npm install -g secondbrain; fi
+fi
+if [ -f "$HOME/.secondbrain/config.json" ]; then
+  BACKUP="$HOME/.secondbrain/config.json.vibestack-bak-$(date +%s)"
+  mv "$HOME/.secondbrain/config.json" "$BACKUP"
+fi
+if ! secondbrain init --pglite --json; then
+  if [ -n "${BACKUP:-}" ] && [ -f "$BACKUP" ]; then mv "$BACKUP" "$HOME/.secondbrain/config.json"; fi
+  echo "secondbrain init failed. Existing config (if any) was restored. PGLite at ~/.secondbrain/pglite/ may be in a partial state — \`rm -rf ~/.secondbrain/pglite\` to reset." >&2
+  echo "Continuing setup without local code search; you can re-run /setup-memory to retry." >&2
+fi
+```
+
+Then continue to Step 5a. The remote-http MCP registration in 5a runs as
+described in the Path 4 subsection; the local PGLite is independent of MCP
+registration (Claude Code talks to the remote brain via MCP for queries;
+`secondbrain` CLI talks to local PGLite for code-def/refs/callers).
+
+**If B (No)**: skip the install + init. The local engine stays absent.
+Skip Step 7.5 (transcript ingest) — memory-stage routes through the remote
+brain in remote-http mode.
+
+**4e. Token handoff.** `SBRAIN_MCP_TOKEN` stays in process env until Step 5a's
+`claude mcp add --header` consumes it; then `unset SBRAIN_MCP_TOKEN`
+immediately. Trade-off: brief argv exposure during `claude mcp add` (visible
+to `ps` for ~10ms), resting state in `~/.claude.json` mode 0600.
+
 ### Switch (from detected existing-engine state)
 
 ```bash
@@ -343,6 +580,13 @@ untouched." STOP.
 
 ## Step 5: Verify memory health
 
+**SKIP entirely on Path 4 (Remote MCP).** The brain host runs its own
+doctor; we don't have local DB access to introspect. Step 4c's verify
+round-trip already proved the server is reachable, authed, and on a
+compatible MCP version.
+
+For Paths 1, 2a, 2b, 3, switch:
+
 ```bash
 doctor=$(secondbrain doctor --json)
 status=$(echo "$doctor" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))")
@@ -358,21 +602,50 @@ doctor output and STOP.
 Only if `which claude` resolves. Ask: "Give Claude Code MCP access to persistent
 memory (secondbrain)? (recommended yes)"
 
-If yes, register the secondbrain binary at **user scope** with an **absolute path**.
-User scope makes the MCP available in every Claude Code session on this machine,
-not just the current workspace.
+The registration form depends on the path picked in Step 2:
+
+### Path 4 (Remote MCP — HTTP transport with bearer)
+
+Tear down any prior registration (could be local-stdio from an old setup, or
+stale remote-http with a rotated token), then register with HTTP + bearer at
+user scope:
+
+```bash
+claude mcp remove secondbrain -s user 2>/dev/null || true
+claude mcp remove secondbrain 2>/dev/null || true
+claude mcp add --scope user --transport http secondbrain "$MCP_URL" \
+  --header "Authorization: Bearer $SBRAIN_MCP_TOKEN"
+unset SBRAIN_MCP_TOKEN  # zero from process env after registration
+claude mcp list | grep secondbrain  # verify: should show "✓ Connected"
+```
+
+**Token-storage note:** `claude mcp add --header "Authorization: Bearer ..."`
+puts the bearer on argv during process startup, briefly visible to `ps` for
+~10ms. The token's resting state is `~/.claude.json` (mode 0600 — Claude
+Code's own credential surface for every MCP server). If a future Claude Code
+release adds a stdin or env-var input form for headers, switch to that.
+
+### Paths 1, 2a, 2b, 3 (Local stdio)
+
+Register at **user scope** with an **absolute path** to the secondbrain
+binary. User scope makes the MCP available in every Claude Code session on
+this machine, not just the current workspace. Absolute path avoids PATH
+resolution issues when Claude Code spawns `secondbrain serve` as a subprocess.
 
 ```bash
 SBRAIN_BIN=$(command -v secondbrain)
 [ -z "$SBRAIN_BIN" ] && SBRAIN_BIN="$HOME/.bun/bin/secondbrain"
 # Remove any existing local-scope registration to avoid conflicts
+claude mcp remove secondbrain -s user 2>/dev/null || true
 claude mcp remove secondbrain 2>/dev/null || true
 claude mcp add --scope user secondbrain -- "$SBRAIN_BIN" serve
-claude mcp list | grep secondbrain
+claude mcp list | grep secondbrain  # verify: should show "✓ Connected"
 ```
 
+### Both paths
+
 If `claude` is not on PATH: emit "MCP registration skipped — register `secondbrain serve`
-in your agent's MCP config manually." Continue to step 6.
+(or your remote MCP URL) in your agent's MCP config manually." Continue to step 6.
 
 Tell the user: "Restart any open Claude Code sessions to see `mcp__secondbrain__*` tools
 — they're loaded at session start, not mid-session."
@@ -433,12 +706,108 @@ vibe-config set memory_sync_mode artifacts-only
 
 ---
 
+## Step 7.5: Transcript & memory ingest gate (single-machine)
+
+**SKIP entirely on Path 4 (Remote MCP).** Transcript ingest shells out to the
+local `secondbrain` CLI which Path 4 doesn't install when the user picked 4d-B
+("remote MCP only"). When 4d-A (local PGLite for code) was picked, ingest is
+still optional but useful: surface the prompt below.
+
+For Paths 1, 2a, 2b, 3 (and Path 4 with PGLite code search enabled):
+
+After memory engine is initialized but before persisting the CLAUDE.md config
+(Step 8), offer to bring this Mac's coding-agent transcripts +
+curated `~/.vibestack/` artifacts into secondbrain so the retrieval surface
+has data to surface.
+
+Probe the current state inline (federation/cross-machine sync is intentionally
+out of scope — this is single-machine ingest only):
+
+```bash
+TRANS_ROOT="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/sessions"
+if [ -d "$TRANS_ROOT" ]; then
+  TOTAL_FILES=$(find "$TRANS_ROOT" -name '*.jsonl' -type f 2>/dev/null | wc -l | tr -d ' ')
+  TOTAL_BYTES=$(du -sk "$TRANS_ROOT" 2>/dev/null | awk '{print $1*1024}')
+else
+  TOTAL_FILES=0; TOTAL_BYTES=0
+fi
+echo "Probe: $TOTAL_FILES transcript files, $TOTAL_BYTES bytes total."
+```
+
+If `$TOTAL_FILES = 0`, skip — there's nothing to ingest. Set
+`vibe-config set transcript_ingest_mode incremental` silently and continue
+to Step 8.
+
+If `$TOTAL_FILES < 200` AND `$TOTAL_BYTES < 100000000` (100MB): silent bulk
+ingest, then set `transcript_ingest_mode=incremental`:
+
+```bash
+find "$TRANS_ROOT" -name '*.jsonl' -type f 2>/dev/null | while IFS= read -r f; do
+  TITLE="session-$(basename "$f" .jsonl)"
+  secondbrain put "$TITLE" < "$f" 2>/dev/null || true
+done
+vibe-config set transcript_ingest_mode incremental
+```
+
+Otherwise (the "many transcripts on disk" path): AskUserQuestion with the
+exact counts AND the value promise. Default scope is **current repo only,
+last 90 days**:
+
+> "Found <N_repo> transcripts in THIS repo (<repo-slug>) over the last
+> 90 days, totalling <bytes>. Ingest into secondbrain?
+>
+> What you get: every vibestack skill auto-loads recent salience from your
+> past sessions in this repo, so the agent finds your prior work without you
+> describing it. You can query 'what was I doing on day X' and get a real
+> answer. Per-session pages are searchable, taggable, and deletable.
+>
+> What stays the same: nothing leaves this machine — vibestack does not sync
+> secondbrain across machines. Per-repo trust policies still apply.
+
+Options:
+- A) Yes — this repo, last 90 days (recommended)
+- B) Yes — this repo, ALL history
+- C) Skip historical, track new from now (`transcript_ingest_mode=incremental`)
+- D) Never ingest transcripts (`transcript_ingest_mode=off`)
+
+After answer:
+```bash
+vibe-config set transcript_ingest_mode "<choice>"
+```
+
+Reference doc for users: `setup-memory/memory.md` (linked from CLAUDE.md
+Step 8).
+
+---
+
 ## Step 8: Persist ## Memory Configuration in CLAUDE.md
 
-Find-and-replace (or append) this section in CLAUDE.md:
+Find-and-replace (or append) the section in CLAUDE.md. Block format depends on
+mode:
+
+### Path 4 (Remote MCP)
 
 ```markdown
 ## Memory Configuration (configured by /setup-memory)
+- Mode: remote-http
+- MCP URL: {MCP_URL}
+- Server version: secondbrain v{SERVER_VERSION}  (from Step 4c verify)
+- Setup date: {today}
+- MCP registered: yes (user scope)
+- Token: stored in ~/.claude.json (do not commit; never written to CLAUDE.md)
+- Memory sync: off (vibestack does not sync across machines)
+- Current repo policy: {read-write|read-only|deny|unset}
+```
+
+The bearer token is **never** written to CLAUDE.md (CLAUDE.md is checked in
+to git in many projects). It lives only in `~/.claude.json` where
+`claude mcp add` placed it.
+
+### Paths 1, 2a, 2b, 3 (Local stdio)
+
+```markdown
+## Memory Configuration (configured by /setup-memory)
+- Mode: local-stdio
 - Engine: {pglite|postgres}
 - Config file: ~/.secondbrain/config.json (mode 0600)
 - Setup date: {today}
@@ -447,9 +816,80 @@ Find-and-replace (or append) this section in CLAUDE.md:
 - Current repo policy: {read-write|read-only|deny|unset}
 ```
 
+**After Step 9 (smoke test) passes, also write the `## Memory Search Guidance`
+block** so the coding agent learns when to prefer `secondbrain` over Grep.
+This block is gated on the smoke test passing — write the Configuration block
+first (so the user knows what state they're in even if the smoke test fails),
+then return here after Step 9 and write the guidance block only if smoke
+test succeeded.
+
+When Step 9 passes, find-and-replace (or append) this block. Use HTML-comment
+delimiters so removal regex is unambiguous and never eats user content. The
+block content is machine-agnostic — no engine type, no page counts, no
+last-sync time. Machine state stays in the Configuration block above.
+
+```markdown
+## Memory Search Guidance (configured by /setup-memory)
+<!-- vibestack-memory-search-guidance:start -->
+
+Secondbrain is set up on this machine. The agent should prefer secondbrain
+over Grep when the question is semantic or when you don't know the exact
+identifier yet. Available via the `secondbrain` CLI and the `mcp__secondbrain__*`
+tools:
+- This repo's code (registered as `vibestack-code-<repo>` source when imported).
+- `~/.vibestack/` curated memory (registered as `vibestack-memory-<user>` source).
+
+Prefer secondbrain when:
+- "Where is X handled?" / semantic intent, no exact string yet:
+    `secondbrain search "<terms>"` or `secondbrain query "<question>"`
+- "Where is symbol Y defined?" / symbol-based code questions:
+    `secondbrain code-def <symbol>` or `secondbrain code-refs <symbol>`
+- "What calls Y?" / "What does Y depend on?":
+    `secondbrain code-callers <symbol>` / `secondbrain code-callees <symbol>`
+- "What did we decide last time?" / past plans, retros, learnings:
+    `secondbrain search "<terms>" --source vibestack-memory-<user>`
+
+Grep is still right for known exact strings, regex, multiline patterns, and
+file globs. Re-run `/setup-memory` to refresh state.
+
+<!-- vibestack-memory-search-guidance:end -->
+```
+
+If Step 9 smoke test fails, skip the guidance block write entirely. The user's
+next `/setup-memory` run will re-evaluate capability and write the block when
+the round-trip works.
+
 ---
 
 ## Step 9: Smoke test
+
+### Path 4 (Remote MCP)
+
+The `mcp__secondbrain__*` tools aren't visible mid-session — they're loaded at
+Claude Code session start. So the live smoke test in this same skill run is
+informational: print the curl-equivalent the user can run after restarting
+Claude Code. The verify round-trip in Step 4c already proved the server is
+reachable + authed + on a compatible MCP version, so we don't re-test that.
+
+Print to stdout:
+
+```
+After restarting Claude Code, the `mcp__secondbrain__*` tools become callable.
+Smoke test: ask the agent to run `mcp__secondbrain__search` with any query
+("test page" works). You should see a JSON list of pages.
+
+To verify from the shell right now (without waiting for restart):
+  curl -s -X POST -H 'Content-Type: application/json' \
+       -H 'Accept: application/json, text/event-stream' \
+       -H 'Authorization: Bearer <YOUR_TOKEN>' \
+       -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+       <YOUR_MCP_URL>
+```
+
+Do NOT print the actual token in the curl command — leave the placeholder
+`<YOUR_TOKEN>` so the snippet is safe to copy into chat / share.
+
+### Paths 1, 2a, 2b, 3 (Local stdio)
 
 ```bash
 SLUG="setup-memory-smoke-test-$(date +%s)"
@@ -458,6 +898,67 @@ secondbrain search "smoke test" | grep -i "$SLUG"
 ```
 
 Confirms the round trip. On failure, surface `secondbrain doctor --json` output and STOP.
+
+---
+
+## Step 10: GREEN/YELLOW/RED verdict block (idempotent doctor output)
+
+After Steps 1-9 complete, summarize. Re-running `/setup-memory` on a configured
+Mac is a first-class doctor path: every step detects existing state, repairs
+only what's missing, and reports here.
+
+```bash
+# Re-detect to surface fresh state
+SBRAIN_MCP_MODE=$(claude mcp list 2>/dev/null | awk '/^secondbrain[[:space:]]/{print ($3=="http" || $3=="HTTP")?"remote-http":"local-stdio"}' | head -1)
+TRANSCRIPT_INGEST=$(vibe-config get transcript_ingest_mode 2>/dev/null || echo "off")
+MEMORY_SYNC=$(vibe-config get memory_sync_mode 2>/dev/null || echo "off")
+```
+
+Pick the right verdict template based on `SBRAIN_MCP_MODE`. Each row is
+`[OK]/[FIX]/[WARN]/[ERR]`.
+
+### Path 4 (Remote MCP)
+
+```
+secondbrain status: GREEN  (mode: remote-http)
+
+  MCP ............. OK   secondbrain v{SERVER_VERSION} at {MCP_URL}
+  Auth ............ OK   bearer accepted (verified via /tools/list)
+  Engine .......... N/A  remote mode
+  Doctor .......... N/A  remote mode (brain admin runs `secondbrain doctor`)
+  Repo policy ..... OK   {read-write|read-only|deny}
+  Memory sync ..... OK   {memory_sync_mode}
+  Transcripts ..... {OK|N/A declined at Step 4d}
+  Code search ..... {OK local-pglite (~/.secondbrain/pglite) | N/A declined at Step 4d}
+  CLAUDE.md ....... OK
+  Smoke test ...... INFO printed for post-restart manual verification
+
+Restart Claude Code to pick up the `mcp__secondbrain__*` tools.
+Re-run `/setup-memory` any time the bearer rotates or the URL moves.
+```
+
+### Paths 1, 2a, 2b, 3 (Local stdio)
+
+```
+secondbrain status: GREEN  (mode: local-stdio)
+
+  CLI ............. OK   <secondbrain version>
+  Engine .......... OK   <pglite|postgres> at <path>
+  doctor .......... OK
+  MCP ............. OK   registered (user scope)
+  Repo policy ..... OK   <read-write|read-only|deny>
+  Code import ..... OK   <last_imported_head>
+  Memory sync ..... {OK|off}
+  Transcripts ..... <N> sessions, last ingest <when> (or "off")
+  CLAUDE.md ....... OK
+  Smoke test ...... OK   put → search → delete round-trip
+
+Run `/setup-memory` again any time secondbrain feels off; it's safe and idempotent.
+```
+
+If any row is YELLOW or RED, the verdict line says so and the failing rows
+surface a one-line "next action" (e.g.,
+`Engine .......... ERR  PGLite corrupt — \`rm -rf ~/.secondbrain/pglite\` and re-run \`/setup-memory\``).
 
 ---
 
