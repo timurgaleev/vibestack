@@ -2169,6 +2169,34 @@ you missed it.>
 <If no plan file: "No plan file detected.">
 <If plan items deferred: list deferred items>
 
+## Linked Spec
+<Auto-detect a /spec archive for this branch and conditionally auto-close its issue:
+  eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+  CURRENT_BRANCH=$(git branch --show-current)
+  SPEC_ARCHIVES="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/specs"
+  # Newest archive whose spec_branch frontmatter matches the current branch (a /spec
+  # --execute run lands /ship in the spawned worktree spec/<slug>-$$, which IS the branch).
+  SPEC_FILE=$(grep -l "^spec_branch: $CURRENT_BRANCH$" "$SPEC_ARCHIVES"/*.md 2>/dev/null | head -1)
+  [ -z "$SPEC_FILE" ] && exit   # no spec for this branch — omit this section entirely
+  SPEC_ISSUE=$(grep "^spec_issue_number:" "$SPEC_FILE" | cut -d' ' -f2)
+  [ -z "$SPEC_ISSUE" ] && exit  # spec archive exists but no issue number — omit
+
+  # CONDITIONAL close: only add "Closes #N" when the Plan Completion gate (Step 8)
+  # reports full delivery (no NOT DONE / deferred items). Otherwise emit the
+  # "Linked to #N (partial)" notice so a partial PR never silently closes the issue.>
+
+<If Plan Completion is fully complete, emit:
+  Closes #<N>
+
+  This PR delivers the spec at <archive path>. Spec filed: <spec_filed_at from frontmatter>.>
+
+<If partial delivery (any NOT DONE / deferred items), emit instead:
+  Linked to #<N> (partial delivery — not auto-closing).
+  Deferred items: <list from Plan Completion>.
+  Close #<N> manually after the follow-up lands.>
+
+<If no /spec archive matches this branch: omit this entire section.>
+
 ## Verification Results
 <If verification ran: summary from Step 8.1 (N PASS, M FAIL, K SKIPPED)>
 <If skipped: reason (no plan, no server, no verification section)>
