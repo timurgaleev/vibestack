@@ -977,6 +977,8 @@ plan's living status.
 - Always place it as the very last section in the plan file. If it was found mid-file,
   move it: delete the old location and append at the end.
 
+{{include lib/snippets/askuserquestion-split.md}}
+
 {{include lib/snippets/capture-learnings.md}}
 ## Next Steps — Review Chaining
 

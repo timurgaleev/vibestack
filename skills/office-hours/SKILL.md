@@ -1127,6 +1127,8 @@ The design doc at `~/.vibestack/projects/` is automatically discoverable by down
 
 ---
 
+{{include lib/snippets/askuserquestion-split.md}}
+
 {{include lib/snippets/capture-learnings.md}}
 ## Important Rules
 
