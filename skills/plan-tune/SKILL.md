@@ -1,18 +1,7 @@
 ---
 name: plan-tune
 description: |
-  Self-tuning question sensitivity + developer psychographic for vibestack (v1: observational).
-  Review which AskUserQuestion prompts fire across vibestack skills, set per-question preferences
-  (never-ask / always-ask / ask-only-for-one-way), inspect the dual-track
-  profile (what you declared vs what your behavior suggests), and enable/disable
-  question tuning. Conversational interface — no CLI syntax required.
-
-  Use when asked to "tune questions", "stop asking me that", "too many questions",
-  "show my profile", "what questions have I been asked", "show my vibe",
-  "developer profile", or "turn off question tuning".
-
-  Proactively suggest when the user says the same vibestack question has come up before,
-  or when they explicitly override a recommendation for the Nth time.
+  Self-tuning question sensitivity + developer psychographic for vibestack (v1: observational). Review which AskUserQuestion prompts fire across vibestack skills, set per-question preferences (never-ask / always-ask / ask-only-for-one-way), inspect the dual-track profile (what you declared vs what your behavior suggests), and enable/disable question tuning. Conversational interface — no CLI syntax required.
 triggers:
   - tune questions
   - stop asking me that
@@ -30,6 +19,12 @@ allowed-tools:
   - Glob
   - Grep
 ---
+
+## When to invoke
+
+Use when asked to "tune questions", "stop asking me that", "too many questions", "show my profile", "what questions have I been asked", "show my vibe", "developer profile", or "turn off question tuning".
+
+Proactively suggest when the user says the same vibestack question has come up before, or when they explicitly override a recommendation for the Nth time.
 
 ## Preamble
 

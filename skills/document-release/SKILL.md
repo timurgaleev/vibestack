@@ -1,13 +1,7 @@
 ---
 name: document-release
 description: |
-  Post-ship documentation update. Reads all project docs, cross-references the
-  diff, builds a Diataxis coverage map (reference/how-to/tutorial/explanation),
-  updates README/ARCHITECTURE/CONTRIBUTING/CLAUDE.md to match what shipped,
-  detects architecture diagram drift, polishes CHANGELOG voice with a sell-test
-  rubric, cleans up TODOS, and optionally bumps VERSION. Surfaces documentation
-  debt in the PR body. Use when asked to "update the docs", "sync documentation",
-  or "post-ship docs". Proactively suggest after a PR is merged or code is shipped.
+  Post-ship documentation update. Reads all project docs, cross-references the diff, builds a Diataxis coverage map (reference/how-to/tutorial/explanation), updates README/ARCHITECTURE/CONTRIBUTING/CLAUDE.md to match what shipped, detects architecture diagram drift, polishes CHANGELOG voice with a sell-test rubric, cleans up TODOS, and optionally bumps VERSION. Surfaces documentation debt in the PR body.
 allowed-tools:
   - Bash
   - Read
@@ -21,6 +15,12 @@ triggers:
   - document what changed
   - post-ship docs
 ---
+
+## When to invoke
+
+Use when asked to "update the docs", "sync documentation", or "post-ship docs".
+
+Proactively suggest after a PR is merged or code is shipped.
 
 ## Preamble
 

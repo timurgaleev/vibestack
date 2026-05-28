@@ -1,11 +1,7 @@
 ---
 name: canary
 description: |
-  Post-deploy canary monitoring. Watches the live app for console errors,
-  performance regressions, and page failures using the browse daemon. Takes
-  periodic screenshots, compares against pre-deploy baselines, and alerts
-  on anomalies. Use when: "monitor deploy", "canary", "post-deploy check",
-  "watch production", "verify deploy".
+  Post-deploy canary monitoring. Watches the live app for console errors, performance regressions, and page failures using the browse daemon. Takes periodic screenshots, compares against pre-deploy baselines, and alerts on anomalies.
 allowed-tools:
   - Bash
   - Read
@@ -17,6 +13,10 @@ triggers:
   - canary check
   - watch for errors post-deploy
 ---
+
+## When to invoke
+
+Use when: "monitor deploy", "canary", "post-deploy check", "watch production", "verify deploy".
 
 ## Preamble
 

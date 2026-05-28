@@ -1,13 +1,7 @@
 ---
 name: context-restore
 description: |
-  Restore working context saved earlier by /context-save. Loads the most recent
-  saved state (across all branches by default) so you can pick up where you
-  left off — even across Conductor workspace handoffs.
-  Use when asked to "resume", "restore context", "where was I", or
-  "pick up where I left off". Pair with /context-save.
-  Formerly /checkpoint resume — renamed because Claude Code treats /checkpoint
-  as a native rewind alias in current environments.
+  Restore working context saved earlier by /context-save. Loads the most recent saved state (across all branches by default) so you can pick up where you left off — even across Conductor workspace handoffs.
 allowed-tools:
   - Bash
   - Read
@@ -21,6 +15,10 @@ triggers:
   - pick up where i left off
   - context restore
 ---
+
+## When to invoke
+
+Use when asked to "resume", "restore context", "where was I", or "pick up where I left off". Pair with /context-save. Formerly /checkpoint resume — renamed because Claude Code treats /checkpoint as a native rewind alias in current environments.
 
 ## Preamble
 

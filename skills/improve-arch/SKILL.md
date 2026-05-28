@@ -1,14 +1,7 @@
 ---
 name: improve-arch
 description: |
-  Find deepening opportunities in a codebase. Surface architectural friction and
-  propose refactors that turn shallow modules into deep ones — small interface,
-  deep implementation. The aim is testability and AI-navigability.
-  If your project has a domain glossary (e.g. `CONTEXT.md`) or ADRs (`docs/adr/`),
-  the skill uses them to keep names consistent and avoid re-litigating decisions.
-  Use when asked to "improve architecture", "find refactoring opportunities",
-  "deepen modules", "consolidate tightly-coupled modules", or to make a codebase
-  more testable and AI-navigable.
+  Find deepening opportunities in a codebase. Surface architectural friction and propose refactors that turn shallow modules into deep ones — small interface, deep implementation. The aim is testability and AI-navigability. If your project has a domain glossary (e.g. `CONTEXT.md`) or ADRs (`docs/adr/`), the skill uses them to keep names consistent and avoid re-litigating decisions.
 allowed-tools:
   - Bash
   - Read
@@ -25,6 +18,10 @@ triggers:
   - architecture review
   - make this more testable
 ---
+
+## When to invoke
+
+Use when asked to "improve architecture", "find refactoring opportunities", "deepen modules", "consolidate tightly-coupled modules", or to make a codebase more testable and AI-navigable.
 
 ## Preamble
 
