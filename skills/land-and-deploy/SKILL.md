@@ -1,10 +1,7 @@
 ---
 name: land-and-deploy
 description: |
-  Land and deploy workflow. Merges the PR, waits for CI and deploy,
-  verifies production health via canary checks. Takes over after /ship
-  creates the PR. Use when: "merge", "land", "deploy", "merge and verify",
-  "land it", "ship it to production".
+  Land and deploy workflow. Merges the PR, waits for CI and deploy, verifies production health via canary checks. Takes over after /ship creates the PR.
 allowed-tools:
   - Bash
   - Read
@@ -16,6 +13,10 @@ triggers:
   - land the pr
   - ship to production
 ---
+
+## When to invoke
+
+Use when: "merge", "land", "deploy", "merge and verify", "land it", "ship it to production".
 
 ## Preamble
 

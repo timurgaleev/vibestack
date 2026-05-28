@@ -1,11 +1,7 @@
 ---
 name: claude
 description: |
-  Claude Code CLI wrapper for getting an independent second opinion. Three modes:
-  Review (diff review via claude -p), Challenge (adversarial failure-mode review),
-  Consult (ask Claude about the repo with read-only file tools). Use when asked for
-  "claude review", "claude challenge", "ask claude", "second opinion from claude",
-  or "outside voice".
+  Claude Code CLI wrapper for getting an independent second opinion. Three modes: Review (diff review via claude -p), Challenge (adversarial failure-mode review), Consult (ask Claude about the repo with read-only file tools).
 triggers:
   - claude review
   - claude challenge
@@ -15,6 +11,10 @@ allowed-tools:
   - Read
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when asked for "claude review", "claude challenge", "ask claude", "second opinion from claude", or "outside voice".
 
 ## Preamble
 

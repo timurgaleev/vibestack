@@ -1,12 +1,7 @@
 ---
 name: benchmark
 description: |
-  Performance regression detection using the browse daemon. Establishes
-  baselines for page load times, Core Web Vitals, and resource sizes.
-  Compares before/after on every PR. Tracks performance trends over time.
-  Use when: "performance", "benchmark", "page speed", "lighthouse", "web vitals",
-  "bundle size", "load time".
-  Voice triggers (speech-to-text aliases): "speed test", "check performance".
+  Performance regression detection using the browse daemon. Establishes baselines for page load times, Core Web Vitals, and resource sizes. Compares before/after on every PR. Tracks performance trends over time.
 triggers:
   - performance benchmark
   - check page speed
@@ -18,6 +13,12 @@ allowed-tools:
   - Glob
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when: "performance", "benchmark", "page speed", "lighthouse", "web vitals", "bundle size", "load time".
+
+Voice triggers (speech-to-text aliases): "speed test", "check performance".
 
 ## Preamble
 

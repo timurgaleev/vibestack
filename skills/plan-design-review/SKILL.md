@@ -2,13 +2,7 @@
 name: plan-design-review
 interactive: true
 description: |
-  Designer's eye plan review — interactive, like CEO and Eng review.
-  Rates each design dimension 0-10, explains what would make it a 10,
-  then fixes the plan to get there. Works in plan mode. For live site
-  visual audits, use /design-review. Use when asked to "review the design plan"
-  or "design critique".
-  Proactively suggest when the user has a plan with UI/UX components that
-  should be reviewed before implementation.
+  Designer's eye plan review — interactive, like CEO and Eng review. Rates each design dimension 0-10, explains what would make it a 10, then fixes the plan to get there. Works in plan mode. For live site visual audits, use /design-review.
 allowed-tools:
   - Read
   - Edit
@@ -21,6 +15,12 @@ triggers:
   - review ux plan
   - check design decisions
 ---
+
+## When to invoke
+
+Use when asked to "review the design plan" or "design critique".
+
+Proactively suggest when the user has a plan with UI/UX components that should be reviewed before implementation.
 
 ## Preamble
 

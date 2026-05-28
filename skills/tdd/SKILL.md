@@ -1,14 +1,7 @@
 ---
 name: tdd
 description: |
-  Test-driven development with the red-green-refactor loop. Vertical-slice tracer bullets,
-  not horizontal slicing. Tests verify behavior through public interfaces, not implementation
-  details, so they survive refactors. Sub-docs cover deep modules, interface design,
-  mocking, refactoring, and what makes a good test.
-  Use when asked to "do tdd", "red-green-refactor", "test-first development",
-  "build with tdd", or you want integration-style tests that survive refactors.
-  Proactively suggest when starting a new feature or bug fix where the behavior is
-  testable through a public interface.
+  Test-driven development with the red-green-refactor loop. Vertical-slice tracer bullets, not horizontal slicing. Tests verify behavior through public interfaces, not implementation details, so they survive refactors. Sub-docs cover deep modules, interface design, mocking, refactoring, and what makes a good test.
 allowed-tools:
   - Bash
   - Read
@@ -24,6 +17,12 @@ triggers:
   - build with tdd
   - test-driven
 ---
+
+## When to invoke
+
+Use when asked to "do tdd", "red-green-refactor", "test-first development", "build with tdd", or you want integration-style tests that survive refactors.
+
+Proactively suggest when starting a new feature or bug fix where the behavior is testable through a public interface.
 
 ## Preamble
 

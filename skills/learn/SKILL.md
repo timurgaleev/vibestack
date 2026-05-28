@@ -1,11 +1,7 @@
 ---
 name: learn
 description: |
-  Manage project learnings. Review, search, prune, and export what vibestack
-  has learned across sessions. Use when asked to "what have we learned",
-  "show learnings", "prune stale learnings", or "export learnings".
-  Proactively suggest when the user asks about past patterns or wonders
-  "didn't we fix this before?"
+  Manage project learnings. Review, search, prune, and export what vibestack has learned across sessions.
 triggers:
   - show learnings
   - what have we learned
@@ -19,6 +15,12 @@ allowed-tools:
   - Glob
   - Grep
 ---
+
+## When to invoke
+
+Use when asked to "what have we learned", "show learnings", "prune stale learnings", or "export learnings".
+
+Proactively suggest when the user asks about past patterns or wonders "didn't we fix this before?"
 
 ## Preamble
 

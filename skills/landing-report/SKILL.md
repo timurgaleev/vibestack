@@ -1,11 +1,7 @@
 ---
 name: landing-report
 description: |
-  Read-only queue dashboard for workspace-aware ship. Shows which VERSION slots
-  are currently claimed by open PRs, which sibling Conductor workspaces have
-  WIP work likely to ship soon, and what slot /ship would pick next. No
-  mutations — just a snapshot. Use when asked to "landing report", "what's in
-  the queue", "show me open PRs", or "which version do I claim next".
+  Read-only queue dashboard for workspace-aware ship. Shows which VERSION slots are currently claimed by open PRs, which sibling Conductor workspaces have WIP work likely to ship soon, and what slot /ship would pick next. No mutations — just a snapshot.
 triggers:
   - landing report
   - version queue
@@ -16,6 +12,10 @@ allowed-tools:
   - Bash
   - Read
 ---
+
+## When to invoke
+
+Use when asked to "landing report", "what's in the queue", "show me open PRs", or "which version do I claim next".
 
 ## Preamble
 
