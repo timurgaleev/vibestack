@@ -1,17 +1,7 @@
 ---
 name: office-hours
 description: |
-  Office Hours — two modes. Startup mode: six forcing questions that expose
-  demand reality, status quo, desperate specificity, narrowest wedge, observation,
-  and future-fit. Builder mode: design thinking brainstorming for side projects,
-  hackathons, learning, and open source. Saves a design doc.
-  Use when asked to "brainstorm this", "I have an idea", "help me think through
-  this", "office hours", or "is this worth building".
-  Proactively invoke this skill (do NOT answer directly) when the user describes
-  a new product idea, asks whether something is worth building, wants to think
-  through design decisions for something that doesn't exist yet, or is exploring
-  a concept before any code is written.
-  Use before /plan-ceo-review or /plan-eng-review.
+  Office Hours — two modes. Startup mode: six forcing questions that expose demand reality, status quo, desperate specificity, narrowest wedge, observation, and future-fit. Builder mode: design thinking brainstorming for side projects, hackathons, learning, and open source. Saves a design doc.
 allowed-tools:
   - Bash
   - Read
@@ -27,6 +17,10 @@ triggers:
   - help me think through
   - office hours
 ---
+
+## When to invoke
+
+Use when asked to "brainstorm this", "I have an idea", "help me think through this", "office hours", or "is this worth building". Proactively invoke this skill (do NOT answer directly) when the user describes a new product idea, asks whether something is worth building, wants to think through design decisions for something that doesn't exist yet, or is exploring a concept before any code is written. Use before /plan-ceo-review or /plan-eng-review.
 
 # /office-hours
 
@@ -400,7 +394,7 @@ Use AskUserQuestion to confirm. If the user disagrees with a premise, revise und
 **Binary check first:**
 
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 Use AskUserQuestion (regardless of codex availability):
@@ -670,7 +664,7 @@ The screenshot file at `/tmp/vibestack-sketch.png` can be referenced by downstre
 After the wireframe is approved, offer outside design perspectives:
 
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 If Codex is available, use AskUserQuestion:
@@ -1126,6 +1120,8 @@ After resources, suggest the next step:
 The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
 
 ---
+
+{{include lib/snippets/askuserquestion-split.md}}
 
 {{include lib/snippets/capture-learnings.md}}
 ## Important Rules

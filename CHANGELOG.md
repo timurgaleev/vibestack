@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.7.0 — 2026-05-28
+
+Six new skills and a leaner session start. `/spec` turns a vague request into a
+precise, executable spec in five phases, and a new iOS preview suite brings
+live-device QA workflows to the pack. Every skill now costs less at session
+start, and the review/retro/deploy skills got sharper correctness guards.
+
+### Added
+
+- **`/spec`** — turn vague intent into a backlog-ready spec in five phases
+  (why → scope → technical-with-mandatory-code-reading → draft → file). Files a
+  GitHub issue, runs an optional codex quality gate (0–10, with fail-closed
+  secret redaction before anything leaves your machine), archives the spec
+  under `~/.vibestack/projects/<slug>/specs/`, and is plan-mode aware: files
+  the issue in plan mode, or files **and** spawns a `claude -p` agent in a
+  fresh worktree in execution mode. `/ship` can close the source issue on merge.
+- **iOS preview suite** — `/ios-qa`, `/ios-fix`, `/ios-design-review`,
+  `/ios-clean`, `/ios-sync`: live-device QA, autonomous bug-fixing, design
+  audit, debug-bridge cleanup, and bridge regeneration for SwiftUI apps driven
+  over a USB tunnel. **Preview:** these drive a real iPhone through a Mac-side
+  iOS-QA daemon and a `DebugBridge` Swift package that vibestack does not bundle
+  yet — each skill detects the daemon and reports `NEEDS_SETUP` when it is
+  absent, so they serve as an architecture reference until the daemon ships.
+- **"5+ options — split, never drop" rule** — a shared snippet
+  (`lib/snippets/askuserquestion-split.md`) plus a deep reference
+  (`docs/askuserquestion-split.md`) now teach decision-asking skills to split
+  or batch a 5+ option decision instead of silently trimming one to fit the
+  4-option cap. Wired into the four `plan-*` review skills and `/office-hours`.
+
+### Changed
+
+- **Leaner session start.** Every skill's always-loaded `description:` is
+  trimmed to its lead summary sentence; the "use when / proactively suggest /
+  voice triggers" routing prose moves into a new `## When to invoke` body
+  section that only loads when the skill is invoked. The explicit `triggers:`
+  list is unchanged, so auto-invocation is unaffected.
+- **`/review`, `/cso`, `/plan-eng-review`, and `/ship`** now run a pre-emit
+  verification gate: every finding must quote the `file:line` and the verbatim
+  code that motivates it, or it is forced to low confidence and suppressed to
+  the appendix — killing the "field doesn't exist on the model" class of
+  framework false positives.
+- **`/retro`** gained a Step 0.5 stale-base pre-flight guard that blocks
+  fabricating a retrospective against a stale base branch or a drifted "today"
+  anchor, with explicit skip paths for no-remote / detached-HEAD / offline runs.
+- **`/land-and-deploy`** now reads authoritative PR state after any failed
+  `gh pr merge` (MERGED / OPEN / CLOSED) instead of retrying the merge, with
+  non-destructive worktree cleanup on the already-merged path.
+
+### Fixed
+
+- Codex detection now uses `command -v codex` instead of `which codex` across
+  all ten codex-using skills, so detection works in minimal / non-interactive
+  shells where `which` is unavailable.
+- `/review` and `/ship` compute the review diff against
+  `git merge-base origin/<base> HEAD` instead of the bare base tip, so a base
+  branch that has advanced past the branch point no longer injects phantom
+  deletions into the review.
+
 ## 1.6.1 — 2026-05-18
 
 Bug fix: `/setup-memory` was hardcoded to detect a `secondbrain`-named MCP

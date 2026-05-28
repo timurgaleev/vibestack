@@ -1,11 +1,7 @@
 ---
 name: codex
 description: |
-  OpenAI Codex CLI wrapper — three modes. Code review: independent diff review via
-  codex review with pass/fail gate. Challenge: adversarial mode that tries to break
-  your code. Consult: ask codex anything with session continuity for follow-ups.
-  The second-opinion reviewer from a completely different AI model. Use when asked
-  to "codex review", "codex challenge", "ask codex", "second opinion", or "consult codex".
+  OpenAI Codex CLI wrapper — three modes. Code review: independent diff review via codex review with pass/fail gate. Challenge: adversarial mode that tries to break your code. Consult: ask codex anything with session continuity for follow-ups. The second-opinion reviewer from a completely different AI model.
 voice-triggers:
   - "code x"
   - "code ex"
@@ -22,6 +18,10 @@ allowed-tools:
   - Grep
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when asked to "codex review", "codex challenge", "ask codex", "second opinion", or "consult codex".
 
 ## Preamble
 
@@ -52,7 +52,7 @@ things you might miss. Present its output faithfully, not summarized.
 ## Step 0.4: Check codex binary
 
 ```bash
-CODEX_BIN=$(which codex 2>/dev/null || echo "")
+CODEX_BIN=$(command -v codex 2>/dev/null || echo "")
 [ -z "$CODEX_BIN" ] && echo "NOT_FOUND" || echo "FOUND: $CODEX_BIN"
 ```
 

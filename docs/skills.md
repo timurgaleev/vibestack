@@ -82,6 +82,15 @@ Triggers: `review this PR`, `code review`, `pre-landing review`
 
 ---
 
+### `/spec`
+Turn vague intent into a precise, executable spec in five phases.
+
+Phases: understand the why (+ optional dedupe), scope and boundaries, technical interrogation (mandatory code-reading first), draft review, file. Optional codex quality gate (0-10, fail-closed secret redaction before dispatch). Archives the spec under `~/.vibestack/projects/<slug>/specs/`. Plan-mode-aware: files the issue and loads it into the active plan file in plan mode; files + spawns `claude -p` in a fresh worktree in execution mode. `/ship` can close the source issue on merge.
+
+Triggers: `spec this out`, `file an issue`, `write up a ticket`, `turn this into a backlog item`
+
+---
+
 ### `/ship`
 Full ship workflow from working branch to merged PR.
 
@@ -457,3 +466,56 @@ Set up secondbrain persistent memory for this coding agent.
 Install the secondbrain CLI, initialize a local PGLite or Supabase brain, register as a Claude Code MCP tool, and capture per-remote trust policy. Three paths: PGLite local (zero accounts), Supabase existing URL, or Supabase auto-provision. Shortcut modes: `--repo` (policy only), `--switch` (engine migration), `--resume-provision`, `--cleanup-orphans`.
 
 Triggers: `setup memory`, `setup secondbrain`, `install secondbrain`, `connect secondbrain`
+
+---
+
+## iOS (preview)
+
+> These skills drive a real iPhone through a Mac-side iOS-QA daemon
+> (`vibe-ios-qa-daemon`) and a `DebugBridge` Swift package embedded in the app
+> under test. **vibestack does not bundle either yet** — each skill detects the
+> daemon and reports `NEEDS_SETUP` when it is absent. Treat them as a reference
+> for the architecture and the find→fix→verify loop until the daemon ships.
+
+### `/ios-qa`
+Live-device iOS QA for SwiftUI apps.
+
+Connects to a real iPhone over the USB CoreDevice tunnel, reads Swift source to understand every screen, then runs a vision-driven loop: screenshot → analyze → decide → act → verify. All interaction goes through an embedded StateServer over HTTP; optionally exposes the device over Tailscale for remote agents.
+
+Triggers: `ios qa`, `test my ios app`, `qa the ios app`, `find bugs on the device`
+
+---
+
+### `/ios-fix`
+Autonomous iOS bug fixer on a real device.
+
+Reproduces a reported bug on the connected iPhone, locates the root cause in Swift source, applies the fix, and verifies on-device through the same find→fix→verify loop.
+
+Triggers: `fix the ios bug`, `fix my ios app`, `ios fix`
+
+---
+
+### `/ios-design-review`
+Visual design audit for iOS apps on real hardware.
+
+Drives the app on a real device and audits hierarchy, typography, spacing, and platform-convention adherence against live screenshots.
+
+Triggers: `ios design review`, `review the ios design`, `audit my ios app`
+
+---
+
+### `/ios-clean`
+Remove the DebugBridge SPM package and `#if DEBUG` wiring from an iOS app.
+
+Strips the debug bridge and all conditional instrumentation so the app is release-clean, with a structural guard that the bridge symbol cannot ship.
+
+Triggers: `ios clean`, `remove the debug bridge`, `clean up ios debug`
+
+---
+
+### `/ios-sync`
+Regenerate the iOS debug bridge against the latest templates.
+
+Re-runs codegen so the typed `@Observable` accessors and the embedded StateServer match the current app source.
+
+Triggers: `ios sync`, `regenerate the ios bridge`, `update the debug bridge`

@@ -1,11 +1,7 @@
 ---
 name: guard
 description: |
-  Full safety mode: destructive command warnings + directory-scoped edits.
-  Combines /careful (warns before rm -rf, DROP TABLE, force-push, etc.) with
-  /freeze (blocks edits outside a specified directory). Use for maximum safety
-  when touching prod or debugging live systems. Use when asked to "guard mode",
-  "full safety", "lock it down", or "maximum safety".
+  Full safety mode: destructive command warnings + directory-scoped edits. Combines /careful (warns before rm -rf, DROP TABLE, force-push, etc.) with /freeze (blocks edits outside a specified directory). Use for maximum safety when touching prod or debugging live systems.
 allowed-tools:
   - Bash
   - Read
@@ -34,6 +30,10 @@ triggers:
   - guard mode
   - lock it down
 ---
+
+## When to invoke
+
+Use when asked to "guard mode", "full safety", "lock it down", or "maximum safety".
 
 # /guard — Full Safety Mode
 

@@ -1,11 +1,7 @@
 ---
 name: health
 description: |
-  Code quality dashboard. Wraps existing project tools (type checker, linter,
-  test runner, dead code detector, shell linter), computes a weighted composite
-  0-10 score, and tracks trends over time. Use when: "health check",
-  "code quality", "how healthy is the codebase", "run all checks",
-  "quality score".
+  Code quality dashboard. Wraps existing project tools (type checker, linter, test runner, dead code detector, shell linter), computes a weighted composite 0-10 score, and tracks trends over time.
 triggers:
   - code health check
   - quality dashboard
@@ -19,6 +15,10 @@ allowed-tools:
   - Grep
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when: "health check", "code quality", "how healthy is the codebase", "run all checks", "quality score".
 
 ## Preamble
 

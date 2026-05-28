@@ -1,13 +1,7 @@
 ---
 name: design-consultation
 description: |
-  Design consultation: understands your product, researches the landscape, proposes a
-  complete design system (aesthetic, typography, color, layout, spacing, motion), and
-  generates font+color preview pages. Creates DESIGN.md as your project's design source
-  of truth. For existing sites, use /plan-design-review to infer the system instead.
-  Use when asked to "design system", "brand guidelines", or "create DESIGN.md".
-  Proactively suggest when starting a new project's UI with no existing
-  design system or DESIGN.md.
+  Design consultation: understands your product, researches the landscape, proposes a complete design system (aesthetic, typography, color, layout, spacing, motion), and generates font+color preview pages. Creates DESIGN.md as your project's design source of truth. For existing sites, use /plan-design-review to infer the system instead.
 allowed-tools:
   - Bash
   - Read
@@ -22,6 +16,12 @@ triggers:
   - create a brand
   - design from scratch
 ---
+
+## When to invoke
+
+Use when asked to "design system", "brand guidelines", or "create DESIGN.md".
+
+Proactively suggest when starting a new project's UI with no existing design system or DESIGN.md.
 
 ## Preamble
 
@@ -223,7 +223,7 @@ If user chooses B, skip this step and continue.
 
 **Check Codex availability:**
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 **If Codex is available**, launch both voices simultaneously:

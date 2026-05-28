@@ -1,10 +1,7 @@
 ---
 name: make-pdf
 description: |
-  Generate professional PDFs from code, markdown, or HTML in the current repository.
-  Supports cover pages, tables of contents, watermarks, custom margins, and page sizes.
-  Use when asked to "make pdf", "generate pdf", "export to pdf", "create pdf report",
-  or "pdf preview".
+  Generate professional PDFs from code, markdown, or HTML in the current repository. Supports cover pages, tables of contents, watermarks, custom margins, and page sizes.
 triggers:
   - make pdf
   - generate pdf
@@ -19,6 +16,10 @@ allowed-tools:
   - Grep
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when asked to "make pdf", "generate pdf", "export to pdf", "create pdf report", or "pdf preview".
 
 ## Preamble
 

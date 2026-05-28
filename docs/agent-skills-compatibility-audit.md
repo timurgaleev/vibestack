@@ -2,10 +2,10 @@
 
 **Generated:** 2026-05-09 (Day 0 Track A of v1.4.0 multi-target install)
 **Track B verified:** 2026-05-09 (Cursor 2026.05.07-42ddaca, Kiro CLI 2.2.2)
-**Skills audited:** 47 (originally 46 on 2026-05-09; `/document-generate` added in v1.6.0 with same compliance profile as `/document-release`)
+**Skills audited:** 53 (47 prior; `/spec` + the 5-skill iOS suite added in the upstream sync. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent; the 5 iOS skills depend on an external Mac-side iOS-QA daemon — `vibe-ios-qa-daemon` — not bundled by vibestack, detected at runtime, same external-dependency profile as the `/browse` family.)
 **Spec reference:** [agentskills.io/specification](https://agentskills.io/specification)
 
-This audit verifies vibestack's 47 skills against the Agent Skills open standard,
+This audit verifies vibestack's 53 skills against the Agent Skills open standard,
 which Claude Code, Cursor (`~/.cursor/skills/`), and Kiro (`~/.kiro/skills/`) all
 implement. The spec standardizes the SKILL.md **file shape** — frontmatter +
 markdown body. It does **not** standardize runtime behavior (hooks, env vars,
@@ -19,17 +19,19 @@ results are in the new "Track B — Empirical Verification" section near the end
 
 | Audit dimension | Pass/Fail | Skills affected |
 |---|---|---|
-| Required `name` field present | 47/47 PASS | — |
-| `name` matches directory basename | 47/47 PASS | — |
-| Required `description` field present | 47/47 PASS | — |
-| Description ≤ 1024 chars (spec limit) | 47/47 PASS | — |
-| YAML frontmatter parseable | 47/47 PASS | — |
+| Required `name` field present | 53/53 PASS | — |
+| `name` matches directory basename | 53/53 PASS | — |
+| Required `description` field present | 53/53 PASS | — |
+| Description ≤ 1024 chars (spec limit) | 53/53 PASS | — |
+| YAML frontmatter parseable | 53/53 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
 | Skills using `${CLAUDE_SKILL_DIR}` substitution | 5 skills | careful, freeze, guard, investigate, ship |
+| Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
+| Skills with external daemon dependency (not bundled) | 9 skills | browse, open-browser, pair-agent, setup-browser-cookies, ios-qa, ios-fix, ios-design-review, ios-clean, ios-sync |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
-| Skills using `AskUserQuestion` (Claude-specific) | ~44 skills | most of the pack |
+| Skills using `AskUserQuestion` (Claude-specific) | ~50 skills | most of the pack |
 
-**Verdict:** All 47 skills are **spec-compliant for file shape**. Cross-target
+**Verdict:** All 53 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
 runtime verification (manual, requires Cursor/Kiro running on the user's machine).
 

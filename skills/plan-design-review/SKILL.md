@@ -2,13 +2,7 @@
 name: plan-design-review
 interactive: true
 description: |
-  Designer's eye plan review — interactive, like CEO and Eng review.
-  Rates each design dimension 0-10, explains what would make it a 10,
-  then fixes the plan to get there. Works in plan mode. For live site
-  visual audits, use /design-review. Use when asked to "review the design plan"
-  or "design critique".
-  Proactively suggest when the user has a plan with UI/UX components that
-  should be reviewed before implementation.
+  Designer's eye plan review — interactive, like CEO and Eng review. Rates each design dimension 0-10, explains what would make it a 10, then fixes the plan to get there. Works in plan mode. For live site visual audits, use /design-review.
 allowed-tools:
   - Read
   - Edit
@@ -21,6 +15,12 @@ triggers:
   - review ux plan
   - check design decisions
 ---
+
+## When to invoke
+
+Use when asked to "review the design plan" or "design critique".
+
+Proactively suggest when the user has a plan with UI/UX components that should be reviewed before implementation.
 
 ## Preamble
 
@@ -481,7 +481,7 @@ If user chooses B, skip this step and continue.
 
 **Check Codex availability:**
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 **If Codex is available**, launch both voices simultaneously:
@@ -976,6 +976,8 @@ plan's living status.
 - If no such section exists, **append it** to the end of the plan file.
 - Always place it as the very last section in the plan file. If it was found mid-file,
   move it: delete the old location and append at the end.
+
+{{include lib/snippets/askuserquestion-split.md}}
 
 {{include lib/snippets/capture-learnings.md}}
 ## Next Steps — Review Chaining

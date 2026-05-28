@@ -1,11 +1,7 @@
 ---
 name: setup-memory
 description: |
-  Set up persistent memory for this coding agent using secondbrain: install the CLI,
-  initialize a local PGLite or Supabase brain, register MCP, capture per-remote
-  trust policy. One command from zero to "persistent memory is running and this
-  agent can call it." Use when: "setup memory", "setup secondbrain", "connect secondbrain",
-  "start secondbrain", "install secondbrain", "configure memory for this machine".
+  Set up persistent memory for this coding agent using secondbrain: install the CLI, initialize a local PGLite or Supabase brain, register MCP, capture per-remote trust policy. One command from zero to "persistent memory is running and this agent can call it."
 triggers:
   - setup memory
   - setup secondbrain
@@ -21,6 +17,10 @@ allowed-tools:
   - Grep
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when: "setup memory", "setup secondbrain", "connect secondbrain", "start secondbrain", "install secondbrain", "configure memory for this machine".
 
 ## Preamble
 

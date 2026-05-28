@@ -1,10 +1,7 @@
 ---
 name: unfreeze
 description: |
-  Clear the freeze boundary set by /freeze, allowing edits to all directories
-  again. Use when you want to widen edit scope without ending the session.
-  Use when asked to "unfreeze", "unlock edits", "remove freeze", or
-  "allow all edits".
+  Clear the freeze boundary set by /freeze, allowing edits to all directories again.
 allowed-tools:
   - Bash
   - Read
@@ -15,6 +12,10 @@ triggers:
   - allow all edits
   - exit careful mode
 ---
+
+## When to invoke
+
+Use when you want to widen edit scope without ending the session. Use when asked to "unfreeze", "unlock edits", "remove freeze", or "allow all edits".
 
 # /unfreeze — Clear Freeze Boundary
 
