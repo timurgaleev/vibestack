@@ -2,14 +2,7 @@
 name: plan-ceo-review
 interactive: true
 description: |
-  CEO/founder-mode plan review. Rethink the problem, find the 10-star product,
-  challenge premises, expand scope when it creates a better product. Four modes:
-  SCOPE EXPANSION (dream big), SELECTIVE EXPANSION (hold scope + cherry-pick
-  expansions), HOLD SCOPE (maximum rigor), SCOPE REDUCTION (strip to essentials).
-  Use when asked to "think bigger", "expand scope", "strategy review", "rethink this",
-  or "is this ambitious enough".
-  Proactively suggest when the user is questioning scope or ambition of a plan,
-  or when the plan feels like it could be thinking bigger.
+  CEO/founder-mode plan review. Rethink the problem, find the 10-star product, challenge premises, expand scope when it creates a better product. Four modes: SCOPE EXPANSION (dream big), SELECTIVE EXPANSION (hold scope + cherry-pick expansions), HOLD SCOPE (maximum rigor), SCOPE REDUCTION (strip to essentials).
 allowed-tools:
   - Read
   - Grep
@@ -23,6 +16,12 @@ triggers:
   - strategy review
   - rethink this plan
 ---
+
+## When to invoke
+
+Use when asked to "think bigger", "expand scope", "strategy review", "rethink this", or "is this ambitious enough".
+
+Proactively suggest when the user is questioning scope or ambition of a plan, or when the plan feels like it could be thinking bigger.
 
 ## Preamble
 
@@ -825,7 +824,7 @@ thorough review.
 **Check tool availability:**
 
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 Use AskUserQuestion:
@@ -1254,6 +1253,8 @@ If promoted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create th
 * One sentence max per option.
 * After each section, pause and wait for feedback.
 * Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
+
+{{include lib/snippets/askuserquestion-split.md}}
 
 {{include lib/snippets/capture-learnings.md}}
 ## Mode Quick Reference

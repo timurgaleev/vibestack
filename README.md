@@ -1,6 +1,6 @@
 # vibestack
 
-> 47 opinionated AI coding workflows. One install. Works in **Claude Code**, **Cursor**, and **Kiro**.
+> 53 opinionated AI coding workflows. One install. Works in **Claude Code**, **Cursor**, and **Kiro**.
 
 [![GitHub Release](https://img.shields.io/github/v/release/timurgaleev/vibestack?style=flat-square&color=000)](https://github.com/timurgaleev/vibestack/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-000?style=flat-square)](LICENSE)
@@ -114,7 +114,7 @@ the spec via `.agents/skills/` — adding them as native targets is
 
 | Path | What lands there | Type |
 |---|---|---|
-| `~/.<agent>/skills/<each-skill>/` | One directory per skill (46) per chosen target. Contains a regular `SKILL.md` plus symlinks to sub-docs and hook scripts. | regular file + symlinks |
+| `~/.<agent>/skills/<each-skill>/` | One directory per skill (53) per chosen target. Contains a regular `SKILL.md` plus symlinks to sub-docs and hook scripts. | regular file + symlinks |
 | `~/.vibestack/bin/` | `vibe-config`, `vibe-slug`, `vibe-learnings-log`, `vibe-learnings-search`, `vibe-render-skill`, `vibe-skill-track` | copies |
 | `~/.vibestack/projects/` | Per-project state (learnings, design docs, test plans). Created empty. | directory |
 | `~/.vibestack/analytics/` | Local-only analytics. Created empty. | directory |
@@ -129,7 +129,7 @@ shape. Claude-Code-specific runtime extensions (the `${CLAUDE_SKILL_DIR}`
 env var, per-skill `PreToolUse` hooks, the `Agent` and `AskUserQuestion`
 tools) are NOT covered by the spec.
 
-For 43 of 47 skills (pure-prose workflows), this is fine — modern LLMs
+For 49 of 53 skills (pure-prose workflows), this is fine — modern LLMs
 map "ask the user" or "dispatch a subagent" to whatever native equivalent
 exists in the host agent. Empirically verified across all three targets.
 
@@ -188,7 +188,7 @@ the install updates every chosen target.
 
 ## What's in the box
 
-47 skills in seven categories. Full reference: [`docs/skills.md`](docs/skills.md).
+53 skills in nine categories. Full reference: [`docs/skills.md`](docs/skills.md).
 
 ### Product & Planning
 | Command | What it does |
@@ -205,6 +205,7 @@ the install updates every chosen target.
 | Command | What it does |
 |---------|-------------|
 | `/review` | Pre-landing PR code review — correctness, security, DB safety, tests |
+| `/spec` | Turn vague intent into a precise, executable spec — files the issue, optional agent spawn |
 | `/ship` | Full ship workflow — merge base, tests, review, version bump, PR |
 | `/investigate` | Systematic debugging — Iron Law: no fix without confirmed root cause |
 | `/cso` | Security audit — OWASP Top 10 + STRIDE threat model |
@@ -268,6 +269,21 @@ the install updates every chosen target.
 | `/pair-agent` | Pair a remote AI agent with your browser session over a secure tunnel |
 | `/setup-browser-cookies` | Import cookies from your real browser into the headless browse session |
 | `/setup-memory` | Set up secondbrain persistent memory as an MCP tool |
+
+### iOS (preview)
+| Command | What it does |
+|---------|-------------|
+| `/ios-qa` | Live-device iOS QA for SwiftUI apps — screenshot → analyze → act → verify loop |
+| `/ios-fix` | Autonomous iOS bug fixer on a real device |
+| `/ios-design-review` | Visual design audit for iOS apps on real hardware |
+| `/ios-clean` | Remove the DebugBridge SPM package and `#if DEBUG` wiring before release |
+| `/ios-sync` | Regenerate the iOS debug bridge against the latest templates |
+
+> **Preview.** The iOS skills drive a real iPhone through a Mac-side iOS-QA
+> daemon and a `DebugBridge` Swift package embedded in the app under test.
+> vibestack does not bundle either yet — each skill detects the daemon and
+> reports `NEEDS_SETUP` when it is absent. Treat them as a reference for the
+> architecture until the daemon ships.
 
 ---
 

@@ -1,12 +1,7 @@
 ---
 name: setup-deploy
 description: |
-  Configure deployment settings for /land-and-deploy. Detects your deploy
-  platform (Fly.io, Render, Vercel, Netlify, Heroku, GitHub Actions, custom),
-  production URL, health check endpoints, and deploy status commands. Writes
-  the configuration to CLAUDE.md so all future deploys are automatic.
-  Use when: "setup deploy", "configure deployment", "set up land-and-deploy",
-  "how do I configure deploys".
+  Configure deployment settings for /land-and-deploy. Detects your deploy platform (Fly.io, Render, Vercel, Netlify, Heroku, GitHub Actions, custom), production URL, health check endpoints, and deploy status commands. Writes the configuration to CLAUDE.md so all future deploys are automatic.
 triggers:
   - configure deploy
   - setup deployment
@@ -20,6 +15,10 @@ allowed-tools:
   - Grep
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when: "setup deploy", "configure deployment", "set up land-and-deploy", "how do I configure deploys".
 
 ## Preamble
 

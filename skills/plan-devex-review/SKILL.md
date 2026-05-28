@@ -2,15 +2,7 @@
 name: plan-devex-review
 interactive: true
 description: |
-  Interactive developer experience plan review. Explores developer personas,
-  benchmarks against competitors, designs magical moments, and traces friction
-  points before scoring. Three modes: DX EXPANSION (competitive advantage),
-  DX POLISH (bulletproof every touchpoint), DX TRIAGE (critical gaps only).
-  Use when asked to "DX review", "developer experience audit", "devex review",
-  or "API design review".
-  Proactively suggest when the user has a plan for developer-facing products
-  (APIs, CLIs, SDKs, libraries, platforms, docs).
-  Voice triggers (speech-to-text aliases): "dx review", "developer experience review", "devex review", "devex audit", "API design review", "onboarding review".
+  Interactive developer experience plan review. Explores developer personas, benchmarks against competitors, designs magical moments, and traces friction points before scoring. Three modes: DX EXPANSION (competitive advantage), DX POLISH (bulletproof every touchpoint), DX TRIAGE (critical gaps only).
 allowed-tools:
   - Read
   - Edit
@@ -24,6 +16,14 @@ triggers:
   - dx plan review
   - check developer onboarding
 ---
+
+## When to invoke
+
+Use when asked to "DX review", "developer experience audit", "devex review", or "API design review".
+
+Proactively suggest when the user has a plan for developer-facing products (APIs, CLIs, SDKs, libraries, platforms, docs).
+
+Voice triggers (speech-to-text aliases): "dx review", "developer experience review", "devex review", "devex audit", "API design review", "onboarding review".
 
 ## Preamble
 
@@ -819,7 +819,7 @@ thorough review.
 **Check tool availability:**
 
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 Use AskUserQuestion:
@@ -1215,6 +1215,8 @@ plan's living status.
 - If no such section exists, **append it** to the end of the plan file.
 - Always place it as the very last section in the plan file. If it was found mid-file,
   move it: delete the old location and append at the end.
+
+{{include lib/snippets/askuserquestion-split.md}}
 
 {{include lib/snippets/capture-learnings.md}}
 ## Next Steps — Review Chaining

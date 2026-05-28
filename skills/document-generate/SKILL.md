@@ -1,12 +1,7 @@
 ---
 name: document-generate
 description: |
-  Generate missing documentation from scratch for a feature, module, or entire project.
-  Uses the Diataxis framework (tutorial / how-to / reference / explanation) to produce
-  complete, structured documentation. Can be invoked standalone or called by
-  /document-release when it finds coverage gaps. Use when asked to "write docs",
-  "generate documentation", "document this feature", "create a tutorial", or
-  "explain this module".
+  Generate missing documentation from scratch for a feature, module, or entire project. Uses the Diataxis framework (tutorial / how-to / reference / explanation) to produce complete, structured documentation. Can be invoked standalone or called by /document-release when it finds coverage gaps.
 allowed-tools:
   - Bash
   - Read
@@ -24,6 +19,10 @@ triggers:
   - explain this module
   - docs for this project
 ---
+
+## When to invoke
+
+Use when asked to "write docs", "generate documentation", "document this feature", "create a tutorial", or "explain this module".
 
 ## Preamble
 

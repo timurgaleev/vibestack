@@ -1,11 +1,7 @@
 ---
 name: open-browser
 description: |
-  Launch vibestack Browser — AI-controlled Chromium with the sidebar extension baked in.
-  Opens a visible browser window where you can watch every action in real time.
-  The sidebar shows a live activity feed and chat. Anti-bot stealth built in.
-  Use when asked to "open browser", "launch browser", "connect chrome",
-  "open chrome", "real browser", "launch chrome", "side panel", or "control my browser".
+  Launch vibestack Browser — AI-controlled Chromium with the sidebar extension baked in. Opens a visible browser window where you can watch every action in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in.
 triggers:
   - open browser
   - launch chromium
@@ -15,6 +11,10 @@ allowed-tools:
   - Read
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when asked to "open browser", "launch browser", "connect chrome", "open chrome", "real browser", "launch chrome", "side panel", or "control my browser".
 
 ## Preamble
 

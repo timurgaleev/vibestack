@@ -1,13 +1,7 @@
 ---
 name: design-review
 description: |
-  Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems,
-  AI slop patterns, and slow interactions — then fixes them. Iteratively fixes issues
-  in source code, committing each fix atomically and re-verifying with before/after
-  screenshots. For plan-mode design review (before implementation), use /plan-design-review.
-  Use when asked to "audit the design", "visual QA", "check if it looks good", or "design polish".
-  Proactively suggest when the user mentions visual inconsistencies or
-  wants to polish the look of a live site.
+  Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems, AI slop patterns, and slow interactions — then fixes them. Iteratively fixes issues in source code, committing each fix atomically and re-verifying with before/after screenshots. For plan-mode design review (before implementation), use /plan-design-review.
 allowed-tools:
   - Bash
   - Read
@@ -22,6 +16,12 @@ triggers:
   - design qa
   - fix design issues
 ---
+
+## When to invoke
+
+Use when asked to "audit the design", "visual QA", "check if it looks good", or "design polish".
+
+Proactively suggest when the user mentions visual inconsistencies or wants to polish the look of a live site.
 
 ## Preamble
 
@@ -840,7 +840,7 @@ Record baseline design score and AI slop score at end of Phase 6.
 
 **Check Codex availability:**
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 **If Codex is available**, launch both voices simultaneously:

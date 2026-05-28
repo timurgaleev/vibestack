@@ -1,11 +1,7 @@
 ---
 name: benchmark-models
 description: |
-  Cross-model benchmark for vibestack skills. Runs the same prompt through Claude,
-  GPT (via Codex CLI), and Gemini side-by-side — compares latency, tokens, cost,
-  and optionally quality via LLM judge. Answers "which model is actually best
-  for this skill?" with data instead of vibes. Use when: "benchmark models",
-  "compare models", "which model is best for X", "cross-model comparison", "model shootout".
+  Cross-model benchmark for vibestack skills. Runs the same prompt through Claude, GPT (via Codex CLI), and Gemini side-by-side — compares latency, tokens, cost, and optionally quality via LLM judge. Answers "which model is actually best for this skill?" with data instead of vibes.
 triggers:
   - cross model benchmark
   - compare claude gpt gemini
@@ -16,6 +12,10 @@ allowed-tools:
   - Read
   - AskUserQuestion
 ---
+
+## When to invoke
+
+Use when: "benchmark models", "compare models", "which model is best for X", "cross-model comparison", "model shootout".
 
 ## Preamble
 
