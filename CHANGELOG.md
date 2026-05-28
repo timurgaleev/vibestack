@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.1 — 2026-05-28
+
+### Fixed
+
+- `/ios-clean`'s description was silently truncated at "…and all" in the
+  agent's skill catalog: the unquoted `#` in `#if DEBUG` started a YAML comment.
+  Quoted the value so the full one-line description shows.
+
 ## 1.7.0 — 2026-05-28
 
 Six new skills and a leaner session start. `/spec` turns a vague request into a
