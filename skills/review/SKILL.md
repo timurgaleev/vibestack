@@ -90,7 +90,7 @@ You are running the `/review` workflow. Analyze the current branch's diff agains
 
 1. Run `git branch --show-current` to get the current branch.
 2. If on the base branch, output: **"Nothing to review — you're on the base branch or have no changes against it."** and stop.
-3. Run `git fetch origin <base> --quiet && git diff origin/<base> --stat` to check if there's a diff. If no diff, output the same message and stop.
+3. Run `git fetch origin <base> --quiet && git diff $(git merge-base origin/<base> HEAD) --stat` to check if there's a diff. If no diff, output the same message and stop.
 
 ---
 
@@ -328,7 +328,7 @@ Fetch the latest base branch to avoid false positives from stale local state:
 git fetch origin <base> --quiet
 ```
 
-Run `git diff origin/<base>` to get the full diff. This includes both committed and uncommitted changes against the latest base branch.
+Run `git diff $(git merge-base origin/<base> HEAD)` to get the full diff. This includes both committed and uncommitted changes against the latest base branch.
 
 ## Step 3.4: Workspace-aware queue status (advisory)
 
@@ -464,8 +464,8 @@ STACK=""
 [ -f go.mod ] && STACK="${STACK}go "
 [ -f Cargo.toml ] && STACK="${STACK}rust "
 echo "STACK: ${STACK:-unknown}"
-DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
-DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_LINES=$((DIFF_INS + DIFF_DEL))
 echo "DIFF_LINES: $DIFF_LINES"
 # Detect test framework for specialist test stub generation
@@ -539,7 +539,7 @@ If learnings are found, include them: "Past learnings for this domain: {learning
 4. Instructions:
 
 "You are a specialist code reviewer. Read the checklist below, then run
-`git diff origin/<base>` to get the full diff. Apply the checklist against the diff.
+`git diff $(git merge-base origin/<base> HEAD)` to get the full diff. Apply the checklist against the diff.
 
 For each finding, output a JSON object on its own line:
 {\"severity\":\"CRITICAL|INFORMATIONAL\",\"confidence\":N,\"path\":\"file\",\"line\":N,\"category\":\"category\",\"summary\":\"description\",\"fix\":\"recommended fix\",\"fingerprint\":\"path:line:category\",\"specialist\":\"name\"}
@@ -642,7 +642,7 @@ The Red Team subagent receives:
 
 Prompt: "You are a red team reviewer. The code has already been reviewed by N specialists
 who found the following issues: {merged findings summary}. Your job is to find what they
-MISSED. Read the checklist, run `git diff origin/<base>`, and look for gaps.
+MISSED. Read the checklist, run `git diff $(git merge-base origin/<base> HEAD)`, and look for gaps.
 Output findings as JSON objects (same schema as the specialists). Focus on cross-cutting
 concerns, integration boundary issues, and failure modes that specialist checklists
 don't cover."
@@ -814,10 +814,10 @@ Every diff gets adversarial review from both Claude and Codex. LOC is not a prox
 **Detect diff size and tool availability:**
 
 ```bash
-DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
-DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 # Legacy opt-out — only gates Codex passes, Claude always runs
 OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
 echo "DIFF_SIZE: $DIFF_TOTAL"
@@ -835,7 +835,7 @@ If `OLD_CFG` is `disabled`: skip Codex passes only. Claude adversarial subagent 
 Dispatch via the Agent tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
 
 Subagent prompt:
-"Read the diff for this branch with `git diff origin/<base>`. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment)."
+"Read the diff for this branch with `git diff $(git merge-base origin/<base> HEAD)`. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment)."
 
 Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** flow into the same Fix-First pipeline as the structured review. **INVESTIGATE findings** are presented as informational.
 
@@ -850,7 +850,7 @@ If Codex is available AND `OLD_CFG` is NOT `disabled`:
 ```bash
 TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-command -v codex >/dev/null 2>&1 && codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff origin/<base> to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
+command -v codex >/dev/null 2>&1 && codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
 ```
 
 Set the Bash tool's `timeout` parameter to `300000` (5 minutes). Do NOT use the `timeout` shell command — it doesn't exist on macOS. After the command completes, read stderr:
