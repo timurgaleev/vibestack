@@ -1255,6 +1255,8 @@ If promoted, copy the CEO plan content to `docs/designs/{FEATURE}.md` (create th
 * After each section, pause and wait for feedback.
 * Use **CRITICAL GAP** / **WARNING** / **OK** for scannability.
 
+{{include lib/snippets/askuserquestion-split.md}}
+
 {{include lib/snippets/capture-learnings.md}}
 ## Mode Quick Reference
 ```
