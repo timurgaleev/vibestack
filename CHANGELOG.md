@@ -36,16 +36,27 @@ start, and the review/retro/deploy skills got sharper correctness guards.
   voice triggers" routing prose moves into a new `## When to invoke` body
   section that only loads when the skill is invoked. The explicit `triggers:`
   list is unchanged, so auto-invocation is unaffected.
-- **`/review`** now runs a pre-emit verification gate: every finding must quote
-  the `file:line` and the verbatim code that motivates it, or it is forced to
-  low confidence and suppressed to the appendix — killing the "field doesn't
-  exist on the model" class of framework false positives.
+- **`/review`, `/cso`, `/plan-eng-review`, and `/ship`** now run a pre-emit
+  verification gate: every finding must quote the `file:line` and the verbatim
+  code that motivates it, or it is forced to low confidence and suppressed to
+  the appendix — killing the "field doesn't exist on the model" class of
+  framework false positives.
 - **`/retro`** gained a Step 0.5 stale-base pre-flight guard that blocks
   fabricating a retrospective against a stale base branch or a drifted "today"
   anchor, with explicit skip paths for no-remote / detached-HEAD / offline runs.
 - **`/land-and-deploy`** now reads authoritative PR state after any failed
   `gh pr merge` (MERGED / OPEN / CLOSED) instead of retrying the merge, with
   non-destructive worktree cleanup on the already-merged path.
+
+### Fixed
+
+- Codex detection now uses `command -v codex` instead of `which codex` across
+  all ten codex-using skills, so detection works in minimal / non-interactive
+  shells where `which` is unavailable.
+- `/review` and `/ship` compute the review diff against
+  `git merge-base origin/<base> HEAD` instead of the bare base tip, so a base
+  branch that has advanced past the branch point no longer injects phantom
+  deletions into the review.
 
 ## 1.6.1 — 2026-05-18
 
