@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.2 — 2026-05-28
+
+### Added
+
+- **`/ship` now closes the `/spec` source issue on merge.** When the branch has
+  a `/spec` archive (matched by `spec_branch`) carrying a `spec_issue_number`,
+  `/ship` adds a `## Linked Spec` section to the PR body: `Closes #N` when the
+  Plan Completion gate reports full delivery, or a "Linked to #N (partial —
+  not auto-closing)" notice otherwise, so a partial PR never silently closes
+  the issue. Completes the `/spec` → `/ship` contract from v1.7.0.
+
 ## 1.7.1 — 2026-05-28
 
 ### Fixed
