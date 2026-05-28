@@ -1,6 +1,6 @@
 ---
 name: ios-clean
-description: Remove the DebugBridge SPM package and all #if DEBUG wiring from an iOS app.
+description: "Remove the DebugBridge SPM package and all #if DEBUG wiring from an iOS app."
 allowed-tools:
   - Bash
   - Read
