@@ -1,0 +1,14 @@
+{
+  "name": "vibe-ios-qa-daemon",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mac-side daemon that brokers HTTP between an agent and a real iPhone over the USB CoreDevice tunnel (+ optional Tailscale). Runs under Bun. No external dependencies.",
+  "scripts": {
+    "test": "bun test",
+    "start": "bun run src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
