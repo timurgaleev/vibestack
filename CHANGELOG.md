@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.3 — 2026-05-29
+
+### Changed
+
+- **Deduped the Review Readiness Dashboard into a shared snippet.** The 50-line
+  dashboard block was byte-identical across `/plan-ceo-review`,
+  `/plan-eng-review`, `/plan-design-review`, `/plan-devex-review`, and
+  `/devex-review`; it now lives in `lib/snippets/review-readiness-dashboard.md`
+  and is pulled in via `{{include}}`. Pure internal refactor — rendered output
+  is byte-identical (verified), no behavior change. `/ship` keeps its own
+  richer dashboard variant.
+
 ## 1.7.2 — 2026-05-28
 
 ### Added
