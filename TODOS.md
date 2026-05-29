@@ -2,12 +2,39 @@
 
 ## Open
 
+### From v1.7.x upstream sync (2026-05-28)
+
+Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
+"5+ options — split, never drop" rule, the catalog-token trim, the
+review/retro/deploy correctness guards, and `/ship` auto-closing the `/spec`
+issue. Remaining follow-ups:
+
+10. **iOS preview suite → functional (or decide reference-only).** `/ios-qa`,
+    `/ios-fix`, `/ios-design-review`, `/ios-clean`, `/ios-sync` ship as preview
+    stubs: each detects a Mac-side iOS-QA daemon (`vibe-ios-qa-daemon`) + a
+    `DebugBridge` Swift package and reports `NEEDS_SETUP` because vibestack
+    bundles neither. To make them real, either build/vendor the daemon +
+    `DebugBridge` SPM targets + a `./setup` path, or consciously keep them as an
+    architecture reference. Until then they cannot drive a device.
+    Effort: L (daemon + Swift package + codegen + tunnel).
+    Priority: P3.
+    Depends on: the user actually doing iOS development.
+
+11. **Broaden the AskUserQuestion split rule (optional).** The "5+ options —
+    split, never drop" snippet is wired into the 4 `plan-*` skills +
+    `/office-hours` (the genuine 5+ scope-decision surfaces). If `/qa`, `/ship`,
+    or `/autoplan` start producing 5+ independent-option asks, add the
+    `{{include lib/snippets/askuserquestion-split.md}}` directive there too.
+    Effort: S.
+    Priority: P3.
+    Depends on: a real 5+ option ask surfacing in one of those skills.
+
 ### v1.5+ candidates from multi-target install eng review (2026-05-09)
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260509-101119.md` (APPROVED, multi-target install for Cursor + Kiro). Ship target: v1.4.0.
 
 6. **`vibe certify` cross-runtime conformance harness** — a command
-   that renders all 46 skills, installs into temp fixtures per target,
+   that renders all 53 skills, installs into temp fixtures per target,
    runs smoke prompts, and prints a parity report
    (identical / soft-enforced / hard-enforced / broken). Codex
    outside-voice idea, validated independently. Turns "multi-target
