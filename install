@@ -441,6 +441,9 @@ if [ "$DRY_RUN" != "1" ]; then
     for script in "$REPO_DIR/bin"/vibe-*; do
       [ -f "$script" ] || continue
       name=$(basename "$script")
+      # vibe-parity-audit is a maintainer/dev tool that must run from the repo
+      # checkout (it reads skills/); don't install it into the runtime bin.
+      case "$name" in vibe-parity-audit) continue;; esac
       cp "$script" "$VIBE_BIN/$name"
       chmod +x "$VIBE_BIN/$name"
     done
