@@ -44,6 +44,10 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Priority: P3.
    Depends on: v1.4 ship + a few months of real usage to know which
    conformance signals actually matter.
+   **Related (shipped v1.7.4):** `bin/vibe-parity-audit` already covers the
+   *upstream-parity* axis (do skills still mirror their source after a sync) —
+   distinct from this *cross-runtime* axis (do they install/behave identically
+   across Claude/Cursor/Kiro). The two could share a report format later.
 
 7. **`./install --scope=user|project` flag** — install to project-local
    `.cursor/skills/` etc. instead of `~/.cursor/skills/`. Locks
@@ -78,7 +82,7 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
      Patch`, `Plan Mode Safe Operations`, `Repo Ownership`, `Search Before
      Building` — all live only in the 5 iOS preview skills. Defer: don't
      snippet-ify (or trim) preview-stub boilerplate until the iOS suite's fate
-     is decided (item #10). Some of it is generic gstack tier-2 boilerplate
+     is decided (item #10). Some of it is generic upstream tier-2 boilerplate
      vibestack's other skills don't carry and may be trimmed rather than shared.
    Effort: M (per drifted family, ~2-3 days each).
    Priority: P2.

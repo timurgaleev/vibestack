@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.7.4 — 2026-05-29
+
+### Added
+
+- **`bin/vibe-parity-audit`** — a maintainer tool that proves the skills still
+  mirror their upstream source after a sync. It fetches each upstream skill's
+  generated `SKILL.md`, normalizes away the agreed adaptations (slim preamble,
+  `When to invoke` block, brand/path substitutions, stubs), and reports the
+  fraction of each local skill's workflow lines present upstream (exact or
+  fuzzy), with a median-coverage PASS/FAIL gate. Brand-neutral: the upstream
+  identity and brand map live only in a local, untracked `~/.vibestack/parity.conf`
+  (run `--init` to scaffold it). Not installed into the runtime bin — it runs
+  from the repo checkout. Current snapshot: median 96% coverage, PASS.
+
 ## 1.7.3 — 2026-05-29
 
 ### Changed
