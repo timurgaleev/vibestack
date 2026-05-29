@@ -60,13 +60,29 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
 
 1. **Migrate remaining shared sections to `lib/snippets/`** —
-   Codex outside-voice fallback (×9), Review Readiness Dashboard (×6),
-   Spec Review Loop (×2). Each needs a per-section drift-reconciliation
-   pass (same methodology as v1 Day 0). Defer until v1 ships and the
-   render pipeline is proven on `capture-learnings` + `prior-learnings`.
-   Effort: M (per snippet, ~3 days).
+   Drift map (measured 2026-05-29):
+   - **DONE (v1.7.3):** Review Readiness Dashboard — 5 byte-identical copies
+     (`plan-ceo-review`, `plan-eng-review`, `plan-design-review`,
+     `plan-devex-review`, `devex-review`) → `lib/snippets/review-readiness-dashboard.md`.
+     Reconciled against upstream (identical modulo brand/stub adaptations);
+     render-diff proved lossless. `ship` keeps its own richer 64-line variant.
+   - **DRIFTED — need real reconciliation, NOT mechanical dedup:** `VIBESTACK
+     REVIEW REPORT` (×6), `Plan File Review Report` (×6), `Review Log` (×5),
+     `Spec Review Loop` (×2), `Plan Status Footer` (×6). Each copy carries
+     genuine per-skill content (review dimensions, report fields), so a snippet
+     would need `{SKILL_NAME}` + per-skill parameterization. The "Codex
+     outside-voice fallback" is woven through the plan-* outside-voice flow, not
+     a self-contained block.
+   - **iOS-stub boilerplate (×5 each, byte-identical):** `Voice`, `Skill
+     routing`, `Operational Self-Improvement`, `Model-Specific Behavioral
+     Patch`, `Plan Mode Safe Operations`, `Repo Ownership`, `Search Before
+     Building` — all live only in the 5 iOS preview skills. Defer: don't
+     snippet-ify (or trim) preview-stub boilerplate until the iOS suite's fate
+     is decided (item #10). Some of it is generic gstack tier-2 boilerplate
+     vibestack's other skills don't carry and may be trimmed rather than shared.
+   Effort: M (per drifted family, ~2-3 days each).
    Priority: P2.
-   Depends on: v1 ship.
+   Depends on: nothing for the drifted families; iOS-boilerplate depends on #10.
 
 2. **Lint rules for `lib/snippets/`** — no duplicate headings, no
    runtime-execution instructions (a snippet should not contain
