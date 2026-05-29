@@ -9,7 +9,7 @@
 import DebugBridge
 
 @MainActor
-func startGstackDebugBridge(appState: AppState) {
+func startVibestackDebugBridge(appState: AppState) {
     // Read --recording flag from launch arguments
     let recording = ProcessInfo.processInfo.arguments.contains("--vibe-recording")
 
@@ -33,7 +33,7 @@ func startGstackDebugBridge(appState: AppState) {
 //
 //       init() {
 //           #if DEBUG
-//           startGstackDebugBridge(appState: appState)
+//           startVibestackDebugBridge(appState: appState)
 //           #endif
 //       }
 //
