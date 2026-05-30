@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.8.0 — 2026-05-30
+
+The iOS suite is real. The five `/ios-*` skills are no longer preview stubs —
+vibestack now ships the whole live-device QA subsystem.
+
+### Added
+
+- **iOS-QA daemon** (`skills/ios-qa/daemon/`, Bun, zero external deps) — the
+  Mac-side broker between an agent and a real iPhone over the USB CoreDevice
+  tunnel: allowlist, audit log, capability-tiered `/auth/mint`, session tokens,
+  single-instance flock, request proxy/classify, tunnel bootstrap, devicectl.
+  Launched via `skills/ios-qa/bin/vibe-ios-qa-daemon`; tailnet grants via
+  `vibe-ios-qa-mint`. Optional `--tailnet` exposes the device to authenticated
+  remote agents over Tailscale.
+- **Accessor codegen** (`skills/ios-qa/scripts/`) — generates typed `@Observable`
+  state accessors from your Swift source: a `swift-syntax` SwiftPM tool with a
+  TypeScript fallback.
+- **`DebugBridge` Swift/Obj-C templates** (`skills/ios-qa/templates/`) — the
+  embedded `StateServer`, KIF-derived synthesized-tap target, debug overlay, and
+  wiring you add to the app under test (DEBUG-only).
+
+### Changed
+
+- The five `/ios-*` skills flip from "preview, not bundled" to real: each now
+  resolves the bundled daemon launcher and gives Bun + Xcode + DebugBridge setup
+  steps, still detecting the daemon and reporting `NEEDS_SETUP` (never fabricating
+  device actions) until the toolchain + device + bridge are in place. Each skill
+  was also trimmed of ~490 lines of non-vibestack tier-2 boilerplate to match
+  house style.
+
+**Verified:** daemon `bun test` 91/91, codegen `bun test` 20/20, Swift sources
+parse clean. The on-device loop (Xcode build of `DebugBridge`, a connected
+iPhone) runs on your Mac — see `skills/ios-qa/docs/`.
+
 ## 1.7.4 — 2026-05-29
 
 ### Added
