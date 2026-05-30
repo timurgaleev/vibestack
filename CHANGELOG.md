@@ -1,16 +1,27 @@
 # Changelog
 
+## 1.8.3 — 2026-05-30
+
+### Fixed
+
+- The v1.8.2 changelog entry inadvertently **quoted an upstream author name**
+  while describing its removal, so the repo-wide brand audit still found one hit
+  (in `CHANGELOG.md` itself). Reworded to describe the change without naming the
+  term. `git grep -i` over all tracked files for the brand/author terms now
+  returns zero — lesson logged: never quote the banned term when documenting its
+  removal.
+
 ## 1.8.2 — 2026-05-30
 
 ### Fixed
 
-- **Brand audit hardened and two residual references removed.** A
-  `"Garry's Durendal"` device-name example in a daemon code comment is now
-  `"Jane's iPhone"`, and the PR template's brand-audit checklist no longer spells
-  out the upstream brand terms (it points to a case-insensitive whole-repo audit
-  with the term list kept out of the repo). The audit is now case-insensitive and
-  covers every tracked file — skills, docs, code, comments, and tests — not just
-  the prose surface.
+- **Brand audit hardened and residual references removed.** A device-name
+  example in a daemon code comment that used an upstream author's name is now a
+  neutral `"Jane's iPhone"`, and the PR template's brand-audit checklist no
+  longer spells out the upstream brand terms (it points to a case-insensitive
+  whole-repo audit, with the term list kept out of the repo). The audit is now
+  case-insensitive and covers every tracked file — skills, docs, code, comments,
+  and tests — not just the prose surface.
 
 ## 1.8.1 — 2026-05-30
 
