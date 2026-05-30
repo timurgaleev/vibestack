@@ -20,7 +20,7 @@ Thanks for opening a PR. Run through the checklist below before requesting revie
 
 - [ ] **`./install` runs without error** on a clean shell.
 - [ ] **`./uninstall` followed by `./install` is idempotent** (no leftover state, no duplicate symlinks).
-- [ ] **Brand audit returns zero hits**: `grep -rn "gstack\|GStack\|garrytan\|ycombinator\|gbrain\|GBrain" skills/ docs/ README.md lib/snippets/` is empty.
+- [ ] **Brand audit clean** — no upstream brand or author names appear in any tracked file (skills, docs, README, lib, bin, code, comments, tests). Run a **case-insensitive** `git grep -i` for the upstream brand terms (the term list is kept in the local sync notes, out of the repo) and confirm it is empty.
 - [ ] **Skill count consistency** — if I added/removed a skill, the count is updated in `README.md` line 3 and matches `ls skills/ | wc -l` and `docs/skills.md` headings.
 - [ ] **CHANGELOG.md** entry added under `## Unreleased` (or a new version section).
 - [ ] **For new skills**: SKILL.md has the standard 4-key frontmatter (`name`, `description`, `allowed-tools`, `triggers`), the directory name matches `name:` exactly, and the skill is documented in both `README.md` skills table and `docs/skills.md`.

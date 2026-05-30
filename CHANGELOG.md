@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.8.2 — 2026-05-30
+
+### Fixed
+
+- **Brand audit hardened and two residual references removed.** A
+  `"Garry's Durendal"` device-name example in a daemon code comment is now
+  `"Jane's iPhone"`, and the PR template's brand-audit checklist no longer spells
+  out the upstream brand terms (it points to a case-insensitive whole-repo audit
+  with the term list kept out of the repo). The audit is now case-insensitive and
+  covers every tracked file — skills, docs, code, comments, and tests — not just
+  the prose surface.
+
 ## 1.8.1 — 2026-05-30
 
 ### Added
