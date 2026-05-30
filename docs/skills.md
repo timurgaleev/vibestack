@@ -480,7 +480,8 @@ Triggers: `setup memory`, `setup secondbrain`, `install secondbrain`, `connect s
 > package added to your app (DEBUG-only). Each skill detects the daemon and
 > reports `NEEDS_SETUP` (without fabricating device actions) until those are in
 > place. The daemon's logic is unit-tested (`bun test` in `skills/ios-qa/daemon`);
-> the on-device loop runs on your Mac + iPhone.
+> the on-device loop runs on your Mac + iPhone. Full end-to-end walkthrough:
+> [`howto-ios-testing.md`](howto-ios-testing.md).
 
 ### `/ios-qa`
 Live-device iOS QA for SwiftUI apps.

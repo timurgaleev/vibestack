@@ -73,7 +73,8 @@ interactions, taps, or screenshots. Requirements:
   generate the typed accessors with `ios-qa/scripts/gen-accessors`, add the
   emitted `DebugBridge` package, and paste the wiring from
   `ios-qa/templates/DebugBridgeWiring.swift.template` into your `@main` App.
-  Full walkthrough + Tailscale ACL example under `ios-qa/docs/`.
+  Full walkthrough: `docs/howto-ios-testing.md`. Tailscale ACL example:
+  `ios-qa/docs/tailscale-acl-example.md`.
 
 ## Architecture
 
