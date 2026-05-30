@@ -9,16 +9,15 @@ Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
 review/retro/deploy correctness guards, and `/ship` auto-closing the `/spec`
 issue. Remaining follow-ups:
 
-10. **iOS preview suite → functional (or decide reference-only).** `/ios-qa`,
-    `/ios-fix`, `/ios-design-review`, `/ios-clean`, `/ios-sync` ship as preview
-    stubs: each detects a Mac-side iOS-QA daemon (`vibe-ios-qa-daemon`) + a
-    `DebugBridge` Swift package and reports `NEEDS_SETUP` because vibestack
-    bundles neither. To make them real, either build/vendor the daemon +
-    `DebugBridge` SPM targets + a `./setup` path, or consciously keep them as an
-    architecture reference. Until then they cannot drive a device.
-    Effort: L (daemon + Swift package + codegen + tunnel).
-    Priority: P3.
-    Depends on: the user actually doing iOS development.
+10. **iOS suite → functional. DONE (v1.8.0).** The Mac-side daemon
+    (`skills/ios-qa/daemon/`, Bun), the `DebugBridge` Swift/Obj-C templates
+    (`skills/ios-qa/templates/`), the accessor codegen (`skills/ios-qa/scripts/`,
+    TS + swift-syntax tool), and the `vibe-ios-qa-daemon`/`vibe-ios-qa-mint`
+    launchers all ship now. Verified here: daemon `bun test` 91/91, codegen
+    `bun test` 20/20, Swift source parses. Remaining (the user's machine, can't be
+    done here): connect an iPhone, `swift build` the DebugBridge in Xcode, and run
+    the on-device find→fix→verify loop. Possible later polish: a `./setup` that
+    runs `swift build` for the codegen tool + checks Bun/Xcode/devicectl.
 
 11. **Broaden the AskUserQuestion split rule (optional).** The "5+ options —
     split, never drop" snippet is wired into the 4 `plan-*` skills +

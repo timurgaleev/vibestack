@@ -270,7 +270,7 @@ the install updates every chosen target.
 | `/setup-browser-cookies` | Import cookies from your real browser into the headless browse session |
 | `/setup-memory` | Set up secondbrain persistent memory as an MCP tool |
 
-### iOS (preview)
+### iOS
 | Command | What it does |
 |---------|-------------|
 | `/ios-qa` | Live-device iOS QA for SwiftUI apps — screenshot → analyze → act → verify loop |
@@ -279,11 +279,14 @@ the install updates every chosen target.
 | `/ios-clean` | Remove the DebugBridge SPM package and `#if DEBUG` wiring before release |
 | `/ios-sync` | Regenerate the iOS debug bridge against the latest templates |
 
-> **Preview.** The iOS skills drive a real iPhone through a Mac-side iOS-QA
-> daemon and a `DebugBridge` Swift package embedded in the app under test.
-> vibestack does not bundle either yet — each skill detects the daemon and
-> reports `NEEDS_SETUP` when it is absent. Treat them as a reference for the
-> architecture until the daemon ships.
+> The iOS skills drive a real iPhone over the USB CoreDevice tunnel via a
+> Mac-side daemon (bundled at `skills/ios-qa/daemon/`, run through
+> `vibe-ios-qa-daemon`) and a `DebugBridge` Swift package you embed in the app
+> under test (DEBUG-only, generated from `skills/ios-qa/templates/`).
+> **Requirements:** macOS with [Bun](https://bun.sh) + Xcode, a paired iPhone,
+> and the DebugBridge package added to your app. Each skill detects the daemon
+> and reports `NEEDS_SETUP` (without fabricating device actions) until those are
+> in place. Remote QA over Tailscale is supported via `vibe-ios-qa-mint`.
 
 ---
 
