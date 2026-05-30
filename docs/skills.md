@@ -469,13 +469,18 @@ Triggers: `setup memory`, `setup secondbrain`, `install secondbrain`, `connect s
 
 ---
 
-## iOS (preview)
+## iOS
 
-> These skills drive a real iPhone through a Mac-side iOS-QA daemon
-> (`vibe-ios-qa-daemon`) and a `DebugBridge` Swift package embedded in the app
-> under test. **vibestack does not bundle either yet** — each skill detects the
-> daemon and reports `NEEDS_SETUP` when it is absent. Treat them as a reference
-> for the architecture and the find→fix→verify loop until the daemon ships.
+> These skills drive a real iPhone over the USB CoreDevice tunnel via a Mac-side
+> daemon (bundled at `skills/ios-qa/daemon/`, a Bun app run through
+> `vibe-ios-qa-daemon`; tailnet grants via `vibe-ios-qa-mint`) and a
+> `DebugBridge` Swift package you embed in the app under test, generated from
+> `skills/ios-qa/templates/` by `skills/ios-qa/scripts/gen-accessors`.
+> **Requirements:** macOS with Bun + Xcode, a paired iPhone, and the DebugBridge
+> package added to your app (DEBUG-only). Each skill detects the daemon and
+> reports `NEEDS_SETUP` (without fabricating device actions) until those are in
+> place. The daemon's logic is unit-tested (`bun test` in `skills/ios-qa/daemon`);
+> the on-device loop runs on your Mac + iPhone.
 
 ### `/ios-qa`
 Live-device iOS QA for SwiftUI apps.

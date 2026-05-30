@@ -2,7 +2,7 @@
 
 **Generated:** 2026-05-09 (Day 0 Track A of v1.4.0 multi-target install)
 **Track B verified:** 2026-05-09 (Cursor 2026.05.07-42ddaca, Kiro CLI 2.2.2)
-**Skills audited:** 53 (47 prior; `/spec` + the 5-skill iOS suite added in the upstream sync. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent; the 5 iOS skills depend on an external Mac-side iOS-QA daemon — `vibe-ios-qa-daemon` — not bundled by vibestack, detected at runtime, same external-dependency profile as the `/browse` family.)
+**Skills audited:** 53 (47 prior; `/spec` + the 5-skill iOS suite added in the upstream sync. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent; the 5 iOS skills run a **bundled** Mac-side daemon (`skills/ios-qa/daemon/`, Bun) via `vibe-ios-qa-daemon`, plus a `DebugBridge` Swift package the user embeds in the app under test; they require Bun + Xcode + a paired iPhone and detect availability at runtime, reporting `NEEDS_SETUP` otherwise.)
 **Spec reference:** [agentskills.io/specification](https://agentskills.io/specification)
 
 This audit verifies vibestack's 53 skills against the Agent Skills open standard,
@@ -27,7 +27,7 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
 | Skills using `${CLAUDE_SKILL_DIR}` substitution | 5 skills | careful, freeze, guard, investigate, ship |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
-| Skills with external daemon dependency (not bundled) | 9 skills | browse, open-browser, pair-agent, setup-browser-cookies, ios-qa, ios-fix, ios-design-review, ios-clean, ios-sync |
+| Skills needing an external daemon/toolchain | 9 skills | browse family (daemon NOT bundled): browse, open-browser, pair-agent, setup-browser-cookies · iOS (daemon bundled, needs Bun+Xcode+iPhone): ios-qa, ios-fix, ios-design-review, ios-clean, ios-sync |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
 | Skills using `AskUserQuestion` (Claude-specific) | ~50 skills | most of the pack |
 
