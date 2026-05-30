@@ -287,6 +287,7 @@ the install updates every chosen target.
 > and the DebugBridge package added to your app. Each skill detects the daemon
 > and reports `NEEDS_SETUP` (without fabricating device actions) until those are
 > in place. Remote QA over Tailscale is supported via `vibe-ios-qa-mint`.
+> **Full end-to-end guide:** [`docs/howto-ios-testing.md`](docs/howto-ios-testing.md).
 
 ---
 

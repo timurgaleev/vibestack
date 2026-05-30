@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.1 — 2026-05-30
+
+### Added
+
+- **`docs/howto-ios-testing.md`** — the end-to-end iOS QA walkthrough for
+  external users: prerequisites (Xcode 16+, a paired iPhone, Bun), adding the
+  `DebugBridge` package to your app, building/installing to the device, starting
+  `vibe-ios-qa-daemon`, the raw HTTP endpoint reference, remote QA over Tailscale
+  with `vibe-ios-qa-mint`, shipping a clean Release build, and a failure table.
+  Linked from the README and `docs/skills.md`; the 5 `/ios-*` skills point to it.
+
 ## 1.8.0 — 2026-05-30
 
 The iOS suite is real. The five `/ios-*` skills are no longer preview stubs —
