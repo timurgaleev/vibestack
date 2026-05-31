@@ -82,16 +82,7 @@ RECOMMENDATION: Choose A because uncommitted work should be preserved as a commi
 
 After the user chooses, execute their choice (commit or stash), then continue with setup.
 
-**Find the browse binary:**
-
-## SETUP
-
-```bash
-# vibestack does not include a browse daemon.
-echo "BROWSE_NOT_AVAILABLE"
-```
-
-If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
+{{include lib/snippets/browse-setup.md}}
 
 ## Test Framework Bootstrap
 
