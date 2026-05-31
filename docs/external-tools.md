@@ -28,6 +28,26 @@ additional case in `./install`. Tracked as a v1.5+ candidate.
 
 **Required by:** `/browse`, `/open-browser`, `/pair-agent`, `/setup-browser-cookies`
 
+### Bundled stateless shim (since v1.9.0)
+
+`/design-review` no longer surrenders when no daemon is present. vibestack now
+ships **`vibe-browse`** — a stateless, Playwright-backed shim under
+`skills/browse/` that implements the read-only `$B` verb surface:
+`goto`, `screenshot`, `responsive`, `viewport`, `console`, `network`, `perf`,
+`js`, `css`, `is`, `text`, `url`, `status`. On first capture it installs
+Playwright + Chromium into `~/.vibestack/browse/` (one time), then runs
+locally. Each verb is independent — `goto` records the target URL and every
+capture re-navigates fresh, so no browser persists between calls.
+
+**What it does NOT do:** cross-call element refs (`@e3`) and the interaction
+verbs that need them — `snapshot -i/-a/-D`, `click`, `fill`, `hover`, `upload`,
+`dialog` — plus CDP/cookie/tunnel/pairing. Those print `NOT_SUPPORTED:<verb>`;
+the consuming skill skips that pass. The interaction-heavy skills below
+(`/browse`, `/open-browser`, `/pair-agent`, `/setup-browser-cookies`) still need
+the full daemon.
+
+### Full daemon (interaction + CDP)
+
 **What it is:** a persistent headless Chromium daemon that exposes a fast (~100ms) command interface for navigating, screenshotting, asserting, and interacting with web pages. Skills that depend on it expect a binary at:
 
 ```

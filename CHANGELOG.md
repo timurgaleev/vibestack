@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.9.0 — 2026-05-31
+
+### Added
+
+- **Bundled browse shim — `/design-review` works without an external daemon.**
+  vibestack now ships `vibe-browse`, a stateless Playwright-backed
+  implementation of the read-only `$B` verb surface (`goto`, `screenshot`,
+  `responsive`, `viewport`, `console`, `network`, `perf`, `js`, `css`, `is`,
+  `text`, `url`, `status`). Previously `/design-review` hard-coded
+  `BROWSE_NOT_AVAILABLE` and fell back to text-only checks — which silently
+  passed pages that returned HTTP 200 while rendering an error overlay. The
+  shim takes real Chromium screenshots (desktop + mobile), captures console
+  errors and failed requests, and extracts computed typography/color for the
+  design-system audit. First capture installs Playwright + Chromium into
+  `~/.vibestack/browse/` (one time); detection (`status`) stays instant and
+  never triggers the download.
+
+### Changed
+
+- `/design-review` SETUP now detects the bundled shim via the shared
+  `lib/snippets/browse-setup.md` include and binds `$B` to it. When the shim is
+  unavailable, the text-only fallback no longer trusts a bare `curl` status —
+  it verifies the response **body** before calling a page healthy.
+
+### Notes
+
+- Cross-call element refs (`@e3`) and interaction verbs (`snapshot -i/-a/-D`,
+  `click`, `fill`, `hover`, `upload`, `dialog`) are intentionally not in the
+  stateless shim; they print `NOT_SUPPORTED:<verb>` and the skill skips that
+  pass. The interaction-heavy skills (`/browse`, `/open-browser`,
+  `/pair-agent`, `/setup-browser-cookies`) still expect the full daemon — see
+  [`docs/external-tools.md`](docs/external-tools.md#browse-daemon).
+
 ## 1.8.3 — 2026-05-30
 
 ### Fixed

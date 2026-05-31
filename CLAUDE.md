@@ -205,6 +205,17 @@ drift.
 - Good: `fix: safe exception sed — replace \s with [[:space:]] for macOS BSD sed`
 - Bad: `update check-careful.sh`
 
+## Shipping (this repo)
+
+When work in this repo is complete and verified (tests green, no drift, brand
+audit clean), **proceed straight to `/ship` — do not pause to ask for commit or
+PR permission.** This is a standing, repo-scoped authorization that overrides
+the global "never commit/push without explicit permission" rule for vibestack
+only. `/ship` branches off main, runs tests, reviews the diff, bumps `VERSION`,
+updates `CHANGELOG.md`, commits, pushes, and opens the PR. If `VERSION` /
+`CHANGELOG` were already bumped by hand for the change, reconcile rather than
+double-bump.
+
 ## Adding a skill checklist
 
 - [ ] `skills/<name>/SKILL.md` exists with valid frontmatter
