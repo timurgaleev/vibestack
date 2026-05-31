@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# vibe-browse — launcher for the stateless Playwright `$B` shim.
+#
+# Resolves the runtime (vibe-browse.mjs) sibling to this script, ensures a
+# self-contained Playwright + Chromium install under $VIBESTACK_HOME/browse
+# (created on first use, then cached), and execs node against it.
+#
+# Detection contract: with no arguments and node missing, prints
+# BROWSE_NOT_AVAILABLE and exits 0 so a skill's SETUP can degrade to text-only.
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+RUNTIME="$SELF_DIR/../runtime/vibe-browse.mjs"
+PKG="$SELF_DIR/../runtime/package.json"
+
+VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+DEP_DIR="$VIBE_HOME/browse"
+
+# No node → shim cannot run. Emit the detection sentinel and stop.
+if ! command -v node >/dev/null 2>&1; then
+  echo "BROWSE_NOT_AVAILABLE"
+  exit 0
+fi
+if [ ! -f "$RUNTIME" ]; then
+  echo "BROWSE_NOT_AVAILABLE"
+  exit 0
+fi
+
+# Verbs that need no browser must stay cheap — never trigger the heavy
+# first-run download for them. Detection (`status`) is the hot path here.
+case "${1:-}" in
+  status | url | viewport) exec node "$RUNTIME" "$@" ;;
+esac
+
+# First-run bootstrap: install Playwright + Chromium into the cache dir.
+if [ ! -d "$DEP_DIR/node_modules/playwright" ]; then
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "BROWSE_NOT_AVAILABLE"
+    exit 0
+  fi
+  echo "vibe-browse: first-run setup — installing Playwright + Chromium (one time)…" >&2
+  mkdir -p "$DEP_DIR"
+  cp "$PKG" "$DEP_DIR/package.json"
+  ( cd "$DEP_DIR" && npm install --silent --no-audit --no-fund >&2 )
+  ( cd "$DEP_DIR" && npx --yes playwright install chromium >&2 )
+fi
+
+# Point the runtime at the cached Playwright install (ESM resolves it by path).
+export VIBE_BROWSE_DEP_DIR="$DEP_DIR"
+exec node "$RUNTIME" "$@"
