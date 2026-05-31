@@ -1,0 +1,11 @@
+{
+  "name": "vibe-browse-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-contained Playwright runtime for the vibestack browse shim. Installed on first use under $VIBESTACK_HOME/browse — kept out of any repo-wide JS build, mirroring the ios-qa daemon.",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
