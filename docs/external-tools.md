@@ -28,7 +28,7 @@ additional case in `./install`. Tracked as a v1.5+ candidate.
 
 **Required by:** `/browse`, `/open-browser`, `/pair-agent`, `/setup-browser-cookies`
 
-### Bundled stateless shim (since v1.9.0)
+### Bundled stateless shim (since v1.8.4)
 
 `/design-review` no longer surrenders when no daemon is present. vibestack now
 ships **`vibe-browse`** — a stateless, Playwright-backed shim under
