@@ -25,9 +25,9 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Description ≤ 1024 chars (spec limit) | 53/53 PASS | — |
 | YAML frontmatter parseable | 53/53 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 5 skills | careful, freeze, guard, investigate, ship |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 6 skills | careful, freeze, guard, investigate, ship, design-review (cross-skill ref to `../browse/bin/vibe-browse`) |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
-| Skills needing an external daemon/toolchain | 9 skills | browse family (daemon NOT bundled): browse, open-browser, pair-agent, setup-browser-cookies · iOS (daemon bundled, needs Bun+Xcode+iPhone): ios-qa, ios-fix, ios-design-review, ios-clean, ios-sync |
+| Skills needing an external daemon/toolchain | 9 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies · iOS (daemon bundled, needs Bun+Xcode+iPhone): ios-qa, ios-fix, ios-design-review, ios-clean, ios-sync. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
 | Skills using `AskUserQuestion` (Claude-specific) | ~50 skills | most of the pack |
 
