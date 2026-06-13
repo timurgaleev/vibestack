@@ -611,6 +611,9 @@ Match findings across reports using the `fingerprint` field (sha256 of category 
 mkdir -p .vibestack/security-reports
 ```
 
+**Secret scan before any report sink.** Before writing or publishing the audit report, scan the exact report bytes for high-confidence secrets so the audit never itself leaks a credential it found.
+{{include lib/snippets/secret-scan-patterns.md}}
+
 Write findings to `.vibestack/security-reports/{date}-{HHMMSS}.json` using this schema:
 
 ```json
