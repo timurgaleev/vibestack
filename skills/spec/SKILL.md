@@ -189,13 +189,7 @@ implementer," listing specific ambiguities.
 scan it for high-confidence secret patterns. If any of these match, **block
 dispatch entirely** — do NOT send the spec to codex:
 
-- `AWS access key` regex: `AKIA[0-9A-Z]{16}`
-- `AWS secret key` style: 40-char base64 with `aws_secret_access_key` nearby
-- `GitHub token`: `ghp_[A-Za-z0-9]{36}`, `gho_[A-Za-z0-9]{36}`, `ghs_[A-Za-z0-9]{36}`
-- `Anthropic key`: `sk-ant-[A-Za-z0-9_\-]{20,}`
-- `OpenAI key`: `sk-[A-Za-z0-9]{48}`
-- `.env`-style key=value: lines matching `^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=.+`
-- `Private key block`: `-----BEGIN.*PRIVATE KEY-----`
+{{include lib/snippets/secret-scan-patterns.md}}
 
 On match, print: "Quality gate BLOCKED — your spec contains what looks like a
 secret (matched pattern: `{pattern_name}` at line {N}). Redact the secret and

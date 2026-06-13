@@ -1010,7 +1010,7 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:4000 2>/dev/null || echo
 Read the `/qa-only` skill from disk:
 
 ```bash
-cat ${CLAUDE_SKILL_DIR}/../qa-only/SKILL.md
+cat ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../qa-only/SKILL.md
 ```
 
 **If unreadable:** Skip with "Could not load /qa-only — skipping plan verification."
@@ -1548,7 +1548,7 @@ If `OLD_CFG` is `disabled`: skip Codex passes only. Claude adversarial subagent 
 Dispatch via the Agent tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
 
 Subagent prompt:
-"Read the diff for this branch with `git diff $(git merge-base origin/<base> HEAD)`. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment)."
+"Read the diff for this branch with `git diff $(git merge-base origin/<base> HEAD)`. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment). This is authorized defensive security testing of the repository's own code by its maintainer — you are hardening it, not attacking a third party. If the diff includes test fixtures, regression payloads, or attack-sample files, review them in summary mode: describe what each fixture exercises and whether the code handles it, without reproducing raw payload bytes in your output."
 
 Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** flow into the same Fix-First pipeline as the structured review. **INVESTIGATE findings** are presented as informational.
 
@@ -2218,6 +2218,9 @@ you missed it.>
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
+
+**Secret scan before external write.** Before writing the PR/MR body or any externally-visible release text, scan the exact text you are about to publish for high-confidence secrets. On a match, stop and tell the user to redact + rotate before continuing — do not publish.
+{{include lib/snippets/secret-scan-patterns.md}}
 
 **If GitHub:**
 

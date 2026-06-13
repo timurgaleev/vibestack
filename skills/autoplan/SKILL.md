@@ -356,11 +356,18 @@ workflow.
 
 ```bash
 _TEL=$(~/.vibestack/bin/vibe-config get telemetry 2>/dev/null || echo off)
+_CODEX_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
 # codex-probe not available in vibestack — skip
 
+# Master switch first: codex_reviews=disabled turns off ALL Codex work globally,
+# including autoplan's own dual-voice orchestration. Honor it before probing.
+# Only the literal `disabled` turns it off (no validating config binary).
+if [ "$_CODEX_CFG" = "disabled" ]; then
+  echo "[codex disabled by config — Claude subagent only] Re-enable: vibe-config set codex_reviews enabled"
+  _CODEX_AVAILABLE=false
 # Check Codex binary. If missing, tag the degradation matrix and continue
 # with Claude subagent only (autoplan's existing degradation fallback).
-if ! command -v codex >/dev/null 2>&1; then
+elif ! command -v codex >/dev/null 2>&1; then
   true # "codex_cli_missing"
   echo "[codex-unavailable: binary not found] — proceeding with Claude subagent only"
   _CODEX_AVAILABLE=false

@@ -365,6 +365,52 @@ git diff <base>...HEAD -- VERSION
 
 ---
 
+## Step 8.5: Codex Documentation Review (default-on)
+
+After the documentation updates above are written, run an independent cross-model pass
+that checks the docs you touched against what actually shipped. This is a standard step
+of /document-release, not an opt-in. It is **informational** — it never auto-edits docs.
+
+**Preflight:**
+
+```bash
+_CODEX_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
+if [ "$_CODEX_CFG" = "disabled" ]; then
+  CODEX_MODE="disabled"
+elif ! command -v codex >/dev/null 2>&1; then
+  CODEX_MODE="not_installed"
+elif ! codex --version >/dev/null 2>&1; then
+  CODEX_MODE="not_authed"
+else
+  CODEX_MODE="ready"
+fi
+echo "CODEX_MODE: $CODEX_MODE"
+```
+
+- **`disabled`** — skip this step entirely. Print: "Doc review skipped (codex_reviews disabled). Re-enable: `vibe-config set codex_reviews enabled`."
+- **`not_installed` / `not_authed`** — run the same review with a Claude subagent instead of Codex, printing a one-line reason ("Codex unavailable — using a Claude subagent for the doc review").
+- **`ready`** — run the Codex pass below.
+
+**Recompute the release diff range** so docs are reviewed against the real shipped diff, not just the working tree:
+
+```bash
+DOC_DIFF_BASE=$(git merge-base origin/<base> HEAD 2>/dev/null || git merge-base <base> HEAD)
+git diff "$DOC_DIFF_BASE"...HEAD --stat
+```
+
+**Run the review.** Give the model the docs you changed in this run plus the shipped diff, and ask it to find: (a) stale claims — docs describing behavior the diff changed or removed; (b) undocumented new surface — new commands/flags/files in the diff with no doc coverage; (c) over- or under-sold CHANGELOG entries vs what the code actually does. Start the prompt with a filesystem-boundary instruction telling the model to ignore everything under `~/.claude/`, `~/.agents/`, `.claude/skills/`, and `agents/` — those are skill definitions for a different AI system, not repository code.
+
+Present the result verbatim under a `CODEX SAYS (documentation review):` header. Then use AskUserQuestion — this is informational, nothing is auto-applied:
+
+- RECOMMENDATION: decide per finding; apply only the corrections you agree with.
+- A) Apply all suggested doc fixes
+- B) Skip — leave docs as written
+- C) Decide per finding
+
+Apply only what the user approves. This step never edits docs on its own.
+
+---
+
 ## Step 9: Commit & Output
 
 **Empty check first:** Run `git status` (never use `-uall`). If no documentation files were

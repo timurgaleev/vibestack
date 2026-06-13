@@ -2,6 +2,50 @@
 
 ## Open
 
+### From v1.52–v1.58 upstream sync (2026-06-13)
+
+Shipped: codex outside-voice **default-on** (plan-ceo/eng/devex-review + autoplan
+master-switch + new `/document-release` doc-audit), mandatory **unresolved-decisions
+verdict + blocking ExitPlanMode gate** (6 skills via 2 new snippets), **adversarial
+defensive-testing framing** (`/ship` + `/review`), **scoped secret-scan** (modern
+OpenAI key shapes in `/spec`, new pre-sink gate in `/ship` + `/cso` via
+`lib/snippets/secret-scan-patterns.md`), **memex brain-preflight** in 5 planning
+skills, and `${CLAUDE_SKILL_DIR:-…}` fallbacks for the safety hooks. Deliberately
+DEFERRED (with reasons), revisit only on the stated trigger:
+
+12. **make-pdf diagrams / multi-format / `/diagram` (upstream v1.58).** DEFERRED —
+    vibestack's `/make-pdf` is a doc-only pointer to an unbuilt external binary; there
+    is no renderer, no `print-css`, and no persistent browser tab in-repo. The upstream
+    feature needs a real renderer + a 9.2MB vendored mermaid/excalidraw bundle + a
+    rasterizing browser. Prerequisite: first vendor the actual make-pdf renderer.
+    Until then, porting the `--to html|docx`, fence, image-directive, `--strict`, or
+    emoji-fallback prose would document capabilities no in-repo binary provides.
+    Effort: L. Priority: P3. Trigger: a decision to vendor the make-pdf renderer.
+
+13. **Cross-session decision memory (upstream v1.57.5.0).** DEFERRED — redundant with
+    memex-as-SSOT. Upstream's local `decisions.jsonl` event store reinvents what memex
+    already does server-side (`entity_timeline`, `entity_recall`, hybrid search); a
+    local copy would create a rival source of truth — the exact anti-pattern the
+    single-brain policy avoids. If decision capture is ever wanted, the scoped move is a
+    one-line instruction telling plan/ship to write decisions *to memex*, not a local
+    store. Effort: M. Priority: P3. Trigger: explicit need for durable decision capture.
+
+14. **Full brain-aware planning cache (upstream v1.52.1.0).** PARTIALLY ADDRESSED — the
+    high-value gap (planning skills ignored the brain) is now closed with a lightweight
+    `lib/snippets/brain-preflight.md` model-level memex query. The upstream heavy layer
+    (`brain-cache` CLI + typed 8-kind schema-pack + TTL cache + resolvers) is NOT ported
+    — it is bin infrastructure against the lightweight-skill-body philosophy. Effort: L.
+    Priority: P3. Trigger: the prose preflight proving insufficient in practice.
+
+15. **`${CLAUDE_SKILL_DIR}` render-time substitution (alternative to the `:-` fallback).**
+    Shipped the low-risk shell-default fallback in the safety hooks + two body refs. A
+    fuller fix would have `bin/vibe-render-skill` substitute the token with the actual
+    per-target install dir at render time (covers Cursor/Kiro paths too, not just the
+    `$HOME/.claude` fallback). Deferred because it complicates the `--check` drift
+    semantics (a fresh render would differ from installed unless the substitution is
+    parameterized by target). Effort: M. Priority: P3. Trigger: a Cursor/Kiro user
+    hitting a hook-path miss, or CC dropping `${VAR:-default}` shell expansion.
+
 ### From v1.7.x upstream sync (2026-05-28)
 
 Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
