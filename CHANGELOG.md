@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.9.0 — 2026-06-13
+
+Cross-model review, plan-approval rigor, and secret hygiene get sharper across the
+review and planning skills; the safety hooks survive newer Claude Code releases.
+
+### Added
+
+- **Codex outside-voice is default-on.** `/plan-ceo-review`, `/plan-eng-review`, and
+  `/plan-devex-review` no longer gate the independent second opinion behind a "Want an
+  outside voice?" question — it runs automatically. A 4-state preflight
+  (`disabled` / `not_installed` / `not_authed` / `ready`) detects install *and* auth
+  separately and degrades to a Claude subagent with a one-line reason when Codex is
+  missing or unauthenticated. A single `codex_reviews` switch governs it
+  (`vibe-config set codex_reviews disabled` turns it off; any other value is enabled).
+- **`/document-release` Codex documentation review** (new Step 8.5, default-on,
+  informational). Recomputes the shipped diff via `git merge-base` and checks the docs
+  you touched against what actually shipped — stale claims, undocumented new surface,
+  over/under-sold CHANGELOG entries. Never auto-edits; every fix needs your approval.
+- **Mandatory unresolved-decisions verdict** in the VIBESTACK REVIEW REPORT, plus a
+  **blocking EXIT PLAN MODE GATE**. Every plan-review report now ends with either the
+  exact `NO UNRESOLVED DECISIONS` line or a `**UNRESOLVED DECISIONS:**` block, and the
+  gate refuses ExitPlanMode unless that status is the report's final line — no "if
+  applicable" escape. Wired into `/plan-ceo-review`, `/plan-eng-review`,
+  `/plan-design-review`, `/plan-devex-review`, `/codex`, and `/devex-review` via two new
+  shared snippets.
+- **Brain preflight in the planning skills.** `/plan-ceo-review`, `/plan-eng-review`,
+  `/plan-design-review`, `/plan-devex-review`, and `/office-hours` now query connected
+  memory (memex MCP) for product / goal / persona / prior-decision context *before* the
+  first question — pre-filling or skipping what the brain already answers. Skips
+  silently when no brain is connected.
+- New shared snippets: `lib/snippets/unresolved-decisions-status.md`,
+  `exit-plan-mode-gate.md`, `brain-preflight.md`, `secret-scan-patterns.md`.
+
+### Changed
+
+- **Adversarial review carries authorized-defensive-testing framing.** The Claude
+  adversarial subagent in `/ship` and `/review` now states it is hardening the repo's
+  own code (not attacking a third party) and reads fixture/attack-payload files in
+  summary mode — so a diff that includes the project's own security fixtures no longer
+  trips usage-policy denials.
+- **Secret scanning before external sinks.** `/spec`'s fail-closed gate now catches
+  modern OpenAI key shapes (`sk-(proj|svcacct|admin)-…`, which a contiguous-alphanumeric
+  pattern silently missed), and `/ship` (PR/MR body + release text) and `/cso` (audit
+  report) gained a pre-sink secret scan. All three share the new
+  `secret-scan-patterns.md` so the pattern set has one source of truth.
+
+### Fixed
+
+- **Safety hooks survive Claude Code releases that stop populating
+  `${CLAUDE_SKILL_DIR}`.** `/guard`, `/freeze`, and `/careful` hook commands (and two
+  in-body references in `/ship` and `/investigate`) now fall back to
+  `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/<name>}`, so Edit/Write/Bash no longer error
+  when the variable is unset.
+- `/autoplan` honors `codex_reviews=disabled` in its Phase 0.5 preflight, so the switch
+  is truly global.
+
+### Notes
+
+- Deferred (tracked in `TODOS.md` with rationale): diagram rendering / multi-format /
+  `/diagram` (no in-repo make-pdf renderer to build on), cross-session decision memory
+  (redundant with memex as single source of truth), and the heavy brain-cache CLI (the
+  lightweight model-level preflight covers the gap).
+
 ## 1.8.4 — 2026-05-31
 
 ### Added

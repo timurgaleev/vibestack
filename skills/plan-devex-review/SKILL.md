@@ -307,6 +307,8 @@ The core principle: **gather evidence and force decisions BEFORE scoring, not du
 scoring.** Steps 0A through 0G build the evidence base. Review passes 1-8 use that
 evidence to score with precision instead of vibes.
 
+{{include lib/snippets/brain-preflight.md}}
+
 ### 0A. Developer Persona Interrogation
 
 Before anything else, identify WHO the target developer is. Different developers have
@@ -810,36 +812,36 @@ Check each item. For any unchecked item, explain what's missing and suggest the 
 
 **STOP.** AskUserQuestion for any item that requires a design decision.
 
-## Outside Voice — Independent Plan Challenge (optional, recommended)
+## Outside Voice — Independent Plan Challenge (default-on)
 
-After all review sections are complete, offer an independent second opinion from a
-different AI system. Two models agreeing on a plan is stronger signal than one model's
-thorough review.
+After all review sections are complete, run an independent second opinion from a
+different AI system automatically — it is a standard step of plan review, not an
+opt-in. Two models agreeing on a plan is stronger signal than one model's thorough
+review.
 
-**Check tool availability:**
-
+**Preflight — decide whether and how the outside voice runs:**
 ```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+_CODEX_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
+# Master switch: only the literal `disabled` turns the outside voice off. vibestack
+# has no validating config binary, so treat any other value as enabled.
+if [ "$_CODEX_CFG" = "disabled" ]; then
+  CODEX_MODE="disabled"
+elif ! command -v codex >/dev/null 2>&1; then
+  CODEX_MODE="not_installed"
+elif ! codex --version >/dev/null 2>&1; then
+  CODEX_MODE="not_authed"
+else
+  CODEX_MODE="ready"
+fi
+echo "CODEX_MODE: $CODEX_MODE"
 ```
+Branch on `CODEX_MODE`:
+- **`disabled`** — skip this section entirely; do NOT fall back to a Claude subagent. Print: "Outside voice skipped (codex_reviews disabled). Re-enable: `vibe-config set codex_reviews enabled`." Continue to the next section.
+- **`not_installed`** — Print: "Codex not installed — using a Claude subagent for the outside voice. Install for true cross-model coverage." Then run the outside voice via the Claude-subagent path below.
+- **`not_authed`** — Print: "Codex installed but not authenticated — using a Claude subagent. Run `codex login` or set `$CODEX_API_KEY`." Then run the Claude-subagent path below.
+- **`ready`** — run the Codex pass below.
 
-Use AskUserQuestion:
-
-> "All review sections are complete. Want an outside voice? A different AI system can
-> give a brutally honest, independent challenge of this plan — logical gaps, feasibility
-> risks, and blind spots that are hard to catch from inside the review. Takes about 2
-> minutes."
->
-> RECOMMENDATION: Choose A — an independent second opinion catches structural blind
-> spots. Two different AI models agreeing on a plan is stronger signal than one model's
-> thorough review. Completeness: A=9/10, B=7/10.
-
-Options:
-- A) Get the outside voice (recommended)
-- B) Skip — proceed to outputs
-
-**If B:** Print "Skipping outside voice." and continue to the next section.
-
-**If A:** Construct the plan review prompt. Read the plan file being reviewed (the file
+Construct the plan review prompt. Read the plan file being reviewed (the file
 the user pointed this review at, or the branch diff scope). If a CEO plan document
 was written in Step 0D-POST, read that too — it contains the scope decisions and vision.
 
@@ -859,7 +861,7 @@ compliments. Just the problems.
 THE PLAN:
 <plan content>"
 
-**If CODEX_AVAILABLE:**
+**If `CODEX_MODE` is `ready`:**
 
 ```bash
 TMPERR_PV=$(mktemp /tmp/codex-planreview-XXXXXXXX)
@@ -888,7 +890,7 @@ CODEX SAYS (plan review — outside voice):
 
 On any Codex error, fall back to the Claude adversarial subagent.
 
-**If CODEX_NOT_AVAILABLE (or Codex errored):**
+**If `CODEX_MODE` is `not_installed` or `not_authed` (or Codex errored):**
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
 
@@ -1143,13 +1145,14 @@ Produce this markdown table:
 | DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
 \`\`\`
 
-Below the table, add these lines (omit any that are empty/not applicable):
+Below the table, add these lines (omit CODEX / CROSS-MODEL when not applicable; VERDICT is always present):
 
 - **CODEX:** (only if codex-review ran) — one-line summary of codex fixes
 - **CROSS-MODEL:** (only if both Claude and Codex reviews exist) — overlap analysis
-- **UNRESOLVED:** total unresolved decisions across all reviews
 - **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
   If Eng Review is not CLEAR and not skipped globally, append "eng review required".
+
+{{include lib/snippets/unresolved-decisions-status.md}}
 
 ### Write to the plan file
 
@@ -1166,6 +1169,8 @@ plan's living status.
 - If no such section exists, **append it** to the end of the plan file.
 - Always place it as the very last section in the plan file. If it was found mid-file,
   move it: delete the old location and append at the end.
+
+{{include lib/snippets/exit-plan-mode-gate.md}}
 
 {{include lib/snippets/askuserquestion-split.md}}
 
