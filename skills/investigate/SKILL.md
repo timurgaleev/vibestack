@@ -103,7 +103,7 @@ If any learnings come back, name which one applies to your investigation in one 
 After forming your root cause hypothesis, lock edits to the affected module to prevent scope creep.
 
 ```bash
-[ -x "${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh" ] && echo "FREEZE_AVAILABLE" || echo "FREEZE_UNAVAILABLE"
+[ -x "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/check-freeze.sh" ] && echo "FREEZE_AVAILABLE" || echo "FREEZE_UNAVAILABLE"
 ```
 
 **If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Write it to the freeze state file:

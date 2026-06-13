@@ -11,17 +11,17 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "bash ${CLAUDE_SKILL_DIR}/../careful/bin/check-careful.sh"
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../careful/bin/check-careful.sh"
           statusMessage: "Checking for destructive commands..."
     - matcher: "Edit"
       hooks:
         - type: command
-          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../freeze/bin/check-freeze.sh"
           statusMessage: "Checking freeze boundary..."
     - matcher: "Write"
       hooks:
         - type: command
-          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../freeze/bin/check-freeze.sh"
           statusMessage: "Checking freeze boundary..."
 triggers:
   - full safety mode

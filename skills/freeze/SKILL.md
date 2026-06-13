@@ -11,12 +11,12 @@ hooks:
     - matcher: "Edit"
       hooks:
         - type: command
-          command: "bash ${CLAUDE_SKILL_DIR}/bin/check-freeze.sh"
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/freeze}/bin/check-freeze.sh"
           statusMessage: "Checking freeze boundary..."
     - matcher: "Write"
       hooks:
         - type: command
-          command: "bash ${CLAUDE_SKILL_DIR}/bin/check-freeze.sh"
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/freeze}/bin/check-freeze.sh"
           statusMessage: "Checking freeze boundary..."
 triggers:
   - freeze edits to directory
