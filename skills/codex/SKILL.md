@@ -608,7 +608,9 @@ After displaying the review output, update the active **plan file** if one exist
 | DX Review | `/plan-devex-review` | Developer experience gaps | {runs} | {status} | {findings} |
 ```
 
-Below the table, add: **UNRESOLVED:** total unresolved decisions, **VERDICT:** which reviews are CLEAR.
+Below the table, add a **VERDICT:** line (which reviews are CLEAR).
+
+{{include lib/snippets/unresolved-decisions-status.md}}
 
 4. Find `## VIBESTACK REVIEW REPORT` in the plan file and replace it, or append it at the end.
 
@@ -690,3 +692,5 @@ during this session, log it for future sessions:
 (codex CLI behavior), `operational` (auth/env/CLI quirk).
 
 **Only log genuine discoveries.** A good test: would this save time in a future session?
+
+{{include lib/snippets/exit-plan-mode-gate.md}}

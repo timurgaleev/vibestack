@@ -372,13 +372,14 @@ Produce this markdown table:
 | DX Review | \`/plan-devex-review\` | Developer experience gaps | {runs} | {status} | {findings} |
 \`\`\`
 
-Below the table, add these lines (omit any that are empty/not applicable):
+Below the table, add these lines:
 
+- **VERDICT:** (always present, first) list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
+  If Eng Review is not CLEAR and not skipped globally, append "eng review required".
 - **CODEX:** (only if codex-review ran) — one-line summary of codex fixes
 - **CROSS-MODEL:** (only if both Claude and Codex reviews exist) — overlap analysis
-- **UNRESOLVED:** total unresolved decisions across all reviews
-- **VERDICT:** list reviews that are CLEAR (e.g., "CEO + ENG CLEARED — ready to implement").
-  If Eng Review is not CLEAR and not skipped globally, append "eng review required".
+
+{{include lib/snippets/unresolved-decisions-status.md}}
 
 ### Write to the plan file
 
@@ -409,3 +410,5 @@ After the audit, recommend:
 * NUMBER issues (1, 2, 3...) and LETTERS for options (A, B, C...).
 * Rate every dimension with evidence source.
 * Screenshots are the gold standard. File references are acceptable. Guesses are not.
+
+{{include lib/snippets/exit-plan-mode-gate.md}}

@@ -74,6 +74,9 @@ eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
 {{include lib/snippets/prior-learnings.md}}
+
+{{include lib/snippets/brain-preflight.md}}
+
 5. **Ask: what's your goal with this?** This is a real question, not a formality. The answer determines everything about how the session runs.
 
    Via AskUserQuestion, ask:
