@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" width="880" height="300" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-label="vibestack turns a vague idea into a shipped product through four guided steps: brainstorm, plan, review, ship — and learns every loop.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B0F17"/>
+      <stop offset="1" stop-color="#121A2A"/>
+    </linearGradient>
+    <linearGradient id="wire" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3FB950"/>
+      <stop offset="0.5" stop-color="#58A6FF"/>
+      <stop offset="1" stop-color="#BC8CFF"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="880" height="300" rx="18" fill="url(#bg)"/>
+
+  <!-- wordmark + tagline -->
+  <text x="40" y="52" fill="#E6EDF3" font-size="26" font-weight="700">vibestack</text>
+  <text x="171" y="52" fill="#7D8590" font-size="14" font-weight="500">/ idea → shipped, the senior-engineer way</text>
+
+  <!-- connector wire -->
+  <line x1="110" y1="170" x2="770" y2="170" stroke="#243049" stroke-width="3" stroke-linecap="round"/>
+  <line x1="110" y1="170" x2="770" y2="170" stroke="url(#wire)" stroke-width="3" stroke-linecap="round" stroke-dasharray="10 650">
+    <animate attributeName="stroke-dashoffset" from="660" to="0" dur="4s" repeatCount="indefinite"/>
+  </line>
+
+  <!-- traveling pulse -->
+  <circle r="7" fill="#fff" filter="url(#glow)">
+    <animateMotion path="M110,170 L770,170" dur="4s" repeatCount="indefinite" keyPoints="0;0.27;0.27;0.5;0.5;0.73;0.73;1;1" keyTimes="0;0.2;0.25;0.45;0.5;0.7;0.75;0.95;1" calcMode="linear"/>
+  </circle>
+
+  <!-- stage cards: x positions 110,330,550,770 (centers) -->
+  <!-- card 1 -->
+  <g>
+    <rect x="40" y="120" width="140" height="100" rx="12" fill="#0E1626" stroke="#3FB950" stroke-width="1.5" opacity="0.55">
+      <animate attributeName="opacity" values="0.55;1;0.55" dur="4s" begin="0s" keyTimes="0;0.06;0.25" repeatCount="indefinite"/>
+    </rect>
+    <text x="110" y="150" text-anchor="middle" fill="#3FB950" font-size="13" font-weight="700">1 · BRAINSTORM</text>
+    <text x="110" y="176" text-anchor="middle" fill="#E6EDF3" font-size="15" font-weight="600">Shape the idea</text>
+    <text x="110" y="200" text-anchor="middle" fill="#7D8590" font-size="12" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">/office-hours</text>
+  </g>
+  <!-- card 2 -->
+  <g>
+    <rect x="260" y="120" width="140" height="100" rx="12" fill="#0E1626" stroke="#58A6FF" stroke-width="1.5" opacity="0.55">
+      <animate attributeName="opacity" values="0.55;1;0.55" dur="4s" begin="0s" keyTimes="0;0.31;0.5" repeatCount="indefinite"/>
+    </rect>
+    <text x="330" y="150" text-anchor="middle" fill="#58A6FF" font-size="13" font-weight="700">2 · PLAN</text>
+    <text x="330" y="176" text-anchor="middle" fill="#E6EDF3" font-size="15" font-weight="600">Pressure-test it</text>
+    <text x="330" y="200" text-anchor="middle" fill="#7D8590" font-size="12" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">/plan-eng-review</text>
+  </g>
+  <!-- card 3 -->
+  <g>
+    <rect x="480" y="120" width="140" height="100" rx="12" fill="#0E1626" stroke="#BC8CFF" stroke-width="1.5" opacity="0.55">
+      <animate attributeName="opacity" values="0.55;1;0.55" dur="4s" begin="0s" keyTimes="0;0.56;0.75" repeatCount="indefinite"/>
+    </rect>
+    <text x="550" y="150" text-anchor="middle" fill="#BC8CFF" font-size="13" font-weight="700">3 · REVIEW</text>
+    <text x="550" y="176" text-anchor="middle" fill="#E6EDF3" font-size="15" font-weight="600">Two AIs check it</text>
+    <text x="550" y="200" text-anchor="middle" fill="#7D8590" font-size="12" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">/review</text>
+  </g>
+  <!-- card 4 -->
+  <g>
+    <rect x="700" y="120" width="140" height="100" rx="12" fill="#0E1626" stroke="#F0883E" stroke-width="1.5" opacity="0.55">
+      <animate attributeName="opacity" values="0.55;1;0.55" dur="4s" begin="0s" keyTimes="0;0.81;1" repeatCount="indefinite"/>
+    </rect>
+    <text x="770" y="150" text-anchor="middle" fill="#F0883E" font-size="13" font-weight="700">4 · SHIP</text>
+    <text x="770" y="176" text-anchor="middle" fill="#E6EDF3" font-size="15" font-weight="600">PR + release</text>
+    <text x="770" y="200" text-anchor="middle" fill="#7D8590" font-size="12" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">/ship</text>
+  </g>
+
+  <!-- learns-every-loop -->
+  <path d="M770,240 q0,30 -330,30 q-330,0 -330,-30" fill="none" stroke="#243049" stroke-width="2" stroke-dasharray="4 6"/>
+  <text x="440" y="288" text-anchor="middle" fill="#7D8590" font-size="12.5">↻ remembers your decisions and gets sharper every loop — all on your machine</text>
+</svg>
