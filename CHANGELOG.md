@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.9.1 — 2026-06-14
+
+### Changed
+
+- Rewrote the README as a short, visual landing page that reads for both
+  technical and non-technical visitors: an animated workflow hero, a
+  one-source-three-agents diagram, a 30-second install, and the idea→ship story
+  up front. The exhaustive skill table moved to [`docs/skills.md`](docs/skills.md)
+  so the front page stays scannable.
+
+### Added
+
+- `docs/assets/hero.svg` — a self-contained, animated diagram of the
+  brainstorm → plan → review → ship loop (renders inline on GitHub, no external
+  assets).
+
 ## 1.9.0 — 2026-06-13
 
 Cross-model review, plan-approval rigor, and secret hygiene get sharper across the
