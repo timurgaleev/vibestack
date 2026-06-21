@@ -1,5 +1,5 @@
 ---
-name: upgrade
+name: vibe-upgrade
 description: |
   Update the installed vibestack pack to the latest release — pull the repo, re-run install, and show what changed.
 allowed-tools:
@@ -18,7 +18,7 @@ triggers:
 Use when asked to "upgrade", "update vibestack", "get the latest skills", or
 after `vibe-update-check` reports a newer version is available.
 
-# /upgrade — Update vibestack to the latest release
+# /vibe-upgrade — Update vibestack to the latest release
 
 ### 1. Locate the vibestack repo
 
@@ -48,7 +48,7 @@ BEFORE="$(cat VERSION 2>/dev/null)"
 BR="$(git symbolic-ref --short HEAD 2>/dev/null || echo main)"
 git fetch --quiet origin || { echo "FETCH_FAILED"; exit 0; }
 if ! git pull --quiet --ff-only origin "$BR"; then
-  echo "PULL_BLOCKED — local changes or non-fast-forward. Stash/commit first, then re-run /upgrade. Not forcing."
+  echo "PULL_BLOCKED — local changes or non-fast-forward. Stash/commit first, then re-run /vibe-upgrade. Not forcing."
   exit 0
 fi
 AFTER="$(cat VERSION 2>/dev/null)"

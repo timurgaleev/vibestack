@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.17.8 — 2026-06-21
+
+### Changed
+
+- Renamed `/upgrade` → **`/vibe-upgrade`** to avoid colliding with Claude Code's
+  built-in `/upgrade` command (and to match the `vibe-*` namespacing the upstream
+  uses for the same skill). Behavior is unchanged; the natural triggers ("upgrade
+  vibestack", "update vibestack", "pull latest skills") still auto-invoke it.
+
 ## 1.17.7 — 2026-06-21
 
 ### Fixed

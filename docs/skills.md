@@ -499,7 +499,7 @@ Triggers: `connect to chrome`, `use my chrome session`, `import chrome cookies`
 
 ---
 
-### `/upgrade`
+### `/vibe-upgrade`
 Update the installed vibestack pack to the latest release — pull the repo (ff-only, never forces), re-run install, and summarize the CHANGELOG delta.
 
 Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`
