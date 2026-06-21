@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# vibe-update-check — print a one-line nag if the installed pack is behind origin.
+# Best-effort and throttled to once/day (a stamp file); never blocks, never errors out.
+set -euo pipefail
+
+HOME_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
+STAMP="$HOME_DIR/.update-check-stamp"
+ROOT="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd || true)"
+[ -n "$ROOT" ] && [ -f "$ROOT/VERSION" ] || exit 0
+
+# Throttle: skip if checked within the last 24h.
+if [ -f "$STAMP" ]; then
+  _age=$(( $(date +%s) - $(stat -f %m "$STAMP" 2>/dev/null || stat -c %Y "$STAMP" 2>/dev/null || echo 0) ))
+  [ "$_age" -lt 86400 ] 2>/dev/null && exit 0
+fi
+mkdir -p "$HOME_DIR"; : > "$STAMP" 2>/dev/null || true
+
+local_v="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+git -C "$ROOT" fetch --quiet origin 2>/dev/null || exit 0
+remote_v="$(git -C "$ROOT" show origin/HEAD:VERSION 2>/dev/null | tr -d '[:space:]' \
+  || git -C "$ROOT" show origin/main:VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+[ -n "$remote_v" ] || exit 0
+
+if [ "$local_v" != "$remote_v" ]; then
+  # Only nag when remote is strictly newer (sort -V puts the larger last).
+  newer="$(printf '%s\n%s\n' "$local_v" "$remote_v" | sort -V | tail -1)"
+  [ "$newer" = "$remote_v" ] && echo "UPDATE: vibestack $remote_v is available (you have $local_v) — run: git -C \"$ROOT\" pull && \"$ROOT/install\""
+fi
+exit 0

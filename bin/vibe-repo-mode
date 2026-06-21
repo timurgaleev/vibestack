@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# vibe-repo-mode — emit `REPO_MODE=solo|collaborative` for `source <(vibe-repo-mode)`.
+# solo = one committer in history; collaborative = more than one. Falls open to solo.
+set -euo pipefail
+
+_authors=$(git shortlog -sn --all 2>/dev/null | wc -l | tr -d ' ')
+if [ "${_authors:-1}" -le 1 ] 2>/dev/null; then
+  echo "REPO_MODE=solo"
+else
+  echo "REPO_MODE=collaborative"
+fi

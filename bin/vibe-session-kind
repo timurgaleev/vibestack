@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# vibe-session-kind — classify the current session: spawned | headless | interactive
+# Best-effort from the environment; defaults to interactive (the safe default).
+set -euo pipefail
+
+if [ -n "${OPENCLAW_SESSION:-}" ] || [ -n "${VIBE_SPAWNED:-}" ]; then
+  echo "spawned"
+elif [ -n "${VIBESTACK_HEADLESS:-}" ] || [ -n "${CI:-}" ]; then
+  echo "headless"
+else
+  echo "interactive"
+fi

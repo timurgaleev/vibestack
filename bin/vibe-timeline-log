@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# vibe-timeline-log — append one timeline event for the current project.
+# Usage: vibe-timeline-log '{"skill":"ship","event":"started","branch":"main"}'
+# Always local; stamps `ts` if absent. Invalid JSON is dropped silently (best-effort,
+# never blocks a skill).
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+HOME_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
+SLUG="unknown"; eval "$("$HERE/vibe-slug" 2>/dev/null)" 2>/dev/null || true
+DIR="$HOME_DIR/projects/${SLUG:-unknown}"
+mkdir -p "$DIR"
+
+python3 - "${1:-}" "$DIR/timeline.jsonl" <<'PY' 2>/dev/null || true
+import json, sys, datetime
+raw, path = sys.argv[1], sys.argv[2]
+try:
+    rec = json.loads(raw)
+    assert isinstance(rec, dict)
+except Exception:
+    sys.exit(0)
+rec.setdefault("ts", datetime.datetime.now(datetime.timezone.utc).isoformat())
+with open(path, "a", encoding="utf-8") as f:
+    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+PY
