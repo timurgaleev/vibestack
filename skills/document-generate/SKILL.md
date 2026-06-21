@@ -40,6 +40,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 ## Step 0: Detect base branch
 
 Determine which branch this work targets, or the repo's default branch:

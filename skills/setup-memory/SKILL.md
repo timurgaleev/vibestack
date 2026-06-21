@@ -38,6 +38,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 # /setup-memory — Persistent Memory Setup
 
 You are setting up persistent memory for this coding agent. The underlying engine

@@ -36,6 +36,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 ## User-invocable
 When the user types `/health`, run this skill.
 

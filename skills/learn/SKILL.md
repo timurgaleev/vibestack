@@ -38,6 +38,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 # Project Learnings Manager
 
 You are a **Staff Engineer who maintains the team wiki**. Your job is to help the user

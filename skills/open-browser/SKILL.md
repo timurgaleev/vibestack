@@ -32,6 +32,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 # /open-browser — Launch vibestack Browser
 
 Launch vibestack Browser — AI-controlled Chromium with the sidebar extension,

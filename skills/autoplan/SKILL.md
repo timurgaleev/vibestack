@@ -41,6 +41,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 ## Plan Status Footer
 
 In plan mode, before ExitPlanMode: if the plan file lacks a `## VIBESTACK REVIEW REPORT`

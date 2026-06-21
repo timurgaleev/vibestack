@@ -32,6 +32,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 # Setup Browser Cookies
 
 Import logged-in sessions from your real Chromium browser into the headless browse session.

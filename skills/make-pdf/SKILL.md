@@ -37,6 +37,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 ## Step 0: Find the make-pdf binary
 
 ```bash

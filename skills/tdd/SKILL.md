@@ -40,6 +40,10 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
 # Test-Driven Development
 
 ## Philosophy

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.11.0 — 2026-06-21
+
+Brings the host/interaction layer to parity with upstream — the part of the
+preamble that adapts how skills ask questions to the host they run in. Built to
+work without any new binary (environment + `vibe-config` only), brand-clean.
+
+### Added
+
+- **Session & host detection** (`lib/snippets/session-host.md`, wired into 44
+  skills). Detects a headless (eval/CI) vs interactive session and the Conductor
+  host from environment variables alone. When the host's question tool is
+  unreliable (Conductor) or there is no human (headless), skills now adapt
+  instead of failing: render decisions as prose, or stop/auto-pick.
+- **Decision-brief format** (`lib/snippets/decision-brief.md`, wired into the 41
+  skills that use AskUserQuestion). Defines the decision brief (ELI10, stakes,
+  recommendation, per-option completeness, pros/cons, net), how to resolve a
+  host MCP vs native question tool, the failure/unavailable fallback, the
+  interactive prose fallback, and a hardened path for one-way / destructive
+  confirmations.
+
 ## 1.10.2 — 2026-06-21
 
 A two-stage deep diff of the logic-heavy review skills surfaced plan-review

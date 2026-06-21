@@ -20,6 +20,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 # Reroll Buddy
 
 Skill to reset the Claude Code `/buddy` companion pet so a new one can be picked.
