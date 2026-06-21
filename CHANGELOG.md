@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.12.0 — 2026-06-21
+
+Pulls the remaining generic-behavior tier-2 blocks from upstream into a single
+shared snippet, adapted to vibestack's own tooling (no gstack infra, no dead
+references) and brand-clean.
+
+### Added
+
+- **Working protocols** (`lib/snippets/working-protocols.md`, wired into 44
+  skills): completion-status reporting (DONE / DONE_WITH_CONCERNS / BLOCKED /
+  NEEDS_CONTEXT), the confusion protocol (stop and ask on high-stakes
+  ambiguity), context-health (progress notes + loop detection), context-recovery
+  from local `~/.vibestack/projects/` artifacts (decisions come from memory, not
+  a local store), the completeness mindset, and search-before-building + repo
+  ownership.
+- **`REPO_MODE` detection** in `lib/snippets/session-host.md` — solo vs
+  collaborative, inferred from git history. Drives the repo-ownership behavior
+  and resolves the previously-undefined `REPO_MODE` reference in `/ship`'s
+  test-failure triage.
+
 ## 1.11.0 — 2026-06-21
 
 Brings the host/interaction layer to parity with upstream — the part of the
