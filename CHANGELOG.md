@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.10.2 — 2026-06-21
+
+A two-stage deep diff of the logic-heavy review skills surfaced plan-review
+guardrails that had drifted out of the local copies.
+
+### Added
+
+- **Anti-shortcut clause in all four plan-review skills** (`/plan-ceo-review`,
+  `/plan-eng-review`, `/plan-design-review`, `/plan-devex-review`). The plan file
+  is the *output* of the interactive review, not a substitute for it: if any
+  review section has a non-trivial finding, the path from finding to ExitPlanMode
+  must go **through** AskUserQuestion. Dumping every finding into one plan write
+  and exiting plan mode without asking is now called out as the exact failure to
+  avoid.
+- **`/plan-eng-review` pre-emit gate lists the false-positive classes it kills**
+  (field-doesn't-exist, `dict.get()` None, `save()` field loss, `update_fields`
+  miss) — a concrete catalog of what quoting the motivating line catches.
+
+### Fixed
+
+- **Plan-review report write-flow no longer replaces in place.** The four
+  plan-review skills now delete any existing `VIBESTACK REVIEW REPORT` section and
+  re-append it at the end, then verify it is the last heading — preventing a stale
+  report from being left mid-file when content was added after it.
+
 ## 1.10.1 — 2026-06-21
 
 A deep, per-skill content comparison (not just section-level) surfaced generic
