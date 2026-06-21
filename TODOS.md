@@ -7,8 +7,10 @@
 The session/preamble/tier-2 + binaries parity is shipped (v1.13.0–v1.15.0). The
 one large remaining item:
 
-- **Browse + design daemons (Phase E).** vibestack ships a stateless Playwright
-  shim for read-only browse verbs; the upstream's full interactive browse daemon
+- **Browse + design daemons (Phase E) — PARTIAL.** The browse shim now supports
+  real interaction via the `chain` verb (goto/click/fill/type/press/hover/check/
+  select/wait/screenshot/text/eval/is on one live page in a single call). Still
+  remaining: the upstream's full *persistent* browse daemon
   (CDP element refs, the browser extension, tunnels/pairing) and the design-image
   daemon are a multi-day vendoring project, not an in-session port. The four
   interaction-heavy skills (`/browse`, `/open-browser`, `/pair-agent`,

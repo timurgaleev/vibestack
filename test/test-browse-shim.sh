@@ -87,6 +87,15 @@ HTML
     && pass "responsive-3" || fail "responsive-3" "missing viewport pngs"
 fi
 
+# chain: supported (not NOT_SUPPORTED) and prints usage with no args
+chain_out="$(node "$RT" chain 2>&1)"; chain_code=$?
+if [ "$chain_code" -eq 1 ] && ! printf '%s' "$chain_out" | grep -q NOT_SUPPORTED \
+   && printf '%s' "$chain_out" | grep -q "step verbs"; then
+  pass "chain-usage"
+else
+  fail "chain-usage" "chain dispatch broken"
+fi
+
 echo ""
 echo "== summary =="
 echo "  passed: $PASS"

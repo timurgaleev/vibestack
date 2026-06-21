@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.16.0 — 2026-06-21
+
+### Added
+
+- **`$B chain` — stateful browser interaction.** The browse shim gains a `chain`
+  verb that runs a sequence of steps on **one live page** in a single call, so a
+  form fill → submit → screenshot works without the full daemon's cross-call
+  element refs. Step verbs: `goto click fill type press hover check uncheck
+  select wait screenshot text eval is`; returns a per-step JSON log and stops on
+  the first failure. Documented in `browse-setup`; covered by `test-browse-shim`
+  (9/9). The persistent daemon (CDP refs, extension, tunnels/pairing) and the
+  design-image daemon remain the one large vendoring item (see TODOS).
+
 ## 1.15.1 — 2026-06-21
 
 ### Fixed

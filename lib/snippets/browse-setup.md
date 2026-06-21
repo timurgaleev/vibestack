@@ -20,10 +20,18 @@ fi
 If `BROWSE_AVAILABLE`: use `$B` for all browse commands below. The shim is
 **stateless** — `goto <url>` records the target, and each capture verb
 (`screenshot`, `responsive`, `console`, `network`, `perf`, `js`, `css`, `is`,
-`text`, `url`, `viewport`) re-navigates and captures fresh. Interaction verbs
-that need cross-call element refs (`snapshot -i`, `click`, `fill`, `hover`,
-`upload`, `dialog`) are **not supported** and print `NOT_SUPPORTED:<verb>`:
-when you see that, skip that pass — do not fabricate the result.
+`text`, `url`, `viewport`) re-navigates and captures fresh.
+
+For **interaction**, use `$B chain` — a single call that runs a sequence of
+steps on **one live page**, so a form fill → submit → screenshot works without
+cross-call element refs:
+`$B chain "goto <url>" "fill <sel> <value>" "click <sel>" "screenshot <path>"`.
+Step verbs: `goto click fill type press hover check uncheck select wait
+screenshot text eval is`. It returns a JSON log per step and stops on the first
+failure. Standalone ref-based verbs (`snapshot -i`, a bare `click` / `fill`,
+`upload`, `dialog`, cookie import, tunnel/pairing) still need the full daemon and
+print `NOT_SUPPORTED:<verb>` — when you see that, skip that pass, don't fabricate
+the result.
 
 If `BROWSE_NOT_AVAILABLE` (no Node, or first-run setup declined): fall back to
 text-only checks. Do **not** trust a bare `curl` status — dev servers often
