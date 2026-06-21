@@ -35,7 +35,7 @@ fi
 case "${1:-}" in
   status | url | viewport | daemon-status | daemon-stop \
   | snapshot | click | fill | type | hover | check | uncheck | select | press \
-  | back | forward | reload | cookies)
+  | back | forward | reload | cookies | upload | dialog)
     exec node "$RUNTIME" "$@" ;;
 esac
 
