@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.17.7 — 2026-06-21
+
+### Fixed
+
+- `/skillify` spelled external project names inside its own brand-check command;
+  the zero-external-brand rule covers skill bodies. Reworded to reference the
+  repo's audit without naming the tokens. No behavior change.
+
 ## 1.17.6 — 2026-06-21
 
 ### Added
