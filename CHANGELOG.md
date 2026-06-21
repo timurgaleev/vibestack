@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.17.4 — 2026-06-21
+
+### Added
+
+- **`/upgrade`** — update the installed pack: locate the repo (via the `vibe-*`
+  symlinks), `git pull --ff-only`, re-run `install`, and summarize the CHANGELOG
+  between the old and new version. Never force-pushes or resets; a blocked pull is
+  reported.
+- **`/connect-chrome`** — reuse your real Chrome's logged-in cookies in the browse
+  daemon: launch Chrome with `--remote-debugging-port`, then
+  `$B cookies import-cdp` carries the session into automated browsing. Cookies stay
+  in-session, never written to the repo.
+
+Skill count 48 → 50.
+
 ## 1.17.3 — 2026-06-21
 
 ### Added
