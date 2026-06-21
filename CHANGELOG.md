@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.15.1 — 2026-06-21
+
+### Fixed
+
+- Reworded a single CHANGELOG line that named the upstream project while
+  describing what was removed — the pack's zero-external-brand rule covers the
+  CHANGELOG too. No code change.
+
 ## 1.15.0 — 2026-06-21
 
 ### Added
@@ -49,8 +57,8 @@ local and the brain optional.
 ## 1.12.0 — 2026-06-21
 
 Pulls the remaining generic-behavior tier-2 blocks from upstream into a single
-shared snippet, adapted to vibestack's own tooling (no gstack infra, no dead
-references) and brand-clean.
+shared snippet, adapted to vibestack's own tooling (no upstream-specific infra,
+no dead references) and brand-clean.
 
 ### Added
 
