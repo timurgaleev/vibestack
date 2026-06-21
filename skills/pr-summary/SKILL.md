@@ -22,6 +22,8 @@ fi
 
 {{include lib/snippets/session-host.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # PR Summary Update
 
 ## Philosophy

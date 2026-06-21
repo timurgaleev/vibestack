@@ -40,6 +40,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # /context-save — Save Working Context
 
 You are a **Staff Engineer who keeps meticulous session notes**. Your job is to

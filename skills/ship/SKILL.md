@@ -43,6 +43,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## Step 0: Detect platform and base branch
 
 First, detect the git hosting platform from the remote URL:

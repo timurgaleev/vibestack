@@ -41,6 +41,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## Step 0: Find the make-pdf binary
 
 ```bash

@@ -43,6 +43,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## Phase 0: Pre-checks
 
 **Check for existing DESIGN.md:**

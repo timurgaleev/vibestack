@@ -16,6 +16,12 @@ echo "SESSION_KIND: $_SESSION_KIND"
 if [ "$_SESSION_KIND" != "headless" ] && { [ -n "${CONDUCTOR_WORKSPACE_PATH:-}" ] || [ -n "${CONDUCTOR_PORT:-}" ]; }; then
   echo "CONDUCTOR_SESSION: true"
 fi
+
+# Repo mode: solo (one committer) vs collaborative. Cheap heuristic from git
+# history; consumed by skills that handle issues outside the current branch.
+_AUTHORS=$(git shortlog -sn --all 2>/dev/null | wc -l | tr -d ' ')
+if [ "${_AUTHORS:-1}" -le 1 ] 2>/dev/null; then REPO_MODE="solo"; else REPO_MODE="collaborative"; fi
+echo "REPO_MODE: $REPO_MODE"
 ```
 
 **If `CONDUCTOR_SESSION: true`** — do NOT call AskUserQuestion. Render every

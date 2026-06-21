@@ -36,6 +36,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # /pair-agent — Share Your Browser With Another AI Agent
 
 You're sitting in Claude Code with a browser running. You also have another AI agent

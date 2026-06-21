@@ -42,6 +42,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # /setup-memory — Persistent Memory Setup
 
 You are setting up persistent memory for this coding agent. The underlying engine
