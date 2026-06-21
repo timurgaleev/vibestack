@@ -40,6 +40,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## User-invocable
 When the user types `/setup-deploy`, run this skill.
 

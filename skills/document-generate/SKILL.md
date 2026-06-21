@@ -44,6 +44,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## Step 0: Detect base branch
 
 Determine which branch this work targets, or the repo's default branch:

@@ -44,6 +44,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # Test-Driven Development
 
 ## Philosophy

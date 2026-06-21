@@ -36,6 +36,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # browse: QA Testing & Dogfooding
 
 Persistent headless Chromium. First call auto-starts (~3s), then ~100ms per command.

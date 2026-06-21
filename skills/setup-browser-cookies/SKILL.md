@@ -36,6 +36,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # Setup Browser Cookies
 
 Import logged-in sessions from your real Chromium browser into the headless browse session.

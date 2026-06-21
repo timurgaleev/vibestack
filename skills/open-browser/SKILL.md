@@ -36,6 +36,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 # /open-browser — Launch vibestack Browser
 
 Launch vibestack Browser — AI-controlled Chromium with the sidebar extension,

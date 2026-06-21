@@ -43,6 +43,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## Setup
 
 **Parse the user's request for these parameters:**

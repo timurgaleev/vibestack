@@ -36,6 +36,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## Base Branch
 
 ```bash

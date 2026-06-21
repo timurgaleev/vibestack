@@ -46,6 +46,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## Step 0: Detect what the user wants
 
 Before routing on intent, check two implicit gates — they fire first:

@@ -45,6 +45,8 @@ fi
 
 {{include lib/snippets/decision-brief.md}}
 
+{{include lib/snippets/working-protocols.md}}
+
 ## DESIGN SETUP
 
 ```bash
