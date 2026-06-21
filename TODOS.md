@@ -2,6 +2,21 @@
 
 ## Open
 
+### Full-parity program (2026-06-21) — remaining
+
+The session/preamble/tier-2 + binaries parity is shipped (v1.13.0–v1.15.0). The
+one large remaining item:
+
+- **Browse + design daemons (Phase E).** vibestack ships a stateless Playwright
+  shim for read-only browse verbs; the upstream's full interactive browse daemon
+  (CDP element refs, the browser extension, tunnels/pairing) and the design-image
+  daemon are a multi-day vendoring project, not an in-session port. The four
+  interaction-heavy skills (`/browse`, `/open-browser`, `/pair-agent`,
+  `/setup-browser-cookies`) and `/design-*` mockups still degrade to text/shim
+  until that lands. Effort: L. Priority: P2. Trigger: a decision to vendor the
+  daemons.
+
+
 ### From v1.52–v1.58 upstream sync (2026-06-13)
 
 Shipped: codex outside-voice **default-on** (plan-ceo/eng/devex-review + autoplan
