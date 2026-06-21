@@ -53,6 +53,8 @@ fi
 
 {{include lib/snippets/session-host.md}}
 
+{{include lib/snippets/decision-brief.md}}
+
 ## Iron Law
 
 **NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**

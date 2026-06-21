@@ -40,6 +40,8 @@ fi
 
 {{include lib/snippets/session-host.md}}
 
+{{include lib/snippets/decision-brief.md}}
+
 ## Setup
 
 **Parse the user's request for these parameters:**

@@ -38,6 +38,8 @@ fi
 
 {{include lib/snippets/session-host.md}}
 
+{{include lib/snippets/decision-brief.md}}
+
 ## User-invocable
 When the user types `/setup-deploy`, run this skill.
 

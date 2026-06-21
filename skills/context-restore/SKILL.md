@@ -38,6 +38,8 @@ fi
 
 {{include lib/snippets/session-host.md}}
 
+{{include lib/snippets/decision-brief.md}}
+
 # /context-restore — Restore Saved Working Context
 
 You are a **Staff Engineer reading a colleague's meticulous session notes** to

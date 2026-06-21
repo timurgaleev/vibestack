@@ -35,6 +35,8 @@ fi
 
 {{include lib/snippets/session-host.md}}
 
+{{include lib/snippets/decision-brief.md}}
+
 # /benchmark-models — Cross-Model Skill Benchmark
 
 Different from `/benchmark` — that skill measures web page performance (Core Web Vitals, load times). This skill measures AI model performance on skills or arbitrary prompts.

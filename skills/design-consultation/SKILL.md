@@ -41,6 +41,8 @@ fi
 
 {{include lib/snippets/session-host.md}}
 
+{{include lib/snippets/decision-brief.md}}
+
 ## Phase 0: Pre-checks
 
 **Check for existing DESIGN.md:**
