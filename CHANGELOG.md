@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.10.0 — 2026-06-21
+
+### Added
+
+- **`/review` and `/ship` plan-completion audits now classify verification mode.**
+  Before judging a plan item DONE, the audit decides *how* it can be verified —
+  `DIFF-VERIFIABLE` (the repo's own `git diff` proves it), `CROSS-REPO` (a file in
+  a sibling repo, checked with `[ -f ]` when reachable), `EXTERNAL-STATE` (DNS,
+  managed-DB config, hosting env — invisible to the diff), or `CONTENT-SHAPE`
+  (run a project validator if one exists). Both add an `UNVERIFIABLE` verdict and a
+  `## Cross-Repo / External Items` output section so deliverables `git diff` cannot
+  prove are surfaced for manual confirmation instead of silently marked DONE. A
+  path-concreteness rule forces any concrete filesystem path to a DONE/NOT DONE
+  `[ -f ]` check.
+- **`/retro` now captures learnings.** It ends with the shared Capture Learnings
+  step, so a non-obvious pattern or pitfall surfaced during a retrospective is
+  logged for future sessions like every other workflow skill.
+
+### Fixed
+
+- **Secret hygiene on two more external sinks.** `/document-generate` now scans
+  generated docs for high-confidence secrets before committing (doc generators
+  routinely emit example credentials), and `/spec` re-scans the issue title + body
+  immediately before `gh issue create` — the world-readable issue could otherwise
+  carry a secret introduced after the pre-codex redaction gate. Both reuse the
+  existing secret-pattern set.
+
+### Removed
+
+- **The iOS QA suite is gone.** The five iOS skills (`/ios-qa`, `/ios-fix`,
+  `/ios-design-review`, `/ios-clean`, `/ios-sync`) and everything they carried —
+  the bundled Mac-side testing daemon, the `DebugBridge` Swift/Obj-C templates,
+  and the accessor codegen — were removed. On-device iOS testing is out of scope
+  for this pack. Skill count drops **53 → 48**; the remaining 48 skills are
+  unchanged.
+
+### Changed
+
+- Docs and config track the smaller surface: README skill count, `docs/skills.md`
+  (iOS section dropped), and the Agent Skills compatibility audit (now 48 skills,
+  4 daemon-dependent skills instead of 9). Removed `docs/howto-ios-testing.md` and
+  the iOS-only `.gitignore` build-artifact entries.
+
 ## 1.9.1 — 2026-06-14
 
 ### Changed
