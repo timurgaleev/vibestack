@@ -286,6 +286,8 @@ interrupt before the work happens.
 
 #### File the issue (always)
 
+**Re-scan before filing.** The fail-closed redaction gate in Phase 4.5 ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so scan the exact title + body you are about to file for the same high-confidence secret patterns as that gate (`lib/snippets/secret-scan-patterns.md`). On a match, **stop**: redact and rotate before filing — never create the issue with a secret in it.
+
 If `gh` is available and authenticated:
 
 ```bash

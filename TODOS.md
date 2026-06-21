@@ -46,6 +46,14 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     parameterized by target). Effort: M. Priority: P3. Trigger: a Cursor/Kiro user
     hitting a hook-path miss, or CC dropping `${VAR:-default}` shell expansion.
 
+16. **`/spec` Phase 4.5a Semantic Content Review (upstream).** DEFERRED (LOW) —
+    an LLM-judgment pass over the drafted spec for named individuals, customers,
+    NDA material, or unannounced strategy before filing the issue, with
+    "proceed anyway" disabled on public repos. The existing regex redaction gate
+    (Phase 4.5) + the new pre-filing re-scan are a partial backstop, so impact is
+    bounded. Effort: S. Priority: P3. Trigger: a real semantic leak the regex
+    gate misses.
+
 ### From v1.7.x upstream sync (2026-05-28)
 
 Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the

@@ -402,6 +402,10 @@ Fix any failures before proceeding.
 
 ## Step 9: Commit & Output
 
+**Secret scan before commit.** Doc generators routinely emit example credentials that look real. Before staging, scan every generated/updated documentation file for high-confidence secrets. On a match, **stop**: name the file and matched pattern, and tell the user to redact (and rotate if the secret is real) before re-running. Do not commit.
+
+{{include lib/snippets/secret-scan-patterns.md}}
+
 1. Stage new documentation files by name (never `git add -A` or `git add .`).
 
 2. Create a commit:

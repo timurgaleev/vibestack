@@ -984,3 +984,7 @@ When the user runs `/retro compare` (or `/retro compare 14d`):
 - Do not read CLAUDE.md or other docs — this skill is self-contained
 - On first run (no prior retros), skip comparison sections gracefully
 - **Global mode:** Does NOT require being inside a git repo. Saves snapshots to `~/.vibestack/retros/` (not `.context/retros/`). Gracefully skip AI tools that aren't installed. Only compare against prior global retros with the same window value. If streak hits 365d cap, display as "365+ days".
+
+---
+
+{{include lib/snippets/capture-learnings.md}}
