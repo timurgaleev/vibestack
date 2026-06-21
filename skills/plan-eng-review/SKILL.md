@@ -184,6 +184,8 @@ Always work through the full interactive review: one section at a time (Architec
 
 **Anti-skip rule:** Never condense, abbreviate, or skip any review section (1-4) regardless of plan type (strategy, spec, code, infra). Every section in this skill exists for a reason. "This is a strategy doc so implementation sections don't apply" is always wrong — implementation details are where strategy breaks down. If a section genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
+**Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion defeats the review — you explored, found issues, and dumped them into a deliverable instead of walking the user through them. If you have ANY non-trivial finding in any review section, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every section is the only path to ExitPlanMode that bypasses AskUserQuestion. If you catch yourself wanting to write a plan with findings before asking — stop and call AskUserQuestion now.
+
 {{include lib/snippets/prior-learnings.md}}
 ### 1. Architecture review
 Evaluate:
@@ -244,6 +246,15 @@ The verification is "I read the source that creates this symbol", not "I
 grep'd for the name and didn't find it." Deeper framework-aware verification
 (model introspection, migration-history-aware checks, ORM dialect detection)
 is deliberately out of scope for this lighter gate.
+
+The FP classes this gate kills:
+
+| FP class | Why the gate catches it |
+|---|---|
+| "field doesn't exist on model" | Requires quoting the model class body or Meta; the field's absence becomes obvious. |
+| "dict.get() might be None" | Requires quoting the dict initialization (e.g. a form's `cleaned_data` is `{}`-initialized). |
+| "save() might lose fields" | Requires quoting the ORM signature or model definition. |
+| "update_fields might miss X" | Requires quoting the field set; if X doesn't exist, the FP is self-evident. |
 
 **Calibration learning:** If you report a finding with confidence < 7 and the user
 confirms it IS a real issue, that is a calibration event. Your initial confidence was
@@ -780,15 +791,12 @@ Below the table, add these lines (omit CODEX / CROSS-MODEL when not applicable; 
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-- Search the plan file for a \`## VIBESTACK REVIEW REPORT\` section **anywhere** in the file
-  (not just at the end — content may have been added after it).
-- If found, **replace it** entirely using the Edit tool. Match from \`## VIBESTACK REVIEW REPORT\`
-  through either the next \`## \` heading or end of file, whichever comes first. This ensures
-  content added after the report section is preserved, not eaten. If the Edit fails
-  (e.g., concurrent edit changed the content), re-read the plan file and retry once.
-- If no such section exists, **append it** to the end of the plan file.
-- Always place it as the very last section in the plan file. If it was found mid-file,
-  move it: delete the old location and append at the end.
+Use a single delete-then-append flow — do NOT replace the section in place. The "replace mid-file" path is what lets an old report get left mid-file when content was added after it.
+
+1. Search the plan file for a \`## VIBESTACK REVIEW REPORT\` section **anywhere** in the file.
+2. If found, **delete the entire section** — from \`## VIBESTACK REVIEW REPORT\` through the next \`## \` heading or end of file — to empty string with the Edit tool. If the Edit fails (concurrent edit changed the content), re-read the plan file and retry once.
+3. **Append** the fresh report section at the END of the plan file.
+4. Verify with the Read tool that \`## VIBESTACK REVIEW REPORT\` is the last \`## \` heading in the file. If it isn't, repeat steps 2-3 once.
 
 {{include lib/snippets/exit-plan-mode-gate.md}}
 
