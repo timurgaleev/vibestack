@@ -10,10 +10,11 @@ one large remaining item:
 - **Browse + design daemons (Phase E) — mostly done.** The browse shim has a
   `chain` verb (one-call sequences) AND a **persistent daemon** (`$B daemon &`)
   giving cross-call element refs (`snapshot` → `@e1`, then `click @e1` from a
-  separate call) over a unix socket. Still remaining (need the upstream browser
-  extension, genuinely large): `upload`, native `dialog` capture, cookie *import*
-  from a real browser, and tunnel/pairing for `/pair-agent` +
-  `/setup-browser-cookies`; plus the design-image daemon
+  separate call) over a unix socket. Done since: upload, dialog capture, cookie import (CDP), tunnel/pairing (ngrok),
+  and design-mockup generation (OpenAI image backend via `vibe-design`). The only
+  deep remainder is the upstream's native browser *extension* (Layer-C stealth +
+  cookie import from Chrome's encrypted store without remote-debugging) — a
+  separate native project
   (CDP element refs, the browser extension, tunnels/pairing) and the design-image
   daemon are a multi-day vendoring project, not an in-session port. The four
   interaction-heavy skills (`/browse`, `/open-browser`, `/pair-agent`,

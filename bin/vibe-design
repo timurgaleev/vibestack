@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# vibe-design — design-mockup generation via OpenAI's image model (the same
+# backend the upstream design daemon uses). Detect-and-use: needs OPENAI_API_KEY
+# and curl, otherwise prints DESIGN_NOT_AVAILABLE so a skill degrades to text.
+#
+# Usage:
+#   vibe-design status
+#   vibe-design variants --brief "<prompt>" [--count N] [--output-dir <dir>] [--size WxH]
+set -euo pipefail
+
+KEY="${OPENAI_API_KEY:-}"
+MODEL="${VIBE_DESIGN_MODEL:-gpt-image-1}"
+
+case "${1:-}" in
+  status)
+    if [ -n "$KEY" ] && command -v curl >/dev/null 2>&1; then echo "DESIGN_AVAILABLE"; else echo "DESIGN_NOT_AVAILABLE"; fi
+    exit 0 ;;
+  variants)
+    [ -n "$KEY" ] || { echo "DESIGN_NOT_AVAILABLE: set OPENAI_API_KEY"; exit 0; }
+    command -v curl >/dev/null 2>&1 || { echo "DESIGN_NOT_AVAILABLE: curl not found"; exit 0; }
+    shift
+    brief=""; count=1; outdir="."; size="1024x1024"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --brief) brief="${2:-}"; shift 2 ;;
+        --count) count="${2:-1}"; shift 2 ;;
+        --output-dir) outdir="${2:-.}"; shift 2 ;;
+        --size) size="${2:-1024x1024}"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    [ -n "$brief" ] || { echo "usage: vibe-design variants --brief <prompt> [--count N] [--output-dir <dir>]"; exit 1; }
+    mkdir -p "$outdir"
+    body="$(python3 -c 'import json,sys; print(json.dumps({"model":sys.argv[1],"prompt":sys.argv[2],"n":int(sys.argv[3]),"size":sys.argv[4]}))' "$MODEL" "$brief" "$count" "$size")"
+    resp="$(curl -s https://api.openai.com/v1/images/generations \
+      -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d "$body")"
+    python3 - "$resp" "$outdir" <<'PY'
+import json, sys, base64, os
+try:
+    resp = json.loads(sys.argv[1])
+except Exception:
+    print("DESIGN_ERROR: non-JSON response"); sys.exit(1)
+outdir = sys.argv[2]
+data = resp.get("data") or []
+if not data:
+    err = resp.get("error", resp)
+    print("DESIGN_ERROR:", (err.get("message") if isinstance(err, dict) else str(err))[:300]); sys.exit(1)
+labels = "ABCDEFGHIJ"
+for i, d in enumerate(data):
+    b = d.get("b64_json")
+    if not b:
+        continue
+    p = os.path.join(outdir, f"variant-{labels[i] if i < len(labels) else i}.png")
+    with open(p, "wb") as f:
+        f.write(base64.b64decode(b))
+    print("variant:", p)
+PY
+    ;;
+  check | compare | serve | approve)
+    # The comparison-board / vision-critique verbs need the full upstream design
+    # daemon; vibestack generates variants only. Skip gracefully (exit 0) so a
+    # skill degrades instead of crashing.
+    echo "DESIGN_${1}_NOT_SUPPORTED: vibestack generates design variants only"
+    exit 0 ;;
+  *)
+    echo "usage: vibe-design status | variants --brief <prompt> [--count N] [--output-dir <dir>] [--size WxH]"
+    exit 1 ;;
+esac

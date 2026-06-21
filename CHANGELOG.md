@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.17.3 — 2026-06-21
+
+### Added
+
+- **Design-mockup generation** (`bin/vibe-design`) via OpenAI's image model — the
+  same backend the upstream design daemon uses. `vibe-design variants --brief
+  "<prompt>" --count N --output-dir <dir>` writes PNG variants; `vibe-design
+  status` reports `DESIGN_AVAILABLE` when `OPENAI_API_KEY` is set, else
+  `DESIGN_NOT_AVAILABLE`. The five design skills' `DESIGN SETUP` now bind `$D` to
+  it (detect-and-use); the comparison-board / vision verbs degrade gracefully.
+
 ## 1.17.2 — 2026-06-21
 
 ### Added

@@ -93,8 +93,13 @@ If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (c
 ## DESIGN SETUP
 
 ```bash
-# vibestack does not include a design daemon.
-echo "DESIGN_NOT_AVAILABLE"
+# Bind $D to vibe-design (OpenAI image backend) when a key is configured.
+D=~/.vibestack/bin/vibe-design
+if [ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ]; then
+  echo "DESIGN_AVAILABLE via $D"
+else
+  echo "DESIGN_NOT_AVAILABLE"
+fi
 ```
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.

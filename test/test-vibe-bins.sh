@@ -49,6 +49,13 @@ id="$("$BIN/vibe-decision-search" --recent 5 | grep -oE 'd[0-9]+' | head -1)"
 # vibe-update-check never errors
 "$BIN/vibe-update-check" >/dev/null 2>&1; [ $? -le 1 ] && ok "update-check exits cleanly" || no "update-check crashed"
 
+# vibe-design: detect-and-use on OPENAI_API_KEY; graceful on unsupported verbs
+[ "$(env -u OPENAI_API_KEY "$BIN/vibe-design" status)" = "DESIGN_NOT_AVAILABLE" ] \
+  && ok "design unavailable without key" || no "design status wrong without key"
+[ "$(OPENAI_API_KEY=dummy "$BIN/vibe-design" status)" = "DESIGN_AVAILABLE" ] \
+  && ok "design available with key" || no "design status wrong with key"
+"$BIN/vibe-design" compare >/dev/null 2>&1 && ok "design skips unsupported verb" || no "design crashed on compare"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"
