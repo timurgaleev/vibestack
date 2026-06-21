@@ -58,7 +58,8 @@ project names.
 ```bash
 cd "$REPO"
 bin/vibe-render-skill "skills/<name>/SKILL.md" /tmp/_skillify_check.md && echo "RENDER_OK"
-git grep -inE "gstack|garry|gbrain|ycombinator" -- "skills/<name>/" | head   # must be empty
+# Brand check: the new skill must contain no external project names. Run the
+# repo's zero-external-brand audit (see CLAUDE.md) — it must return nothing.
 ./install --yes
 ```
 
