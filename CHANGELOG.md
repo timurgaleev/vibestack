@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.17.2 — 2026-06-21
+
+### Added
+
+- **Browse tunnel / pairing via ngrok** (the same mechanism the upstream pairs
+  through): `$B tunnel <port>` exposes a local port for a remote agent and prints
+  `TUNNEL: <https url>`; `$B tunnel-stop` ends it. Detect-and-use — prints
+  `TUNNEL_NOT_AVAILABLE` when ngrok isn't installed. Used by `/pair-agent`.
+
 ## 1.17.1 — 2026-06-21
 
 ### Added

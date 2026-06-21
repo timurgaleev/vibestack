@@ -43,6 +43,10 @@ interaction the stateless shim can't do.
   `import-cdp` copies cookies from a Chrome started with `--remote-debugging-port`
   (the CDP cookie-import path).
 
+- **tunnel / pairing:** `$B tunnel <port>` exposes a local port for a remote
+  agent via ngrok and prints `TUNNEL: <https url>` (`$B tunnel-stop` ends it).
+  Prints `TUNNEL_NOT_AVAILABLE` if ngrok isn't installed.
+
 Without a running daemon, ref-based verbs (`snapshot`, a bare `click` / `fill`,
 …) print `NOT_SUPPORTED:<verb>` — skip that pass, don't fabricate the result.
 

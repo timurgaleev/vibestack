@@ -17,6 +17,30 @@ PKG="$SELF_DIR/../runtime/package.json"
 VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 DEP_DIR="$VIBE_HOME/browse"
 
+# Tunnel / pairing (no node, no browser): expose a local port for a remote agent
+# via ngrok — detect-and-use, the same mechanism the upstream pairs through.
+case "${1:-}" in
+  tunnel)
+    port="${2:-3000}"
+    command -v ngrok >/dev/null 2>&1 || { echo "TUNNEL_NOT_AVAILABLE: ngrok not installed (e.g. brew install ngrok)"; exit 0; }
+    mkdir -p "$DEP_DIR"
+    nohup ngrok http "$port" --log stdout >"$DEP_DIR/ngrok.log" 2>&1 &
+    echo $! >"$DEP_DIR/ngrok.pid"
+    url=""
+    for _ in $(seq 1 20); do
+      url="$(curl -s http://127.0.0.1:4040/api/tunnels 2>/dev/null | grep -oE 'https://[a-z0-9.-]+\.ngrok[a-z.-]*[^"]*' | head -1)"
+      [ -n "$url" ] && break
+      sleep 0.5
+    done
+    [ -n "$url" ] && echo "TUNNEL: $url" || echo "TUNNEL_NOT_AVAILABLE: ngrok started but reported no URL (see $DEP_DIR/ngrok.log)"
+    exit 0 ;;
+  tunnel-stop)
+    [ -f "$DEP_DIR/ngrok.pid" ] && kill "$(cat "$DEP_DIR/ngrok.pid")" 2>/dev/null || true
+    rm -f "$DEP_DIR/ngrok.pid"
+    echo "tunnel stopped"
+    exit 0 ;;
+esac
+
 # No node → shim cannot run. Emit the detection sentinel and stop.
 if ! command -v node >/dev/null 2>&1; then
   echo "BROWSE_NOT_AVAILABLE"
