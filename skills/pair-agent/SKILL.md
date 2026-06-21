@@ -32,6 +32,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 # /pair-agent — Share Your Browser With Another AI Agent
 
 You're sitting in Claude Code with a browser running. You also have another AI agent

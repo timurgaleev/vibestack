@@ -51,6 +51,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## Iron Law
 
 **NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST.**

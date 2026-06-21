@@ -36,6 +36,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## User-invocable
 When the user types `/setup-deploy`, run this skill.
 

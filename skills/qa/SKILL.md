@@ -41,6 +41,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## Step 0: Detect platform and base branch
 
 First, detect the git hosting platform from the remote URL:

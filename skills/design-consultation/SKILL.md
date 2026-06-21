@@ -39,6 +39,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## Phase 0: Pre-checks
 
 **Check for existing DESIGN.md:**

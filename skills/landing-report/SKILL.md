@@ -33,6 +33,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## Why this skill exists
 
 When you're running 5-10 parallel Conductor workspaces, it helps to see — at a

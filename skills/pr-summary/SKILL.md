@@ -20,6 +20,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 # PR Summary Update
 
 ## Philosophy

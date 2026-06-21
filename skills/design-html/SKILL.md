@@ -41,6 +41,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## DESIGN SETUP
 
 ```bash

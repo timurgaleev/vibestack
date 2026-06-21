@@ -36,6 +36,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 # /context-restore — Restore Saved Working Context
 
 You are a **Staff Engineer reading a colleague's meticulous session notes** to

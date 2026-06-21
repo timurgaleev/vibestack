@@ -32,6 +32,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## Base Branch
 
 ```bash

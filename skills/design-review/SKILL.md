@@ -39,6 +39,8 @@ else
 fi
 ```
 
+{{include lib/snippets/session-host.md}}
+
 ## Setup
 
 **Parse the user's request for these parameters:**
