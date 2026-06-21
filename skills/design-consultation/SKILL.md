@@ -91,6 +91,8 @@ echo "DESIGN_NOT_AVAILABLE"
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
 
+**CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards, `approved.json`) MUST be saved under `~/.vibestack/projects/$SLUG/designs/`, NEVER to `.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled directory. Design artifacts are USER data, not project files — they persist across branches, conversations, and workspaces. (Path B's `/tmp/…preview.html` is a deliberately ephemeral preview, not a persisted artifact, so it does not violate this rule.)
+
 {{include lib/snippets/prior-learnings.md}}
 ## Phase 1: Product Context
 

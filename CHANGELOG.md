@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.10.1 — 2026-06-21
+
+A deep, per-skill content comparison (not just section-level) surfaced generic
+guardrails that lived inside otherwise-mirrored skills:
+
+### Added
+
+- **`/design-consultation` enforces an artifact-persistence rule.** Mockups,
+  comparison boards, and `approved.json` must be saved under
+  `~/.vibestack/projects/$SLUG/designs/` — never in `.context/`, `docs/designs/`,
+  `/tmp/`, or any project-local / version-controlled directory. Design artifacts
+  are user data that persist across branches and workspaces, not project files.
+- **`/plan-tune` no longer nags.** Step 0 gained a **Consent gate** and a
+  **Setup gate** with prompt-once markers (`.question-tuning-prompted`,
+  `.declared-setup-prompted`): a user who declines, or who enables tuning
+  directly without the wizard, is handled once and never re-prompted. A partial
+  bail-out of the setup wizard is honored the same way.
+
+### Changed
+
+- `/plan-tune` "Inspect profile" now distinguishes the low *display* threshold
+  from the much higher bar required to ship behavior-adapting defaults — so a
+  visible observed profile is never mistaken for a green light to start changing
+  skill behavior while tuning is observational.
+
 ## 1.10.0 — 2026-06-21
 
 ### Added
