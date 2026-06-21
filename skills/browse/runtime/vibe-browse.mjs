@@ -32,6 +32,7 @@ const getChromium = async () => {
 const CTX_DIR = process.env.VIBE_BROWSE_CTX_DIR ?? join(tmpdir(), 'vibe-browse')
 const CTX_FILE = join(CTX_DIR, 'ctx.json')
 const NAV_TIMEOUT = Number(process.env.VIBE_BROWSE_TIMEOUT ?? 30000)
+const ACTION_TIMEOUT = Number(process.env.VIBE_BROWSE_ACTION_TIMEOUT ?? 10000)
 
 const VIEWPORTS = {
   mobile: { width: 390, height: 844 },
@@ -235,11 +236,64 @@ const verbs = {
     console.log(String(ok))
     process.exit(ok ? 0 : 1)
   },
+
+  // Stateful interaction: run a sequence of steps on ONE live page. Each arg is
+  // one step ("goto <url>", "fill <sel> <value...>", "click <sel>", ...). The
+  // page persists across steps, so form-fill → submit → screenshot works in a
+  // single call without cross-call element refs (which would need a daemon).
+  async chain(steps) {
+    if (!steps.length) {
+      die('usage: chain "goto <url>" "fill <sel> <val>" "click <sel>" "screenshot <path>" …\n' +
+          '  step verbs: goto click fill type press hover check uncheck select wait screenshot text eval is')
+    }
+    const ctx = readCtx()
+    const chromium = await getChromium()
+    const headed = process.env.VIBE_BROWSE_HEADED === '1'
+    const browser = await chromium.launch({ headless: !headed })
+    const context = await browser.newContext({ viewport: ctx.viewport ?? VIEWPORTS.desktop, deviceScaleFactor: 1 })
+    const page = await context.newPage()
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    const log = []
+    let failed = false
+    for (const raw of steps) {
+      const parts = String(raw).trim().split(/\s+/)
+      const v = parts[0]
+      const a = parts.slice(1)
+      const sel = a[0]
+      const loc = () => page.locator(sel).first()
+      try {
+        switch (v) {
+          case 'goto': { const r = await page.goto(resolveUrl(a[0]), { waitUntil: 'networkidle', timeout: NAV_TIMEOUT }); log.push({ step: raw, status: r?.status() ?? null }); if ((r?.status() ?? 0) >= 400) throw new Error('HTTP ' + r.status()); break }
+          case 'click': await loc().click({ timeout: ACTION_TIMEOUT }); log.push({ step: raw, ok: true }); break
+          case 'fill': await loc().fill(a.slice(1).join(' '), { timeout: ACTION_TIMEOUT }); log.push({ step: raw, ok: true }); break
+          case 'type': await loc().pressSequentially(a.slice(1).join(' '), { timeout: ACTION_TIMEOUT }); log.push({ step: raw, ok: true }); break
+          case 'press': await page.keyboard.press(a[0]); log.push({ step: raw, ok: true }); break
+          case 'hover': await loc().hover({ timeout: ACTION_TIMEOUT }); log.push({ step: raw, ok: true }); break
+          case 'check': await loc().check({ timeout: ACTION_TIMEOUT }); log.push({ step: raw, ok: true }); break
+          case 'uncheck': await loc().uncheck({ timeout: ACTION_TIMEOUT }); log.push({ step: raw, ok: true }); break
+          case 'select': await loc().selectOption(a.slice(1).join(' ')); log.push({ step: raw, ok: true }); break
+          case 'wait': { const w = a[0]; if (/^\d+$/.test(w)) await page.waitForTimeout(+w); else await page.locator(w).first().waitFor({ timeout: ACTION_TIMEOUT }); log.push({ step: raw, ok: true }); break }
+          case 'screenshot': { mkdirSync(join(a[0], '..'), { recursive: true }); await page.screenshot({ path: a[0], fullPage: true }); log.push({ step: raw, screenshot: a[0] }); break }
+          case 'text': { const t = await page.evaluate(() => document.body?.innerText ?? ''); log.push({ step: raw, text: t.slice(0, 2000) }); break }
+          case 'eval': { const r = await page.evaluate(`(() => (${a.join(' ')}))()`); log.push({ step: raw, result: typeof r === 'string' ? r : JSON.stringify(r) }); break }
+          case 'is': { const st = a[0]; const l = page.locator(a[1]).first(); let ok = false; try { ok = st === 'visible' ? await l.isVisible() : st === 'enabled' ? await l.isEnabled() : st === 'checked' ? await l.isChecked() : st === 'editable' ? await l.isEditable() : false } catch {} log.push({ step: raw, [st]: ok }); if (!ok) throw new Error(`not ${st}: ${a[1]}`); break }
+          default: throw new Error(`unknown step verb: ${v}`)
+        }
+      } catch (e) {
+        log.push({ step: raw, error: String(e?.message ?? e).slice(0, 200) })
+        failed = true
+        break
+      }
+    }
+    await browser.close()
+    console.log(JSON.stringify({ chain: log }, null, 2))
+    if (failed) process.exit(1)
+  },
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
 const [, , verb, ...args] = process.argv
-if (!verb) die('usage: vibe-browse <verb> [args]   (verbs: goto screenshot responsive console network perf js css is text url viewport status)', 2)
+if (!verb) die('usage: vibe-browse <verb> [args]   (verbs: goto screenshot responsive console network perf js css is text url viewport status chain)', 2)
 if (UNSUPPORTED.has(verb)) die(`NOT_SUPPORTED:${verb}`, 2)
 
 const handler = verbs[verb === 'console' ? 'console_' : verb]
