@@ -48,6 +48,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 ## Step 0: Detect what the user wants
 
 Before routing on intent, check two implicit gates — they fire first:

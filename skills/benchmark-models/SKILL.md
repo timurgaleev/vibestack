@@ -39,6 +39,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # /benchmark-models — Cross-Model Skill Benchmark
 
 Different from `/benchmark` — that skill measures web page performance (Core Web Vitals, load times). This skill measures AI model performance on skills or arbitrary prompts.

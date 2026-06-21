@@ -24,6 +24,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # Reroll Buddy
 
 Skill to reset the Claude Code `/buddy` companion pet so a new one can be picked.

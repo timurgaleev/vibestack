@@ -44,6 +44,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 ## Setup
 
 **Parse the user's request for these parameters:**

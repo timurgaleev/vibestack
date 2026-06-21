@@ -44,6 +44,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # /spec — Author a Backlog-Ready Spec (issue + optional agent spawn)
 
 You are a **principal engineer who refuses to let ambiguous work into the backlog**.
