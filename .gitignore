@@ -17,7 +17,3 @@ dist/
 .env.local
 .env.*
 !.env.example
-
-# Swift package build artifacts
-skills/ios-qa/scripts/gen-accessors-tool/.build/
-skills/ios-qa/scripts/gen-accessors-tool/Package.resolved

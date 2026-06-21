@@ -46,6 +46,14 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     parameterized by target). Effort: M. Priority: P3. Trigger: a Cursor/Kiro user
     hitting a hook-path miss, or CC dropping `${VAR:-default}` shell expansion.
 
+16. **`/spec` Phase 4.5a Semantic Content Review (upstream).** DEFERRED (LOW) —
+    an LLM-judgment pass over the drafted spec for named individuals, customers,
+    NDA material, or unannounced strategy before filing the issue, with
+    "proceed anyway" disabled on public repos. The existing regex redaction gate
+    (Phase 4.5) + the new pre-filing re-scan are a partial backstop, so impact is
+    bounded. Effort: S. Priority: P3. Trigger: a real semantic leak the regex
+    gate misses.
+
 ### From v1.7.x upstream sync (2026-05-28)
 
 Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
@@ -53,15 +61,10 @@ Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
 review/retro/deploy correctness guards, and `/ship` auto-closing the `/spec`
 issue. Remaining follow-ups:
 
-10. **iOS suite → functional. DONE (v1.8.0).** The Mac-side daemon
-    (`skills/ios-qa/daemon/`, Bun), the `DebugBridge` Swift/Obj-C templates
-    (`skills/ios-qa/templates/`), the accessor codegen (`skills/ios-qa/scripts/`,
-    TS + swift-syntax tool), and the `vibe-ios-qa-daemon`/`vibe-ios-qa-mint`
-    launchers all ship now. Verified here: daemon `bun test` 91/91, codegen
-    `bun test` 20/20, Swift source parses. Remaining (the user's machine, can't be
-    done here): connect an iPhone, `swift build` the DebugBridge in Xcode, and run
-    the on-device find→fix→verify loop. Possible later polish: a `./setup` that
-    runs `swift build` for the codegen tool + checks Bun/Xcode/devicectl.
+10. **iOS suite — REMOVED (v1.10.0).** The 5 iOS skills (`/ios-qa`, `/ios-fix`,
+    `/ios-design-review`, `/ios-clean`, `/ios-sync`) and the bundled Mac-side
+    daemon / DebugBridge templates / accessor codegen were removed — out of scope
+    for this pack. Skill count 53 → 48.
 
 11. **Broaden the AskUserQuestion split rule (optional).** The "5+ options —
     split, never drop" snippet is wired into the 4 `plan-*` skills +
@@ -120,16 +123,9 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
      would need `{SKILL_NAME}` + per-skill parameterization. The "Codex
      outside-voice fallback" is woven through the plan-* outside-voice flow, not
      a self-contained block.
-   - **iOS-stub boilerplate (×5 each, byte-identical):** `Voice`, `Skill
-     routing`, `Operational Self-Improvement`, `Model-Specific Behavioral
-     Patch`, `Plan Mode Safe Operations`, `Repo Ownership`, `Search Before
-     Building` — all live only in the 5 iOS preview skills. Defer: don't
-     snippet-ify (or trim) preview-stub boilerplate until the iOS suite's fate
-     is decided (item #10). Some of it is generic upstream tier-2 boilerplate
-     vibestack's other skills don't carry and may be trimmed rather than shared.
    Effort: M (per drifted family, ~2-3 days each).
    Priority: P2.
-   Depends on: nothing for the drifted families; iOS-boilerplate depends on #10.
+   Depends on: nothing for the drifted families.
 
 2. **Lint rules for `lib/snippets/`** — no duplicate headings, no
    runtime-execution instructions (a snippet should not contain

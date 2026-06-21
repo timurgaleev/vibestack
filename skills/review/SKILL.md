@@ -185,19 +185,43 @@ For each item, note:
 - The item text (verbatim or concise summary)
 - Its category: CODE | TEST | MIGRATION | CONFIG | DOCS
 
+### Verification Mode
+
+Before judging completion, classify HOW each item can be verified. The diff alone cannot prove every kind of work — items outside the current repo or system are structurally invisible to `git diff`.
+
+- **DIFF-VERIFIABLE** — A code change in this repo would manifest in `git diff origin/<base>...HEAD`. Examples: "add UserService" (file appears), "validate input X" (validation logic appears), "create users table" (migration appears).
+- **CROSS-REPO** — Item names a file or change in a sibling repo (e.g. `~/Development/<other-repo>/docs/dashboard.md`). The current diff CANNOT prove this.
+- **EXTERNAL-STATE** — Item names state in an external system: managed-DB config/RLS, DNS records, hosting env vars, OAuth allowlists, third-party SaaS. The current diff CANNOT prove this.
+- **CONTENT-SHAPE** — Item requires a file to follow a specific convention. In this repo: diff-verifiable. In another repo or system: see CROSS-REPO / EXTERNAL-STATE.
+
+**Verification dispatch:**
+
+- **DIFF-VERIFIABLE** → cross-reference against the diff (next section).
+- **CROSS-REPO** → if the sibling repo is reachable on disk (try `~/Development/<repo>/`, `~/code/<repo>/`, the parent of the current repo), run `[ -f <path> ]`. File exists → DONE (cite path). Missing → NOT DONE (cite path). Path unreachable → UNVERIFIABLE (cite the manual check).
+- **EXTERNAL-STATE** → UNVERIFIABLE. Cite the system and the specific check the user must perform.
+- **CONTENT-SHAPE in another repo** → if the file exists, run any project-detected validator (see below) before falling back to UNVERIFIABLE. Pass → DONE; fail → NOT DONE (cite output). No validator available: UNVERIFIABLE, citing both the path and the convention to confirm.
+
+**Path concreteness rule.** If a plan item names a *concrete filesystem path* (absolute, `~/...`, or `<sibling-repo>/<file>`), it MUST be classified DONE or NOT DONE based on `[ -f <path> ]`. UNVERIFIABLE is only valid when the path is genuinely abstract ("DNS record", "managed-DB allowlist") or the sibling root is unreachable on this machine. "I don't want to check" is not unreachable.
+
+**Validator detection.** Before falling back to UNVERIFIABLE on a CONTENT-SHAPE item, scan the target repo's `package.json` for a script matching `validate-*`, `check-docs`, `lint-*`, or similar. If found, invoke it with the relevant path argument. A passing validator promotes the item from UNVERIFIABLE to DONE; a failing one demotes it to NOT DONE.
+
+**Honesty rule.** Do NOT classify an item DONE just because related code shipped. Code that *handles* a deliverable is not the deliverable. When in doubt between DONE and UNVERIFIABLE, prefer UNVERIFIABLE — better to surface a confirmation prompt than silently miss a deliverable.
+
 ### Cross-Reference Against Diff
 
 Run `git diff origin/<base>...HEAD` and `git log origin/<base>..HEAD --oneline` to understand what was implemented.
 
-For each extracted plan item, check the diff and classify:
+For each extracted plan item, run the verification dispatch from the previous section, then classify:
 
-- **DONE** — Clear evidence in the diff that this item was implemented. Cite the specific file(s) changed.
-- **PARTIAL** — Some work toward this item exists in the diff but it's incomplete (e.g., model created but controller missing, function exists but edge cases not handled).
-- **NOT DONE** — No evidence in the diff that this item was addressed.
+- **DONE** — Clear evidence the item shipped. Cite the specific file(s) changed in the diff for DIFF-VERIFIABLE items, or the verified path that exists for CROSS-REPO items with a reachable sibling repo.
+- **PARTIAL** — Some work toward this item exists but it's incomplete (e.g., model created but controller missing, function exists but edge cases not handled).
+- **NOT DONE** — Verification ran and produced negative evidence (file missing, code absent in the diff, sibling-repo file confirmed absent).
 - **CHANGED** — The item was implemented using a different approach than the plan described, but the same goal is achieved. Note the difference.
+- **UNVERIFIABLE** — The diff and any reachable sibling-repo checks cannot prove or disprove this. Always applies to EXTERNAL-STATE items and to CROSS-REPO items where the sibling repo isn't reachable. Cite the specific manual verification the user must perform.
 
-**Be conservative with DONE** — require clear evidence in the diff. A file being touched is not enough; the specific functionality described must be present.
+**Be conservative with DONE** — require clear evidence. A file being touched is not enough; the specific functionality described must be present.
 **Be generous with CHANGED** — if the goal is met by different means, that counts as addressed.
+**Be honest with UNVERIFIABLE** — better to surface items the user must manually confirm than silently classify them DONE.
 
 ### Output Format
 
@@ -219,8 +243,12 @@ Plan: {plan file path}
 ## Migration Items
   [DONE]      Create users table — db/migrate/20240315_create_users.rb
 
+## Cross-Repo / External Items
+  [DONE]          Add dashboard doc — ~/Development/other-repo/docs/dashboard.md (file exists)
+  [UNVERIFIABLE]  DNS-only mode for dashboard.example.com — confirm in your DNS provider
+
 ─────────────────────────────────
-COMPLETION: 4/7 DONE, 1 PARTIAL, 1 NOT DONE, 1 CHANGED
+COMPLETION: 5/9 DONE, 1 PARTIAL, 1 NOT DONE, 1 CHANGED, 1 UNVERIFIABLE
 ─────────────────────────────────
 ```
 

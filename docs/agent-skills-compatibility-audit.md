@@ -2,10 +2,10 @@
 
 **Generated:** 2026-05-09 (Day 0 Track A of v1.4.0 multi-target install)
 **Track B verified:** 2026-05-09 (Cursor 2026.05.07-42ddaca, Kiro CLI 2.2.2)
-**Skills audited:** 53 (47 prior; `/spec` + the 5-skill iOS suite added in the upstream sync. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent; the 5 iOS skills run a **bundled** Mac-side daemon (`skills/ios-qa/daemon/`, Bun) via `vibe-ios-qa-daemon`, plus a `DebugBridge` Swift package the user embeds in the app under test; they require Bun + Xcode + a paired iPhone and detect availability at runtime, reporting `NEEDS_SETUP` otherwise.)
+**Skills audited:** 48. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent.
 **Spec reference:** [agentskills.io/specification](https://agentskills.io/specification)
 
-This audit verifies vibestack's 53 skills against the Agent Skills open standard,
+This audit verifies vibestack's 48 skills against the Agent Skills open standard,
 which Claude Code, Cursor (`~/.cursor/skills/`), and Kiro (`~/.kiro/skills/`) all
 implement. The spec standardizes the SKILL.md **file shape** — frontmatter +
 markdown body. It does **not** standardize runtime behavior (hooks, env vars,
@@ -19,19 +19,19 @@ results are in the new "Track B — Empirical Verification" section near the end
 
 | Audit dimension | Pass/Fail | Skills affected |
 |---|---|---|
-| Required `name` field present | 53/53 PASS | — |
-| `name` matches directory basename | 53/53 PASS | — |
-| Required `description` field present | 53/53 PASS | — |
-| Description ≤ 1024 chars (spec limit) | 53/53 PASS | — |
-| YAML frontmatter parseable | 53/53 PASS | — |
+| Required `name` field present | 48/48 PASS | — |
+| `name` matches directory basename | 48/48 PASS | — |
+| Required `description` field present | 48/48 PASS | — |
+| Description ≤ 1024 chars (spec limit) | 48/48 PASS | — |
+| YAML frontmatter parseable | 48/48 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
 | Skills using `${CLAUDE_SKILL_DIR}` substitution | 6 skills | careful, freeze, guard, investigate, ship, design-review (cross-skill ref to `../browse/bin/vibe-browse`) |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
-| Skills needing an external daemon/toolchain | 9 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies · iOS (daemon bundled, needs Bun+Xcode+iPhone): ios-qa, ios-fix, ios-design-review, ios-clean, ios-sync. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
+| Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
 | Skills using `AskUserQuestion` (Claude-specific) | ~50 skills | most of the pack |
 
-**Verdict:** All 53 skills are **spec-compliant for file shape**. Cross-target
+**Verdict:** All 48 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
 runtime verification (manual, requires Cursor/Kiro running on the user's machine).
 
