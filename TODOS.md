@@ -7,10 +7,13 @@
 The session/preamble/tier-2 + binaries parity is shipped (v1.13.0–v1.15.0). The
 one large remaining item:
 
-- **Browse + design daemons (Phase E) — PARTIAL.** The browse shim now supports
-  real interaction via the `chain` verb (goto/click/fill/type/press/hover/check/
-  select/wait/screenshot/text/eval/is on one live page in a single call). Still
-  remaining: the upstream's full *persistent* browse daemon
+- **Browse + design daemons (Phase E) — mostly done.** The browse shim has a
+  `chain` verb (one-call sequences) AND a **persistent daemon** (`$B daemon &`)
+  giving cross-call element refs (`snapshot` → `@e1`, then `click @e1` from a
+  separate call) over a unix socket. Still remaining (need the upstream browser
+  extension, genuinely large): `upload`, native `dialog` capture, cookie *import*
+  from a real browser, and tunnel/pairing for `/pair-agent` +
+  `/setup-browser-cookies`; plus the design-image daemon
   (CDP element refs, the browser extension, tunnels/pairing) and the design-image
   daemon are a multi-day vendoring project, not an in-session port. The four
   interaction-heavy skills (`/browse`, `/open-browser`, `/pair-agent`,
