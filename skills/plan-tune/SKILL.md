@@ -44,10 +44,16 @@ fi
 
 ## Step 0: Detect what the user wants
 
-Read the user's message. Route based on plain-English intent, not keywords:
+Before routing on intent, check two implicit gates — they fire first:
 
-1. **First-time use** (config says `question_tuning` is not yet set to `true`) →
-   run `Enable + setup` below.
+- **Consent gate.** If `question_tuning` is not `true` AND `${VIBESTACK_HOME:-$HOME/.vibestack}/.question-tuning-prompted` does not exist → run `Enable + setup`. The marker is written whichever way the user answers (even a decline), so someone who said "not now" is never re-prompted on later invocations.
+- **Setup gate.** If `question_tuning` is `true` AND `developer-profile.json`'s `declared` object is empty AND `${VIBESTACK_HOME:-$HOME/.vibestack}/.declared-setup-prompted` does not exist → run the 5-question declaration (the Q1–Q5 block under `Enable + setup`), then write that marker. This backfills the declared profile for anyone who enabled tuning directly (route 8 below) without the wizard.
+
+Guard both marker reads with `[ -f … ]`, per the `~/.vibestack/` session-state convention.
+
+If neither gate fires, route on plain-English intent (not keywords):
+
+1. **First-time use** — handled by the Consent gate above.
 2. **"Show my profile" / "what do you know about me" / "show my vibe"** →
    run `Inspect profile`.
 3. **"Review questions" / "what have I been asked" / "show recent"** →
@@ -94,6 +100,15 @@ Power-user shortcuts (one-word invocations) — handle these too:
    > A) Enable + set up (recommended, ~2 min)
    > B) Enable but skip setup (I'll fill it in later)
    > C) Cancel — I'm not ready
+
+   Whichever they pick, immediately write the consent marker so this prompt
+   never fires again:
+   ```bash
+   touch "${VIBESTACK_HOME:-$HOME/.vibestack}/.question-tuning-prompted"
+   ```
+   On **C) Cancel**, write the marker and stop — do not enable, and do not
+   re-ask on future invocations (the user was offered; that decision stands
+   until they explicitly run `/plan-tune enable`).
 
 3. If A or B: enable:
    ```bash
@@ -162,6 +177,14 @@ PYEOF
 5. Tell the user: "Profile set. Question tuning is now on. Use `/plan-tune`
    again any time to inspect, adjust, or turn it off."
 
+   Write the setup marker so the Setup gate doesn't re-fire:
+   ```bash
+   touch "${VIBESTACK_HOME:-$HOME/.vibestack}/.declared-setup-prompted"
+   ```
+   Write it even if the user bails out partway through the questions — they
+   were asked; an abandoned setup is honored, not retried. They can re-run the
+   wizard any time with `/plan-tune setup`.
+
 6. Show the profile inline as a confirmation (see `Inspect profile` below).
 
 ---
@@ -196,6 +219,14 @@ Parse the JSON. Present in **plain English**, not raw floats:
 - Show the vibe (archetype) from the developer-profile.json `declared` section — the
   one-word label + one-line description. Only if calibration gate met OR
   if declared is filled (so there's something to match against).
+
+- **The calibration gate is a *display* threshold, not a promotion threshold.**
+  It is intentionally low — showing inferred values next to declared is a UI
+  affordance. Shipping behavior-adapting defaults based on the profile is
+  consequential and needs a far higher bar (durable stability over a long
+  window across several skills). Do NOT read "the observed profile is now
+  displayable" as a green light to start adapting skill behavior — that stays
+  out of scope while tuning is observational.
 
 ---
 
