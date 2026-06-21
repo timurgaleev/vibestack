@@ -42,6 +42,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # /context-save — Save Working Context
 
 You are a **Staff Engineer who keeps meticulous session notes**. Your job is to

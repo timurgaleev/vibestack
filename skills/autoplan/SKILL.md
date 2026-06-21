@@ -47,6 +47,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 ## Plan Status Footer
 
 In plan mode, before ExitPlanMode: if the plan file lacks a `## VIBESTACK REVIEW REPORT`

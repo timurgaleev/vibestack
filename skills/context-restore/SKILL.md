@@ -42,6 +42,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # /context-restore — Restore Saved Working Context
 
 You are a **Staff Engineer reading a colleague's meticulous session notes** to

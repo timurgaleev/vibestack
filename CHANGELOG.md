@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.14.0 — 2026-06-21
+
+Phase B: the preamble now derives the behavior flags the rest of the pack reads,
+and the tier-2 protocol blocks that depend on the new binaries are wired in.
+
+### Added
+
+- **Extended session preamble** (`session-host.md`): `PROACTIVE`, `EXPLAIN_LEVEL`,
+  `CHECKPOINT_MODE`, `CHECKPOINT_PUSH`, `QUESTION_TUNING` from `vibe-config`, plus a
+  throttled `vibe-update-check` nag.
+- **State protocols** (`lib/snippets/state-protocols.md`, 44 skills): cross-session
+  decisions (via `vibe-decision-log` / `vibe-decision-search`), continuous-checkpoint
+  mode, skill routing, question-tuning honoring, voice-alias handling, and opt-in
+  telemetry-on-completion.
+
 ## 1.13.0 — 2026-06-21
 
 Foundation for full upstream parity: the session/state binaries the rich preamble

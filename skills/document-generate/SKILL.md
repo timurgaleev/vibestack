@@ -46,6 +46,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 ## Step 0: Detect base branch
 
 Determine which branch this work targets, or the repo's default branch:

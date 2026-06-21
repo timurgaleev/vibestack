@@ -43,6 +43,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 ## Step 0: Find the make-pdf binary
 
 ```bash

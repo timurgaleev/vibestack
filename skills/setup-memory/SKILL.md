@@ -44,6 +44,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # /setup-memory — Persistent Memory Setup
 
 You are setting up persistent memory for this coding agent. The underlying engine

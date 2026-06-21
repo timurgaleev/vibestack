@@ -45,6 +45,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # /codex — Multi-AI Second Opinion
 
 You are running the `/codex` skill. This wraps the OpenAI Codex CLI to get an independent,

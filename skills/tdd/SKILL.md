@@ -46,6 +46,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # Test-Driven Development
 
 ## Philosophy

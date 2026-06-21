@@ -38,6 +38,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # /open-browser — Launch vibestack Browser
 
 Launch vibestack Browser — AI-controlled Chromium with the sidebar extension,

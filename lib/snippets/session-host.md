@@ -22,7 +22,22 @@ fi
 _AUTHORS=$(git shortlog -sn --all 2>/dev/null | wc -l | tr -d ' ')
 if [ "${_AUTHORS:-1}" -le 1 ] 2>/dev/null; then REPO_MODE="solo"; else REPO_MODE="collaborative"; fi
 echo "REPO_MODE: $REPO_MODE"
+
+# Config-driven behavior flags (all via vibe-config; safe defaults).
+_VC=~/.vibestack/bin/vibe-config
+echo "PROACTIVE: $("$_VC" get proactive 2>/dev/null || echo true)"
+_EXPLAIN=$("$_VC" get explain_level 2>/dev/null || echo default); [ "$_EXPLAIN" = terse ] || _EXPLAIN=default; echo "EXPLAIN_LEVEL: $_EXPLAIN"
+echo "CHECKPOINT_MODE: $("$_VC" get checkpoint_mode 2>/dev/null || echo explicit)"
+echo "CHECKPOINT_PUSH: $("$_VC" get checkpoint_push 2>/dev/null || echo false)"
+echo "QUESTION_TUNING: $("$_VC" get question_tuning 2>/dev/null || echo false)"
+# Throttled best-effort update nag (once/day, never blocks).
+~/.vibestack/bin/vibe-update-check 2>/dev/null || true
 ```
+
+`EXPLAIN_LEVEL: terse` (or a "terse / no-explanations" request in the user's
+message) means skip optional explanatory prose — lead with the result.
+`PROACTIVE: false` means don't auto-invoke or proactively suggest skills; ask
+first. These are soft directives the skill body reads.
 
 **If `CONDUCTOR_SESSION: true`** — do NOT call AskUserQuestion. Render every
 decision as a prose brief instead: a labeled question, each option with a

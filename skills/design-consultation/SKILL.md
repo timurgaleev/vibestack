@@ -45,6 +45,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 ## Phase 0: Pre-checks
 
 **Check for existing DESIGN.md:**

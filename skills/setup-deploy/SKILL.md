@@ -42,6 +42,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 ## User-invocable
 When the user types `/setup-deploy`, run this skill.
 

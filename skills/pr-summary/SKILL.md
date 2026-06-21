@@ -24,6 +24,8 @@ fi
 
 {{include lib/snippets/working-protocols.md}}
 
+{{include lib/snippets/state-protocols.md}}
+
 # PR Summary Update
 
 ## Philosophy
