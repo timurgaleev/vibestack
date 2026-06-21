@@ -466,3 +466,40 @@ Set up secondbrain persistent memory for this coding agent.
 Install the secondbrain CLI, initialize a local PGLite or Supabase brain, register as a Claude Code MCP tool, and capture per-remote trust policy. Three paths: PGLite local (zero accounts), Supabase existing URL, or Supabase auto-provision. Shortcut modes: `--repo` (policy only), `--switch` (engine migration), `--resume-provision`, `--cleanup-orphans`.
 
 Triggers: `setup memory`, `setup secondbrain`, `install secondbrain`, `connect secondbrain`
+
+---
+
+## Web & Tooling (added v1.17.x)
+
+### `/scrape`
+Pull structured data from a web page with the browse shim — navigate, extract by selector, return JSON. Read-only.
+
+Triggers: `scrape this page`, `get data from`, `pull from`, `extract from`
+
+---
+
+### `/skillify`
+Turn a working browse/scrape flow into a reusable skill — write a new `SKILL.md` from the captured steps, render-validate, brand-check, and install.
+
+Triggers: `skillify this`, `make this a skill`, `save this flow as a skill`
+
+---
+
+### `/diagram`
+Render a Mermaid diagram to a self-contained HTML file and a PNG, using the browse shim as the renderer (no heavy diagram toolchain).
+
+Triggers: `draw a diagram`, `make a mermaid diagram`, `render this flowchart`
+
+---
+
+### `/connect-chrome`
+Reuse your real Chrome's logged-in cookies in the browse daemon (via CDP import on `--remote-debugging-port`), so authenticated pages work without re-logging-in.
+
+Triggers: `connect to chrome`, `use my chrome session`, `import chrome cookies`
+
+---
+
+### `/upgrade`
+Update the installed vibestack pack to the latest release — pull the repo (ff-only, never forces), re-run install, and summarize the CHANGELOG delta.
+
+Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`

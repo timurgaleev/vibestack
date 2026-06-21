@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.17.6 — 2026-06-21
+
+### Added
+
+- **`/diagram`** — render a Mermaid diagram to a self-contained HTML page (Mermaid
+  from a CDN) and a PNG, using the browse shim as the renderer: write the HTML,
+  `$B chain "goto file://… " "wait" "screenshot …"`. No heavy diagram toolchain;
+  the HTML opens in any browser even without the shim. Excalidraw/DOCX are out of
+  scope.
+- `docs/skills.md` now documents the five v1.17.x skills (`/scrape`, `/skillify`,
+  `/diagram`, `/connect-chrome`, `/upgrade`).
+
+Skill count 52 → 53.
+
 ## 1.17.5 — 2026-06-21
 
 ### Added
