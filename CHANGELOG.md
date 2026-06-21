@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.17.5 — 2026-06-21
+
+### Added
+
+- **`/scrape`** — pull structured data from a page with the browse shim: navigate,
+  extract by selector (`js`/`text`, or the daemon for interactive pages), return
+  JSON. Read-only; degrades to `curl` for static pages.
+- **`/skillify`** — turn a working browse/scrape flow into a reusable skill: write
+  a new `skills/<name>/SKILL.md` from the captured steps, render-validate,
+  brand-check, and install.
+
+Skill count 50 → 52.
+
 ## 1.17.4 — 2026-06-21
 
 ### Added
