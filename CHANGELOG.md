@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.17.1 — 2026-06-21
+
+### Added
+
+- **Browse daemon gains upload, dialog capture, and full cookie ops** (matching
+  the upstream's CDP cookie path, Playwright-native): `$B upload <sel|@ref>
+  <path…>`; `$B dialog` reports the last JS dialog (`$B dialog dismiss` flips the
+  next one); `$B cookies get | set <json> | save <path> | load <path> |
+  import-cdp <url>` — `import-cdp` copies cookies from a Chrome started with
+  `--remote-debugging-port`. No browser extension needed.
+
 ## 1.17.0 — 2026-06-21
 
 ### Added

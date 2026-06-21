@@ -297,7 +297,7 @@ const verbs = {
 // on the live page) proxy to it over its unix socket. With no daemon, the
 // interaction-only verbs stay NOT_SUPPORTED and the rest run statelessly.
 const DAEMON_SOCK = process.env.VIBE_BROWSE_DAEMON_SOCK ?? join(tmpdir(), 'vibe-browse', 'daemon.sock')
-const DAEMON_INTERACTION = new Set(['snapshot', 'click', 'fill', 'type', 'hover', 'check', 'uncheck', 'select', 'press', 'back', 'forward', 'reload', 'cookies'])
+const DAEMON_INTERACTION = new Set(['snapshot', 'click', 'fill', 'type', 'hover', 'check', 'uncheck', 'select', 'press', 'back', 'forward', 'reload', 'cookies', 'upload', 'dialog'])
 const DAEMON_HANDLED = new Set([...DAEMON_INTERACTION, 'goto', 'screenshot', 'text', 'url', 'eval'])
 
 const daemonAlive = () => new Promise((res) => {

@@ -9,7 +9,7 @@
 // Protocol: newline-delimited JSON. Request `{"verb":"click","args":["@e1"]}`,
 // reply `{"ok":true,...}` or `{"ok":false,"error":"…"}`. `__stop` shuts down.
 import net from 'node:net'
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -44,7 +44,15 @@ const chromium = await getChromium()
 const browser = await chromium.launch({ headless: process.env.VIBE_BROWSE_HEADED !== '1' })
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
 const page = await context.newPage()
-page.on('dialog', (d) => d.accept().catch(() => {}))
+// Record the most recent JS dialog so `dialog` can report it, then act on it.
+// Default accepts; `dialog dismiss` flips the next action to dismiss.
+let lastDialog = null
+let dialogAction = 'accept'
+page.on('dialog', async (d) => {
+  lastDialog = { type: d.type(), message: d.message() }
+  try { dialogAction === 'dismiss' ? await d.dismiss() : await d.accept() } catch {}
+  dialogAction = 'accept'
+})
 
 const loc = (a) => page.locator(sel(a)).first()
 const handlers = {
@@ -77,9 +85,29 @@ const handlers = {
   async forward() { await page.goForward(); return { url: page.url() } },
   async reload() { await page.reload(); return { url: page.url() } },
   async eval({ args }) { const r = await page.evaluate(`(() => (${args.join(' ')}))()`); return { result: typeof r === 'string' ? r : JSON.stringify(r) } },
+  // Upload: set file inputs on a <input type=file>. `upload <sel|@ref> <path...>`.
+  async upload({ args }) { await loc(args[0]).setInputFiles(args.slice(1)); return { ok: true, files: args.slice(1) } },
+  // Dialog: report the last JS dialog seen; `dialog dismiss` makes the NEXT one dismiss.
+  async dialog({ args }) {
+    if (args[0] === 'dismiss') { dialogAction = 'dismiss'; return { ok: true, next: 'dismiss' } }
+    if (args[0] === 'accept') { dialogAction = 'accept'; return { ok: true, next: 'accept' } }
+    return { dialog: lastDialog }
+  },
+  // Cookies: get | set <json> | save <path> | load <path> | import-cdp <cdp-url>.
+  // import-cdp connects to a Chrome started with --remote-debugging-port and copies
+  // its cookies into this session (the upstream's CDP cookie-import, brand-clean).
   async cookies({ args }) {
-    if ((args[0] ?? 'get') === 'get') return { cookies: await context.cookies() }
-    return { ok: false, error: 'cookie writes go through a context import, not the daemon' }
+    const op = args[0] ?? 'get'
+    if (op === 'get') return { cookies: await context.cookies() }
+    if (op === 'set') { await context.addCookies(JSON.parse(args.slice(1).join(' '))); return { ok: true } }
+    if (op === 'save') { writeFileSync(args[1], JSON.stringify(await context.storageState(), null, 2)); return { ok: true, saved: args[1] } }
+    if (op === 'load') { const st = JSON.parse(readFileSync(args[1], 'utf8')); if (st.cookies) await context.addCookies(st.cookies); return { ok: true, loaded: args[1] } }
+    if (op === 'import-cdp') {
+      const ext = await chromium.connectOverCDP(args[1])
+      try { const src = ext.contexts()[0]; if (src) await context.addCookies(await src.cookies()) } finally { await ext.close() }
+      return { ok: true, imported: 'cdp' }
+    }
+    return { ok: false, error: 'cookies: get | set <json> | save <path> | load <path> | import-cdp <url>' }
   },
   async status() { return { mode: 'daemon', url: page.url() } },
 }
