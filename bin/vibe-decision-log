@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""vibe-decision-log — append a durable decision (or supersede/redact it).
+
+Usage:
+  vibe-decision-log '{"decision":"...","rationale":"...","scope":"repo","source":"user"}'
+  vibe-decision-log --supersede <decision-id>
+  vibe-decision-log --redact <decision-id>
+
+Event-sourced: every call appends one line to
+``$VIBESTACK_HOME/projects/<slug>/decisions.jsonl``. The active set is derived at
+read time by vibe-decision-search (supersede/redact fold over the log). Local and
+reliable — memex is the semantic-recall layer, not the decision store, mirroring
+upstream's "log is local; brain not required."
+
+NON-INTERACTIVE — never prompts (skills call this; a prompt would hang them).
+A decision carrying a high-confidence secret is rejected (exit 1), nothing written.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+HOME = os.environ.get("VIBESTACK_HOME", os.path.expanduser("~/.vibestack"))
+
+# High-confidence secret patterns — reject before persisting (a decision body is
+# user/agent text that can travel). Mirrors lib/snippets/secret-scan-patterns.
+SECRETS = [
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"gh[posr]_[A-Za-z0-9]{36}"),
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9]{48}"),
+    re.compile(r"-----BEGIN[^-]*PRIVATE KEY-----"),
+]
+
+
+def slug() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        out = subprocess.run([os.path.join(here, "vibe-slug")],
+                             capture_output=True, text=True, timeout=5).stdout
+        m = re.search(r"SLUG=([^\s]+)", out)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return "unknown"
+
+
+def branch() -> str:
+    try:
+        return subprocess.run(["git", "branch", "--show-current"],
+                              capture_output=True, text=True, timeout=5).stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def append(slug_: str, event: dict) -> str:
+    path = os.path.join(HOME, "projects", slug_, "decisions.jsonl")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    return path
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if not args:
+        print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
+        return 1
+
+    now = datetime.now(timezone.utc).isoformat()
+    did = f"d{int(time.time())}{os.getpid() % 1000:03d}"
+    s = slug()
+
+    if args[0] == "--supersede":
+        if len(args) < 2:
+            print("error: --supersede needs a decision id", file=sys.stderr)
+            return 1
+        append(s, {"id": did, "ts": now, "type": "supersede", "target": args[1]})
+        print(f"superseded {args[1]}")
+        return 0
+
+    if args[0] == "--redact":
+        if len(args) < 2:
+            print("error: --redact needs a decision id", file=sys.stderr)
+            return 1
+        append(s, {"id": did, "ts": now, "type": "redact", "target": args[1]})
+        print(f"redacted {args[1]}")
+        return 0
+
+    try:
+        body = json.loads(args[0])
+    except Exception as e:
+        print(f"error: first argument must be a JSON object ({e})", file=sys.stderr)
+        return 1
+    if not isinstance(body, dict) or not body.get("decision"):
+        print('error: JSON must include a non-empty "decision" field', file=sys.stderr)
+        return 1
+
+    blob = json.dumps(body)
+    for pat in SECRETS:
+        if pat.search(blob):
+            print("error: decision rejected — it contains a high-confidence secret. "
+                  "Redact and rotate before logging.", file=sys.stderr)
+            return 1
+
+    event = {"id": did, "ts": now, "type": "decide", "branch": branch(),
+             "decision": body["decision"], "rationale": body.get("rationale", ""),
+             "scope": body.get("scope", "repo"), "source": body.get("source", "agent")}
+    append(s, event)
+    print(f"logged {did}: {body['decision'][:80]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

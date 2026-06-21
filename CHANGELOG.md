@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.13.0 — 2026-06-21
+
+Foundation for full upstream parity: the session/state binaries the rich preamble
+needs, adapted to vibestack and memex. Decisions and analytics stay **local** —
+memex is the read-only semantic-recall brain, exactly as upstream keeps its log
+local and the brain optional.
+
+### Added
+
+- **Seven `vibe-*` binaries** (installed to `~/.vibestack/bin/`):
+  - `vibe-session-kind` — classify the session (spawned / headless / interactive).
+  - `vibe-repo-mode` — emit `REPO_MODE=solo|collaborative` from git history.
+  - `vibe-telemetry-log` — opt-in only; writes nothing unless telemetry is enabled.
+  - `vibe-timeline-log` — append a per-project timeline event.
+  - `vibe-update-check` — throttled, best-effort "a newer version is available" nag.
+  - `vibe-decision-log` / `vibe-decision-search` — an event-sourced **local**
+    durable-decision store (`decisions.jsonl`), with `--supersede` / `--redact`
+    and high-confidence-secret rejection. memex remains the semantic-recall layer.
+- `test/test-vibe-bins.sh` — 11 smoke tests for the new binaries (all green).
+
 ## 1.12.0 — 2026-06-21
 
 Pulls the remaining generic-behavior tier-2 blocks from upstream into a single

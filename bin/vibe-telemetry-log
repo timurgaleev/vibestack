@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# vibe-telemetry-log — append a telemetry event (no-op unless telemetry is enabled).
+# Usage: vibe-telemetry-log --event-type T --skill S [--outcome O] [--session-id ID]
+# Opt-in only: writes nothing unless `vibe-config get telemetry` is a non-empty,
+# non-"off" value. Local only — events go to $VIBESTACK_HOME/analytics/telemetry.jsonl.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+HOME_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
+
+_tel="$("$HERE/vibe-config" get telemetry 2>/dev/null || echo "off")"
+[ -z "$_tel" ] && _tel="off"
+[ "$_tel" = "off" ] && exit 0
+
+evt=""; skill=""; outcome=""; sid=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --event-type) evt="${2:-}"; shift 2 ;;
+    --skill) skill="${2:-}"; shift 2 ;;
+    --outcome) outcome="${2:-}"; shift 2 ;;
+    --session-id) sid="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+mkdir -p "$HOME_DIR/analytics"
+python3 - "$evt" "$skill" "$outcome" "$sid" "$HOME_DIR/analytics/telemetry.jsonl" <<'PY' 2>/dev/null || true
+import json, sys, datetime
+evt, skill, outcome, sid, path = sys.argv[1:6]
+rec = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+       "event_type": evt, "skill": skill, "outcome": outcome, "session_id": sid}
+with open(path, "a", encoding="utf-8") as f:
+    f.write(json.dumps({k: v for k, v in rec.items() if v != ""}) + "\n")
+PY
