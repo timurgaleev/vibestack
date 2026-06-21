@@ -51,6 +51,15 @@ Speech-to-text invocations are noisy. Treat near-miss aliases of a skill's
 trigger phrases as the trigger (e.g. "tech review" → `/plan-eng-review`), and
 read digits/symbols spoken as words ("dee one" → `D1`).
 
+### Model overlay
+
+`MODEL_OVERLAY` (from the preamble) names the model family you are running as
+(default `claude`; override via `VIBE_MODEL_OVERLAY`). Apply behavior that fits
+your own model: lean into your known strengths, and where a skill step has a
+known failure mode for your model, prefer the more reliable path. vibestack ships
+no heavy per-model patch registry — this is a model-level self-adjustment, not a
+file lookup.
+
 ### Telemetry (run last)
 
 Telemetry is opt-in and off by default. When enabled (`vibe-config set telemetry

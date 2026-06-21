@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.15.0 — 2026-06-21
+
+### Added
+
+- **`MODEL_OVERLAY`** preamble flag + a model-overlay protocol (in
+  `state-protocols.md`): the skill self-adjusts to its model family (default
+  `claude`, override `VIBE_MODEL_OVERLAY`). No heavy per-model registry — a
+  model-level adjustment.
+- **`docs/internals.md`** — documents the binaries, shared snippets, preamble
+  flags, and the memex-brain / local-state architecture.
+
 ## 1.14.0 — 2026-06-21
 
 Phase B: the preamble now derives the behavior flags the rest of the pack reads,

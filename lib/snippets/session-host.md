@@ -32,6 +32,7 @@ echo "CHECKPOINT_PUSH: $("$_VC" get checkpoint_push 2>/dev/null || echo false)"
 echo "QUESTION_TUNING: $("$_VC" get question_tuning 2>/dev/null || echo false)"
 # Throttled best-effort update nag (once/day, never blocks).
 ~/.vibestack/bin/vibe-update-check 2>/dev/null || true
+echo "MODEL_OVERLAY: ${VIBE_MODEL_OVERLAY:-claude}"
 ```
 
 `EXPLAIN_LEVEL: terse` (or a "terse / no-explanations" request in the user's
