@@ -28,10 +28,18 @@ cross-call element refs:
 `$B chain "goto <url>" "fill <sel> <value>" "click <sel>" "screenshot <path>"`.
 Step verbs: `goto click fill type press hover check uncheck select wait
 screenshot text eval is`. It returns a JSON log per step and stops on the first
-failure. Standalone ref-based verbs (`snapshot -i`, a bare `click` / `fill`,
-`upload`, `dialog`, cookie import, tunnel/pairing) still need the full daemon and
-print `NOT_SUPPORTED:<verb>` — when you see that, skip that pass, don't fabricate
-the result.
+failure. For a **persistent session with element refs** across separate calls, start the
+daemon once: `$B daemon &` (then `$B daemon-status` to confirm, `$B daemon-stop`
+to end it). With the daemon up, `$B snapshot` tags interactive elements and
+returns `@e1`, `@e2`, …; later calls act on the same live page by ref —
+`$B click @e3`, `$B fill @e2 "user@test.com"`, plus `hover/type/press/check/
+select/back/forward/reload/cookies get/goto/screenshot/text`. This is the
+cross-call interaction the stateless shim can't do.
+
+Without a running daemon, ref-based verbs (`snapshot`, a bare `click` / `fill`,
+…) print `NOT_SUPPORTED:<verb>` — skip that pass, don't fabricate the result.
+Still unsupported entirely (need the upstream extension): `upload`, native
+`dialog` capture, cookie *import* from a real browser, and tunnel/pairing.
 
 If `BROWSE_NOT_AVAILABLE` (no Node, or first-run setup declined): fall back to
 text-only checks. Do **not** trust a bare `curl` status — dev servers often

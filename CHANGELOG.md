@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.17.0 — 2026-06-21
+
+### Added
+
+- **Persistent browse daemon** (`skills/browse/runtime/vibe-browse-daemon.mjs`).
+  `$B daemon &` keeps one browser + page alive over a unix socket, so element
+  refs survive across separate calls: `$B snapshot` tags interactive elements and
+  returns `@e1`, `@e2`, …; a later `$B click @e1` (a different process) acts on
+  the same live page. Verbs: snapshot, click, fill, type, hover, check, uncheck,
+  select, press, back, forward, reload, cookies (get), goto, screenshot, text,
+  eval — by ref or selector. `$B daemon-status` / `$B daemon-stop` control it, and
+  the stateless shim auto-proxies these verbs to the daemon when one is up. No
+  browser extension — Playwright drives Chromium over CDP directly.
+- `test/test-browse-shim.sh` covers the daemon client (12/12, browser-optional).
+
+Still needing the upstream browser extension (tracked in TODOS): `upload`, native
+`dialog` capture, cookie *import* from a real browser, tunnel/pairing, and the
+design-image daemon.
+
 ## 1.16.0 — 2026-06-21
 
 ### Added

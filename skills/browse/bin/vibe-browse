@@ -11,6 +11,7 @@ set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME="$SELF_DIR/../runtime/vibe-browse.mjs"
+RUNTIME_DAEMON="$SELF_DIR/../runtime/vibe-browse-daemon.mjs"
 PKG="$SELF_DIR/../runtime/package.json"
 
 VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
@@ -28,8 +29,14 @@ fi
 
 # Verbs that need no browser must stay cheap — never trigger the heavy
 # first-run download for them. Detection (`status`) is the hot path here.
+# Cheap path — no local browser needed: context verbs, plus daemon control and
+# the daemon-proxied interaction verbs (the client just talks to the running
+# daemon's socket, or returns NOT_SUPPORTED when none is up).
 case "${1:-}" in
-  status | url | viewport) exec node "$RUNTIME" "$@" ;;
+  status | url | viewport | daemon-status | daemon-stop \
+  | snapshot | click | fill | type | hover | check | uncheck | select | press \
+  | back | forward | reload | cookies)
+    exec node "$RUNTIME" "$@" ;;
 esac
 
 # First-run bootstrap: install Playwright + Chromium into the cache dir.
@@ -47,4 +54,10 @@ fi
 
 # Point the runtime at the cached Playwright install (ESM resolves it by path).
 export VIBE_BROWSE_DEP_DIR="$DEP_DIR"
+# `daemon` runs the persistent server; everything else runs the stateless shim
+# (and the shim itself proxies to the daemon when one is already up).
+if [ "${1:-}" = "daemon" ]; then
+  shift
+  exec node "$RUNTIME_DAEMON" "$@"
+fi
 exec node "$RUNTIME" "$@"

@@ -87,6 +87,15 @@ HTML
     && pass "responsive-3" || fail "responsive-3" "missing viewport pngs"
 fi
 
+# daemon client: control + proxy verbs behave with NO daemon running.
+export VIBE_BROWSE_DAEMON_SOCK="$WORK/no-daemon.sock"
+node --check "$REPO_ROOT/skills/browse/runtime/vibe-browse-daemon.mjs" \
+  && pass "daemon-syntax" || fail "daemon-syntax" "daemon runtime has a syntax error"
+printf '%s' "$(node "$RT" daemon-status 2>&1)" | grep -q "no daemon" \
+  && pass "daemon-status-none" || fail "daemon-status-none" "status wrong with no daemon"
+node "$RT" click @e1 >/dev/null 2>&1; [ "$?" -eq 2 ] \
+  && pass "interaction-needs-daemon" || fail "interaction-needs-daemon" "click should be NOT_SUPPORTED with no daemon"
+
 # chain: supported (not NOT_SUPPORTED) and prints usage with no args
 chain_out="$(node "$RT" chain 2>&1)"; chain_code=$?
 if [ "$chain_code" -eq 1 ] && ! printf '%s' "$chain_out" | grep -q NOT_SUPPORTED \

@@ -11,6 +11,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import net from 'node:net'
 
 // Playwright lives in a self-contained install (the launcher points
 // VIBE_BROWSE_DEP_DIR at it). ESM does not honor NODE_PATH for bare specifiers,
@@ -291,9 +292,47 @@ const verbs = {
   },
 }
 
+// ── daemon client ────────────────────────────────────────────────────────────
+// When the persistent daemon is running, stateful verbs (and the verbs that act
+// on the live page) proxy to it over its unix socket. With no daemon, the
+// interaction-only verbs stay NOT_SUPPORTED and the rest run statelessly.
+const DAEMON_SOCK = process.env.VIBE_BROWSE_DAEMON_SOCK ?? join(tmpdir(), 'vibe-browse', 'daemon.sock')
+const DAEMON_INTERACTION = new Set(['snapshot', 'click', 'fill', 'type', 'hover', 'check', 'uncheck', 'select', 'press', 'back', 'forward', 'reload', 'cookies'])
+const DAEMON_HANDLED = new Set([...DAEMON_INTERACTION, 'goto', 'screenshot', 'text', 'url', 'eval'])
+
+const daemonAlive = () => new Promise((res) => {
+  const s = net.connect(DAEMON_SOCK)
+  s.on('error', () => res(false))
+  s.on('connect', () => { s.end(); res(true) })
+})
+const proxyToDaemon = (verb, args) => new Promise((res) => {
+  const s = net.connect(DAEMON_SOCK)
+  let buf = ''
+  s.on('error', () => res(null))
+  s.on('connect', () => s.write(JSON.stringify({ verb, args }) + '\n'))
+  s.on('data', (d) => { buf += d.toString(); const nl = buf.indexOf('\n'); if (nl >= 0) { s.end(); try { res(JSON.parse(buf.slice(0, nl))) } catch { res(null) } } })
+})
+
 // ── dispatch ─────────────────────────────────────────────────────────────────
 const [, , verb, ...args] = process.argv
-if (!verb) die('usage: vibe-browse <verb> [args]   (verbs: goto screenshot responsive console network perf js css is text url viewport status chain)', 2)
+if (!verb) die('usage: vibe-browse <verb> [args]   (verbs: goto screenshot responsive console network perf js css is text url viewport status chain | daemon daemon-status daemon-stop snapshot click fill type hover check select press)', 2)
+
+if (verb === 'daemon-status') {
+  console.log((await daemonAlive()) ? 'Mode: daemon (running)' : 'Mode: launched (no daemon)')
+  process.exit(0)
+}
+if (verb === 'daemon-stop') {
+  const r = await proxyToDaemon('__stop', [])
+  console.log(r?.stopped ? 'daemon stopped' : 'no daemon running')
+  process.exit(0)
+}
+if (DAEMON_HANDLED.has(verb) && (await daemonAlive())) {
+  const r = await proxyToDaemon(verb, args)
+  console.log(JSON.stringify(r, null, 2))
+  process.exit(r?.ok ? 0 : 1)
+}
+if (DAEMON_INTERACTION.has(verb)) die(`NOT_SUPPORTED:${verb}`, 2)  // no daemon → start one: vibe-browse daemon &
+
 if (UNSUPPORTED.has(verb)) die(`NOT_SUPPORTED:${verb}`, 2)
 
 const handler = verbs[verb === 'console' ? 'console_' : verb]
