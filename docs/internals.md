@@ -45,6 +45,7 @@ vibestack splits durable knowledge the same way upstream does:
 | `vibe-telemetry-log` | Append a telemetry event — opt-in, no-op unless enabled |
 | `vibe-timeline-log` | Append a per-project timeline event |
 | `vibe-update-check` | Throttled (24h) "newer version available" nag |
+| `vibe-first-task-detect` | Classify the repo into one first-task bucket for the first-run scaffold (local git + FS only, emits one enum token) |
 | `vibe-decision-log` / `vibe-decision-search` | Event-sourced local decision store (`--supersede` / `--redact`, secret rejection) |
 | `vibe-parity-audit` | Maintainer tool — prove skills still mirror upstream (runs from the repo, not installed) |
 
