@@ -54,6 +54,8 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
+{{include lib/snippets/first-run-scaffold.md}}
+
 ## SETUP
 
 ```bash
@@ -1120,15 +1122,16 @@ If A: run `open URL1 && open URL2 && open URL3` (opens each in default browser).
 If B/C/D: run `open` on the selected URL only.
 If E: proceed to next-skill recommendations.
 
-### Next-skill recommendations
+### Next-skill handoff
 
-After resources, suggest the next step:
+After resources, don't just list the next step — offer to launch it. Use AskUserQuestion to ask which review to run now (default `/plan-eng-review`), then invoke it with the Skill tool in this same session so the user doesn't retype anything:
 
-- **`/plan-ceo-review`** for ambitious features (EXPANSION mode) — rethink the problem, find the 10-star product
-- **`/plan-eng-review`** for well-scoped implementation planning — lock in architecture, tests, edge cases
-- **`/plan-design-review`** for visual/UX design review
+- **`/plan-eng-review`** (default) — well-scoped implementation planning; lock in architecture, tests, edge cases
+- **`/plan-ceo-review`** — ambitious features (EXPANSION mode); rethink the problem, find the 10-star product
+- **`/plan-design-review`** — visual/UX design review
+- Skip — stop here, I'll run it later
 
-The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they will read it during their pre-review system audit.
+On a pick, invoke the chosen skill via the Skill tool. On Skip, stop. The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they read it during their pre-review system audit.
 
 ---
 

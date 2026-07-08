@@ -46,6 +46,8 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
+{{include lib/snippets/scope-gate.md}}
+
 ## Step 0: Detect platform and base branch
 
 First, detect the git hosting platform from the remote URL:

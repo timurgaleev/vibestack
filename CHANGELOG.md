@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.18.0 — 2026-07-08
+
+### Added
+
+- **First-run project scaffold.** On the first-ever skill run in a project,
+  `/office-hours` now points you at one concrete next move instead of a wall of
+  options. A new `vibe-first-task-detect` binary classifies the repo (greenfield,
+  a language with code, a feature branch with unshipped work, uncommitted changes)
+  using only local git + filesystem, and the `first-run-scaffold` snippet maps the
+  bucket to a single first-skill suggestion. Fires once per project, never in
+  headless/CI runs, and never interrupts a command you explicitly gave.
+- **Ask-first scope gate** in `/plan-eng-review` and `/plan-design-review`: the
+  first action confirms the review target (branch diff, a pasted plan, or a
+  specific path) before any repo exploration or audit — no more spelunking the
+  whole repo, or auditing an empty one, on a guess.
+- Six more credential shapes in the secret-scan gate (`/ship`, `/cso`, `/spec`,
+  `/document-generate`): GitLab (`glpat-`/`glptt-`/`gldt-`), HuggingFace, npm,
+  DigitalOcean, GCP service-account JSON, and entropy-gated `Bearer` tokens.
+
+### Changed
+
+- `/office-hours` now offers to **launch** the next review (`/plan-eng-review` by
+  default) via the Skill tool at handoff, instead of listing options you have to
+  retype.
+
 ## 1.17.8 — 2026-06-21
 
 ### Changed
