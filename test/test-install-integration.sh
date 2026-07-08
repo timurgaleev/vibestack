@@ -77,7 +77,21 @@ mark_detected() {
 # Fails ONLY for the matched target_substring/skill_substring combo, passing
 # through to the real renderer for everything else.
 RENDERER_PATH="$REPO_DIR/bin/vibe-render-skill"
+# The backup must live in bin/ (not a tempdir): the stub delegates via
+# `exec "$RENDERER_BAK"`, and the renderer resolves lib/snippets/ relative to
+# its own path (dirname $0). Running it from outside the repo would break
+# snippet resolution. It's gitignored, so a hard-killed run can't pollute
+# `git status`, and the startup sweep below clears any orphan.
 RENDERER_BAK="$REPO_DIR/bin/.vibe-render-skill.bak.$$"
+
+# Self-heal from a previously crashed run: traps don't fire on SIGKILL, so an
+# interrupted test can leave the tracked renderer replaced by the stub below.
+# Detect the stub's own marker (never present in the real renderer) and restore
+# the committed version; also sweep any legacy in-tree backups from old runs.
+if grep -q "FAKE_RENDERER: failing" "$RENDERER_PATH" 2>/dev/null; then
+  git -C "$REPO_DIR" checkout -- bin/vibe-render-skill 2>/dev/null || true
+fi
+rm -f "$REPO_DIR"/bin/.vibe-render-skill.bak.* 2>/dev/null || true
 
 with_failing_renderer() {
   local skill_substring="$1"   # e.g. "office-hours"
