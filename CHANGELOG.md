@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.18.2 — 2026-07-09
+
+### Fixed
+
+- **Multi-target install when the repo is cloned inside a target's skills
+  directory** (the documented `git clone … ~/.claude/skills/vibestack`). The
+  containing target's atomic swap renamed its skills root aside — moving this
+  repo's `skills/` source and `bin/` renderer with it — so any target installed
+  afterward found no source and landed `0/53`. Install now defers the target
+  whose root contains the repo to LAST; its own render completes before the
+  swap, making multi-target install order-independent. Regression test added.
+
 ## 1.18.1 — 2026-07-08
 
 ### Fixed
