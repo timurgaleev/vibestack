@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.18.1 — 2026-07-08
+
+### Fixed
+
+- `test/test-install-integration.sh` no longer risks leaving the tracked
+  `bin/vibe-render-skill` replaced by its test stub. The renderer-failure
+  injection restores via a trap, which a hard kill (SIGKILL) skips — an
+  interrupted run could orphan a truncated stub plus a `.bak` in the working
+  tree. The backup is now gitignored and swept on startup, and a stub-marker
+  self-heal restores the committed renderer at the next run.
+
 ## 1.18.0 — 2026-07-08
 
 ### Added

@@ -1,4 +1,5 @@
 SYNC_GUIDE.md
+bin/.vibe-render-skill.bak.*
 .env
 node_modules/
 dist/
