@@ -260,6 +260,25 @@ test_all_three_targets_byte_identical_per_skill() {
   done
 }
 
+# --- Repo checkout inside a target root: multi-target install still fills every
+#     target (regression: the containing target's atomic swap used to relocate
+#     the repo mid-run, leaving later targets at 0/N).
+test_repo_inside_target_installs_all_targets() {
+  local nested="$HOME/.claude/skills/vibestack"
+  mkdir -p "$nested"
+  cp "$REPO_DIR/install" "$nested/install"
+  cp -R "$REPO_DIR/skills" "$REPO_DIR/lib" "$REPO_DIR/bin" "$nested/"
+  bash "$nested/install" --target=claude,cursor,kiro < /dev/null >/dev/null 2>&1
+  assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
+  assert_file_exists "$HOME/.kiro/skills/office-hours/SKILL.md" || return 1
+  local want n_cursor n_kiro
+  want=$(find "$REPO_DIR/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+  n_cursor=$(find "$HOME/.cursor/skills" -maxdepth 2 -name SKILL.md | wc -l | tr -d ' ')
+  n_kiro=$(find "$HOME/.kiro/skills" -maxdepth 2 -name SKILL.md | wc -l | tr -d ' ')
+  assert_eq "$want" "$n_cursor" "cursor skill count" || return 1
+  assert_eq "$want" "$n_kiro" "kiro skill count" || return 1
+}
+
 # --- Idempotency: re-running install produces identical bytes
 test_install_idempotent_per_target() {
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
@@ -639,6 +658,9 @@ run_test "v1.5: staging failure preserves prod"                 test_install_sta
 run_test "v1.5: recovery cleans orphaned staging"               test_install_recovery_orphaned_staging
 run_test "v1.5: rapid rerun does not nest .old (codex P2 fix)"  test_install_rapid_rerun_does_not_nest_old
 run_test "v1.5: recovery restores from orphaned .old"           test_install_recovery_orphaned_old
+# Heaviest test last (full 3-target install from a nested copy) so it never
+# loads the machine ahead of the timing-sensitive PTY tests above.
+run_test "repo_inside_target_installs_all_targets"              test_repo_inside_target_installs_all_targets
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
