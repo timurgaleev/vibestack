@@ -325,6 +325,26 @@ if [ "${#TARGETS[@]}" -eq 0 ]; then
   exit 2
 fi
 
+# If this repo checkout lives inside a target's skills root — the documented
+# `git clone … ~/.claude/skills/vibestack` puts it inside the Claude target —
+# install that target LAST. Its atomic swap renames the root aside (this repo,
+# with its skills/ source and bin/ renderer, included), which would leave any
+# target processed afterward with no source to render from (0/N installed).
+# The containing target's own render completes before its swap, so moving it to
+# the end is safe and makes multi-target install order-independent.
+_ordered=(); _deferred=()
+for _t in "${TARGETS[@]}"; do
+  _r=$(target_root "$_t")
+  if [ -n "$_r" ]; then
+    case "$REPO_DIR/" in
+      "$_r"/*) _deferred+=("$_t"); continue ;;
+    esac
+  fi
+  _ordered+=("$_t")
+done
+TARGETS=("${_ordered[@]}" "${_deferred[@]}")
+unset _ordered _deferred _t _r
+
 # ───────────────────────────────────────────────────────────────────────────
 # Per-skill install — renders SKILL.md to a target dir + symlinks bin/ and
 # sub-docs. Body unchanged from v1.4.0; v1.5.0 just calls it with a staging
