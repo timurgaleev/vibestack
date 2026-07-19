@@ -44,12 +44,7 @@ fi
 
 ## SETUP
 
-```bash
-# vibestack does not include a browse daemon.
-echo "BROWSE_NOT_AVAILABLE"
-```
-
-If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
+{{include lib/snippets/browse-detect.md}}
 
 ## Step 0: Detect platform and base branch
 
@@ -345,7 +340,7 @@ Tell the user: "Before I merge any PR, I run a series of readiness checks — co
 Preview the readiness checks that will run at Step 3.5 (without re-running tests):
 
 ```bash
-true # vibe-review-read 2>/dev/null
+~/.vibestack/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Show a summary of review status: which reviews have been run, how stale they are.
@@ -481,7 +476,7 @@ Collect evidence for each check below. Track warnings (yellow) and blockers (red
 ### 3.5a: Review staleness check
 
 ```bash
-true # vibe-review-read 2>/dev/null
+~/.vibestack/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Parse the output. For each review skill (plan-eng-review, plan-ceo-review,
