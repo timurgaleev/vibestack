@@ -186,23 +186,27 @@ the questions whose answers aren't in the code.
 Present a full draft issue and ask: **"Does this accurately capture what you want?
 What did I get wrong?"** Iterate until the user confirms.
 
-### Phase 4.5: Quality Gate (--no-gate to skip)
+### Phase 4.5a: Fail-closed redaction (ALWAYS runs — `--no-gate` does NOT skip this)
 
-After the user confirms the draft, run the codex quality gate (default ON).
-Purpose: catch ambiguities that survived your interrogation. Codex (a second AI
-model) reads the spec and scores it 0-10 for "executability by an unfamiliar
-implementer," listing specific ambiguities.
-
-**Fail-closed redaction (PRECEDES dispatch):** Before sending the spec to codex,
-scan it for high-confidence secret patterns. If any of these match, **block
-dispatch entirely** — do NOT send the spec to codex:
+Before the spec is sent to codex, archived, or filed, scan it for high-confidence
+secret patterns. This is a security gate, not the quality gate — it runs on every
+`/spec` invocation, including `--no-gate`, because the spec is archived and filed
+regardless of the codex gate:
 
 {{include lib/snippets/secret-scan-patterns.md}}
 
-On match, print: "Quality gate BLOCKED — your spec contains what looks like a
-secret (matched pattern: `{pattern_name}` at line {N}). Redact the secret and
-re-run, or use `--no-gate` to skip the gate entirely (the secret would still be
-archived and filed)." Stop. Do not proceed to dispatch or to Phase 5.
+On match, **STOP** — do not dispatch to codex, do not archive, do not file the
+issue. Print: "BLOCKED — your spec contains what looks like a secret (matched
+pattern: `{pattern_name}` at line {N}). Redact it and re-run. `--no-gate` only
+skips the quality score, not this scan — a secret must never be archived or filed."
+
+### Phase 4.5: Quality Gate (--no-gate to skip)
+
+After redaction passes AND the user confirms the draft, run the codex quality
+gate (default ON; `--no-gate` skips only this scoring step). Purpose: catch
+ambiguities that survived your interrogation. Codex (a second AI model) reads the
+spec and scores it 0-10 for "executability by an unfamiliar implementer," listing
+specific ambiguities.
 
 **Dispatch (when redaction passes):** Wrap the spec in hard delimiters and an
 instruction boundary, then invoke codex with a 2-minute timeout:
