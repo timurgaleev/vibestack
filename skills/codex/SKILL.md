@@ -205,13 +205,19 @@ Codex may spend a few extra tokens reading them. Acceptable trade-off:
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
+# Portable timeout (gtimeout → timeout → unwrapped); bare `timeout` is absent on
+# stock macOS and would exit 127 before codex runs.
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 # 330s (5.5min) is slightly longer than the Bash 300s so the shell wrapper
 # only fires if Bash's own timeout doesn't.
-timeout 330 codex review --base "$BASE" -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+${_CX_TO:+$_CX_TO 330} codex review --base "$BASE" -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 _CODEX_EXIT=$?
 if [ "$_CODEX_EXIT" = "124" ]; then
   true # vibe-review-log codex_timeout 330 (not yet implemented)
   echo "Codex stalled past 5.5 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
+elif [ "$_CODEX_EXIT" != "0" ]; then
+  echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
+  echo "Codex did not complete cleanly — treat its review as UNAVAILABLE for this run (do not report a false pass)."
 fi
 ```
 
@@ -237,12 +243,16 @@ _PROMPT_FILE=$(mktemp "$TMP_ROOT/codex-prompt-XXXXXX.txt")
   git diff "$BASE...HEAD" 2>/dev/null
   printf '\nDIFF_END\n'
 } > "$_PROMPT_FILE"
-timeout 330 codex exec -s read-only "$(cat "$_PROMPT_FILE")" -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+${_CX_TO:+$_CX_TO 330} codex exec -s read-only "$(cat "$_PROMPT_FILE")" -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 _CODEX_EXIT=$?
 rm -f "$_PROMPT_FILE"
 if [ "$_CODEX_EXIT" = "124" ]; then
   true # vibe-review-log codex_timeout 330 (not yet implemented)
   echo "Codex stalled past 5.5 minutes."
+elif [ "$_CODEX_EXIT" != "0" ]; then
+  echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
+  echo "Codex did not complete cleanly — treat its review as UNAVAILABLE for this run (do not report a false pass)."
 fi
 ```
 
@@ -307,7 +317,7 @@ CROSS-MODEL ANALYSIS:
 
 8. Persist the review result:
 ```bash
-true # vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"commit":"'"$(git rev-parse --short HEAD)"'"}' (not yet implemented)
+~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"commit":"'"$(git rev-parse --short HEAD)"'"}' (not yet implemented)
 ```
 
 Substitute: TIMESTAMP (ISO 8601), STATUS ("clean" if PASS, "issues_found" if FAIL),
@@ -347,12 +357,16 @@ If the user passed `--xhigh`, use `"xhigh"` instead of `"high"`.
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
+# Portable timeout: gtimeout → timeout → unwrapped. Stock macOS has neither
+# unless coreutils is installed, so a bare `timeout` exits 127 and codex never
+# runs. Empty _CX_TO makes ${_CX_TO:+…} expand to nothing → codex runs unwrapped.
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 if [ -z "$PYTHON_CMD" ]; then
   echo "ERROR: Python 3 is required to parse Codex JSON output. Install python3 or python and retry." >&2
   exit 1
 fi
 TMPERR=${TMPERR:-$(mktemp "$TMP_ROOT/codex-err-XXXXXX.txt")}
-timeout 600 codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+${_CX_TO:+$_CX_TO 600} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 import sys, json
 turn_completed_count = 0
 for line in sys.stdin:
@@ -494,11 +508,15 @@ For a **new session:**
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
+# Portable timeout: gtimeout → timeout → unwrapped. Stock macOS has neither
+# unless coreutils is installed, so a bare `timeout` exits 127 and codex never
+# runs. Empty _CX_TO makes ${_CX_TO:+…} expand to nothing → codex runs unwrapped.
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 if [ -z "$PYTHON_CMD" ]; then
   echo "ERROR: Python 3 is required to parse Codex JSON output. Install python3 or python and retry." >&2
   exit 1
 fi
-timeout 600 codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+${_CX_TO:+$_CX_TO 600} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 import sys, json
 for line in sys.stdin:
     line = line.strip()
@@ -539,13 +557,17 @@ For a **resumed session** (user chose "Continue"):
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
+# Portable timeout: gtimeout → timeout → unwrapped. Stock macOS has neither
+# unless coreutils is installed, so a bare `timeout` exits 127 and codex never
+# runs. Empty _CX_TO makes ${_CX_TO:+…} expand to nothing → codex runs unwrapped.
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 if [ -z "$PYTHON_CMD" ]; then
   echo "ERROR: Python 3 is required to parse Codex JSON output. Install python3 or python and retry." >&2
   exit 1
 fi
 cd "$_REPO_ROOT" || exit 1
 SESSION_ID=$(cat .context/codex-session-id 2>/dev/null)
-timeout 600 codex exec resume "$SESSION_ID" "<prompt>" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+${_CX_TO:+$_CX_TO 600} codex exec resume "$SESSION_ID" "<prompt>" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 # same python streaming parser as the new-session block above (with flush=True on all print() calls)
 "
 # Same hang detection pattern as new-session block
