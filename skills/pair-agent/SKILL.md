@@ -290,3 +290,16 @@ To disconnect all agents and rotate the root token:
 # This invalidates ALL scoped tokens immediately
 $B tunnel rotate
 ```
+
+## Orchestrator injection prompts
+
+When a remote/orchestrating agent spawns a vibestack coding session (rather than
+just sharing the browser), it can inject a ready-made discipline prompt from
+`lib/orchestrator/` into the target repo's `CLAUDE.md`:
+
+- `lite.md` — planning discipline for any spawned coding task
+- `full.md` — `/autoplan` → implement → `/ship`, report the PR URL
+- `plan.md` — `/office-hours` → `/autoplan`, save the reviewed plan, don't build
+
+These are plain prompts (nothing installs them); the orchestrator reads the file
+and appends its body. See `lib/orchestrator/README.md`.
