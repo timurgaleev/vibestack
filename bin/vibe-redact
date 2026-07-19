@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# vibe-redact — install/uninstall the credential pre-push guard.
+#
+#   vibe-redact install-prepush-hook     install the guard in the current repo
+#   vibe-redact uninstall-prepush-hook   remove it (restores any chained hook)
+#
+# The installed hook runs vibe-redact-prepush against every push and blocks
+# when a high-confidence credential appears in the pushed diff. Any pre-existing
+# pre-push hook is preserved as pre-push.local and chained ahead of the guard.
+# Guardrail, not enforcement: `git push --no-verify` and
+# `VIBESTACK_REDACT_PREPUSH=skip` bypass it.
+set -euo pipefail
+
+MANAGED_MARKER="# vibe-redact pre-push (managed)"
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+hooks_path() {
+  if ! git rev-parse --git-path hooks 2>/dev/null; then
+    echo "vibe-redact: not in a git repo" >&2
+    exit 1
+  fi
+}
+
+install_hook() {
+  local dir hook_path local_path prepush_bin
+  dir=$(hooks_path)
+  mkdir -p "$dir"
+  hook_path="$dir/pre-push"
+  prepush_bin="$SELF_DIR/vibe-redact-prepush"
+  if [ ! -x "$prepush_bin" ]; then
+    echo "vibe-redact: $prepush_bin not found or not executable" >&2
+    exit 1
+  fi
+
+  if [ -f "$hook_path" ]; then
+    if grep -qF "$MANAGED_MARKER" "$hook_path" 2>/dev/null; then
+      echo "vibe-redact: pre-push hook already installed."
+      return 0
+    fi
+    local_path="$dir/pre-push.local"
+    mv "$hook_path" "$local_path"
+    chmod 755 "$local_path"
+    echo "vibe-redact: preserved existing hook as pre-push.local (chained)."
+  fi
+
+  # stdin is single-consume: capture it once, feed both the chained hook and ours.
+  cat > "$hook_path" <<EOF
+#!/usr/bin/env bash
+$MANAGED_MARKER
+set -euo pipefail
+_input="\$(cat)"
+_local="\$(git rev-parse --git-path hooks/pre-push.local)"
+if [ -x "\$_local" ]; then
+  printf '%s' "\$_input" | "\$_local" "\$@" || exit \$?
+fi
+if [ ! -x "$prepush_bin" ]; then
+  echo "vibe-redact pre-push guard: $prepush_bin missing (pack uninstalled?) — push allowed unscanned" >&2
+  exit 0
+fi
+printf '%s' "\$_input" | "$prepush_bin" "\$@"
+EOF
+  chmod 755 "$hook_path"
+  echo "vibe-redact: installed pre-push hook at $hook_path"
+}
+
+uninstall_hook() {
+  local dir hook_path local_path
+  dir=$(hooks_path)
+  hook_path="$dir/pre-push"
+  local_path="$dir/pre-push.local"
+  if [ ! -f "$hook_path" ] || ! grep -qF "$MANAGED_MARKER" "$hook_path" 2>/dev/null; then
+    echo "vibe-redact: no managed pre-push hook to remove."
+    return 0
+  fi
+  if [ -f "$local_path" ]; then
+    mv "$local_path" "$hook_path"
+    echo "vibe-redact: removed managed hook, restored pre-push.local."
+  else
+    rm -f "$hook_path"
+    echo "vibe-redact: removed managed pre-push hook."
+  fi
+}
+
+case "${1:-}" in
+  install-prepush-hook)   install_hook ;;
+  uninstall-prepush-hook) uninstall_hook ;;
+  *)
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    exit 1 ;;
+esac

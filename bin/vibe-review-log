@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""vibe-review-log — append a review result to the branch review log.
+
+Usage:
+  vibe-review-log '{"skill":"review","status":"pass","issues_found":0,...}'
+
+Appends one line to ``$VIBESTACK_HOME/projects/<slug>/<branch>-reviews.jsonl``.
+The Review Readiness Dashboard (/ship) and /retro read it via vibe-review-read.
+Local and reliable — memex is semantic recall, this is per-branch workflow state.
+
+NON-INTERACTIVE — never prompts. A payload carrying a high-confidence secret is
+rejected (exit 1), nothing written. `TIMESTAMP`/`COMMIT`/`STATUS` placeholders
+left unsubstituted by a caller are filled in here (ts=now, commit=short HEAD).
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+HOME = os.environ.get("VIBESTACK_HOME", os.path.expanduser("~/.vibestack"))
+
+SECRETS = [
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"gh[posr]_[A-Za-z0-9]{36}"),
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9]{48}"),
+    re.compile(r"-----BEGIN[^-]*PRIVATE KEY-----"),
+]
+
+
+def _run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        return ""
+
+
+def slug() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    out = _run([os.path.join(here, "vibe-slug")])
+    m = re.search(r"SLUG=([^\s]+)", out)
+    return m.group(1) if m else "unknown"
+
+
+def branch() -> str:
+    return _run(["git", "branch", "--show-current"]) or "unknown"
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if not args:
+        print('usage: vibe-review-log \'{"skill":"...","status":"..."}\'', file=sys.stderr)
+        return 1
+    try:
+        body = json.loads(args[0])
+    except Exception as e:
+        print(f"error: first argument must be a JSON object ({e})", file=sys.stderr)
+        return 1
+    if not isinstance(body, dict) or not body.get("skill"):
+        print('error: JSON must include a non-empty "skill" field', file=sys.stderr)
+        return 1
+
+    for pat in SECRETS:
+        if pat.search(args[0]):
+            print("error: review entry rejected — high-confidence secret present. "
+                  "Redact and rotate before logging.", file=sys.stderr)
+            return 1
+
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    if not body.get("timestamp") or body["timestamp"] == "TIMESTAMP":
+        body["timestamp"] = now
+    if body.get("commit") in (None, "", "COMMIT"):
+        body["commit"] = _run(["git", "rev-parse", "--short", "HEAD"]) or "unknown"
+    body.setdefault("branch", branch())
+
+    path = os.path.join(HOME, "projects", slug(), f"{branch()}-reviews.jsonl")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(body, ensure_ascii=False) + "\n")
+    print(f"logged review: {body['skill']} status={body.get('status','?')}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

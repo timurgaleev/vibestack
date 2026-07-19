@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# vibe-redact-prepush — git pre-push hook that scans the diff being pushed for
+# high-confidence credentials and blocks the push on a hit.
+#
+# THIS IS A GUARDRAIL, NOT ENFORCEMENT. `git push --no-verify` bypasses it, as
+# does `VIBESTACK_REDACT_PREPUSH=skip`. It catches accidental credential
+# pushes, the most common real-world leak. It does NOT scan history, binary
+# files, or unchanged lines — history scanning is /cso's job.
+#
+# Git pre-push interface: refs arrive on STDIN, one per line:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# We scan the ADDED lines of <remote sha>..<local sha> per ref. Special cases:
+#   - remote sha all-zeroes → new branch: diff against merge-base with the
+#     remote default branch (fallback: the empty tree, which scans everything).
+#   - remote tip object absent locally (shallow clone / stale force-push) →
+#     same merge-base/empty-tree fallback — scans MORE, never less.
+#   - local sha all-zeroes → branch delete: nothing pushed, skip.
+#
+# Fail-closed: if the pushed diff cannot be computed, the push is BLOCKED —
+# unscanned-but-allowed is the exact failure mode this hook exists to prevent.
+set -uo pipefail
+
+VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+EMPTY_TREE="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+log_skip() {
+  mkdir -p "$VIBE_HOME/security" 2>/dev/null || true
+  printf '{"ts":"%s","reason":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${VIBESTACK_REDACT_PREPUSH_REASON:-env-skip}" \
+    >> "$VIBE_HOME/security/prepush-skip.jsonl" 2>/dev/null || true
+}
+
+case "$(printf '%s' "${VIBESTACK_REDACT_PREPUSH:-}" | tr '[:upper:]' '[:lower:]')" in
+  skip)
+    log_skip
+    echo "vibe-redact-prepush: skipped via VIBESTACK_REDACT_PREPUSH=skip" >&2
+    exit 0 ;;
+esac
+
+block_no_diff() {
+  {
+    echo ""
+    echo "BLOCKED: vibe-redact-prepush could not compute the pushed diff, so it"
+    echo "cannot be scanned for credentials. ($1)"
+    echo "Bypass if you're sure: VIBESTACK_REDACT_PREPUSH=skip git push   (or git push --no-verify)"
+  } >&2
+  exit 1
+}
+
+default_remote_branch() {
+  local sym
+  sym=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [ -n "$sym" ]; then
+    printf '%s\n' "${sym#refs/remotes/}"
+    return
+  fi
+  local b
+  for b in origin/main origin/master; do
+    if git rev-parse --verify --quiet "$b" >/dev/null 2>&1; then
+      printf '%s\n' "$b"
+      return
+    fi
+  done
+  printf 'origin/main\n'
+}
+
+# Added lines of the range being pushed for one ref update.
+added_lines_for() {
+  local local_sha="$1" remote_sha="$2" range base
+  if printf '%s' "$remote_sha" | grep -qE '^0+$' \
+     || ! git cat-file -e "$remote_sha" 2>/dev/null; then
+    base=$(git merge-base "$local_sha" "$(default_remote_branch)" 2>/dev/null || true)
+    if [ -n "$base" ]; then range="$base..$local_sha"; else range="$EMPTY_TREE..$local_sha"; fi
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  local diff
+  if ! diff=$(git diff --unified=0 --no-color "$range" 2>/dev/null); then
+    return 1
+  fi
+  printf '%s\n' "$diff" | grep -E '^\+' | grep -vE '^\+\+\+' | sed 's/^+//' || true
+}
+
+# High-confidence credential patterns (kept in sync with
+# lib/snippets/secret-scan-patterns.md). Format: "<label>|<POSIX ERE>".
+PATTERNS=(
+  'AWS access key|AKIA[0-9A-Z]{16}'
+  'GitHub token|gh(p|o|s)_[A-Za-z0-9]{36}'
+  'Anthropic key|sk-ant-[A-Za-z0-9_-]{20,}'
+  'OpenAI key (modern)|sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}'
+  'OpenAI key (classic)|sk-[A-Za-z0-9]{48}'
+  'GitLab token|gl(pat|ptt|dt)-[A-Za-z0-9_-]{20,}'
+  'HuggingFace token|hf_[A-Za-z0-9]{30,}'
+  'npm token|npm_[A-Za-z0-9]{36}'
+  'DigitalOcean token|dop_v1_[a-f0-9]{64}'
+  'Private key block|-----BEGIN[^-]*PRIVATE KEY-----'
+  'AWS secret key|aws_secret_access_key[^A-Za-z0-9]+[A-Za-z0-9/+=]{40}'
+  'env-style secret|^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=..+'
+)
+
+# Print masked findings for one blob of text; returns 0 if any finding.
+scan_added() {
+  local text="$1" found=1 entry label pat hits
+  for entry in "${PATTERNS[@]}"; do
+    label="${entry%%|*}"
+    pat="${entry#*|}"
+    hits=$(printf '%s\n' "$text" | grep -oE "$pat" 2>/dev/null | head -5 || true)
+    if [ -n "$hits" ]; then
+      found=0
+      while IFS= read -r h; do
+        printf '  HIGH  %-22s %.10s...\n' "$label" "$h"
+      done <<< "$hits"
+    fi
+  done
+  # Bearer tokens, entropy-gated: >=20 chars with a digit, a lowercase, and an
+  # uppercase — placeholders (YOUR_TOKEN_HERE, <token>, xxxx...) don't qualify.
+  hits=$(printf '%s\n' "$text" | grep -oE 'Bearer[ 	]+[A-Za-z0-9._~+/=-]{20,}' 2>/dev/null \
+    | sed -E 's/^Bearer[ 	]+//' \
+    | awk '/[0-9]/ && /[a-z]/ && /[A-Z]/' | head -5 || true)
+  if [ -n "$hits" ]; then
+    found=0
+    while IFS= read -r h; do
+      printf '  HIGH  %-22s %.10s...\n' "Bearer token" "$h"
+    done <<< "$hits"
+  fi
+  return $found
+}
+
+findings=""
+# `|| [ -n ... ]` keeps the last line when stdin lacks a trailing newline
+# (the managed wrapper pipes refs via printf '%s').
+while read -r _local_ref local_sha _remote_ref remote_sha _rest || [ -n "${local_sha:-}" ]; do
+  [ -n "${local_sha:-}" ] || continue
+  printf '%s' "$local_sha" | grep -qE '^0+$' && continue   # branch delete
+  if ! added=$(added_lines_for "$local_sha" "${remote_sha:-0}"); then
+    block_no_diff "git diff failed for $local_sha"
+  fi
+  [ -n "$(printf '%s' "$added" | tr -d '[:space:]')" ] || continue
+  if hit=$(scan_added "$added"); then
+    findings="$findings$hit
+"
+  fi
+done
+
+if [ -n "$findings" ]; then
+  {
+    echo ""
+    echo "BLOCKED: vibe-redact-prepush found credential(s) in the pushed diff:"
+    echo ""
+    printf '%s' "$findings"
+    echo ""
+    echo "Rotate the credential (a pushed secret is compromised) and remove it from the diff."
+    echo "This is a guardrail: 'git push --no-verify' or 'VIBESTACK_REDACT_PREPUSH=skip git push' bypass it."
+  } >&2
+  exit 1
+fi
+
+exit 0
