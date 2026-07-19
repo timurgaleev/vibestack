@@ -135,6 +135,7 @@ bin/vibe-render-skill --check skills/<name>/SKILL.md ~/.claude/skills/<name>/SKI
 ./install --target=all             # all three, non-interactive
 ./install --target=claude          # claude only
 ./install --target=cursor,kiro     # cursor + kiro
+./install --target=codex           # Codex CLI (opt-in — not in `all`, see below)
 ./install --yes                    # all three, skip prompts (CI-friendly)
 ./install --dry-run --target=all   # preview, no writes
 
@@ -150,6 +151,12 @@ standard](https://agentskills.io/specification): Claude Code
 target's directory — no format translation. `bin/` and sub-doc symlinks
 are installed per target so the "edit source, immediately reflected"
 workflow works in any chosen target.
+
+A fourth target, **Codex CLI** (`~/.codex/skills/`), is wired into the same
+data-driven registry (`TARGET_LABEL`/`TARGET_ROOT` in `install`) but kept out of
+the default `all`/`--yes` set until its skill-path loading is confirmed on a real
+Codex setup — select it with `--target=codex`. Adding another runtime is now one
+row per map. The `agents/openai.yaml` manifest registers the pack with Codex.
 
 Update flow: `git pull && ./install`. The install is idempotent — re-runs
 produce identical bytes. No restart needed if your agent supports
