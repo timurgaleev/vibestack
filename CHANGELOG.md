@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.21.0 — 2026-07-19
+
+Continues the upstream parity sweep: activates conditional review dispatch, hardens
+scrape and spec.
+
+### Added
+
+- **`bin/vibe-diff-scope`** computes `SCOPE_FRONTEND/BACKEND/AUTH/MIGRATIONS/API/…`
+  from the diff. `/review`, `/ship`, `/land-and-deploy`, and the design checklist
+  previously stubbed this out (`# diff-scope not available`), so their conditional
+  specialists — security, performance, data-migration, API-contract, design — never
+  fired. They now dispatch on the real scope of the change.
+
+### Changed
+
+- **`/scrape`** gains a match phase (reuse an existing skill before prototyping),
+  single-pipeable-JSON output discipline, a 3-attempt failure protocol that never
+  presents a partial scrape as complete, and a `/skillify` nudge for repeat flows.
+
+### Fixed
+
+- **`/spec` no longer archives a spec containing a secret under `--no-gate`.**
+  Fail-closed secret redaction moved to its own always-on phase — `--no-gate` now
+  skips only the codex quality score, never the secret scan that gates archiving
+  and issue-filing.
+
 ## 1.20.0 — 2026-07-19
 
 Integrates capability from upstream infra dirs that were previously skipped, plus

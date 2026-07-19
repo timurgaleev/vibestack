@@ -28,6 +28,18 @@ If `BROWSE_NOT_AVAILABLE`: fall back to `curl` + an HTML parse for static pages
 (note that JS-rendered content and screenshots are unavailable), or stop and tell
 the user the browse shim is needed.
 
+### 0. Match — is this already a skill?
+
+Before prototyping a new scrape, check whether a codified skill already covers
+this target:
+
+```bash
+ls ~/.claude/skills/ 2>/dev/null | grep -iE '<site-or-domain-keyword>' || echo "NO_MATCH"
+```
+
+If a matching skill exists, suggest running it (`/that-skill`) instead of
+re-deriving the flow. Only prototype when there's no match.
+
 ### 1. Pin the target
 
 Confirm the URL and exactly which fields the user wants (single record, or a list
@@ -58,9 +70,31 @@ selectors exactly — never guess a value that isn't on the page.
 
 ### 4. Return
 
-Print the JSON. Name any requested field that couldn't be found rather than
-fabricating it. If JS-heavy content is missing, retry once via the daemon with a
-short wait (`"$B" chain "goto <url>" "wait 1500" "text"`).
+**Output discipline: emit ONE pipeable JSON document and nothing else** — no
+surrounding prose, no markdown fences, so the output can be piped into `jq` or a
+file. Name any requested field that couldn't be found (as `null` with a short
+note in a `_missing` array) rather than fabricating it. If JS-heavy content is
+missing, retry once via the daemon with a short wait
+(`"$B" chain "goto <url>" "wait 1500" "text"`).
+
+### Failure protocol
+
+Scraping fails in known ways (selector drift, JS-gated content, anti-bot walls).
+Handle them, don't paper over them:
+
+- **Attempt budget: 3.** Stateless pass → daemon + wait → daemon + interaction.
+  After the third failed attempt, STOP.
+- **No partial results as success.** If some requested fields are unreachable,
+  return what you have with an explicit `_missing` list — never present a partial
+  scrape as complete.
+- **On a hard stop, offer the choice** (AskUserQuestion): A) try `/connect-chrome`
+  (the page needs a real logged-in session), B) adjust the target/fields,
+  C) give up — the site is protected or JS-gated beyond the shim.
+
+### Codify a repeat
+
+If this scrape worked and the user is likely to run it again, offer to `/skillify`
+it into a reusable `/<name>` so the flow becomes one command next time.
 
 ## Discipline
 

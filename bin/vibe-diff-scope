@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# vibe-diff-scope — categorize what changed in the diff against a base branch.
+# Drives conditional specialist dispatch in /review and /ship and the
+# canary-depth matrix in /land-and-deploy.
+#
+# Usage:
+#   source <(vibe-diff-scope main)   # sets SCOPE_FRONTEND=true SCOPE_BACKEND=false …
+#   vibe-diff-scope main             # prints SCOPE_*=… lines
+set -euo pipefail
+
+BASE="${1:-main}"
+
+FILES=$(git diff "${BASE}...HEAD" --name-only 2>/dev/null \
+  || git diff "${BASE}" --name-only 2>/dev/null || echo "")
+
+FRONTEND=false BACKEND=false PROMPTS=false TESTS=false DOCS=false
+CONFIG=false MIGRATIONS=false API=false AUTH=false
+
+if [ -n "$FILES" ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in
+      # Frontend: styles, components, templates, markup
+      *.css|*.scss|*.less|*.sass|*.pcss|*.module.css|*.module.scss) FRONTEND=true ;;
+      *.tsx|*.jsx|*.vue|*.svelte|*.astro) FRONTEND=true ;;
+      *.erb|*.haml|*.slim|*.hbs|*.ejs) FRONTEND=true ;;
+      *.html) FRONTEND=true ;;
+      tailwind.config.*|postcss.config.*) FRONTEND=true ;;
+      app/views/*|*/components/*|styles/*|css/*|app/assets/stylesheets/*) FRONTEND=true ;;
+
+      # Prompts: prompt builders, generation/eval services, system prompts
+      *prompt_builder*|*generation_service*|*writer_service*|*designer_service*) PROMPTS=true ;;
+      *evaluator*|*scorer*|*classifier_service*|*analyzer*) PROMPTS=true ;;
+      *voice*.rb|*writing*.rb|*prompt*.rb|*token*.rb) PROMPTS=true ;;
+      config/system_prompts/*) PROMPTS=true ;;
+
+      # Tests
+      *.test.*|*.spec.*|*_test.*|*_spec.*) TESTS=true ;;
+      test/*|tests/*|spec/*|__tests__/*|cypress/*|e2e/*) TESTS=true ;;
+
+      # Docs
+      *.md) DOCS=true ;;
+
+      # Config / lockfiles / CI
+      package.json|package-lock.json|yarn.lock|bun.lock|bun.lockb) CONFIG=true ;;
+      Gemfile|Gemfile.lock) CONFIG=true ;;
+      *.yml|*.yaml) CONFIG=true ;;
+      .github/*) CONFIG=true ;;
+      requirements.txt|pyproject.toml|go.mod|Cargo.toml|composer.json) CONFIG=true ;;
+
+      # Migrations
+      db/migrate/*|*/migrations/*|alembic/*|prisma/migrations/*) MIGRATIONS=true ;;
+
+      # API: routes, controllers, endpoints, schemas
+      *controller*|*route*|*endpoint*|*/api/*) API=true ;;
+      *.graphql|*.gql|openapi.*|swagger.*) API=true ;;
+
+      # Auth
+      *auth*|*session*|*jwt*|*oauth*|*permission*|*role*) AUTH=true ;;
+
+      # Backend: remaining code. Include ESM/CJS + explicit-module TS so an
+      # ESM-only PR never skips the backend reviewer.
+      *.rb|*.py|*.go|*.rs|*.java|*.php|*.ex|*.exs) BACKEND=true ;;
+      *.ts|*.js|*.mjs|*.cjs|*.mts|*.cts) BACKEND=true ;;
+    esac
+  done <<< "$FILES"
+fi
+
+echo "SCOPE_FRONTEND=$FRONTEND"
+echo "SCOPE_BACKEND=$BACKEND"
+echo "SCOPE_PROMPTS=$PROMPTS"
+echo "SCOPE_TESTS=$TESTS"
+echo "SCOPE_DOCS=$DOCS"
+echo "SCOPE_CONFIG=$CONFIG"
+echo "SCOPE_MIGRATIONS=$MIGRATIONS"
+echo "SCOPE_API=$API"
+echo "SCOPE_AUTH=$AUTH"

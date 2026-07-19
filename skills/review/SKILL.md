@@ -491,7 +491,11 @@ higher confidence.
 ### Detect stack and scope
 
 ```bash
-# diff-scope not available — skip scope gating
+# Compute SCOPE_* signals from the diff (drives conditional specialist dispatch).
+# Falls back to all-false if the binary is missing, which just runs the always-on
+# specialists — never errors.
+eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false}"
 # Detect stack for specialist context
 STACK=""
 [ -f Gemfile ] && STACK="${STACK}ruby "

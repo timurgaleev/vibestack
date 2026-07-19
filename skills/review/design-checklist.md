@@ -9,7 +9,8 @@ This checklist applies to **source code in the diff** — not rendered output. R
 **Trigger:** Only run this checklist if the diff touches frontend files. Use git diff to detect:
 
 ```bash
-# diff-scope not available — check manually with: git diff --name-only <base> | grep -E '\.(tsx|jsx|css|html|svelte)'
+eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false}"
 ```
 
 If `SCOPE_FRONTEND=false`, skip the entire design review silently.
