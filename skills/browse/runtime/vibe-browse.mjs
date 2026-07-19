@@ -12,6 +12,7 @@ import { homedir, tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import net from 'node:net'
+import { applyStealth, STEALTH_LAUNCH_ARGS, STEALTH_IGNORE_DEFAULT_ARGS } from './vibe-stealth.mjs'
 
 // Playwright lives in a self-contained install (the launcher points
 // VIBE_BROWSE_DEP_DIR at it). ESM does not honor NODE_PATH for bare specifiers,
@@ -76,11 +77,12 @@ const requireUrl = (ctx) => {
 // collected console errors / failed requests. Caller must close `browser`.
 const load = async (ctx, viewport) => {
   const chromium = await getChromium()
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ args: STEALTH_LAUNCH_ARGS, ignoreDefaultArgs: STEALTH_IGNORE_DEFAULT_ARGS })
   const context = await browser.newContext({
     viewport: viewport ?? ctx.viewport ?? VIEWPORTS.desktop,
     deviceScaleFactor: 1,
   })
+  await applyStealth(context)
   const page = await context.newPage()
   const errors = []
   const failed = []
@@ -250,8 +252,9 @@ const verbs = {
     const ctx = readCtx()
     const chromium = await getChromium()
     const headed = process.env.VIBE_BROWSE_HEADED === '1'
-    const browser = await chromium.launch({ headless: !headed })
+    const browser = await chromium.launch({ headless: !headed, args: STEALTH_LAUNCH_ARGS, ignoreDefaultArgs: STEALTH_IGNORE_DEFAULT_ARGS })
     const context = await browser.newContext({ viewport: ctx.viewport ?? VIEWPORTS.desktop, deviceScaleFactor: 1 })
+    await applyStealth(context)
     const page = await context.newPage()
     page.on('dialog', (d) => d.accept().catch(() => {}))
     const log = []

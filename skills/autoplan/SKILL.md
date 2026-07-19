@@ -52,7 +52,7 @@ fi
 ## Plan Status Footer
 
 In plan mode, before ExitPlanMode: if the plan file lacks a `## VIBESTACK REVIEW REPORT`
-section, check `true # vibe-review-read` (stub — not yet implemented) and append a placeholder.
+section, check `~/.vibestack/bin/vibe-review-read --json 2>/dev/null` and append a placeholder.
 With no review data, append a 5-row placeholder table (CEO/Codex/Eng/Design/DX Review)
 with all zeros and verdict "NO REVIEWS YET — run `/autoplan`".
 If a richer review report already exists, skip — review skills wrote it.
@@ -365,7 +365,9 @@ workflow.
 ```bash
 _TEL=$(~/.vibestack/bin/vibe-config get telemetry 2>/dev/null || echo off)
 _CODEX_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
-# codex-probe not available in vibestack — skip
+# Portable timeout (gtimeout → timeout → unwrapped) — sourced once, stays in
+# scope for all 4 phases. Bare `timeout` is absent on stock macOS (exit 127).
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 
 # Master switch first: codex_reviews=disabled turns off ALL Codex work globally,
 # including autoplan's own dual-voice orchestration. Honor it before probing.
@@ -379,12 +381,13 @@ elif ! command -v codex >/dev/null 2>&1; then
   true # "codex_cli_missing"
   echo "[codex-unavailable: binary not found] — proceeding with Claude subagent only"
   _CODEX_AVAILABLE=false
-elif ! codex --version >/dev/null 2>&1; then
+# Multi-signal auth probe: an API key in the env OR a credentials file. `codex
+# --version` succeeds even when logged out, so it cannot stand in for this.
+elif ! { [ -n "${CODEX_API_KEY:-}" ] || [ -n "${OPENAI_API_KEY:-}" ] || [ -f "$HOME/.codex/auth.json" ]; }; then
   true # "codex_auth_failed"
   echo "[codex-unavailable: auth missing] — proceeding with Claude subagent only. Run \`codex login\` or set \$CODEX_API_KEY to enable dual-voice review."
   _CODEX_AVAILABLE=false
 else
-  true #   # non-blocking warn if known-bad
   _CODEX_AVAILABLE=true
 fi
 ```
@@ -418,7 +421,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **Codex CEO voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  timeout 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   You are a CEO/founder advisor reviewing a development plan.
   Challenge the strategic foundations: Are the premises valid or assumed? Is this the
@@ -535,7 +538,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **Codex design voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  timeout 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   Read the plan file at <plan_path>. Evaluate this plan's
   UI/UX design decisions.
@@ -616,7 +619,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **Codex eng voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  timeout 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   Review this plan for architectural issues, missing edge cases,
   and hidden complexity. Be adversarial.
@@ -737,7 +740,7 @@ Log: "Phase 3.5 skipped — no developer-facing scope detected."
   **Codex DX voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  timeout 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   Read the plan file at <plan_path>. Evaluate this plan's developer experience.
 
@@ -991,36 +994,36 @@ STATUS is "clean" if no unresolved issues, "issues_open" otherwise.
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-true # vibe-review-log '{"skill":"plan-ceo-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"SELECTIVE_EXPANSION","via":"autoplan","commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"plan-ceo-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"SELECTIVE_EXPANSION","via":"autoplan","commit":"'"$COMMIT"'"}'
 
-true # vibe-review-log '{"skill":"plan-eng-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"FULL_REVIEW","via":"autoplan","commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"plan-eng-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"FULL_REVIEW","via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
 If Phase 2 ran (UI scope):
 ```bash
-true # vibe-review-log '{"skill":"plan-design-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"plan-design-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
 If Phase 3.5 ran (DX scope):
 ```bash
-true # vibe-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
 Dual voice logs (one per phase that ran):
 ```bash
-true # vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"ceo","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"ceo","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 
-true # vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"eng","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"eng","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
 If Phase 2 ran (UI scope), also log:
 ```bash
-true # vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
 If Phase 3.5 ran (DX scope), also log:
 ```bash
-true # vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
 SOURCE = "codex+subagent", "codex-only", "subagent-only", or "unavailable".

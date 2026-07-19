@@ -64,9 +64,9 @@ fi
 
 ## SETUP
 
+{{include lib/snippets/browse-detect.md}}
+
 ```bash
-# vibestack does not include a browse daemon.
-echo "BROWSE_NOT_AVAILABLE"
 REPORT_DIR=".vibestack/qa-reports"
 mkdir -p "$REPORT_DIR/screenshots"
 ```

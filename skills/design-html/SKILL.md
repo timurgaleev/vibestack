@@ -150,12 +150,7 @@ else a few taps away with an obvious path to get there.
 
 ## SETUP
 
-```bash
-# vibestack does not include a browse daemon.
-echo "BROWSE_NOT_AVAILABLE"
-```
-
-If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
+{{include lib/snippets/browse-detect.md}}
 
 ## Step 0: Input Detection
 

@@ -90,16 +90,37 @@ def resolve_config_path(arg):
     return None
 
 
-def fetch_upstream(repo, skill_dir):
+def _fetch_file(repo, path):
     try:
         out = subprocess.run(
-            ["gh", "api", f"repos/{repo}/contents/{skill_dir}/SKILL.md", "--jq", ".content"],
+            ["gh", "api", f"repos/{repo}/contents/{path}", "--jq", ".content"],
             capture_output=True, text=True, timeout=60)
         if out.returncode != 0 or not out.stdout.strip():
             return None
         return base64.b64decode(out.stdout).decode("utf-8", "replace")
     except Exception:
         return None
+
+
+def fetch_upstream(repo, skill_dir):
+    text = _fetch_file(repo, f"{skill_dir}/SKILL.md")
+    if text is None:
+        return None
+    # Some upstream skills carve their body into sections/*.md; without them
+    # the comparison sees only the stub and coverage collapses.
+    try:
+        out = subprocess.run(
+            ["gh", "api", f"repos/{repo}/contents/{skill_dir}/sections", "--jq", ".[].name"],
+            capture_output=True, text=True, timeout=60)
+        if out.returncode == 0:
+            for name in out.stdout.split():
+                if name.endswith(".md"):
+                    part = _fetch_file(repo, f"{skill_dir}/sections/{name}")
+                    if part:
+                        text += "\n" + part
+    except Exception:
+        pass
+    return text
 
 
 def render_local(skill):

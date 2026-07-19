@@ -89,12 +89,7 @@ branch name wherever the instructions say "the base branch" or `<default>`.
 
 ## SETUP
 
-```bash
-# vibestack does not include a browse daemon.
-echo "BROWSE_NOT_AVAILABLE"
-```
-
-If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
+{{include lib/snippets/browse-detect.md}}
 
 ## DX First Principles
 
@@ -192,7 +187,7 @@ Check for prior /plan-devex-review scores:
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-true # vibe-review-read 2>/dev/null | grep plan-devex-review || echo "NO_PRIOR_PLAN_REVIEW"
+~/.vibestack/bin/vibe-review-read --json 2>/dev/null | grep plan-devex-review || echo "NO_PRIOR_PLAN_REVIEW"
 ```
 
 If prior scores exist, display them. These are your baseline for the boomerang comparison.
@@ -327,7 +322,7 @@ Flag any dimension where live score < plan score - 2 (reality fell short of plan
 **PLAN MODE EXCEPTION — ALWAYS RUN:**
 
 ```bash
-true # vibe-review-log '{"skill":"devex-review","timestamp":"TIMESTAMP","status":"STATUS","overall_score":N,"product_type":"TYPE","tthw_measured":"TTHW","dimensions_tested":N,"dimensions_inferred":N,"boomerang":"YES_OR_NO","commit":"COMMIT"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"devex-review","timestamp":"TIMESTAMP","status":"STATUS","overall_score":N,"product_type":"TYPE","tthw_measured":"TTHW","dimensions_tested":N,"dimensions_inferred":N,"boomerang":"YES_OR_NO","commit":"COMMIT"}'
 ```
 
 {{include lib/snippets/review-readiness-dashboard.md}}

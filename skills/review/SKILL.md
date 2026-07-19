@@ -700,7 +700,7 @@ If the Red Team subagent fails or times out, skip silently and continue.
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
 ```bash
-true # vibe-review-read
+~/.vibestack/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
@@ -943,7 +943,7 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-true # vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
@@ -976,7 +976,7 @@ recognize that Eng Review was run on this branch.
 Run:
 
 ```bash
-true # vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"COMMIT"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"COMMIT"}'
 ```
 
 Substitute:

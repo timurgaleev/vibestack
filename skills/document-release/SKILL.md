@@ -478,7 +478,13 @@ glab mr view -F json 2>/dev/null | python3 -c "import sys,json; print(json.load(
 
    If there are any documentation debt items, suggest adding a `docs-debt` label to the PR.
 
-4. Write the updated body back:
+4. **Secret scan before external write.** Before writing the body back, scan the
+   exact text about to be published (the tempfile) for high-confidence secrets.
+   On a match, STOP — tell the user to redact + rotate before continuing; do not
+   publish.
+{{include lib/snippets/secret-scan-patterns.md}}
+
+5. Write the updated body back:
 
 **If GitHub:**
 ```bash
@@ -494,13 +500,13 @@ MRBODY
 )"
 ```
 
-5. Clean up the tempfile:
+6. Clean up the tempfile:
 
 ```bash
 rm -f /tmp/vibestack-pr-body-$$.md
 ```
 
-6. If `gh pr view` / `glab mr view` fails (no PR/MR exists): skip with message "No PR/MR found — skipping body update."
+7. If `gh pr view` / `glab mr view` fails (no PR/MR exists): skip with message "No PR/MR found — skipping body update."
 7. If `gh pr edit` / `glab mr update` fails: warn "Could not update PR/MR body — documentation changes are in the
    commit." and continue.
 
