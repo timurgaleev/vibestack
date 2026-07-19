@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync, readFileSync } from '
 import { tmpdir, homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { applyStealth, STEALTH_LAUNCH_ARGS, STEALTH_IGNORE_DEFAULT_ARGS } from './vibe-stealth.mjs'
 
 const SOCK = process.env.VIBE_BROWSE_DAEMON_SOCK ?? join(tmpdir(), 'vibe-browse', 'daemon.sock')
 const NAV_TIMEOUT = Number(process.env.VIBE_BROWSE_TIMEOUT ?? 30000)
@@ -41,8 +42,13 @@ const resolveUrl = (raw) =>
 const sel = (a) => (a && a.startsWith('@')) ? `[data-vibe-ref="${a.slice(1)}"]` : a
 
 const chromium = await getChromium()
-const browser = await chromium.launch({ headless: process.env.VIBE_BROWSE_HEADED !== '1' })
+const browser = await chromium.launch({
+  headless: process.env.VIBE_BROWSE_HEADED !== '1',
+  args: STEALTH_LAUNCH_ARGS,
+  ignoreDefaultArgs: STEALTH_IGNORE_DEFAULT_ARGS,
+})
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+await applyStealth(context)
 const page = await context.newPage()
 // Record the most recent JS dialog so `dialog` can report it, then act on it.
 // Default accepts; `dialog dismiss` flips the next action to dismiss.
