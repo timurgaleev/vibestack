@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.19.0 — 2026-07-19
+
+Upstream parity sweep: closes real behavioral gaps found by a per-skill diff against
+the upstream pack, adapted to vibestack's stack (memex, Playwright, no telemetry).
+
+### Added
+
+- **Always-on browser anti-detection.** The browse daemon and shim now apply a
+  JS-level stealth layer on every page (`skills/browse/runtime/vibe-stealth.mjs`):
+  `navigator.webdriver` mask, `window.chrome.*` restoration, `Notification`/hardware
+  consistency, an automation-globals sweep, and a `toString` proxy that survives the
+  depth-3 `[native code]` check. Opt into the aggressive WebGL/plugins layer with
+  `VIBESTACK_STEALTH=extended`; per-install hardware via `VIBESTACK_HW_CONCURRENCY` /
+  `VIBESTACK_DEVICE_MEMORY`. Previously the daemon had no stealth at all.
+- **Credential pre-push guard.** `vibe-redact install-prepush-hook` installs a git
+  `pre-push` hook (`vibe-redact-prepush`) that scans the pushed diff for
+  high-confidence credentials and blocks on a hit; it chains any existing hook and
+  honors a `VIBESTACK_REDACT_PREPUSH=skip` escape valve. `/ship` offers to install it
+  once (or silently installs it when you've opted in).
+- **Review-log persistence.** New `vibe-review-log` / `vibe-review-read` back the
+  Review Readiness Dashboard: 25 log + 9 read call sites across `/ship`, `/review`,
+  `/autoplan`, the `plan-*` reviews, and the design skills now write and read real
+  per-branch review state instead of no-op stubs.
+
+### Changed
+
+- **`/skillify` is safe by default:** a provenance guard (refuses to invent a skill
+  with no working flow), a name-collision check, staged validation with
+  discard-on-failure, an approval gate before install, and post-install verification.
+- **`/ship` plan-completion is stricter:** UNVERIFIABLE plan items are confirmed
+  per-item (never blanket-approved), and a double failure of the audit (subagent *and*
+  inline fallback) surfaces an explicit gate instead of silently passing.
+- **`/document-release`** scans the PR/MR body for secrets before publishing it.
+- **`./install`** ends with an intent-routed first move (idea → `/office-hours` or
+  `/spec`; existing code → `/qa` or `/investigate`).
+- Eight browse-using skills (`/qa`, `/qa-only`, `/canary`, `/land-and-deploy`,
+  `/benchmark`, `/design-consultation`, `/design-html`, `/devex-review`,
+  `/office-hours`) now detect the shipped browse shim instead of hard-coding
+  `BROWSE_NOT_AVAILABLE`, so their browser steps actually run.
+
+### Fixed
+
+- **Codex voices no longer break on stock macOS.** `/codex` and `/autoplan` resolve a
+  portable timeout (`gtimeout` → `timeout` → unwrapped) instead of a bare `timeout`
+  that exits 127 where coreutils isn't installed. `/codex` also surfaces a non-zero
+  exit as `[codex exit N]` and treats the review as unavailable rather than a silent
+  pass, and `/autoplan`'s Codex auth check is now multi-signal (`$CODEX_API_KEY` /
+  `$OPENAI_API_KEY` / `~/.codex/auth.json`) instead of a `--version` probe that
+  passes even when logged out.
+- `bin/vibe-parity-audit` now folds in each upstream skill's carved `sections/*.md`
+  before comparing, so coverage reflects the full skill body.
+
 ## 1.18.2 — 2026-07-09
 
 ### Fixed
