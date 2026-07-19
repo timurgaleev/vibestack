@@ -671,10 +671,12 @@ if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo "    Verify per: docs/hook-verification.md"
 fi
 
-# Happy-path CTA preserved.
+# Happy-path CTA — intent-routed first move.
 if [ "$DRY_RUN" != "1" ]; then
   echo ""
-  echo "Try /office-hours first in a new session of your chosen agent."
+  echo "First move (in a new session of your chosen agent):"
+  echo "  • Starting from an idea → /office-hours  (or /spec to pin down a spec)"
+  echo "  • Existing code to work on → /qa  (or /investigate for a bug)"
   echo "Full skill list: docs/skills.md"
   echo "Compatibility matrix: docs/agent-skills-compatibility-audit.md"
   echo "Uninstall: $REPO_DIR/uninstall"

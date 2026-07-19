@@ -83,12 +83,7 @@ If the codebase is empty and purpose is unclear, say: *"I don't have a clear pic
 
 ## SETUP
 
-```bash
-# vibestack does not include a browse daemon.
-echo "BROWSE_NOT_AVAILABLE"
-```
-
-If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
+{{include lib/snippets/browse-detect.md}}
 
 ## DESIGN SETUP
 
@@ -288,7 +283,7 @@ Present subagent output under a `CLAUDE SUBAGENT (design direction):` header.
 
 **Log the result:**
 ```bash
-true # vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".
 

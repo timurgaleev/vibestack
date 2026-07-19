@@ -142,7 +142,7 @@ Never skip a verification step because a prior `/ship` run already performed it.
 After completing the review, read the review log and config to display the dashboard.
 
 ```bash
-true # vibe-review-read
+~/.vibestack/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
@@ -985,7 +985,10 @@ After producing the completion checklist:
 
 - **All DONE or CHANGED:** Pass. "Plan completion: PASS — all items addressed." Continue.
 - **Only PARTIAL items (no NOT DONE):** Continue with a note in the PR body. Not blocking.
-- **UNVERIFIABLE items present (no NOT DONE):** Not blocking. List each in the PR body's `## Plan Completion` section under "Manual verification required" with the exact check the user must perform (e.g., "confirm DNS-only mode for dashboard.example.com"). Never silently treat UNVERIFIABLE as DONE.
+- **UNVERIFIABLE items present (no NOT DONE):** Blocking confirmation, per item. Never silently treat UNVERIFIABLE as DONE, and never blanket-confirm them with one question (that is the failure shape where the user picks "yes" without opening a single file).
+  - For each UNVERIFIABLE item, use AskUserQuestion with that item's *specific* manual check — "Confirm: does `~/Development/other-repo/docs/dashboard.md` exist?", not "Have you checked all items?".
+  - **Cap:** if there are more than 5, present them as a numbered list first and ask whether to (1) confirm each individually (default, recommended), (2) stop and reduce scope, or (3) explicitly accept blanket-confirmation with a note that this skips real verification.
+  - Items the user confirms → treat as DONE and embed under `## Plan Completion — Manual Verifications` in the PR body. Items they cannot confirm → carry as still-open manual checks in the PR body.
 - **Any NOT DONE items:** Use AskUserQuestion:
   - Show the completion checklist above
   - "{N} items from the plan are NOT DONE. These were part of the original plan but are missing from the implementation."
@@ -1012,7 +1015,7 @@ After producing the completion checklist:
 3. If `deferred > 0` and no user override, present the deferred items via AskUserQuestion before continuing.
 4. Embed `summary` in PR body's `## Plan Completion` section (Step 19).
 
-**If the subagent fails or returns invalid JSON:** Fall back to running the audit inline. Never block /ship on subagent failure.
+**If the subagent fails or returns invalid JSON:** Fall back to running the audit inline (parent runs the same plan-extraction + classification). **If the inline fallback ALSO fails** (plan file unreadable, parser error): do NOT silently pass. Surface it as an explicit AskUserQuestion — "Plan Completion audit could not run ({reason}). A) Skip audit and ship anyway (record 'audit skipped' in the PR body + Step 20 metrics), B) Stop and fix the audit." Default and recommended: B. A silent fail-open here is exactly how a missed deliverable ships unnoticed.
 
 ---
 
@@ -1204,7 +1207,7 @@ Check if the diff touches frontend files using git diff:
 6. **Log the result** for the Review Readiness Dashboard:
 
 ```bash
-true # vibe-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
 ```
 
 Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of `git rev-parse --short HEAD`.
@@ -1442,7 +1445,7 @@ If the Red Team subagent fails or times out, skip silently and continue.
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
 ```bash
-true # vibe-review-read
+~/.vibestack/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
@@ -1493,7 +1496,7 @@ Output a summary header: `Pre-Landing Review: N issues (X critical, Y informatio
 
 9. Persist the review result to the review log:
 ```bash
-true # vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
 ```
 Substitute TIMESTAMP (ISO 8601), STATUS ("clean" if no issues, "issues_found" otherwise),
 and N values from the summary counts above. The `via:"ship"` distinguishes from standalone `/review` runs.
@@ -1655,7 +1658,7 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-true # vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
@@ -2089,6 +2092,54 @@ Claiming work is complete without verification is dishonesty, not efficiency.
 ---
 
 ## Step 17: Push
+
+**Credential pre-push guard — offer/install before the push.** A per-repo git
+`pre-push` hook that scans the pushed diff for high-confidence credentials and
+blocks on a hit. Guardrail, not enforcement (`VIBESTACK_REDACT_PREPUSH=skip` or
+`git push --no-verify` bypass it).
+
+```bash
+_VBIN="${VIBESTACK_HOME:-$HOME/.vibestack}/bin"
+_REDACT_PREPUSH=$("$_VBIN/vibe-config" get redact_prepush_hook 2>/dev/null || echo "false")
+_HOOK_PATH=$(git rev-parse --git-path hooks/pre-push 2>/dev/null || echo "")
+_HOOK_INSTALLED="no"
+[ -n "$_HOOK_PATH" ] && [ -f "$_HOOK_PATH" ] && grep -q "vibe-redact" "$_HOOK_PATH" 2>/dev/null && _HOOK_INSTALLED="yes"
+# A committed custom hooks dir (core.hooksPath, e.g. husky's .husky/) must never
+# get a silent install: the chaining installer would rename the team's committed
+# hook and write a machine-local wrapper into the working tree.
+_HOOKS_DIR=$(git rev-parse --git-path hooks 2>/dev/null || echo "")
+_GIT_DIR=$(git rev-parse --absolute-git-dir 2>/dev/null || echo "")
+_HOOKS_IN_GIT_DIR="no"
+case "$_HOOKS_DIR" in "$_GIT_DIR"/*|hooks|.git/hooks) _HOOKS_IN_GIT_DIR="yes" ;; esac
+_PREPUSH_PROMPTED=$([ -f "${VIBESTACK_HOME:-$HOME/.vibestack}/.redact-prepush-prompted" ] && echo "yes" || echo "no")
+echo "REDACT_PREPUSH: $_REDACT_PREPUSH | HOOK_INSTALLED: $_HOOK_INSTALLED | HOOKS_IN_GIT_DIR: $_HOOKS_IN_GIT_DIR | PREPUSH_PROMPTED: $_PREPUSH_PROMPTED"
+```
+
+Branch on the echoed values:
+
+1. **`REDACT_PREPUSH: true` and `HOOK_INSTALLED: no` and `HOOKS_IN_GIT_DIR: yes`** —
+   consent already given; install silently and continue:
+   `"$_VBIN/vibe-redact" install-prepush-hook`.
+   If `HOOKS_IN_GIT_DIR: no`, do NOT install silently — print one line:
+   "redact pre-push guard not installed: this repo uses a custom core.hooksPath;
+   run `vibe-redact install-prepush-hook` manually if you want it chained."
+2. **`REDACT_PREPUSH` not true AND `PREPUSH_PROMPTED: no`** — one-time offer (fires
+   once EVER, machine-wide). AskUserQuestion:
+   > vibestack can install a per-repo git pre-push hook that blocks pushes
+   > containing credentials (API keys, tokens, private keys). Guardrail, not
+   > enforcement — `VIBESTACK_REDACT_PREPUSH=skip` bypasses it. Install it for
+   > repos you ship from?
+
+   - A) Yes — install the credential guard (recommended)
+   - B) No — never ask again
+
+   If A: `"$_VBIN/vibe-config" set redact_prepush_hook true` then
+   `"$_VBIN/vibe-redact" install-prepush-hook`.
+   If B: `"$_VBIN/vibe-config" set redact_prepush_hook false`.
+   ALWAYS after either answer (but NOT if the question failed to render — a failed
+   AskUserQuestion must re-offer next time):
+   `touch "${VIBESTACK_HOME:-$HOME/.vibestack}/.redact-prepush-prompted"`.
+3. **Anything else** (declined earlier, or already installed) — continue silently.
 
 **Idempotency check:** Check if the branch is already pushed and up to date.
 
