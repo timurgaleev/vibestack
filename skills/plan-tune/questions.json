@@ -1,0 +1,46 @@
+{
+  "_comment": "One-way-door registry for question tuning. A one-way-door question is always asked and NEVER suppressed by a user preference; a two-way question can be preference-suppressed. Consumed by bin/vibe-question-check. Primary gate = the `registry` id lookup; keyword + skill-category checks are the fallback for ad-hoc questions with no registry id.",
+  "registry": {
+    "ship:version-bump-major": "one-way",
+    "ship:version-bump-minor": "one-way",
+    "cso:finding-approval": "one-way",
+    "land-and-deploy:merge-approval": "one-way",
+    "land-and-deploy:deploy-approval": "one-way",
+    "skillify:install-approval": "one-way",
+    "ship:plan-not-done": "one-way",
+    "plan-ceo-review:scope-mode": "two-way",
+    "office-hours:mode": "two-way",
+    "ship:cross-project-learnings": "two-way"
+  },
+  "one_way_skill_categories": [
+    "cso:approval",
+    "land-and-deploy:approval",
+    "ship:destructive"
+  ],
+  "destructive_keyword_patterns": [
+    "\\brm\\s+-rf\\b",
+    "\\bdelete\\b",
+    "\\bremove\\s+(directory|folder|files?)\\b",
+    "\\bwipe\\b",
+    "\\bpurge\\b",
+    "\\btruncate\\b",
+    "\\bdrop\\s+(table|database|schema|index|column)\\b",
+    "\\bdelete\\s+from\\b",
+    "\\bforce[- ]push\\b",
+    "\\bpush\\s+--force\\b",
+    "\\bgit\\s+reset\\s+--hard\\b",
+    "\\bcheckout\\s+--\\b",
+    "\\bclean\\s+-f\\b",
+    "\\bbranch\\s+-D\\b",
+    "\\bkubectl\\s+delete\\b",
+    "\\bterraform\\s+destroy\\b",
+    "\\brollback\\b",
+    "\\brevoke\\s+[\\w\\s]*\\b(api key|token|secret|credential|access key|password)\\b",
+    "\\breset\\s+[\\w\\s]*\\b(api key|token|secret|credential|access key|password)\\b",
+    "\\brotate\\s+[\\w\\s]*\\b(api key|token|secret|credential|access key|password)\\b",
+    "\\barchitectur(e|al)\\s+(change|fork|shift|decision)\\b",
+    "\\bdata\\s+model\\s+change\\b",
+    "\\bschema\\s+migration\\b",
+    "\\bbreaking\\s+change\\b"
+  ]
+}

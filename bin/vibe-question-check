@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""vibe-question-check — one-way-door classifier for question tuning.
+
+Decides whether an AskUserQuestion may be suppressed by a user preference
+(two-way) or must always be asked (one-way). This is the enforcing safety layer
+for /plan-tune: a preference can silence a two-way question, never a one-way one.
+
+Usage:
+  vibe-question-check --id <registry-id> [--skill S] [--category C] [--summary "..."]
+  vibe-question-check --summary "force-push to main?"    # keyword path
+
+Prints one line: `ONE_WAY <reason>` or `TWO_WAY <reason>`. Exit 0 = TWO_WAY
+(suppressible), exit 3 = ONE_WAY (must ask). A skill gates on the exit code.
+
+Resolution order (first match wins), mirroring the classifier design — the
+registry is primary; keyword/skill-category are the fallback for ad-hoc ids;
+default is TWO_WAY only when nothing matches:
+  1. registry[id]                          -> registry
+  2. "<skill>:<category>" in one-way set    -> skill-category
+  3. summary matches a destructive pattern  -> keyword
+  4. otherwise                              -> two-way
+"""
+import argparse
+import json
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+# Installed layout symlinks skills/; the registry travels with the plan-tune skill.
+CANDIDATES = [
+    os.path.join(HERE, "..", "skills", "plan-tune", "questions.json"),
+    os.path.expanduser("~/.claude/skills/plan-tune/questions.json"),
+    os.path.expanduser("~/.vibestack/questions.json"),
+]
+
+
+def load_registry():
+    for path in CANDIDATES:
+        if os.path.isfile(path):
+            try:
+                with open(path) as f:
+                    return json.load(f)
+            except Exception:
+                continue
+    return {}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="One-way-door question classifier.")
+    ap.add_argument("--id")
+    ap.add_argument("--skill")
+    ap.add_argument("--category")
+    ap.add_argument("--summary")
+    args = ap.parse_args()
+
+    reg = load_registry()
+    registry = reg.get("registry", {})
+    one_way_cats = set(reg.get("one_way_skill_categories", []))
+    patterns = reg.get("destructive_keyword_patterns", [])
+
+    # 1. Registry lookup (primary).
+    if args.id and args.id in registry:
+        door = registry[args.id]
+        if door == "one-way":
+            print("ONE_WAY registry")
+            return 3
+        print("TWO_WAY registry")
+        return 0
+
+    # 2. Skill-category fallback.
+    if args.skill and args.category:
+        if f"{args.skill}:{args.category}" in one_way_cats:
+            print("ONE_WAY skill-category")
+            return 3
+
+    # 3. Keyword pattern match on the summary.
+    if args.summary:
+        for pat in patterns:
+            try:
+                if re.search(pat, args.summary, re.IGNORECASE):
+                    print(f"ONE_WAY keyword:{pat}")
+                    return 3
+            except re.error:
+                continue
+
+    # 4. No evidence — suppressible.
+    print("TWO_WAY default")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

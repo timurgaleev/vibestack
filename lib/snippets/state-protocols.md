@@ -45,6 +45,20 @@ skip a question whose answer the profile already settles, and respect any
 "never ask about X" preference. Manage these with `/plan-tune`. When tuning is
 off (the default), ask normally.
 
+**One-way-door safety (always enforced, even with tuning off).** Before
+suppressing ANY question because of a preference, classify it — a one-way door
+(destructive or irreversible: delete, force-push, drop, rotate a credential,
+merge/deploy approval, breaking change) is asked every time and can never be
+silenced by a preference:
+
+```bash
+~/.vibestack/bin/vibe-question-check --id "<skill>:<question-id>" --skill "<skill>" --category "<approval|clarification|routing>" --summary "<the question text>"
+```
+
+Exit 3 / `ONE_WAY` → ask it regardless of preference. Exit 0 / `TWO_WAY` → the
+preference may suppress it. If the binary is absent, fail safe: treat the
+question as one-way and ask.
+
 ### Voice
 
 Speech-to-text invocations are noisy. Treat near-miss aliases of a skill's
