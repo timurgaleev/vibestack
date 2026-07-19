@@ -374,7 +374,7 @@ Check whether this PR's claimed VERSION still points at a free slot in the queue
 BRANCH_VERSION=$(git show HEAD:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
 BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)
 BASE_VERSION=$(git show origin/$BASE_BRANCH:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
-QUEUE_JSON=$(# bin/vibe-next-version (not yet implemented) \
+QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
   --base "$BASE_BRANCH" \
   --bump patch \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
@@ -521,8 +521,13 @@ echo "TEST_FW: ${TEST_FW:-unknown}"
 ### Read specialist hit rates (adaptive gating)
 
 ```bash
-# specialist-stats not available in vibestack
+~/.vibestack/bin/vibe-specialist-stats 2>/dev/null || true
 ```
+
+Each line tags a specialist `GATE_CANDIDATE` (dispatched 10+ times, never found
+anything — safe to skip), `NEVER_GATE` (security / data-migration insurance —
+always run), or `active`. Fresh project with no history → everything is `active`,
+so the full scope-selected set runs.
 
 ### Select specialists
 

@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""vibe-specialist-stats — per-specialist hit rates for adaptive review gating.
+
+Reads the review log (all branches for this project) and aggregates, per
+specialist, how often it was dispatched and how many findings it produced.
+A specialist that has been dispatched many times and never found anything is a
+GATE_CANDIDATE — /review and /ship skip it to save a subagent. Security and
+data-migration are NEVER_GATE (insurance specialists — always run).
+
+Usage: vibe-specialist-stats [--min-dispatches N]   (default N=10)
+
+Output: one line per specialist:
+  <name>  dispatched=<D> findings=<F>  [GATE_CANDIDATE|NEVER_GATE|active]
+
+Data source: the `specialists` object on `review`/`adversarial-review` entries in
+$VIBESTACK_HOME/projects/<slug>/*-reviews.jsonl (written by vibe-review-log).
+No log yet → every specialist prints `active` (nothing gated), so a fresh project
+runs the full set.
+"""
+import argparse
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+HOME = os.environ.get("VIBESTACK_HOME", os.path.expanduser("~/.vibestack"))
+NEVER_GATE = {"security", "data-migration"}
+
+
+def slug() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        out = subprocess.run([os.path.join(here, "vibe-slug")],
+                             capture_output=True, text=True, timeout=5).stdout
+        m = re.search(r"SLUG=([^\s]+)", out)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return "unknown"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--min-dispatches", type=int, default=10)
+    args = ap.parse_args()
+
+    proj = os.path.join(HOME, "projects", slug())
+    files = glob.glob(os.path.join(proj, "*-reviews.jsonl"))
+
+    # name -> [dispatch_count, finding_count]
+    stats = {}
+    for path in files:
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except Exception:
+                        continue
+                    specs = entry.get("specialists")
+                    if not isinstance(specs, dict):
+                        continue
+                    for name, s in specs.items():
+                        if not isinstance(s, dict):
+                            continue
+                        d, f_ = stats.get(name, (0, 0))
+                        if s.get("dispatched"):
+                            d += 1
+                            f_ += int(s.get("findings", 0) or 0)
+                        stats[name] = (d, f_)
+        except Exception:
+            continue
+
+    if not stats:
+        # No history — surface the always-considered specialists as active so the
+        # skill runs its full scope-selected set.
+        for name in ("testing", "maintainability", "security", "performance",
+                     "data-migration", "api-contract", "design"):
+            print(f"{name:16} dispatched=0 findings=0  active")
+        return 0
+
+    for name in sorted(stats):
+        d, f_ = stats[name]
+        if name in NEVER_GATE:
+            tag = "NEVER_GATE"
+        elif d >= args.min_dispatches and f_ == 0:
+            tag = "GATE_CANDIDATE"
+        else:
+            tag = "active"
+        print(f"{name:16} dispatched={d} findings={f_}  {tag}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
