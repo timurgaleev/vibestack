@@ -44,7 +44,7 @@ fi
 When you're running 5-10 parallel Conductor workspaces, it helps to see — at a
 glance — which version numbers are claimed, by whom, and what slot your next
 `/ship` would land in. This skill is a read-only call into the same
-`# bin/vibe-next-version (not yet implemented)` utility `/ship` uses, but with nothing mutating.
+`~/.vibestack/bin/vibe-next-version` utility `/ship` uses, but with nothing mutating.
 Think of it as `gh pr list` for VERSION numbers.
 
 ---
@@ -81,7 +81,7 @@ they'd claim for micro/patch/minor/major. Cheap (same gh call cached by bun).
 
 ```bash
 for LEVEL in micro patch minor major; do
-  # bin/vibe-next-version (not yet implemented) \
+  ~/.vibestack/bin/vibe-next-version \
     --base "$BASE_BRANCH" \
     --bump "$LEVEL" \
     --current-version "$BASE_VERSION" \
