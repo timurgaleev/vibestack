@@ -196,7 +196,7 @@ Check diff size: `git diff <base>...HEAD --stat | tail -1`. If the diff is >200 
 
 If CEO Review is missing, mention as informational ("CEO Review not run — recommended for product changes") but do NOT block.
 
-For Design Review: run `# diff-scope not available — skip scope gating`. If `SCOPE_FRONTEND=true` and no design review (plan-design-review or design-review-lite) exists in the dashboard, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 9, but consider running /design-review for a full visual audit post-implementation." Still never block.
+For Design Review: run `eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"`. If `SCOPE_FRONTEND=true` and no design review (plan-design-review or design-review-lite) exists in the dashboard, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 9, but consider running /design-review for a full visual audit post-implementation." Still never block.
 
 Continue to Step 2 — do NOT block or ask. Ship runs its own review in Step 9.
 
@@ -1181,10 +1181,11 @@ higher confidence.
 
 ## Design Review (conditional, diff-scoped)
 
-Check if the diff touches frontend files using git diff:
+Check if the diff touches frontend files:
 
 ```bash
-# diff-scope not available — skip scope gating
+eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false}"
 ```
 
 **If `SCOPE_FRONTEND=false`:** Skip design review silently. No output.
@@ -1242,7 +1243,10 @@ Present Codex output under a `CODEX (design):` header, merged with the checklist
 ### Detect stack and scope
 
 ```bash
-# diff-scope not available — skip scope gating
+# Compute SCOPE_* from the diff (conditional specialist dispatch). All-false
+# fallback if the binary is absent — runs the always-on specialists, never errors.
+eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false}"
 # Detect stack for specialist context
 STACK=""
 [ -f Gemfile ] && STACK="${STACK}ruby "

@@ -838,8 +838,8 @@ If you want to persist deploy settings for future runs, suggest the user run `/s
 Classify the changes using git diff:
 
 ```bash
-# diff-scope not available — classify changes manually
-echo "FRONTEND=$SCOPE_FRONTEND BACKEND=$SCOPE_BACKEND DOCS=$SCOPE_DOCS CONFIG=$SCOPE_CONFIG"
+eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+echo "FRONTEND=${SCOPE_FRONTEND:-false} BACKEND=${SCOPE_BACKEND:-false} DOCS=${SCOPE_DOCS:-false} CONFIG=${SCOPE_CONFIG:-false}"
 ```
 
 **Decision tree (evaluate in order):**
