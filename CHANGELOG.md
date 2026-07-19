@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.20.0 — 2026-07-19
+
+Integrates capability from upstream infra dirs that were previously skipped, plus
+two parity fixes. Everything brand-renamed to vibestack; audit clean.
+
+### Added
+
+- **Codex CLI as an install target.** `./install --target=codex` renders the pack
+  into `~/.codex/skills/`, and `agents/openai.yaml` registers it with Codex. The
+  target list is now a data-driven registry (`TARGET_LABEL` / `TARGET_ROOT` in
+  `install`) — adding a runtime is one row per map. Codex is opt-in (excluded from
+  `all` / `--yes`) until its skill-path loading is confirmed on a real setup.
+- **Enforced one-way-door safety for question tuning.** New
+  `bin/vibe-question-check` + `skills/plan-tune/questions.json` classify every
+  question as one-way (always ask) or two-way (suppressible). A `never-ask`
+  preference can now only ever silence a two-way question — a destructive or
+  irreversible one (delete, force-push, drop, rotate-credential, merge/deploy
+  approval, breaking change) is always asked. This turns `/plan-tune` from
+  observational into enforcing; wired into the shared question-tuning protocol so
+  every skill honors it.
+- **Orchestrator injection prompts** in `lib/orchestrator/` (`lite` / `full` /
+  `plan`) — ready-made discipline prompts a remote agent can inject into a spawned
+  vibestack session, cross-linked from `/pair-agent`.
+
+### Fixed
+
+- `/design-review` now creates its `REPORT_DIR` (and `screenshots/` subdir) in the
+  setup phase; every phase writes screenshots there, but it was never initialized.
+- `/retro global` stops with a clear message when no cross-tool session-discovery
+  binary is present instead of running an empty query and fabricating a narrative.
+
 ## 1.19.0 — 2026-07-19
 
 Upstream parity sweep: closes real behavioral gaps found by a per-skill diff against

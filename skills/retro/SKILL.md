@@ -685,14 +685,18 @@ Locate and run the discovery script using this fallback chain:
 
 ```bash
 DISCOVER_BIN=""
-# global-discover not available in vibestack — skip global discovery
-DISCOVER_BIN=""
-echo "DISCOVER_BIN: $DISCOVER_BIN"
+[ -x "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-global-discover" ] && DISCOVER_BIN="${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-global-discover"
+[ -z "$DISCOVER_BIN" ] && command -v vibe-global-discover >/dev/null 2>&1 && DISCOVER_BIN="$(command -v vibe-global-discover)"
+echo "DISCOVER_BIN: ${DISCOVER_BIN:-none}"
 ```
 
-If no binary is found, skip global discovery silently.
+**Stop-guard:** if `DISCOVER_BIN` is `none`, vibestack does not ship a cross-tool
+session-discovery binary, so global mode has no data source. Do NOT fall through
+and fabricate a narrative from an empty query. STOP and say: "`/retro global`
+needs a cross-tool session-discovery binary (`vibe-global-discover`) that isn't
+installed. Run a repo-scoped retro instead: `/retro` from inside a project."
 
-Run the discovery:
+Only when a binary IS present, run the discovery:
 ```bash
 $DISCOVER_BIN --since "<window>" --format json 2>/tmp/vibestack-discover-stderr
 ```

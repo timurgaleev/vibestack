@@ -262,6 +262,15 @@ fi
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
 
+**Report directory (create it now — every phase writes screenshots and the audit here):**
+
+```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+REPORT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/designs/design-audit-$(date +%Y%m%d)"
+mkdir -p "$REPORT_DIR/screenshots"
+echo "REPORT_DIR: $REPORT_DIR"
+```
+
 {{include lib/snippets/prior-learnings.md}}
 ## UX Principles: How Users Actually Behave
 

@@ -34,45 +34,59 @@ usage() {
 Usage: ./install [options]
 
 Options:
-  --target=<list>   Comma-separated targets: claude, cursor, kiro, or all.
+  --target=<list>   Comma-separated targets: claude, cursor, kiro, codex, or all.
                     Bypasses the interactive prompt. Default behavior asks.
-  --yes, -y         Non-interactive: install into all three targets.
+                    `all` = claude, cursor, kiro (codex is opt-in, see below).
+  --yes, -y         Non-interactive: install into the default set (all three).
                     Equivalent to --target=all.
   --dry-run         Preview every output, write nothing.
   -h, --help        Show this help and exit.
 
 Default behavior:
   Interactive (TTY):     shows write plan + Enter installs detected
-  Non-interactive (CI):  installs into all three targets
+  Non-interactive (CI):  installs into the default set (claude, cursor, kiro)
+
+  `codex` is a known target (installs into ~/.codex/skills) but is excluded from
+  `all`/`--yes` until its skill-path loading is confirmed on your setup — select
+  it explicitly with `--target=codex`.
 
 Examples:
   ./install                          # Interactive: install plan + Enter
-  ./install --target=all             # All three, skip prompts
+  ./install --target=all             # claude, cursor, kiro (default set)
   ./install --target=cursor          # Cursor only
   ./install --target=cursor,kiro     # Cursor + Kiro
-  ./install --yes                    # All three, skip prompts (CI-friendly)
+  ./install --target=codex           # Codex CLI (opt-in)
+  ./install --yes                    # Default set, skip prompts (CI-friendly)
   ./install --dry-run                # Interactive preview, write nothing
 EOF
 }
 
+# Target registry (data-driven). Add a runtime by adding one row to each map;
+# label/root/detection all read from here instead of hardcoded case arms.
+declare -A TARGET_LABEL=(
+  [claude]="Claude Code"
+  [cursor]="Cursor"
+  [kiro]="Kiro"
+  [codex]="Codex CLI"
+)
+declare -A TARGET_ROOT=(
+  [claude]="$HOME/.claude/skills"
+  [cursor]="$HOME/.cursor/skills"
+  [kiro]="$HOME/.kiro/skills"
+  [codex]="$HOME/.codex/skills"
+)
+
+# Default "all"/`--yes` set — the runtimes whose skill-loading path is verified.
+# `codex` is a KNOWN target (installable via `--target=codex`) but stays out of
+# the default set until its skill-path loading is confirmed on the user's box.
 ALL_TARGETS=("claude" "cursor" "kiro")
 
 target_label() {
-  case "$1" in
-    claude) echo "Claude Code" ;;
-    cursor) echo "Cursor" ;;
-    kiro)   echo "Kiro" ;;
-    *)      echo "$1" ;;
-  esac
+  echo "${TARGET_LABEL[$1]:-$1}"
 }
 
 target_root() {
-  case "$1" in
-    claude) echo "$HOME/.claude/skills" ;;
-    cursor) echo "$HOME/.cursor/skills" ;;
-    kiro)   echo "$HOME/.kiro/skills" ;;
-    *)      echo "" ;;
-  esac
+  echo "${TARGET_ROOT[$1]:-}"
 }
 
 # Detection heuristic (v1.4.0 logic, extracted v1.5.0).
@@ -202,13 +216,12 @@ if [ -n "$TARGETS_RAW" ]; then
     IFS=',' read -ra TARGETS <<< "$TARGETS_RAW"
   fi
   for t in "${TARGETS[@]}"; do
-    case "$t" in
-      claude|cursor|kiro) ;;
-      *)
-        echo "ERROR: unknown target '$t'. Valid: claude, cursor, kiro, all." >&2
-        exit 2
-        ;;
-    esac
+    # Valid = any name in the target registry (plus the literal 'all', handled
+    # above). Keeps the check data-driven so a new registry row is enough.
+    if [ -z "${TARGET_ROOT[$t]:-}" ]; then
+      echo "ERROR: unknown target '$t'. Valid: ${!TARGET_ROOT[*]}, all." >&2
+      exit 2
+    fi
   done
 elif [ "$YES_FLAG" = "1" ]; then
   TARGETS=("${ALL_TARGETS[@]}")
