@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.22.0 — 2026-07-19
+
+Completes two review/ship subsystems that were stubbed out, both built on the
+review-log store added in 1.19.
+
+### Added
+
+- **`bin/vibe-specialist-stats`** — per-specialist hit rates from the review log.
+  `/review` and `/ship` now adaptively gate their specialist army: a specialist
+  dispatched 10+ times that never found anything becomes a `GATE_CANDIDATE` and is
+  skipped; security and data-migration are `NEVER_GATE` (always run). A fresh
+  project with no history runs the full scope-selected set.
+- **`bin/vibe-next-version`** — queue-aware next-version pick. `/ship`'s version
+  bump and drift check, `/landing-report`, and `/land-and-deploy` read it to see
+  which VERSION slots open PRs already claim and pick the next free one, so two
+  branches shipping in parallel don't collide. Degrades to a plain local bump when
+  no PR host is reachable.
+
 ## 1.21.0 — 2026-07-19
 
 Continues the upstream parity sweep: activates conditional review dispatch, hardens

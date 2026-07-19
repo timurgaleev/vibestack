@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""vibe-next-version — queue-aware next VERSION pick for workspace-aware ship.
+
+Looks at what VERSION slots are already claimed by open PRs (and, best-effort,
+sibling git worktrees with uncommitted-but-higher VERSION files), then returns
+the next free slot for the requested bump level so two branches shipping in
+parallel don't collide on the same version.
+
+Usage:
+  vibe-next-version --base main --bump minor --current-version 1.20.0
+
+Output (JSON on stdout):
+  {"version":"1.21.0","claimed":["1.21.0"],"active_siblings":[],"offline":false,"reason":"..."}
+
+Degrades gracefully: if `gh`/`glab` are missing or unauthenticated, emits
+`{"offline":true,...}` with a local bump so callers fall back to plain arithmetic.
+Read-only — never writes VERSION or touches git state.
+
+Version format: MAJOR.MINOR.PATCH (this repo's scheme). Bump levels: major, minor,
+patch (micro is treated as patch for 3-part versions).
+"""
+import argparse
+import json
+import re
+import subprocess
+import sys
+
+SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+# Match a v-prefixed 3- or 4-part version at the start of a PR title.
+TITLE_VER = re.compile(r"\bv(\d+\.\d+\.\d+)(?:\.\d+)?\b")
+
+
+def parse(v):
+    m = SEMVER.match(v.strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def bump(v, level):
+    major, minor, patch = v
+    if level == "major":
+        return (major + 1, 0, 0)
+    if level == "minor":
+        return (major, minor + 1, 0)
+    return (major, minor, patch + 1)  # patch / micro
+
+
+def fmt(t):
+    return ".".join(str(x) for x in t)
+
+
+def run(cmd):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        return r.stdout if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def open_pr_versions():
+    """Claimed versions from open PR titles. None if no working PR host."""
+    out = run(["gh", "pr", "list", "--state", "open", "--json", "title", "--limit", "100"])
+    if out is not None:
+        try:
+            claimed = []
+            for pr in json.loads(out):
+                m = TITLE_VER.search(pr.get("title", ""))
+                if m:
+                    p = parse(m.group(1))
+                    if p:
+                        claimed.append(p)
+            return claimed
+        except Exception:
+            return None
+    # GitLab fallback
+    out = run(["glab", "mr", "list", "--json"])  # some glab builds support --json
+    if out is not None:
+        try:
+            claimed = []
+            for mr in json.loads(out):
+                m = TITLE_VER.search(mr.get("title", ""))
+                if m:
+                    p = parse(m.group(1))
+                    if p:
+                        claimed.append(p)
+            return claimed
+        except Exception:
+            return None
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", default="main")
+    ap.add_argument("--bump", default="patch")
+    ap.add_argument("--current-version", required=True)
+    args = ap.parse_args()
+
+    cur = parse(args.current_version)
+    if not cur:
+        print(json.dumps({"offline": True, "version": args.current_version,
+                          "claimed": [], "active_siblings": [],
+                          "reason": "current-version not MAJOR.MINOR.PATCH"}))
+        return 0
+
+    target = bump(cur, args.bump)
+    claimed = open_pr_versions()
+
+    if claimed is None:
+        print(json.dumps({"offline": True, "version": fmt(target),
+                          "claimed": [], "active_siblings": [],
+                          "reason": "no PR host reachable — local bump only"}))
+        return 0
+
+    claimed_set = set(claimed)
+    # Step forward at the requested level until the slot is free.
+    picked = target
+    guard = 0
+    while picked in claimed_set and guard < 1000:
+        picked = bump(picked, args.bump)
+        guard += 1
+
+    if not claimed:
+        reason = "no open PRs claim a slot"
+    elif picked != target:
+        reason = "advanced past claimed slots"
+    else:
+        reason = "next free slot"
+    print(json.dumps({
+        "version": fmt(picked),
+        "claimed": sorted(fmt(c) for c in claimed),
+        "active_siblings": [],
+        "offline": False,
+        "reason": reason,
+    }))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

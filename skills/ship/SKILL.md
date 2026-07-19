@@ -1272,8 +1272,12 @@ echo "TEST_FW: ${TEST_FW:-unknown}"
 ### Read specialist hit rates (adaptive gating)
 
 ```bash
-# specialist-stats not available in vibestack
+~/.vibestack/bin/vibe-specialist-stats 2>/dev/null || true
 ```
+
+Each line tags a specialist `GATE_CANDIDATE` (dispatched 10+ times, never found
+anything — safe to skip), `NEVER_GATE` (security / data-migration insurance —
+always run), or `active`. Fresh project → everything `active`, full set runs.
 
 ### Select specialists
 
@@ -1738,7 +1742,7 @@ fi
 Read the `STATE:` line and dispatch:
 
 - **FRESH** → proceed with the bump action below (steps 1–4).
-- **ALREADY_BUMPED** → skip the bump by default, BUT check for queue drift first: call `# bin/vibe-next-version (not yet implemented)` with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`), compare its `.version` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
+- **ALREADY_BUMPED** → skip the bump by default, BUT check for queue drift first: call `~/.vibestack/bin/vibe-next-version` with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`), compare its `.version` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
 - **DRIFT_STALE_PKG** → a prior `/ship` bumped `VERSION` but failed to update `package.json`. Run the sync-only repair block below (after step 4). Do NOT re-bump. Reuse `CURRENT_VERSION` for CHANGELOG and PR body. (Queue check still runs in ALREADY_BUMPED terms after repair.)
 - **DRIFT_UNEXPECTED** → `/ship` has halted (exit 1). Resolve manually; /ship cannot tell which file is authoritative.
 
@@ -1754,10 +1758,10 @@ Read the `STATE:` line and dispatch:
 
    Save the chosen level as `BUMP_LEVEL` (one of `major`, `minor`, `patch`, `micro`). This is the user-intended level. The next step decides *placement* — the level stays the same even if queue-aware allocation has to advance past a claimed slot.
 
-3. **Queue-aware version pick (workspace-aware ship, v1.6.4.0+).** Call `# bin/vibe-next-version (not yet implemented)` to see what's already claimed by open PRs + active sibling Conductor worktrees, then render the queue state to the user:
+3. **Queue-aware version pick (workspace-aware ship, v1.6.4.0+).** Call `~/.vibestack/bin/vibe-next-version` to see what's already claimed by open PRs + active sibling Conductor worktrees, then render the queue state to the user:
 
    ```bash
-   QUEUE_JSON=$(# bin/vibe-next-version (not yet implemented) \
+   QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
      --base <base> \
      --bump "$BUMP_LEVEL" \
      --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
