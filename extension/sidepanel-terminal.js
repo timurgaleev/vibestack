@@ -974,7 +974,7 @@
    *
    * v1.44 patience overhaul: no more 15s give-up. The user already opened
    * the sidebar; giving up tells them "you did something wrong" when the
-   * truth is the daemon is slow to boot (or restarting via the upstream
+   * truth is the daemon is slow to boot (or restarting via the reference
    * supervisor). We poll forever at 2s intervals with ascending status
    * messages so the user knows we're still trying, and ONLY abort on
    * explicit signals: state transition out of IDLE (connect succeeded

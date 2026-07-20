@@ -256,7 +256,7 @@ $B --headed --proxy socks5://user:pass@host:1080 \
 
 **Container support.** `--headed` on Linux without `DISPLAY` automatically picks a free X display (`:99`, `:100`, ...) and spawns Xvfb. Cleanup on `$B disconnect` validates the recorded PID's `/proc/<pid>/cmdline` matches `Xvfb` AND start-time matches before sending any signal — no PID-reuse footguns. Standard Debian/Ubuntu containers work out of the box; minimal images (alpine, distroless) may also need fonts/dbus/gtk libs for headed Chromium to render.
 
-**Failure modes.** SOCKS5 upstream rejected or unreachable → fail-fast at startup with a redacted error after 3 retries (5s budget). Mid-stream upstream drop → browse kills the affected client connection only; no transport retries (which could corrupt browser traffic). Mismatched daemon config → exit 1 with a `$B disconnect` hint.
+**Failure modes.** SOCKS5 reference rejected or unreachable → fail-fast at startup with a redacted error after 3 retries (5s budget). Mid-stream reference drop → browse kills the affected client connection only; no transport retries (which could corrupt browser traffic). Mismatched daemon config → exit 1 with a `$B disconnect` hint.
 
 ## Snapshot Flags
 

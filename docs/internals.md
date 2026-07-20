@@ -7,7 +7,7 @@ preamble flags, and the memory architecture. For the skill catalogue see
 
 ## Architecture: brain vs. local state
 
-vibestack splits durable knowledge the same way upstream does:
+vibestack splits durable knowledge the same way reference does:
 
 - **memex is the brain** — a hosted Postgres + pgvector MCP server. It is the
   **read-only semantic-recall** layer: skills query it for product/goal/prior
@@ -16,7 +16,7 @@ vibestack splits durable knowledge the same way upstream does:
 - **Local state is the record** — durable decisions, learnings, analytics, and
   per-project artifacts live under `~/.vibestack/` (override with
   `$VIBESTACK_HOME`). Decisions and artifacts are **local and reliable; the brain
-  is not required for them** — the same split the upstream uses.
+  is not required for them** — the same split the reference uses.
 
 ```
 ~/.vibestack/
@@ -47,7 +47,7 @@ vibestack splits durable knowledge the same way upstream does:
 | `vibe-update-check` | Throttled (24h) "newer version available" nag |
 | `vibe-first-task-detect` | Classify the repo into one first-task bucket for the first-run scaffold (local git + FS only, emits one enum token) |
 | `vibe-decision-log` / `vibe-decision-search` | Event-sourced local decision store (`--supersede` / `--redact`, secret rejection) |
-| `vibe-parity-audit` | Maintainer tool — prove skills still mirror upstream (runs from the repo, not installed) |
+| `vibe-parity-audit` | Maintainer tool — prove skills still mirror reference (runs from the repo, not installed) |
 
 `./install` symlinks every `bin/vibe-*` except `vibe-parity-audit`.
 

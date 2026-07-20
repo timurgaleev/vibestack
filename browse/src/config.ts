@@ -192,7 +192,7 @@ export function resolveChromiumProfile(explicit?: string): string {
  *      the absolute form of $CHROMIUM_PROFILE env value
  *
  * Prevents accidentally deleting lock files from an unrelated directory if
- * profile resolution is misconfigured upstream (CWD drift, env injection).
+ * profile resolution is misconfigured reference (CWD drift, env injection).
  *
  * Caller MUST ensure external coordination has already guaranteed no live
  * peer is using this profile (gbd.lock for vibestack-browser; single-instance CLI

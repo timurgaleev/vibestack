@@ -101,7 +101,7 @@ const handlers = {
   },
   // Cookies: get | set <json> | save <path> | load <path> | import-cdp <cdp-url>.
   // import-cdp connects to a Chrome started with --remote-debugging-port and copies
-  // its cookies into this session (the upstream's CDP cookie-import, brand-clean).
+  // its cookies into this session (the reference's CDP cookie-import, brand-clean).
   async cookies({ args }) {
     const op = args[0] ?? 'get'
     if (op === 'get') return { cookies: await context.cookies() }
