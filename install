@@ -483,6 +483,24 @@ if [ "$DRY_RUN" != "1" ]; then
     echo "  + vibestack tools → $VIBE_BIN"
   fi
 
+  # Full browse daemon (optional). When bun is available, install the daemon's
+  # deps so /browse + /open-browser get the rich TypeScript daemon (CDP inspector,
+  # PTY, sidebar extension, content-security). Idempotent; non-fatal — /browse
+  # falls back to the bundled stateless Playwright shim when this is absent.
+  if [ -f "$REPO_DIR/package.json" ] && command -v bun >/dev/null 2>&1; then
+    if [ ! -d "$REPO_DIR/node_modules/playwright" ]; then
+      echo "  + browse daemon: installing deps (bun)…"
+      if ( cd "$REPO_DIR" && bun install >/dev/null 2>&1 ); then
+        ( cd "$REPO_DIR" && bun run vendor:xterm >/dev/null 2>&1 ) || true
+        echo "    browse daemon ready"
+      else
+        echo "    browse deps failed — /browse uses the stateless shim"
+      fi
+    else
+      echo "  + browse daemon deps present"
+    fi
+  fi
+
   if ! echo "$PATH" | tr ':' '\n' | grep -qF "$VIBE_BIN"; then
     echo ""
     echo "  NOTE: Add $VIBE_BIN to your PATH:"
