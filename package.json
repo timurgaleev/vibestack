@@ -1,0 +1,40 @@
+{
+  "name": "vibestack",
+  "version": "1.24.0",
+  "description": "vibestack — AI coding skills + a fast headless browser daemon. One repo, one install, the whole workflow.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run browse/src/cli.ts",
+    "server": "bun run browse/src/server.ts",
+    "start": "bun run browse/src/server.ts",
+    "build": "bash browse/scripts/build-node-server.sh",
+    "vendor:xterm": "mkdir -p extension/lib && cp node_modules/xterm/lib/xterm.js extension/lib/xterm.js && cp node_modules/xterm/css/xterm.css extension/lib/xterm.css && cp node_modules/xterm-addon-fit/lib/xterm-addon-fit.js extension/lib/xterm-addon-fit.js"
+  },
+  "dependencies": {
+    "@ngrok/ngrok": "^1.7.0",
+    "diff": "^7.0.0",
+    "marked": "^18.0.2",
+    "playwright": "^1.58.2",
+    "socks": "^2.8.8"
+  },
+  "optionalDependencies": {
+    "@huggingface/transformers": "^4.1.0"
+  },
+  "devDependencies": {
+    "xterm": "5",
+    "xterm-addon-fit": "^0.8.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "keywords": [
+    "browser",
+    "automation",
+    "playwright",
+    "headless",
+    "cli",
+    "ai-agent",
+    "devtools"
+  ]
+}

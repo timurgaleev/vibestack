@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# browse — launcher for the vibestack browse daemon/CLI.
+# Runs the TypeScript CLI directly on bun (no compile step). Resolves the repo
+# root from this script's location (browse/bin/browse -> repo root two levels up).
+set -euo pipefail
+
+_SELF="$(cd "$(dirname "$0")" && pwd)"
+_REPO="$(cd "$_SELF/../.." && pwd)"   # browse/bin -> browse -> repo root
+_CLI="$_REPO/browse/src/cli.ts"
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "BROWSE_NOT_AVAILABLE: bun not found (the full browse daemon needs bun; the stateless shim is the fallback)" >&2
+  exit 2
+fi
+if [ ! -f "$_CLI" ]; then
+  echo "BROWSE_NOT_AVAILABLE: $_CLI missing" >&2
+  exit 2
+fi
+if [ ! -d "$_REPO/node_modules/playwright" ]; then
+  echo "BROWSE_NOT_AVAILABLE: dependencies not installed (run: cd \"$_REPO\" && bun install)" >&2
+  exit 2
+fi
+
+exec bun run "$_CLI" "$@"
