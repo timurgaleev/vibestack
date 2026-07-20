@@ -9,6 +9,25 @@
 # BROWSE_NOT_AVAILABLE and exits 0 so a skill's SETUP can degrade to text-only.
 set -euo pipefail
 
+# ── Prefer the full bun browse daemon when it's installed ────────────────────
+# Resolve this script's REAL path (it is symlinked into the installed skills
+# dir), find the repo root, and delegate to browse/bin/browse — the full
+# TypeScript daemon (rich HTTP API, CDP inspector, PTY, content-security). It
+# self-checks bun + deps and exits 2 (BROWSE_NOT_AVAILABLE) when unavailable, in
+# which case we fall through to the stateless .mjs shim below.
+_src="${BASH_SOURCE[0]}"
+while [ -L "$_src" ]; do
+  _ld="$(cd -P "$(dirname "$_src")" && pwd)"; _src="$(readlink "$_src")"
+  case "$_src" in /*) ;; *) _src="$_ld/$_src" ;; esac
+done
+_REAL_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
+_REPO="$(cd "$_REAL_DIR/../../.." 2>/dev/null && pwd || true)"
+_FULL="$_REPO/browse/bin/browse"
+if [ "${VIBE_BROWSE_FORCE_SHIM:-0}" != "1" ] && [ -x "$_FULL" ] \
+   && command -v bun >/dev/null 2>&1 && [ -d "$_REPO/node_modules/playwright" ]; then
+  exec "$_FULL" "$@"
+fi
+
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME="$SELF_DIR/../runtime/vibe-browse.mjs"
 RUNTIME_DAEMON="$SELF_DIR/../runtime/vibe-browse-daemon.mjs"
