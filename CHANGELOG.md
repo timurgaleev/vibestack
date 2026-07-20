@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.24.0 — 2026-07-20
+
+### Added
+
+- **Full browser daemon + sidebar extension.** vibestack now ships the complete
+  headless-browser subsystem (`browse/`, ~24k lines of TypeScript on bun) and the
+  Chrome MV3 sidebar extension (`extension/`), brand-renamed and adapted to
+  vibestack's paths. This replaces the ~640-line stateless shim as the primary
+  `$B` backend — it adds a rich HTTP daemon (`:34567`), the CDP inspector,
+  persistent element refs, an in-browser PTY terminal, a cookie-picker UI,
+  content-security wrapping of page text, and ngrok tunnelling.
+  - `browse/bin/browse` launches the daemon/CLI directly on bun — no compile step.
+  - `skills/browse/bin/vibe-browse` now **delegates to the full daemon** when bun
+    and the deps are present, and falls back to the bundled stateless Playwright
+    shim otherwise (`VIBE_BROWSE_FORCE_SHIM=1` forces the shim). Every skill that
+    uses `$B` picks up the daemon automatically.
+  - `./install` installs the daemon's deps (`bun install`) and vendors xterm into
+    the extension when bun is available — idempotent and non-fatal; a machine
+    without bun keeps working on the shim.
+  - The ML prompt-injection classifier's `@huggingface/transformers` dependency is
+    `optional` (lazy-loaded), so the base install stays light.
+
 ## 1.23.0 — 2026-07-20
 
 ### Removed
