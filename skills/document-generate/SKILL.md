@@ -50,14 +50,18 @@ fi
 
 ## Step 0: Detect base branch
 
-Determine which branch this work targets, or the repo's default branch:
+Determine which branch this work targets, or the repo's default branch. Probes
+GitHub (`gh`) and GitLab (`glab`) before the git-native fallback, so the base is
+correct on either host:
 
 ```bash
-BASE=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null \
-  || git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' \
-  || git rev-parse --verify origin/main >/dev/null 2>&1 && echo main \
-  || git rev-parse --verify origin/master >/dev/null 2>&1 && echo master \
-  || echo main)
+BASE=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null)
+[ -z "$BASE" ] && BASE=$(glab mr view -F json 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('target_branch',''))" 2>/dev/null)
+[ -z "$BASE" ] && BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+[ -z "$BASE" ] && git rev-parse --verify origin/main >/dev/null 2>&1 && BASE=main
+[ -z "$BASE" ] && git rev-parse --verify origin/master >/dev/null 2>&1 && BASE=master
+[ -z "$BASE" ] && BASE=main
 echo "Base branch: $BASE"
 ```
 
