@@ -460,15 +460,6 @@ Triggers: `import browser cookies`, `login to test site`, `setup authenticated s
 
 ---
 
-### `/setup-memory`
-Set up secondbrain persistent memory for this coding agent.
-
-Install the secondbrain CLI, initialize a local PGLite or Supabase brain, register as a Claude Code MCP tool, and capture per-remote trust policy. Three paths: PGLite local (zero accounts), Supabase existing URL, or Supabase auto-provision. Shortcut modes: `--repo` (policy only), `--switch` (engine migration), `--resume-provision`, `--cleanup-orphans`.
-
-Triggers: `setup memory`, `setup secondbrain`, `install secondbrain`, `connect secondbrain`
-
----
-
 ## Web & Tooling (added v1.17.x)
 
 ### `/scrape`
