@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.22.1 — 2026-07-20
+
+Parity polish.
+
+### Added
+
+- `/careful` and `/freeze` now emit a structured `hook_fire` analytics event when
+  they warn/deny — gated behind the same `VIBESTACK_DEBUG` opt-in as the existing
+  hook log (no unconditional egress), recording only skill/decision/pattern/ts/repo,
+  never the command or file path.
+
+### Fixed
+
+- `/document-generate` base-branch detection probes GitLab (`glab`) as well as
+  GitHub before the git-native fallback, so it resolves the correct base on either
+  host.
+
 ## 1.22.0 — 2026-07-19
 
 Completes two review/ship subsystems that were stubbed out, both built on the
