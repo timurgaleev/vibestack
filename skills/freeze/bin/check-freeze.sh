@@ -40,6 +40,24 @@ _vibestack_log() {
   return 0
 }
 
+# Opt-in structured analytics event (same VIBESTACK_DEBUG gate — no unconditional
+# egress). Records only skill/decision/pattern/ts/repo, never the file path.
+_vibestack_analytics() {
+  [ "${VIBESTACK_DEBUG:-0}" = "1" ] || return 0
+  (
+    set +e
+    local decision="$1" pattern="$2"
+    local dir="${VIBESTACK_HOME:-$HOME/.vibestack}/analytics"
+    mkdir -p "$dir" 2>/dev/null
+    local ts repo
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    repo=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo unknown)
+    printf '{"event":"hook_fire","skill":"freeze","decision":"%s","pattern":"%s","ts":"%s","repo":"%s"}\n' \
+      "$decision" "$pattern" "$ts" "$repo" >> "$dir/skill-usage.jsonl" 2>/dev/null
+  ) 2>/dev/null
+  return 0
+}
+
 INPUT=$(cat)
 
 STATE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
@@ -118,6 +136,7 @@ case "$FILE_PATH" in
     ;;
   *)
     _vibestack_log freeze deny outside-boundary "$FILE_PATH (boundary=$FREEZE_DIR)"
+    _vibestack_analytics deny boundary_deny
     printf '{"permissionDecision":"deny","message":"[freeze] Blocked: %s is outside the freeze boundary (%s). Only edits within the frozen directory are allowed."}\n' "$FILE_PATH" "$FREEZE_DIR"
     ;;
 esac

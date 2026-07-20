@@ -44,6 +44,25 @@ _vibestack_log() {
   return 0
 }
 
+# Opt-in structured analytics event (same VIBESTACK_DEBUG gate as hook.log — no
+# unconditional egress, honoring the no-telemetry-by-default policy). Records
+# only skill/decision/pattern/ts/repo, never the command text.
+_vibestack_analytics() {
+  [ "${VIBESTACK_DEBUG:-0}" = "1" ] || return 0
+  (
+    set +e
+    local decision="$1" pattern="$2"
+    local dir="${VIBESTACK_HOME:-$HOME/.vibestack}/analytics"
+    mkdir -p "$dir" 2>/dev/null
+    local ts repo
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    repo=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo unknown)
+    printf '{"event":"hook_fire","skill":"careful","decision":"%s","pattern":"%s","ts":"%s","repo":"%s"}\n' \
+      "$decision" "$pattern" "$ts" "$repo" >> "$dir/skill-usage.jsonl" 2>/dev/null
+  ) 2>/dev/null
+  return 0
+}
+
 INPUT=$(cat)
 
 # Extract "command" field — grep/sed first, python fallback for escaped quotes
@@ -121,6 +140,7 @@ fi
 
 if [ -n "$WARN" ]; then
   _vibestack_log careful ask "$WARN" "$CMD"
+  _vibestack_analytics ask "$(printf '%s' "$WARN" | cut -d: -f1)"
   WARN_ESCAPED=$(printf '%s' "$WARN" | sed 's/"/\\"/g')
   printf '{"permissionDecision":"ask","message":"[careful] %s"}\n' "$WARN_ESCAPED"
 else
