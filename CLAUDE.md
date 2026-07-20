@@ -197,11 +197,11 @@ The upstream identity and the brand map live ONLY in a local, untracked config
 bin/vibe-parity-audit --init      # write a starter config under ~/.vibestack
 # fill in upstream_repo + remap/skip/sub lines, then:
 bin/vibe-parity-audit             # per-skill coverage + median + PASS/FAIL
-bin/vibe-parity-audit --show-unmatched setup-memory   # drill into one skill
+bin/vibe-parity-audit --show-unmatched make-pdf   # drill into one skill
 ```
 
 Exits 0 if median coverage ≥ threshold (default 0.85). Low scorers are expected
-for the most-adapted skills (e.g. `setup-memory`, `make-pdf`); use
+for the most-adapted skills (e.g. `make-pdf`); use
 `--show-unmatched <skill>` to confirm each gap is a documented adaptation, not
 drift.
 

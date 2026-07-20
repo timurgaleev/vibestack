@@ -83,7 +83,6 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | reroll-buddy | — | — | — | full / full / full |
 | setup-browser-cookies | — | — | — | full / full / full |
 | setup-deploy | — | — | — | full / full / full |
-| setup-memory | — | — | — | full / full / full |
 | ship | — | yes (in body, not hook) | — | full / full / full |
 | tdd | — | — | — | full / full / full |
 | unfreeze | — | — | — | full / full / full |
