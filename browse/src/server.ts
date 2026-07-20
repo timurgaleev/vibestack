@@ -47,8 +47,8 @@ import { safeUnlink, safeUnlinkQuiet, safeKill } from './error-handling';
 import { readAgentRecord, killAgentByRecord, clearAgentRecord, agentRecordPath, spawnTerminalAgent } from './terminal-agent-control';
 import { isProcessAlive } from './error-handling';
 import { sanitizeBody, stripLoneSurrogateEscapes } from './sanitize';
-import { startSocksBridge, testUpstream, type BridgeHandle } from './socks-bridge';
-import { parseProxyConfig, toUpstreamConfig, ProxyConfigError } from './proxy-config';
+import { startSocksBridge, testReference, type BridgeHandle } from './socks-bridge';
+import { parseProxyConfig, toReferenceConfig, ProxyConfigError } from './proxy-config';
 import { redactProxyUrl } from './proxy-redact';
 import { shouldSpawnXvfb, pickFreeDisplay, spawnXvfb, xvfbInstallHint, type XvfbHandle } from './xvfb';
 import { logTunnelDenial } from './tunnel-denial-log';
@@ -2868,7 +2868,7 @@ export async function start() {
   // ─── Proxy config (D8 + codex F5) ──────────────────────────────
   // BROWSE_PROXY_URL is set by the CLI when --proxy was passed. For SOCKS5
   // with auth, we run a local 127.0.0.1 bridge that relays to the
-  // authenticated upstream (Chromium can't do SOCKS5 auth itself). For
+  // authenticated reference (Chromium can't do SOCKS5 auth itself). For
   // HTTP/HTTPS or unauthenticated SOCKS5, we pass the URL directly to
   // Chromium's proxy.server option.
   let proxyBridge: BridgeHandle | null = null;
@@ -2890,25 +2890,25 @@ export async function start() {
     }
 
     if (parsed.scheme === 'socks5' && parsed.hasAuth) {
-      // Pre-flight: verify upstream accepts our creds before launching
+      // Pre-flight: verify reference accepts our creds before launching
       // Chromium. 5s budget, 3 retries with 500ms backoff (D4: handles VPN
       // warm-up race). On failure, exit with redacted error.
-      console.log(`[browse] Testing SOCKS5 upstream ${redactProxyUrl(proxyUrl)}...`);
+      console.log(`[browse] Testing SOCKS5 reference ${redactProxyUrl(proxyUrl)}...`);
       try {
-        const test = await testUpstream({
-          upstream: toUpstreamConfig(parsed),
+        const test = await testReference({
+          reference: toReferenceConfig(parsed),
           budgetMs: 5000,
           retries: 3,
           backoffMs: 500,
         });
-        console.log(`[browse] [proxy] upstream test ok in ${test.ms}ms (${test.attempts} attempt${test.attempts === 1 ? '' : 's'})`);
+        console.log(`[browse] [proxy] reference test ok in ${test.ms}ms (${test.attempts} attempt${test.attempts === 1 ? '' : 's'})`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[browse] [proxy] FAIL upstream ${redactProxyUrl(proxyUrl)}: ${msg}`);
+        console.error(`[browse] [proxy] FAIL reference ${redactProxyUrl(proxyUrl)}: ${msg}`);
         process.exit(1);
       }
 
-      proxyBridge = await startSocksBridge({ upstream: toUpstreamConfig(parsed) });
+      proxyBridge = await startSocksBridge({ reference: toReferenceConfig(parsed) });
       console.log(`[browse] [proxy] bridge listening on 127.0.0.1:${proxyBridge.port}`);
       browserManager.setProxyConfig({ server: `socks5://127.0.0.1:${proxyBridge.port}` });
     } else {

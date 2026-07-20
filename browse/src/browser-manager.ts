@@ -152,7 +152,7 @@ export class BrowserManager {
   // Proxy config applied to chromium.launch() when set (D8). Set by server.ts
   // at startup based on BROWSE_PROXY_URL. For SOCKS5 with auth, server.ts
   // points this at the local bridge (socks5://127.0.0.1:<bridgePort>); for
-  // HTTP/HTTPS or unauth SOCKS5, it's the upstream URL directly.
+  // HTTP/HTTPS or unauth SOCKS5, it's the reference URL directly.
   private proxyConfig: { server: string; username?: string; password?: string } | null = null;
   private pages: Map<number, Page> = new Map();
   private tabSessions: Map<number, TabSession> = new Map();

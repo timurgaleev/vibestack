@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vibe-design — design-mockup generation via OpenAI's image model (the same
-# backend the upstream design daemon uses). Detect-and-use: needs OPENAI_API_KEY
+# backend the reference design daemon uses). Detect-and-use: needs OPENAI_API_KEY
 # and curl, otherwise prints DESIGN_NOT_AVAILABLE so a skill degrades to text.
 #
 # Usage:
@@ -57,7 +57,7 @@ for i, d in enumerate(data):
 PY
     ;;
   check | compare | serve | approve)
-    # The comparison-board / vision-critique verbs need the full upstream design
+    # The comparison-board / vision-critique verbs need the full reference design
     # daemon; vibestack generates variants only. Skip gracefully (exit 0) so a
     # skill degrades instead of crashing.
     echo "DESIGN_${1}_NOT_SUPPORTED: vibestack generates design variants only"

@@ -11,7 +11,7 @@
  */
 
 import { createHash } from 'crypto';
-import type { UpstreamConfig } from './socks-bridge';
+import type { ReferenceConfig } from './socks-bridge';
 
 export interface ParsedProxyConfig {
   /** Original scheme: 'socks5' | 'http' | 'https' */
@@ -114,8 +114,8 @@ export function parseProxyConfig(opts: {
   };
 }
 
-/** Convert a ParsedProxyConfig to the UpstreamConfig shape socks-bridge wants. */
-export function toUpstreamConfig(cfg: ParsedProxyConfig): UpstreamConfig {
+/** Convert a ParsedProxyConfig to the ReferenceConfig shape socks-bridge wants. */
+export function toReferenceConfig(cfg: ParsedProxyConfig): ReferenceConfig {
   return {
     host: cfg.host,
     port: cfg.port,

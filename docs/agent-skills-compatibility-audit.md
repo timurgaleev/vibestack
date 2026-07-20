@@ -214,7 +214,7 @@ agent to activate `/careful` then run `rm -rf /tmp/vibestack-careful-test/file.t
   guardrail here is me, not a hook."_
 - Kiro binary doesn't expose any `*_SKILL_DIR` env var that would expand
   `${CLAUDE_SKILL_DIR}`. Kiro's `preToolUse` framework exists (added per
-  upstream amazon-q-developer-cli PR #2875) but doesn't honor Claude-
+  reference amazon-q-developer-cli PR #2875) but doesn't honor Claude-
   Code-formatted hook commands.
 - **Net effect for Kiro users:** ⚠️ **No automatic protection from
   destructive commands.** The `/careful` skill loads and instructs the

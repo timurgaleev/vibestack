@@ -28,19 +28,19 @@ export function redactProxyUrl(input: string | null | undefined): string {
 }
 
 /**
- * Redact creds in an upstream config object (host/port/userId/password).
+ * Redact creds in an reference config object (host/port/userId/password).
  * Returns a plain object suitable for logging.
  */
-export function redactUpstream(upstream: {
+export function redactReference(reference: {
   host: string;
   port: number;
   userId?: string;
   password?: string;
 }): { host: string; port: number; userId?: string; password?: string } {
   return {
-    host: upstream.host,
-    port: upstream.port,
-    ...(upstream.userId ? { userId: REDACTED } : {}),
-    ...(upstream.password ? { password: REDACTED } : {}),
+    host: reference.host,
+    port: reference.port,
+    ...(reference.userId ? { userId: REDACTED } : {}),
+    ...(reference.password ? { password: REDACTED } : {}),
   };
 }

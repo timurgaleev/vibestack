@@ -1,15 +1,15 @@
 /**
  * Local SOCKS5 bridge — accepts unauthenticated connections on 127.0.0.1:<ephemeral>
- * and relays them through an authenticated upstream SOCKS5 proxy.
+ * and relays them through an authenticated reference SOCKS5 proxy.
  *
  * Why this exists: Chromium does not prompt for SOCKS5 auth at launch. To use
- * an auth-required upstream (residential SOCKS5 from a VPN provider, for
+ * an auth-required reference (residential SOCKS5 from a VPN provider, for
  * example), we run a no-auth listener locally that the browser talks to, and
- * the bridge handles the auth handshake with upstream.
+ * the bridge handles the auth handshake with reference.
  *
  * Architecture:
  *   Chromium  →  socks5://127.0.0.1:<ephemeral>  (this bridge, no auth)
- *                  └→ authenticated SOCKS5 to upstream  →  destination
+ *                  └→ authenticated SOCKS5 to reference  →  destination
  *
  * Ported from wintermute's scripts/socks-bridge.mjs with TS types, ephemeral
  * port (no hardcoded 1090), 127.0.0.1-only bind, and a stream-error policy
@@ -21,7 +21,7 @@
 import * as net from 'net';
 import { SocksClient, type SocksProxy } from 'socks';
 
-export interface UpstreamConfig {
+export interface ReferenceConfig {
   host: string;
   port: number;
   userId?: string;
@@ -46,15 +46,15 @@ const ATYP_IPV6 = 0x04;
 const REPLY_SUCCESS = 0x00;
 const REPLY_GENERAL_FAILURE = 0x01;
 const REPLY_HOST_UNREACHABLE = 0x04;
-const UPSTREAM_CONNECT_TIMEOUT_MS = 15000;
+const PROXY_CONNECT_TIMEOUT_MS = 15000;
 
-function buildUpstream(upstream: UpstreamConfig): SocksProxy {
+function buildReference(reference: ReferenceConfig): SocksProxy {
   return {
-    host: upstream.host,
-    port: upstream.port,
+    host: reference.host,
+    port: reference.port,
     type: 5,
-    ...(upstream.userId ? { userId: upstream.userId } : {}),
-    ...(upstream.password ? { password: upstream.password } : {}),
+    ...(reference.userId ? { userId: reference.userId } : {}),
+    ...(reference.password ? { password: reference.password } : {}),
   };
 }
 
@@ -94,18 +94,18 @@ function writeReply(sock: net.Socket, code: number): void {
 }
 
 /**
- * Start a local SOCKS5 bridge that relays to an authenticated upstream.
+ * Start a local SOCKS5 bridge that relays to an authenticated reference.
  * Listens on 127.0.0.1 only (never 0.0.0.0). port: 0 picks an ephemeral port.
  *
  * Stream-error policy: on any error during a relayed connection, the affected
- * client socket and its upstream pair are destroyed. No transport retries.
+ * client socket and its reference pair are destroyed. No transport retries.
  * Browser sees a proxy/connection error and surfaces it as such.
  */
 export async function startSocksBridge(opts: {
-  upstream: UpstreamConfig;
+  reference: ReferenceConfig;
   port?: number;
 }): Promise<BridgeHandle> {
-  const upstreamProxy = buildUpstream(opts.upstream);
+  const referenceProxy = buildReference(opts.reference);
   const requestedPort = opts.port ?? 0;
   const inFlight = new Set<net.Socket>();
 
@@ -133,14 +133,14 @@ export async function startSocksBridge(opts: {
 
     let state: State = 'greeting';
     let buf = Buffer.alloc(0);
-    let upstreamSocket: net.Socket | null = null;
+    let referenceSocket: net.Socket | null = null;
 
     const killBoth = (reason?: string) => {
       void reason;
       state = 'closed';
       try { clientSocket.destroy(); } catch { /* already gone */ }
-      if (upstreamSocket) {
-        try { upstreamSocket.destroy(); } catch { /* already gone */ }
+      if (referenceSocket) {
+        try { referenceSocket.destroy(); } catch { /* already gone */ }
       }
     };
 
@@ -180,35 +180,35 @@ export async function startSocksBridge(opts: {
         }
         state = 'connecting';
         // Pause client reads so any post-handshake bytes don't get dropped.
-        // We replay `remainder` after upstream is established.
+        // We replay `remainder` after reference is established.
         clientSocket.pause();
         SocksClient.createConnection({
-          proxy: upstreamProxy,
+          proxy: referenceProxy,
           command: 'connect',
           destination: { host: dest.host, port: dest.port },
-          timeout: UPSTREAM_CONNECT_TIMEOUT_MS,
+          timeout: PROXY_CONNECT_TIMEOUT_MS,
         }).then((result) => {
           if (state === 'closed') {
             try { result.socket.destroy(); } catch { /* shutdown */ }
             return;
           }
-          upstreamSocket = result.socket;
+          referenceSocket = result.socket;
           writeReply(clientSocket, REPLY_SUCCESS);
           // Replay any pre-buffered post-handshake bytes BEFORE we pipe.
           if (remainder.length > 0) {
-            try { upstreamSocket.write(remainder); } catch { killBoth('replay write failed'); return; }
+            try { referenceSocket.write(remainder); } catch { killBoth('replay write failed'); return; }
           }
           // Wire the rest of the connection through the pipe.
-          upstreamSocket.on('error', () => killBoth('upstream error'));
-          upstreamSocket.on('close', () => { try { clientSocket.destroy(); } catch { /* already gone */ } });
+          referenceSocket.on('error', () => killBoth('reference error'));
+          referenceSocket.on('close', () => { try { clientSocket.destroy(); } catch { /* already gone */ } });
           clientSocket.removeListener('data', onData);
-          clientSocket.pipe(upstreamSocket);
-          upstreamSocket.pipe(clientSocket);
+          clientSocket.pipe(referenceSocket);
+          referenceSocket.pipe(clientSocket);
           clientSocket.resume();
           state = 'piped';
         }).catch(() => {
           writeReply(clientSocket, REPLY_HOST_UNREACHABLE);
-          killBoth('upstream connect failed');
+          killBoth('reference connect failed');
         });
         return;
       }
@@ -244,9 +244,9 @@ export async function startSocksBridge(opts: {
   };
 }
 
-export interface UpstreamTestOpts {
-  upstream: UpstreamConfig;
-  /** Hostname to test connectivity to through the upstream. Default 1.1.1.1. */
+export interface ReferenceTestOpts {
+  reference: ReferenceConfig;
+  /** Hostname to test connectivity to through the reference. Default 1.1.1.1. */
   testHost?: string;
   /** Port. Default 443. */
   testPort?: number;
@@ -259,7 +259,7 @@ export interface UpstreamTestOpts {
 }
 
 /**
- * Pre-flight: verify the upstream proxy actually accepts our credentials and
+ * Pre-flight: verify the reference proxy actually accepts our credentials and
  * can reach a known endpoint. Called before chromium.launch so failures
  * surface as a clear startup error instead of a confusing 'connection
  * refused' on first navigation.
@@ -270,8 +270,8 @@ export interface UpstreamTestOpts {
  * Throws on final failure. Caller is responsible for redacting any error
  * that may leak credentials.
  */
-export async function testUpstream(opts: UpstreamTestOpts): Promise<{ ok: true; attempts: number; ms: number }> {
-  const upstreamProxy = buildUpstream(opts.upstream);
+export async function testReference(opts: ReferenceTestOpts): Promise<{ ok: true; attempts: number; ms: number }> {
+  const referenceProxy = buildReference(opts.reference);
   const testHost = opts.testHost ?? '1.1.1.1';
   const testPort = opts.testPort ?? 443;
   const budgetMs = opts.budgetMs ?? 5000;
@@ -289,7 +289,7 @@ export async function testUpstream(opts: UpstreamTestOpts): Promise<{ ok: true; 
 
     try {
       const result = await SocksClient.createConnection({
-        proxy: upstreamProxy,
+        proxy: referenceProxy,
         command: 'connect',
         destination: { host: testHost, port: testPort },
         timeout: perAttempt,
@@ -307,8 +307,8 @@ export async function testUpstream(opts: UpstreamTestOpts): Promise<{ ok: true; 
   }
 
   const reason = lastErr instanceof Error ? lastErr.message : String(lastErr);
-  const err = new Error(`SOCKS5 upstream rejected or unreachable after ${retries} attempts (${Date.now() - start}ms): ${reason}`);
-  (err as Error & { upstreamHost?: string; upstreamPort?: number }).upstreamHost = opts.upstream.host;
-  (err as Error & { upstreamHost?: string; upstreamPort?: number }).upstreamPort = opts.upstream.port;
+  const err = new Error(`SOCKS5 reference rejected or unreachable after ${retries} attempts (${Date.now() - start}ms): ${reason}`);
+  (err as Error & { referenceHost?: string; referencePort?: number }).referenceHost = opts.reference.host;
+  (err as Error & { referenceHost?: string; referencePort?: number }).referencePort = opts.reference.port;
   throw err;
 }

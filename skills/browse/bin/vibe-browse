@@ -37,7 +37,7 @@ VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 DEP_DIR="$VIBE_HOME/browse"
 
 # Tunnel / pairing (no node, no browser): expose a local port for a remote agent
-# via ngrok — detect-and-use, the same mechanism the upstream pairs through.
+# via ngrok — detect-and-use, the same mechanism the reference pairs through.
 case "${1:-}" in
   tunnel)
     port="${2:-3000}"

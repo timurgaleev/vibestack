@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""vibe-parity-audit — prove vibestack's skills still mirror their upstream source.
+"""vibe-parity-audit — prove vibestack's skills still mirror their reference source.
 
-Brand-neutral by design: this script names no upstream project. The upstream
+Brand-neutral by design: this script names no reference project. The reference
 repo, skill-name remaps, and the brand/path substitutions all live in a LOCAL,
-UNTRACKED config file so the repo stays free of any upstream brand reference.
+UNTRACKED config file so the repo stays free of any reference brand reference.
 
 Config resolution (first found wins):
   1. --config <path>
@@ -13,12 +13,12 @@ Config resolution (first found wins):
 Run `vibe-parity-audit --init` to write a starter config, then fill it in.
 
 How it works: for every local skill (minus the configured skips), it fetches the
-upstream skill's generated SKILL.md, renders the local skill (expanding
+reference skill's generated SKILL.md, renders the local skill (expanding
 {{include}} snippets), normalizes away the agreed adaptations (slim preamble,
 When-to-invoke catalog block, brand/path substitutions, stub lines), and reports
-the fraction of the local skill's workflow lines that appear in the upstream
+the fraction of the local skill's workflow lines that appear in the reference
 version (exact or fuzzy). High coverage = the local skill faithfully mirrors
-upstream; the gap is the adaptations.
+reference; the gap is the adaptations.
 
 Exit 0 if median coverage >= threshold (default 0.85), else 1 — usable in CI.
 """
@@ -29,36 +29,36 @@ REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 VIBESTACK_HOME = os.environ.get("VIBESTACK_HOME", os.path.join(HOME, ".vibestack"))
 
 STARTER = """\
-# vibe-parity-audit config — LOCAL ONLY. Do NOT commit. Keep the upstream
+# vibe-parity-audit config — LOCAL ONLY. Do NOT commit. Keep the reference
 # identity and brand map here so the repo stays brand-neutral.
 
-# Upstream repository to compare against, as owner/repo (for `gh api`).
-upstream_repo = OWNER/REPO
+# Reference repository to compare against, as owner/repo (for `gh api`).
+reference_repo = OWNER/REPO
 
 # Optional: coverage threshold for a passing run (0.0–1.0). Default 0.85.
 threshold = 0.85
 
-# Skill-name remaps where the local name differs from the upstream dir name.
-#   remap <local-skill> -> <upstream-dir>
-# remap open-browser -> open-UPSTREAM-browser
-# remap setup-memory -> setup-UPSTREAMBRAIN
+# Skill-name remaps where the local name differs from the reference dir name.
+#   remap <local-skill> -> <reference-dir>
+# remap open-browser -> open-REFERENCE-browser
+# remap setup-memory -> setup-REFERENCEBRAIN
 
-# Local-only skills with no upstream counterpart (skipped).
+# Local-only skills with no reference counterpart (skipped).
 # skip my-local-skill
 
-# Brand/path substitutions applied to the UPSTREAM text before comparison so it
+# Brand/path substitutions applied to the REFERENCE text before comparison so it
 # reads in local terms. Order matters (longest/most-specific first).
 #   sub <from> -> <to>
-# sub ~/.claude/skills/UPSTREAM -> ~/.claude/skills/vibestack
-# sub UPSTREAMBRAIN -> secondbrain
-# sub ~/.UPSTREAM -> ~/.vibestack
-# sub UPSTREAM- -> vibe-
-# sub UPSTREAM -> vibestack
+# sub ~/.claude/skills/REFERENCE -> ~/.claude/skills/vibestack
+# sub REFERENCEBRAIN -> secondbrain
+# sub ~/.REFERENCE -> ~/.vibestack
+# sub REFERENCE- -> vibe-
+# sub REFERENCE -> vibestack
 """
 
 
 def load_config(path):
-    cfg = {"upstream_repo": None, "threshold": 0.85, "remap": {}, "skip": set(), "subs": []}
+    cfg = {"reference_repo": None, "threshold": 0.85, "remap": {}, "skip": set(), "subs": []}
     with open(path) as f:
         for raw in f:
             line = raw.strip()
@@ -75,8 +75,8 @@ def load_config(path):
             elif "=" in line:
                 k, v = line.split("=", 1)
                 k, v = k.strip(), v.strip()
-                if k == "upstream_repo":
-                    cfg["upstream_repo"] = v
+                if k == "reference_repo":
+                    cfg["reference_repo"] = v
                 elif k == "threshold":
                     cfg["threshold"] = float(v)
     return cfg
@@ -102,11 +102,11 @@ def _fetch_file(repo, path):
         return None
 
 
-def fetch_upstream(repo, skill_dir):
+def fetch_reference(repo, skill_dir):
     text = _fetch_file(repo, f"{skill_dir}/SKILL.md")
     if text is None:
         return None
-    # Some upstream skills carve their body into sections/*.md; without them
+    # Some reference skills carve their body into sections/*.md; without them
     # the comparison sees only the stub and coverage collapses.
     try:
         out = subprocess.run(
@@ -187,11 +187,11 @@ def coverage(local_lines, up_lines):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Prove vibestack skills mirror their upstream source.")
+    ap = argparse.ArgumentParser(description="Prove vibestack skills mirror their reference source.")
     ap.add_argument("--config")
     ap.add_argument("--init", action="store_true", help="write a starter config and exit")
     ap.add_argument("--skill", help="audit only this skill")
-    ap.add_argument("--show-unmatched", metavar="SKILL", help="list local lines not found upstream")
+    ap.add_argument("--show-unmatched", metavar="SKILL", help="list local lines not found reference")
     ap.add_argument("--threshold", type=float, help="override pass threshold")
     args = ap.parse_args()
 
@@ -203,7 +203,7 @@ def main():
             return 0
         with open(dest, "w") as f:
             f.write(STARTER)
-        print(f"Wrote starter config: {dest}\nFill in upstream_repo + remaps + subs, then re-run.")
+        print(f"Wrote starter config: {dest}\nFill in reference_repo + remaps + subs, then re-run.")
         return 0
 
     cfg_path = resolve_config_path(args.config)
@@ -212,8 +212,8 @@ def main():
               f"Looked at: --config, $VIBE_PARITY_CONF, {VIBESTACK_HOME}/parity.conf", file=sys.stderr)
         return 2
     cfg = load_config(cfg_path)
-    if not cfg["upstream_repo"] or "/" not in cfg["upstream_repo"]:
-        print(f"Set `upstream_repo = owner/repo` in {cfg_path}", file=sys.stderr)
+    if not cfg["reference_repo"] or "/" not in cfg["reference_repo"]:
+        print(f"Set `reference_repo = owner/repo` in {cfg_path}", file=sys.stderr)
         return 2
     threshold = args.threshold if args.threshold is not None else cfg["threshold"]
 
@@ -230,9 +230,9 @@ def main():
 
     if args.show_unmatched:
         s = args.show_unmatched
-        up = fetch_upstream(cfg["upstream_repo"], cfg["remap"].get(s, s))
+        up = fetch_reference(cfg["reference_repo"], cfg["remap"].get(s, s))
         if up is None:
-            print(f"No upstream skill for {s}", file=sys.stderr)
+            print(f"No reference skill for {s}", file=sys.stderr)
             return 2
         U = norm_lines(up, cfg["subs"])
         V = [l for l in norm_lines(render_local(s)) if len(l) > 15]
@@ -243,7 +243,7 @@ def main():
 
     rows, missing = [], []
     for s in skills:
-        up = fetch_upstream(cfg["upstream_repo"], cfg["remap"].get(s, s))
+        up = fetch_reference(cfg["reference_repo"], cfg["remap"].get(s, s))
         if up is None:
             missing.append(s)
             continue
@@ -257,7 +257,7 @@ def main():
         flag = "  <-- review" if cov < threshold else ""
         print(f"{s:26}{cov * 100:7.0f}%{flag}")
     if missing:
-        print(f"\nno upstream counterpart (local-only): {', '.join(missing)}")
+        print(f"\nno reference counterpart (local-only): {', '.join(missing)}")
     if not rows:
         print("no skills compared", file=sys.stderr)
         return 2

@@ -10,7 +10,7 @@ Event-sourced: every call appends one line to
 ``$VIBESTACK_HOME/projects/<slug>/decisions.jsonl``. The active set is derived at
 read time by vibe-decision-search (supersede/redact fold over the log). Local and
 reliable — memex is the semantic-recall layer, not the decision store, mirroring
-upstream's "log is local; brain not required."
+reference's "log is local; brain not required."
 
 NON-INTERACTIVE — never prompts (skills call this; a prompt would hang them).
 A decision carrying a high-confidence secret is rejected (exit 1), nothing written.

@@ -102,7 +102,7 @@ Do NOT make any code changes. Do NOT start implementation. Your only job right n
 ## Prime Directives
 1. Zero silent failures. Every failure mode must be visible — to the system, to the team, to the user. If a failure can happen silently, that is a critical defect in the plan.
 2. Every error has a name. Don't say "handle errors." Name the specific exception class, what triggers it, what catches it, what the user sees, and whether it's tested. Catch-all error handling (e.g., catch Exception, rescue StandardError, except Exception) is a code smell — call it out.
-3. Data flows have shadow paths. Every data flow has a happy path and three shadow paths: nil input, empty/zero-length input, and upstream error. Trace all four for every new flow.
+3. Data flows have shadow paths. Every data flow has a happy path and three shadow paths: nil input, empty/zero-length input, and reference error. Trace all four for every new flow.
 4. Interactions have edge cases. Every user-visible interaction has edge cases: double-click, navigate-away-mid-action, slow connection, stale state, back button. Map them.
 5. Observability is scope, not afterthought. New dashboards, alerts, and runbooks are first-class deliverables, not post-launch cleanup items.
 6. Diagrams are mandatory. No non-trivial flow goes undiagrammed. ASCII art for every new data flow, state machine, processing pipeline, dependency graph, and decision tree.
@@ -585,7 +585,7 @@ Evaluate and diagram:
     * Happy path (data flows correctly)
     * Nil path (input is nil/missing — what happens?)
     * Empty path (input is present but empty/zero-length — what happens?)
-    * Error path (upstream call fails — what happens?)
+    * Error path (reference call fails — what happens?)
 * State machines. ASCII diagram for every new stateful object. Include impossible/invalid transitions and what prevents them.
 * Coupling concerns. Which components are now coupled that weren't before? Is that coupling justified? Draw the before/after dependency graph.
 * Scaling characteristics. What breaks first under 10x load? Under 100x?
