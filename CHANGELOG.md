@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.23.0 — 2026-07-20
+
+### Removed
+
+- **`/setup-memory`.** The persistent-memory setup skill is gone (skill count
+  52). Memory recall continues to work through the connected memory MCP — this
+  only removes the interactive setup flow, which is no longer used.
+
+### Added
+
+- **`/vibe-upgrade` is now full-featured** (67 → 353 lines), matching the upstream
+  upgrade workflow while keeping vibestack's fast-forward-only safety:
+  - Inline upgrade consent gate (Yes / Always / Not now / Never ask again),
+    triggered by an `UPDATE:` line in the preamble.
+  - Auto-upgrade mode via `VIBESTACK_AUTO_UPGRADE` or the `auto_upgrade` config
+    key, with a scoped roll-back to the pre-pull commit if `./install` fails.
+  - Snooze with escalating backoff (24h / 48h / 1 week) and per-version state;
+    `vibe-update-check` honors an active snooze.
+  - "Never ask again" persistence via the `update_check=false` config gate.
+  - A version-migrations runner (`skills/vibe-upgrade/migrations/v*.sh`),
+    idempotent and non-fatal.
+  - Vendored / project-local install detection and upgrade path, and a
+    team-mode-aware sync/removal of a committed vendored copy.
+  - `vibe-update-check` gains `--force`, the config gate, and snooze honoring —
+    fully backward-compatible (default behavior unchanged with no config).
+
 ## 1.22.1 — 2026-07-20
 
 Parity polish.
