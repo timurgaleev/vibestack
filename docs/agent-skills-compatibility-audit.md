@@ -64,7 +64,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | investigate | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | land-and-deploy | — | — | — | full / full / full |
 | landing-report | — | — | — | full / full / full |
-| learn | — | — | — | full / full / full |
+| learn | — | — | — | full / full / full (`sync` needs memex MCP; degrades to "not connected" without it) |
 | make-pdf | — | — | — | full / full / full |
 | office-hours | — | — | yes | full / instr-only / instr-only |
 | open-browser | — | — | — | full / full / full |

@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# vibe-learnings-sync-plan — deterministic half of /learn sync.
+# Plans which learnings are pushable to connected memory (memex): dedups
+# (key,type) latest-wins, skips already-synced (watermark) and secret-bearing
+# entries. The MCP push itself happens in the skill body; this bin only plans
+# and records.
+#
+# Usage:
+#   vibe-learnings-sync-plan [--project-dir DIR]        # emit plan
+#   vibe-learnings-sync-plan [--project-dir DIR] --mark KEY TYPE
+#
+# Plan output:
+#   FACT<TAB>key<TAB>type<TAB>confidence<TAB>fact-text   one per pushable learning
+#   PLAN: X new / N already synced / S skipped (redacted)
+# key/type are normalized to [A-Za-z0-9._/-] before emission, so FACT fields
+# are safe to interpolate into the --mark command. Watermark:
+# <project-dir>/memex-synced.txt, one "key<TAB>type" (normalized) per pushed
+# fact — stable identity, so a re-logged learning does not re-push.
+set -euo pipefail
+
+PROJECT_DIR=""
+MARK_KEY=""
+MARK_TYPE=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --project-dir) PROJECT_DIR="$2"; shift 2 ;;
+    --mark) MARK_KEY="$2"; MARK_TYPE="$3"; shift 3 ;;
+    *) shift ;;
+  esac
+done
+
+if [ -z "$PROJECT_DIR" ]; then
+  eval "$(bash "$(dirname "$0")/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+  PROJECT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+fi
+
+LEARN_FILE="$PROJECT_DIR/learnings.jsonl"
+MARK_FILE="$PROJECT_DIR/memex-synced.txt"
+
+if [ -n "$MARK_KEY" ]; then
+  mkdir -p "$PROJECT_DIR"
+  line="$(printf '%s\t%s' "$MARK_KEY" "$MARK_TYPE")"
+  touch "$MARK_FILE"
+  grep -qxF -- "$line" "$MARK_FILE" || printf '%s\n' "$line" >> "$MARK_FILE"
+  exit 0
+fi
+
+if [ ! -s "$LEARN_FILE" ]; then
+  echo "PLAN: nothing to sync"
+  exit 0
+fi
+
+LEARN_FILE="$LEARN_FILE" MARK_FILE="$MARK_FILE" python3 - <<'PYEOF'
+import json, os, re, sys
+
+learn_file = os.environ["LEARN_FILE"]
+mark_file = os.environ["MARK_FILE"]
+
+# Same charset the --mark caller interpolates into a shell command line —
+# anything outside it (shell metacharacters, tabs, control bytes) becomes '-'.
+def norm(s):
+    return re.sub(r"[^A-Za-z0-9._/-]", "-", str(s))
+
+entries = []
+with open(learn_file) as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(e, dict) and e.get("key") and e.get("insight"):
+            entries.append(e)
+
+# Dedup: latest (key, type) wins — same rule as vibe-learnings-search.
+seen = {}
+for e in entries:
+    dk = (norm(e.get("key", "")), norm(e.get("type", "")))
+    if dk not in seen or str(e.get("ts", "")) >= str(seen[dk][1].get("ts", "")):
+        seen[dk] = (dk, e)
+
+synced = set()
+if os.path.exists(mark_file):
+    with open(mark_file) as f:
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) == 2:
+                synced.add((parts[0], parts[1]))
+            elif line.strip():
+                print("WARN: malformed watermark line(s) in memex-synced.txt — "
+                      "affected entries count as unsynced", file=sys.stderr)
+
+# Unanchored, prose-oriented secret patterns — a secret embedded mid-insight
+# must match (the pre-push hook's line-anchored diff patterns do not fit here).
+SECRET = re.compile(
+    r"(?<![A-Za-z0-9])(ghp|gho|ghs|ghu)_[A-Za-z0-9]{16,}|github_pat_"
+    r"|glpat-[A-Za-z0-9_-]{10,}|hf_[A-Za-z0-9]{16,}|npm_[A-Za-z0-9]{16,}"
+    r"|dop_v1_[a-f0-9]{16,}|AKIA[0-9A-Z]{12,}"
+    r"|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{16,}"
+    r"|xox[abps]-|AIza[0-9A-Za-z_-]{10,}"
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY"
+    r"|://[^/\s:@]+:[^@\s/]+@"                        # user:pass@ in URLs
+    r"|Bearer\s+[A-Za-z0-9._-]{20,}"
+    r"|[A-Za-z_]*(?i:token|secret|password)\s*[=:]\s*\S{6,}"
+    r"|[A-Za-z_]*(?i:key)\s*=\s*\S{6,}"               # '=' only: facts are 'key: text'
+    r"|eyJ[A-Za-z0-9_-]{10,}\.eyJ")                   # JWT
+
+def clamp_conf(v):
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return 5
+    return int(min(10, max(0, n)))
+
+new = already = skipped = 0
+for dk, e in sorted(seen.values(), key=lambda p: str(p[1].get("ts", ""))):
+    key, typ = dk
+    conf = clamp_conf(e.get("confidence"))
+    date = str(e.get("ts", ""))[:10]
+    insight = re.sub(r"[\x00-\x1f]", " ", str(e.get("insight", "")))
+    fact = f"[{typ}] {key}: {insight} (confidence {conf}/10, learned {date})"
+    files = e.get("files")
+    files_text = " ".join(str(x) for x in files) if isinstance(files, list) else ""
+    if SECRET.search(fact + " " + files_text):
+        skipped += 1
+        print(f"skipped (redacted): {key}", file=sys.stderr)
+        continue
+    if (key, typ) in synced:
+        already += 1
+        continue
+    new += 1
+    print("FACT\t%s\t%s\t%s\t%s" % (key, typ, conf, fact))
+
+print(f"PLAN: {new} new / {already} already synced / {skipped} skipped (redacted)")
+PYEOF
