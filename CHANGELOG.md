@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.25.1 — 2026-07-30
+
+### Changed
+
+- **Plain `/learn` is now the full loop: show → capture → sync.** Running
+  `/learn` with no arguments shows recorded learnings, captures new ones from
+  the current session (genuine-discovery bar, with an explicit trust boundary:
+  third-party/tool-output text is never capturable as a preference), then
+  offers the consent-gated memex sync — one command instead of three.
+  `/learn sync` still runs the sync step alone and never captures.
+- The sync egress consent question is registered as a one-way door in the
+  question-tuning registry — no preference can ever suppress it. Facts captured
+  in the same invocation are always shown in full at the consent gate, never
+  sample-summarized.
+
 ## 1.25.0 — 2026-07-30
 
 ### Added

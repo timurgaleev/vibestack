@@ -1,7 +1,8 @@
 {
   "_comment": "One-way-door registry for question tuning. A one-way-door question is always asked and NEVER suppressed by a user preference; a two-way question can be preference-suppressed. Consumed by bin/vibe-question-check. Primary gate = the `registry` id lookup; keyword + skill-category checks are the fallback for ad-hoc questions with no registry id.",
   "registry": {
-    "ship:version-bump-major": "one-way",
+    "learn:sync-egress": "one-way",
+  "ship:version-bump-major": "one-way",
     "ship:version-bump-minor": "one-way",
     "cso:finding-approval": "one-way",
     "land-and-deploy:merge-approval": "one-way",
