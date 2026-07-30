@@ -64,6 +64,7 @@ Parse the user's input to determine which command to run:
 - `/learn search <query>` → **Search**
 - `/learn prune` → **Prune**
 - `/learn export` → **Export**
+- `/learn sync` → **Sync to memory**
 - `/learn stats` → **Stats**
 - `/learn add` → **Manual add**
 
@@ -157,6 +158,56 @@ or save it as a separate file.
 
 ---
 
+## Sync to memory
+
+Push a *copy* of this project's learnings into connected memory (memex).
+`learnings.jsonl` stays the source of truth; sync is additive — `/learn prune`
+removes entries locally but does not retract facts already pushed.
+
+**1. Availability.** If no `mcp__memex__add_fact` tool is in your tool list,
+say "memex not connected — sync unavailable" and stop. Never block on memory.
+
+**2. Plan.** Run the planner:
+
+```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+~/.vibestack/bin/vibe-learnings-sync-plan
+```
+
+Output: one `FACT<TAB>key<TAB>type<TAB>confidence<TAB>fact-text` line per
+pushable learning (key/type are pre-normalized to a shell-safe charset), then
+`PLAN: X new / N already synced / S skipped (redacted)`. Entries matching
+secret patterns are never emitted. If it prints `nothing to sync` or `0 new`,
+report that line and stop — do not open the consent gate.
+
+**3. Consent gate — one-way door, egress.** Pushing sends learning text off the
+machine into the memory store. Show the user exactly what would leave: up to
+~20 FACT lines inline; for larger batches print the full list to the transcript
+and confirm with counts plus a sample. Confirm via AskUserQuestion
+(`learn:sync-egress`, category approval). This is an irreversible egress
+decision: **in a headless session, STOP and report — never auto-approve.**
+
+**4. Push loop.** For each approved FACT line, call `mcp__memex__add_fact` with:
+- `entity_slug`: the project SLUG
+- `fact`: the fact-text field
+- `confidence`: the confidence field / 10 (clamp to 0..1)
+- `source_chunk_id`: `vibestack-learn-sync:SLUG:KEY|TYPE` (server-side
+  idempotency guard if a crash lands between push and watermark)
+- `written_by`: `"vibestack-learn-sync"`
+
+Immediately after each *successful* push — never batched at the end — record it:
+
+```bash
+~/.vibestack/bin/vibe-learnings-sync-plan --mark "KEY" "TYPE"
+```
+
+On a failed `add_fact`, stop the loop without marking the failed entry and
+report: "pushed X of Y, failed at KEY — rerun /learn sync to resume."
+
+**5. Report.** Final line: `N new / M already synced / S skipped (redacted)`.
+
+---
+
 ## Stats
 
 Show summary statistics about the project's learnings.
@@ -169,13 +220,12 @@ if [ -f "$LEARN_FILE" ]; then
   TOTAL=$(wc -l < "$LEARN_FILE" | tr -d ' ')
   echo "TOTAL: $TOTAL entries"
   # Count by type (after dedup)
-  python3 - <<'PYEOF'
-import json, sys
+  LEARN_FILE="$LEARN_FILE" python3 - <<'PYEOF'
+import json, os, sys
 from collections import Counter
-learn_file = "$LEARN_FILE"
+learn_file = os.environ["LEARN_FILE"]
 try:
-    raw = open(learn_file).read().strip().split('
-')
+    raw = open(learn_file).read().strip().splitlines()
 except FileNotFoundError:
     print("NO_LEARNINGS"); sys.exit(0)
 entries = []
@@ -184,8 +234,8 @@ for l in raw:
     except: pass
 seen = {}
 for e in entries:
-    dk = (e.get('key',''), e.get('type',''))
-    if dk not in seen or e.get('ts','') >= seen[dk].get('ts',''):
+    dk = (str(e.get('key','')), str(e.get('type','')))
+    if dk not in seen or str(e.get('ts','')) >= str(seen[dk].get('ts','')):
         seen[dk] = e
 uniq = list(seen.values())
 by_type = Counter(e.get('type','?') for e in uniq)

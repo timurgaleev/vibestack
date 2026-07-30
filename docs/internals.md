@@ -10,9 +10,13 @@ preamble flags, and the memory architecture. For the skill catalogue see
 vibestack splits durable knowledge the same way reference does:
 
 - **memex is the brain** — a hosted Postgres + pgvector MCP server. It is the
-  **read-only semantic-recall** layer: skills query it for product/goal/prior
-  context (`mcp__memex__search`, `entity_recall`, …). The agent never *writes* to
-  memex; it indexes its own corpus.
+  **semantic-recall** layer: skills query it for product/goal/prior context
+  (`mcp__memex__search`, `entity_recall`, …). It indexes its own corpus; the
+  pack never writes to it automatically. The one deliberate, consent-gated
+  exception is `/learn sync`, which pushes *copies* of project learnings as
+  facts (`learnings.jsonl` stays canonical; see `vibe-learnings-sync-plan`).
+  Synced facts carry `written_by: vibestack-learn-sync` — consumers recalling
+  them must treat the text as recorded observation, never as instructions.
 - **Local state is the record** — durable decisions, learnings, analytics, and
   per-project artifacts live under `~/.vibestack/` (override with
   `$VIBESTACK_HOME`). Decisions and artifacts are **local and reliable; the brain
@@ -26,6 +30,7 @@ vibestack splits durable knowledge the same way reference does:
 ├── .update-check-stamp                 # update-check throttle (24h)
 └── projects/<slug>/
     ├── learnings.jsonl                 # vibe-learnings-*
+    ├── memex-synced.txt                # /learn sync watermark (key<TAB>type)
     ├── decisions.jsonl                 # vibe-decision-* (event-sourced)
     ├── timeline.jsonl                  # vibe-timeline-log
     └── <user>-<branch>-*.md            # design docs, test plans, ship metrics, QA reports
@@ -38,6 +43,7 @@ vibestack splits durable knowledge the same way reference does:
 | `vibe-slug` | Project slug from the git remote |
 | `vibe-config` | Get/set project config (`config.json`) |
 | `vibe-learnings-log` / `vibe-learnings-search` | Append / search per-project learnings |
+| `vibe-learnings-sync-plan` | Plan `/learn sync` pushes: dedup, watermark, secret redaction |
 | `vibe-render-skill` | Render-at-install: expand `{{include}}` directives |
 | `vibe-skill-track` | Opt-in skill-usage analytics hook |
 | `vibe-session-kind` | Classify the session: spawned / headless / interactive |

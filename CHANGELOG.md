@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.25.0 — 2026-07-30
+
+### Added
+
+- **`/learn sync` — push project learnings into connected memory (memex).**
+  Learnings captured across sessions can now be recalled by any tool that reads
+  the memory server, not just vibestack. `bin/vibe-learnings-sync-plan` does the
+  deterministic half (latest-wins dedup, stable-identity watermark in
+  `memex-synced.txt`, prose-oriented secret redaction covering token, URL-cred,
+  JWT, and env-assignment shapes); the skill body handles the consent-gated MCP
+  push with per-entry resume and server-side idempotency. Egress is a one-way
+  door: the exact fact text is shown before anything leaves the machine, and
+  headless sessions never auto-approve. `test/test-learn-sync.sh` covers the
+  planner (20 cases).
+
+### Fixed
+
+- `/learn stats` never worked: a quoted heredoc kept `$LEARN_FILE` from
+  expanding, so it always printed `NO_LEARNINGS`; a literal newline in the
+  Python source was also a syntax error. Stats now dedupes and reports
+  correctly, and tolerates non-string timestamps.
+
 ## 1.24.1 — 2026-07-20
 
 ### Changed
