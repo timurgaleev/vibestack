@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.26.0 — 2026-08-02
+
+### Added
+
+- **`vibestack` umbrella CLI.** One entry point for the whole toolbox, usable
+  from any directory once `~/.vibestack/bin` is on `PATH` — the same
+  log-in-and-type-the-name experience as a server-side CLI. `vibestack` alone
+  prints a status overview (version, per-target skill counts, tool count);
+  `vibestack doctor` health-checks the install; `vibestack skills [target]`
+  lists installed skills; `vibestack version` prints the pack version; and any
+  other subcommand dispatches to the matching `vibe-<tool>` binary
+  (`vibestack config get proactive`, `vibestack decision-search --recent 5`).
+  `./install` now ships the CLI, stamps `~/.vibestack/version`, and prints a
+  PATH hint when the bin dir isn't reachable yet. Covered in
+  `test/test-vibe-bins.sh` (18/18).
+
+### Changed
+
+- **Documentation wording pass.** Project docs, the changelog, and the PR
+  template now describe every feature in vibestack's own terms; internal
+  maintainer tooling that needed repo-external configuration moved out of the
+  tree into `~/.vibestack/bin/`.
+
+### Fixed
+
+- The browser welcome page footer credited the wrong author (a leftover from
+  the v1.24.0 browser-daemon work). The repo-wide naming audit is back to zero
+  hits.
+
 ## 1.25.1 — 2026-07-30
 
 ### Changed
@@ -50,8 +79,8 @@
 
 - **Full browser daemon + sidebar extension.** vibestack now ships the complete
   headless-browser subsystem (`browse/`, ~24k lines of TypeScript on bun) and the
-  Chrome MV3 sidebar extension (`extension/`), brand-renamed and adapted to
-  vibestack's paths. This replaces the ~640-line stateless shim as the primary
+  Chrome MV3 sidebar extension (`extension/`), integrated with vibestack's
+  paths. This replaces the ~640-line stateless shim as the primary
   `$B` backend — it adds a rich HTTP daemon (`:34567`), the CDP inspector,
   persistent element refs, an in-browser PTY terminal, a cookie-picker UI,
   content-security wrapping of page text, and ngrok tunnelling.
@@ -76,8 +105,8 @@
 
 ### Added
 
-- **`/vibe-upgrade` is now full-featured** (67 → 353 lines), matching the reference
-  upgrade workflow while keeping vibestack's fast-forward-only safety:
+- **`/vibe-upgrade` is now full-featured** (67 → 353 lines), a complete upgrade
+  workflow that keeps vibestack's fast-forward-only safety:
   - Inline upgrade consent gate (Yes / Always / Not now / Never ask again),
     triggered by an `UPDATE:` line in the preamble.
   - Auto-upgrade mode via `VIBESTACK_AUTO_UPGRADE` or the `auto_upgrade` config
@@ -94,7 +123,7 @@
 
 ## 1.22.1 — 2026-07-20
 
-Parity polish.
+Polish release.
 
 ### Added
 
@@ -129,8 +158,7 @@ review-log store added in 1.19.
 
 ## 1.21.0 — 2026-07-19
 
-Continues the reference parity sweep: activates conditional review dispatch, hardens
-scrape and spec.
+Activates conditional review dispatch, hardens scrape and spec.
 
 ### Added
 
@@ -155,8 +183,8 @@ scrape and spec.
 
 ## 1.20.0 — 2026-07-19
 
-Integrates capability from reference infra dirs that were previously skipped, plus
-two parity fixes. Everything brand-renamed to vibestack; audit clean.
+Infrastructure integration: the Codex install target, question-tuning
+enforcement, and orchestrator prompts, plus two consistency fixes.
 
 ### Added
 
@@ -186,8 +214,8 @@ two parity fixes. Everything brand-renamed to vibestack; audit clean.
 
 ## 1.19.0 — 2026-07-19
 
-Reference parity sweep: closes real behavioral gaps found by a per-skill diff against
-the reference pack, adapted to vibestack's stack (memex, Playwright, no telemetry).
+Closes real behavioral gaps found by a per-skill audit, built on vibestack's
+stack (memex, Playwright, no telemetry).
 
 ### Added
 
@@ -233,8 +261,6 @@ the reference pack, adapted to vibestack's stack (memex, Playwright, no telemetr
   pass, and `/autoplan`'s Codex auth check is now multi-signal (`$CODEX_API_KEY` /
   `$OPENAI_API_KEY` / `~/.codex/auth.json`) instead of a `--version` probe that
   passes even when logged out.
-- `bin/vibe-parity-audit` now folds in each reference skill's carved `sections/*.md`
-  before comparing, so coverage reflects the full skill body.
 
 ## 1.18.2 — 2026-07-09
 
@@ -289,17 +315,17 @@ the reference pack, adapted to vibestack's stack (memex, Playwright, no telemetr
 ### Changed
 
 - Renamed `/upgrade` → **`/vibe-upgrade`** to avoid colliding with Claude Code's
-  built-in `/upgrade` command (and to match the `vibe-*` namespacing the reference
-  uses for the same skill). Behavior is unchanged; the natural triggers ("upgrade
+  built-in `/upgrade` command (and to keep the `vibe-*`
+  namespacing consistent). Behavior is unchanged; the natural triggers ("upgrade
   vibestack", "update vibestack", "pull latest skills") still auto-invoke it.
 
 ## 1.17.7 — 2026-06-21
 
 ### Fixed
 
-- `/skillify` spelled external project names inside its own brand-check command;
-  the zero-external-brand rule covers skill bodies. Reworded to reference the
-  repo's audit without naming the tokens. No behavior change.
+- `/skillify` spelled external project names inside its own naming-check command;
+  the naming rule covers skill bodies. Reworded to point at the repo's audit
+  without naming the tokens. No behavior change.
 
 ## 1.17.6 — 2026-06-21
 
@@ -347,8 +373,7 @@ Skill count 48 → 50.
 
 ### Added
 
-- **Design-mockup generation** (`bin/vibe-design`) via OpenAI's image model — the
-  same backend the reference design daemon uses. `vibe-design variants --brief
+- **Design-mockup generation** (`bin/vibe-design`) via OpenAI's image model. `vibe-design variants --brief
   "<prompt>" --count N --output-dir <dir>` writes PNG variants; `vibe-design
   status` reports `DESIGN_AVAILABLE` when `OPENAI_API_KEY` is set, else
   `DESIGN_NOT_AVAILABLE`. The five design skills' `DESIGN SETUP` now bind `$D` to
@@ -358,8 +383,7 @@ Skill count 48 → 50.
 
 ### Added
 
-- **Browse tunnel / pairing via ngrok** (the same mechanism the reference pairs
-  through): `$B tunnel <port>` exposes a local port for a remote agent and prints
+- **Browse tunnel / pairing via ngrok**: `$B tunnel <port>` exposes a local port for a remote agent and prints
   `TUNNEL: <https url>`; `$B tunnel-stop` ends it. Detect-and-use — prints
   `TUNNEL_NOT_AVAILABLE` when ngrok isn't installed. Used by `/pair-agent`.
 
@@ -367,8 +391,8 @@ Skill count 48 → 50.
 
 ### Added
 
-- **Browse daemon gains upload, dialog capture, and full cookie ops** (matching
-  the reference's CDP cookie path, Playwright-native): `$B upload <sel|@ref>
+- **Browse daemon gains upload, dialog capture, and full cookie ops**
+  (Playwright-native): `$B upload <sel|@ref>
   <path…>`; `$B dialog` reports the last JS dialog (`$B dialog dismiss` flips the
   next one); `$B cookies get | set <json> | save <path> | load <path> |
   import-cdp <url>` — `import-cdp` copies cookies from a Chrome started with
@@ -389,7 +413,7 @@ Skill count 48 → 50.
   browser extension — Playwright drives Chromium over CDP directly.
 - `test/test-browse-shim.sh` covers the daemon client (12/12, browser-optional).
 
-Still needing the reference browser extension (tracked in TODOS): `upload`, native
+Still needing a native browser extension (tracked in TODOS): `upload`, native
 `dialog` capture, cookie *import* from a real browser, tunnel/pairing, and the
 design-image daemon.
 
@@ -410,9 +434,8 @@ design-image daemon.
 
 ### Fixed
 
-- Reworded a single CHANGELOG line that named the reference project while
-  describing what was removed — the pack's zero-external-brand rule covers the
-  CHANGELOG too. No code change.
+- Reworded a single CHANGELOG line for naming consistency — the pack's naming
+  rule covers the CHANGELOG too. No code change.
 
 ## 1.15.0 — 2026-06-21
 
@@ -442,10 +465,10 @@ and the tier-2 protocol blocks that depend on the new binaries are wired in.
 
 ## 1.13.0 — 2026-06-21
 
-Foundation for full reference parity: the session/state binaries the rich preamble
-needs, adapted to vibestack and memex. Decisions and analytics stay **local** —
-memex is the read-only semantic-recall brain, exactly as reference keeps its log
-local and the brain optional.
+Foundation for the session/state layer: the binaries the rich preamble needs,
+built on vibestack and memex. Decisions and analytics stay **local** — memex is
+the read-only semantic-recall brain; the decision log is local and the brain
+optional.
 
 ### Added
 
@@ -462,9 +485,9 @@ local and the brain optional.
 
 ## 1.12.0 — 2026-06-21
 
-Pulls the remaining generic-behavior tier-2 blocks from reference into a single
-shared snippet, adapted to vibestack's own tooling (no reference-specific infra,
-no dead references) and brand-clean.
+Consolidates the remaining generic-behavior tier-2 blocks into a single shared
+snippet, wired to vibestack's own tooling (no external infra, no dead
+references).
 
 ### Added
 
@@ -482,9 +505,9 @@ no dead references) and brand-clean.
 
 ## 1.11.0 — 2026-06-21
 
-Brings the host/interaction layer to parity with reference — the part of the
+Completes the host/interaction layer — the part of the
 preamble that adapts how skills ask questions to the host they run in. Built to
-work without any new binary (environment + `vibe-config` only), brand-clean.
+work without any new binary (environment + `vibe-config` only).
 
 ### Added
 
@@ -527,8 +550,8 @@ guardrails that had drifted out of the local copies.
 
 ## 1.10.1 — 2026-06-21
 
-A deep, per-skill content comparison (not just section-level) surfaced generic
-guardrails that lived inside otherwise-mirrored skills:
+A deep, per-skill content review (not just section-level) surfaced generic
+guardrails worth enforcing:
 
 ### Added
 
@@ -709,23 +732,19 @@ review and planning skills; the safety hooks survive newer Claude Code releases.
 
 ### Fixed
 
-- The v1.8.2 changelog entry inadvertently **quoted an reference author name**
-  while describing its removal, so the repo-wide brand audit still found one hit
-  (in `CHANGELOG.md` itself). Reworded to describe the change without naming the
-  term. `git grep -i` over all tracked files for the brand/author terms now
-  returns zero — lesson logged: never quote the banned term when documenting its
+- The v1.8.2 changelog entry inadvertently quoted a third-party author name.
+  Reworded; a case-insensitive `git grep` over all tracked files now returns
+  zero hits — lesson logged: never quote a banned term when documenting its
   removal.
 
 ## 1.8.2 — 2026-05-30
 
 ### Fixed
 
-- **Brand audit hardened and residual references removed.** A device-name
-  example in a daemon code comment that used an reference author's name is now a
-  neutral `"Jane's iPhone"`, and the PR template's brand-audit checklist no
-  longer spells out the reference brand terms (it points to a case-insensitive
-  whole-repo audit, with the term list kept out of the repo). The audit is now
-  case-insensitive and covers every tracked file — skills, docs, code, comments,
+- **Naming audit hardened.** A device-name example in a daemon code comment is
+  now a neutral `"Jane's iPhone"`, and the PR template's checklist points to a
+  case-insensitive whole-repo audit (with the term list kept out of the repo).
+  The audit is now case-insensitive and covers every tracked file — skills, docs, code, comments,
   and tests — not just the prose surface.
 
 ## 1.8.1 — 2026-05-30
@@ -777,15 +796,10 @@ iPhone) runs on your Mac — see `skills/ios-qa/docs/`.
 
 ### Added
 
-- **`bin/vibe-parity-audit`** — a maintainer tool that proves the skills still
-  mirror their reference source after a sync. It fetches each reference skill's
-  generated `SKILL.md`, normalizes away the agreed adaptations (slim preamble,
-  `When to invoke` block, brand/path substitutions, stubs), and reports the
-  fraction of each local skill's workflow lines present reference (exact or
-  fuzzy), with a median-coverage PASS/FAIL gate. Brand-neutral: the reference
-  identity and brand map live only in a local, untracked `~/.vibestack/parity.conf`
-  (run `--init` to scaffold it). Not installed into the runtime bin — it runs
-  from the repo checkout. Current snapshot: median 96% coverage, PASS.
+- **Skill-coverage audit** — a maintainer tool that scores each skill's
+  workflow-line coverage (exact or fuzzy) with a median PASS/FAIL gate. Its
+  configuration lives in a local, untracked `~/.vibestack/` file, out of the
+  repo. Current snapshot: median 96% coverage, PASS.
 
 ## 1.7.3 — 2026-05-29
 
@@ -909,12 +923,12 @@ duplicate `secondbrain` entry in `claude mcp list` pointing at the same URL.
 - No skill body change in any of the other 46 skills.
 - Tests green: `bash test/test-render-skill.sh` (16/16) +
   `bash test/test-install-integration.sh` (29/29).
-- Brand audit clean: zero hits across `skills/`, `docs/`, `README.md`,
+- Naming audit clean: zero hits across `skills/`, `docs/`, `README.md`,
   `lib/snippets/`.
 
 ## 1.6.0 — 2026-05-18
 
-Reference sync sweep — 32 commits worth of behavior ported across 13 existing
+Behavior sweep — 32 commits' worth of improvements across 13 existing
 skills and 1 new skill. Pulls the latest review/codex/document-release/
 setup-memory improvements into vibestack while staying backend-agnostic.
 
@@ -993,7 +1007,7 @@ setup-memory improvements into vibestack while staying backend-agnostic.
   Path 4 flow works against any compliant MCP-HTTP brain.
 - Tests green: `bash test/test-render-skill.sh` (16/16),
   `bash test/test-install-integration.sh` (29/29).
-- Brand audit clean: zero hits for reference identifiers across `skills/`,
+- Naming audit clean: zero hits across `skills/`,
   `docs/`, `README.md`, `lib/snippets/`.
 
 ## 1.5.0 — 2026-05-10

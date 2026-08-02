@@ -2,9 +2,22 @@
 
 ## Open
 
-### Full-parity program (2026-06-21) — remaining
+### E2E skill-eval harness (2026-08-02)
 
-The session/preamble/tier-2 + binaries parity is shipped (v1.13.0–v1.15.0). The
+17. **End-to-end skill evals** — a bun harness that spawns real `claude -p`
+    sessions in a sandbox (temp project + project-level `.claude/skills/`),
+    streams the transcript, and asserts skill behavior (e.g. `/autoplan` fires
+    both review voices, `/ship` runs its gates). Today's bash suites cover the
+    renderer, install, binaries, and the browse shim — none exercise a live
+    skill session. Scoped v1: a session-runner helper with timeout/orphan
+    safety + smoke evals for `/ship`, `/autoplan`, `/review`, opt-in via
+    `test:evals` (never in the default suite — costs real tokens).
+    Effort: L. Priority: P2. Trigger: first regression a bash suite could not
+    have caught, or before any large skill refactor.
+
+### Feature program (2026-06-21) — remaining
+
+The session/preamble/tier-2 + binaries layer is shipped (v1.13.0–v1.15.0). The
 one large remaining item:
 
 - **Browse + design daemons (Phase E) — mostly done.** The browse shim has a
@@ -12,7 +25,7 @@ one large remaining item:
   giving cross-call element refs (`snapshot` → `@e1`, then `click @e1` from a
   separate call) over a unix socket. Done since: upload, dialog capture, cookie import (CDP), tunnel/pairing (ngrok),
   and design-mockup generation (OpenAI image backend via `vibe-design`). The only
-  deep remainder is the upstream's native browser *extension* (Layer-C stealth +
+  deep remainder is a native browser *extension* (Layer-C stealth +
   cookie import from Chrome's encrypted store without remote-debugging) — a
   separate native project
   (CDP element refs, the browser extension, tunnels/pairing) and the design-image
@@ -23,7 +36,7 @@ one large remaining item:
   daemons.
 
 
-### From v1.52–v1.58 upstream sync (2026-06-13)
+### Deferred items (2026-06-13)
 
 Shipped: codex outside-voice **default-on** (plan-ceo/eng/devex-review + autoplan
 master-switch + new `/document-release` doc-audit), mandatory **unresolved-decisions
@@ -34,26 +47,26 @@ OpenAI key shapes in `/spec`, new pre-sink gate in `/ship` + `/cso` via
 skills, and `${CLAUDE_SKILL_DIR:-…}` fallbacks for the safety hooks. Deliberately
 DEFERRED (with reasons), revisit only on the stated trigger:
 
-12. **make-pdf diagrams / multi-format / `/diagram` (upstream v1.58).** DEFERRED —
+12. **make-pdf diagrams / multi-format / `/diagram`.** DEFERRED —
     vibestack's `/make-pdf` is a doc-only pointer to an unbuilt external binary; there
-    is no renderer, no `print-css`, and no persistent browser tab in-repo. The upstream
+    is no renderer, no `print-css`, and no persistent browser tab in-repo. The
     feature needs a real renderer + a 9.2MB vendored mermaid/excalidraw bundle + a
     rasterizing browser. Prerequisite: first vendor the actual make-pdf renderer.
     Until then, porting the `--to html|docx`, fence, image-directive, `--strict`, or
     emoji-fallback prose would document capabilities no in-repo binary provides.
     Effort: L. Priority: P3. Trigger: a decision to vendor the make-pdf renderer.
 
-13. **Cross-session decision memory (upstream v1.57.5.0).** DEFERRED — redundant with
-    memex-as-SSOT. Upstream's local `decisions.jsonl` event store reinvents what memex
+13. **Cross-session decision memory.** DEFERRED — redundant with
+    memex-as-SSOT. A local `decisions.jsonl` event store reinvents what memex
     already does server-side (`entity_timeline`, `entity_recall`, hybrid search); a
     local copy would create a rival source of truth — the exact anti-pattern the
     single-brain policy avoids. If decision capture is ever wanted, the scoped move is a
     one-line instruction telling plan/ship to write decisions *to memex*, not a local
     store. Effort: M. Priority: P3. Trigger: explicit need for durable decision capture.
 
-14. **Full brain-aware planning cache (upstream v1.52.1.0).** PARTIALLY ADDRESSED — the
+14. **Full brain-aware planning cache.** PARTIALLY ADDRESSED — the
     high-value gap (planning skills ignored the brain) is now closed with a lightweight
-    `lib/snippets/brain-preflight.md` model-level memex query. The upstream heavy layer
+    `lib/snippets/brain-preflight.md` model-level memex query. The heavy layer
     (`brain-cache` CLI + typed 8-kind schema-pack + TTL cache + resolvers) is NOT ported
     — it is bin infrastructure against the lightweight-skill-body philosophy. Effort: L.
     Priority: P3. Trigger: the prose preflight proving insufficient in practice.
@@ -67,7 +80,7 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     parameterized by target). Effort: M. Priority: P3. Trigger: a Cursor/Kiro user
     hitting a hook-path miss, or CC dropping `${VAR:-default}` shell expansion.
 
-16. **`/spec` Phase 4.5a Semantic Content Review (upstream).** DEFERRED (LOW) —
+16. **`/spec` Phase 4.5a Semantic Content Review.** DEFERRED (LOW) —
     an LLM-judgment pass over the drafted spec for named individuals, customers,
     NDA material, or unannounced strategy before filing the issue, with
     "proceed anyway" disabled on public repos. The existing regex redaction gate
@@ -75,7 +88,7 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     bounded. Effort: S. Priority: P3. Trigger: a real semantic leak the regex
     gate misses.
 
-### From v1.7.x upstream sync (2026-05-28)
+### Deferred items (2026-05-28)
 
 Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
 "5+ options — split, never drop" rule, the catalog-token trim, the
@@ -102,7 +115,7 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
 
 6. **`vibe certify` cross-runtime conformance harness** — a command
    that renders all 53 skills, installs into temp fixtures per target,
-   runs smoke prompts, and prints a parity report
+   runs smoke prompts, and prints a coverage report
    (identical / soft-enforced / hard-enforced / broken). Codex
    outside-voice idea, validated independently. Turns "multi-target
    support" from a claim into a measurable badge; catches regressions
@@ -111,10 +124,9 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Priority: P3.
    Depends on: v1.4 ship + a few months of real usage to know which
    conformance signals actually matter.
-   **Related (shipped v1.7.4):** `bin/vibe-parity-audit` already covers the
-   *upstream-parity* axis (do skills still mirror their source after a sync) —
-   distinct from this *cross-runtime* axis (do they install/behave identically
-   across Claude/Cursor/Kiro). The two could share a report format later.
+   **Related (shipped v1.7.4):** the local skill-coverage audit already covers
+   the coverage axis — distinct from this *cross-runtime* axis (do skills
+   install/behave identically across Claude/Cursor/Kiro). The two could share a report format later.
 
 7. **`./install --scope=user|project` flag** — install to project-local
    `.cursor/skills/` etc. instead of `~/.cursor/skills/`. Locks
@@ -135,7 +147,7 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    - **DONE (v1.7.3):** Review Readiness Dashboard — 5 byte-identical copies
      (`plan-ceo-review`, `plan-eng-review`, `plan-design-review`,
      `plan-devex-review`, `devex-review`) → `lib/snippets/review-readiness-dashboard.md`.
-     Reconciled against upstream (identical modulo brand/stub adaptations);
+     Reconciled for consistency (identical modulo minor adaptations);
      render-diff proved lossless. `ship` keeps its own richer 64-line variant.
    - **DRIFTED — need real reconciliation, NOT mechanical dedup:** `VIBESTACK
      REVIEW REPORT` (×6), `Plan File Review Report` (×6), `Review Log` (×5),

@@ -53,9 +53,18 @@ vibestack splits durable knowledge the same way reference does:
 | `vibe-update-check` | Throttled (24h) "newer version available" nag |
 | `vibe-first-task-detect` | Classify the repo into one first-task bucket for the first-run scaffold (local git + FS only, emits one enum token) |
 | `vibe-decision-log` / `vibe-decision-search` | Event-sourced local decision store (`--supersede` / `--redact`, secret rejection) |
-| `vibe-parity-audit` | Maintainer tool — prove skills still mirror reference (runs from the repo, not installed) |
+| `vibestack` | Umbrella CLI — `status` / `doctor` / `skills` / `version`, and dispatch to any `vibe-<tool>` |
 
-`./install` symlinks every `bin/vibe-*` except `vibe-parity-audit`.
+`./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
+bin (`~/.vibestack/bin`), and stamps the pack version at `~/.vibestack/version`.
+Add the bin dir to `PATH` to use the CLI from anywhere, like a server-side tool:
+
+```bash
+export PATH="$PATH:$HOME/.vibestack/bin"
+vibestack            # status overview
+vibestack doctor     # health check
+vibestack config get proactive
+```
 
 ## Shared snippets (`lib/snippets/`)
 

@@ -181,30 +181,6 @@ and Kiro by default. Three implications:
    uninstall.** Covers regression (claude byte-identical), multi-target
    install, idempotency, dry-run, hook warnings, uninstall round-trip.
 
-## Parity audit
-
-`bin/vibe-parity-audit` proves the skills still mirror their reference source
-after a sync. For each local skill it fetches the reference skill's generated
-`SKILL.md`, normalizes away the agreed adaptations (slim preamble, `When to
-invoke` block, brand/path substitutions, stub lines), and reports the fraction
-of the local skill's workflow lines that appear reference (exact or fuzzy). High
-coverage = faithful mirror; the gap is the adaptations.
-
-The reference identity and the brand map live ONLY in a local, untracked config
-(`~/.vibestack/parity.conf`) so the repo stays brand-neutral. First run:
-
-```bash
-bin/vibe-parity-audit --init      # write a starter config under ~/.vibestack
-# fill in reference_repo + remap/skip/sub lines, then:
-bin/vibe-parity-audit             # per-skill coverage + median + PASS/FAIL
-bin/vibe-parity-audit --show-unmatched make-pdf   # drill into one skill
-```
-
-Exits 0 if median coverage ≥ threshold (default 0.85). Low scorers are expected
-for the most-adapted skills (e.g. `make-pdf`); use
-`--show-unmatched <skill>` to confirm each gap is a documented adaptation, not
-drift.
-
 ## Commit discipline
 
 - One logical change per commit
