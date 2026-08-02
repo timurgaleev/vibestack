@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# vibe-certify — cross-runtime conformance report.
+#
+# Renders and installs the full pack into a throwaway fixture tree per target
+# runtime (claude, cursor, kiro, codex) using the real ./install --scope=project
+# path, then verifies every installed skill:
+#
+#   frontmatter   name: present and matches the directory
+#   rendered      no unexpanded {{include}} directives
+#   paths         no leftover ${CLAUDE_SKILL_DIR} tokens (substitution ran)
+#   links         bin/ and sub-doc symlinks resolve
+#
+# Output: per-target PASS/FAIL matrix + per-skill failures. Exit 0 when every
+# target passes, 1 otherwise. Live smoke prompts are out of scope (see
+# `bun run test:evals` for real-session evals on the claude runtime).
+#
+# Usage: vibe-certify [target ...]   (default: claude cursor kiro codex)
+set -uo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+TARGETS=("$@")
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(claude cursor kiro codex)
+
+FIX="$(mktemp -d "${TMPDIR:-/tmp}/vibe-certify.XXXXXX")" || exit 3
+trap 'rm -rf "$FIX"' EXIT INT TERM
+
+total_skills=$(find "$REPO/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+overall=0
+declare -a summary
+
+for t in "${TARGETS[@]}"; do
+  root="$FIX/$t"
+  mkdir -p "$root"
+  # Real install path, project-scoped into the fixture. State stays isolated.
+  if ! VIBESTACK_HOME="$FIX/state" "$REPO/install" \
+      --scope=project --project-root="$root" --target="$t" --yes \
+      >"$FIX/$t-install.log" 2>&1; then
+    summary+=("$t: FAIL (install exited non-zero — see log below)")
+    sed -n '$p' "$FIX/$t-install.log"
+    overall=1
+    continue
+  fi
+
+  skills_root="$root/.$t/skills"
+  installed=$(find "$skills_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  fails=0
+  for d in "$skills_root"/*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d")
+    f="$d/SKILL.md"
+    if [ ! -s "$f" ]; then
+      echo "  $t/$name: MISSING or empty SKILL.md"; fails=$((fails+1)); continue
+    fi
+    fm=$(grep -m1 '^name:' "$f" | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
+    if [ "$fm" != "$name" ]; then
+      echo "  $t/$name: frontmatter name '$fm' != directory"; fails=$((fails+1))
+    fi
+    if grep -qE '^\{\{include lib/snippets/[A-Za-z0-9_-]+\.md\}\}$' "$f"; then
+      echo "  $t/$name: unexpanded {{include}} directive"; fails=$((fails+1))
+    fi
+    if grep -q 'CLAUDE_SKILL_DIR' "$f"; then
+      echo "  $t/$name: leftover \${CLAUDE_SKILL_DIR} token"; fails=$((fails+1))
+    fi
+    # Symlinks must resolve (bin/, sub-docs point back into the repo).
+    while IFS= read -r link; do
+      if [ ! -e "$link" ]; then
+        echo "  $t/$name: dangling symlink $(basename "$link")"; fails=$((fails+1))
+      fi
+    done < <(find "$d" -maxdepth 1 -type l 2>/dev/null)
+  done
+
+  if [ "$installed" != "$total_skills" ]; then
+    echo "  $t: installed $installed/$total_skills skills"; fails=$((fails+1))
+  fi
+
+  if [ "$fails" -eq 0 ]; then
+    summary+=("$t: PASS ($installed/$total_skills skills, 0 findings)")
+  else
+    summary+=("$t: FAIL ($installed/$total_skills skills, $fails findings)")
+    overall=1
+  fi
+done
+
+echo
+echo "== vibe-certify =="
+for line in "${summary[@]}"; do echo "  $line"; done
+exit "$overall"
