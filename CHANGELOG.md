@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.29.0 — 2026-08-02
+
+### Added
+
+- **Project-scoped installs.** `./install --scope=project
+  [--project-root=<dir>]` puts the skills into `<dir>/.claude|.cursor|.kiro/
+  skills` instead of `$HOME`, pinning the pack's version per repo for teams.
+  Runtime bin/state stay in `~/.vibestack`; installing into the pack's own
+  checkout is refused; `./uninstall` mirrors the flags. Verified round-trip:
+  52 skills in, zero left after uninstall.
+- **Per-target skill paths baked in at render time.** `vibe-render-skill
+  --skill-dir <dir>` substitutes `${CLAUDE_SKILL_DIR}` (bare and `:-fallback`
+  forms) with the concrete install path, and `./install` passes each target's
+  production path — hooks and body commands now resolve correctly on Cursor,
+  Kiro, and project-scoped trees, not just `~/.claude`.
+
+### Changed
+
+- **Target detection no longer counts stale leftovers.** A runtime is detected
+  when its CLI is on PATH or its home dir shows activity in the last 180 days —
+  an app uninstalled months ago no longer gets skills silently installed.
+
 ## 1.28.0 — 2026-08-02
 
 ### Added
