@@ -6,7 +6,7 @@
  *   This file is the canonical source. Each browser-skill ships a sibling
  *   copy at `<skill>/_lib/browse-client.ts` (Phase 2's generator copies it
  *   alongside every generated skill; Phase 1's bundled `hackernews-frontpage`
- *   reference skill ships a hand-copied version). The skill imports the
+ *   example skill ships a hand-copied version). The skill imports the
  *   sibling via relative path: `import { browse } from './_lib/browse-client'`.
  *
  *   Why per-skill copies and not a single global SDK: each skill is fully
