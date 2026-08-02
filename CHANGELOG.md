@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.25.2 — 2026-08-02
+
+### Fixed
+
+- The browser welcome page footer credited an upstream author instead of the
+  repo owner (left over from the v1.24.0 browser-daemon port). Repo-wide brand
+  audit is back to zero hits.
+
 ## 1.25.1 — 2026-07-30
 
 ### Changed
