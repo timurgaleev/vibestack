@@ -358,6 +358,13 @@ done
 TARGETS=("${_ordered[@]}" "${_deferred[@]}")
 unset _ordered _deferred _t _r
 
+# Static source lint — fail fast before rendering anything. An unbalanced
+# fence or a broken snippet would otherwise render silently-wrong skills.
+if ! bash "$REPO_DIR/bin/vibe-lint-sources" "$REPO_DIR"; then
+  echo "ERROR: source lint failed — fix the findings above, then re-run ./install" >&2
+  exit 1
+fi
+
 # ───────────────────────────────────────────────────────────────────────────
 # Per-skill install — renders SKILL.md to a target dir + symlinks bin/ and
 # sub-docs. Body unchanged from v1.4.0; v1.5.0 just calls it with a staging
