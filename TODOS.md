@@ -64,24 +64,6 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
 
-1. **Migrate remaining shared sections to `lib/snippets/`** —
-   Drift map (measured 2026-05-29):
-   - **DONE (v1.7.3):** Review Readiness Dashboard — 5 byte-identical copies
-     (`plan-ceo-review`, `plan-eng-review`, `plan-design-review`,
-     `plan-devex-review`, `devex-review`) → `lib/snippets/review-readiness-dashboard.md`.
-     Reconciled for consistency (identical modulo minor adaptations);
-     render-diff proved lossless. `ship` keeps its own richer 64-line variant.
-   - **DRIFTED — need real reconciliation, NOT mechanical dedup:** `VIBESTACK
-     REVIEW REPORT` (×6), `Plan File Review Report` (×6), `Review Log` (×5),
-     `Spec Review Loop` (×2), `Plan Status Footer` (×6). Each copy carries
-     genuine per-skill content (review dimensions, report fields), so a snippet
-     would need `{SKILL_NAME}` + per-skill parameterization. The "Codex
-     outside-voice fallback" is woven through the plan-* outside-voice flow, not
-     a self-contained block.
-   Effort: M (per drifted family, ~2-3 days each).
-   Priority: P2.
-   Depends on: nothing for the drifted families.
-
 3. **Renderer infra-error fuzz tests** — PATH-shimmed mocks that
    force `mktemp`/`mv` to fail and assert exit 3 + clean error
    messages. Add iff a future refactor of error handling regresses
@@ -91,6 +73,29 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Depends on: nothing (can be done anytime if motivated).
 
 ## Completed
+
+### Shared-section dedup (TODOS #1) — shipped in v1.30.0 (2026-08-02)
+
+1. **Drifted-family migration resolved.**
+   - `lib/snippets/plan-file-review-report.md` — the Plan File Review Report +
+     VIBESTACK REVIEW REPORT section, deduped from 5 skills (plan-ceo/eng/
+     devex/design-review + devex-review). The byte-identical trio renders
+     unchanged (proven by render-diff); plan-design-review and devex-review
+     picked up the two fixes their copies had missed (verdict-line wording,
+     delete-then-append write flow). `/codex`'s compact variant stays
+     intentionally separate. The nested unresolved-decisions-status include is
+     inlined in the snippet (renderer allows one level); the standalone
+     snippet file remains for `/codex`.
+   - `lib/snippets/spec-review-loop.md` — deduped from `/office-hours` +
+     `/plan-ceo-review` via `{SKILL_NAME}` (renders byte-identical for both).
+   - **Plan Status Footer** — only one real copy exists (autoplan); the other
+     grep hits are skip-list bullets. No dedup needed.
+   - **Review Log** — permanently per-skill BY DESIGN: each copy carries a
+     different vibe-review-log payload schema (metrics, STATUS rules, MODE
+     enums) consumed by vibe-review-read and the dashboards; a shared snippet
+     would break the data contract. Do not re-attempt mechanical dedup.
+   **Completed:** v1.30.0 (2026-08-02)
+
 
 ### Install family — shipped in v1.29.0 (2026-08-02)
 

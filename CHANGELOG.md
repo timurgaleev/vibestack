@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.30.0 — 2026-08-02
+
+### Changed
+
+- **Shared review-report section deduped into one snippet.** The Plan File
+  Review Report (with the VIBESTACK REVIEW REPORT template) lived as five
+  near-identical copies across the plan-review skills; it is now
+  `lib/snippets/plan-file-review-report.md` included everywhere. The three
+  byte-identical copies render exactly as before (render-diff proven), and the
+  two drifted copies picked up the fixes they had missed: `plan-design-review`
+  gets the current verdict-line wording, `devex-review` gets the
+  delete-then-append plan-file write flow (its old replace-in-place path could
+  leave a stale report mid-file).
+- **Spec Review Loop deduped** into `lib/snippets/spec-review-loop.md`
+  (`/office-hours` + `/plan-ceo-review`, `{SKILL_NAME}`-parameterized —
+  renders byte-identical for both).
+- Review Log sections stay deliberately per-skill: each carries its own
+  analytics payload schema consumed by `vibe-review-read`; recorded in TODOS
+  so nobody re-attempts mechanical dedup.
+
 ## 1.29.0 — 2026-08-02
 
 ### Added
