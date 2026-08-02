@@ -1,7 +1,7 @@
 {
   "name": "vibestack",
-  "version": "1.24.0",
-  "description": "vibestack — AI coding skills + a fast headless browser daemon. One repo, one install, the whole workflow.",
+  "version": "1.27.0",
+  "description": "vibestack \u2014 AI coding skills + a fast headless browser daemon. One repo, one install, the whole workflow.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -9,7 +9,9 @@
     "server": "bun run browse/src/server.ts",
     "start": "bun run browse/src/server.ts",
     "build": "bash browse/scripts/build-node-server.sh",
-    "vendor:xterm": "mkdir -p extension/lib && cp node_modules/xterm/lib/xterm.js extension/lib/xterm.js && cp node_modules/xterm/css/xterm.css extension/lib/xterm.css && cp node_modules/xterm-addon-fit/lib/xterm-addon-fit.js extension/lib/xterm-addon-fit.js"
+    "vendor:xterm": "mkdir -p extension/lib && cp node_modules/xterm/lib/xterm.js extension/lib/xterm.js && cp node_modules/xterm/css/xterm.css extension/lib/xterm.css && cp node_modules/xterm-addon-fit/lib/xterm-addon-fit.js extension/lib/xterm-addon-fit.js",
+    "test:evals": "RUN_EVALS=1 bun test test/evals/",
+    "test:runner": "bun test test/evals/session-runner-timeout.test.ts"
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",

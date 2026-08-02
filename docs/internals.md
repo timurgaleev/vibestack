@@ -7,7 +7,7 @@ preamble flags, and the memory architecture. For the skill catalogue see
 
 ## Architecture: brain vs. local state
 
-vibestack splits durable knowledge the same way reference does:
+vibestack splits durable knowledge in two:
 
 - **memex is the brain** — a hosted Postgres + pgvector MCP server. It is the
   **semantic-recall** layer: skills query it for product/goal/prior context
@@ -20,7 +20,7 @@ vibestack splits durable knowledge the same way reference does:
 - **Local state is the record** — durable decisions, learnings, analytics, and
   per-project artifacts live under `~/.vibestack/` (override with
   `$VIBESTACK_HOME`). Decisions and artifacts are **local and reliable; the brain
-  is not required for them** — the same split the reference uses.
+  is not required for them**.
 
 ```
 ~/.vibestack/
@@ -54,6 +54,7 @@ vibestack splits durable knowledge the same way reference does:
 | `vibe-first-task-detect` | Classify the repo into one first-task bucket for the first-run scaffold (local git + FS only, emits one enum token) |
 | `vibe-decision-log` / `vibe-decision-search` | Event-sourced local decision store (`--supersede` / `--redact`, secret rejection) |
 | `vibestack` | Umbrella CLI — `status` / `doctor` / `skills` / `version`, and dispatch to any `vibe-<tool>` |
+| `vibe-lint-sources` | Static lint over skill sources + snippets (fence balance, duplicate headings, nested includes, size); runs inside `./install` before rendering |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
 bin (`~/.vibestack/bin`), and stamps the pack version at `~/.vibestack/version`.
@@ -102,3 +103,19 @@ The preamble echoes flags the skill body reads. All come from the environment or
 | `CHECKPOINT_MODE` / `CHECKPOINT_PUSH` | config | continuous WIP commits vs explicit |
 | `QUESTION_TUNING` | config | honor recorded question preferences (`/plan-tune`) |
 | `MODEL_OVERLAY` | env | model family for self-adjustment (default `claude`) |
+
+## E2E skill evals (`test/evals/`)
+
+`session-runner.ts` spawns a real `claude -p` session in a throwaway sandbox:
+skills render from repo sources into the sandbox's project-level
+`.claude/skills/` (the path real installs resolve), `VIBESTACK_HOME` points
+into the sandbox, and the child gets zero MCP servers. The runner streams
+NDJSON and survives timed-out children that leave pipe-holding orphans —
+regression-locked by `session-runner-timeout.test.ts`, which runs offline in
+the default suite.
+
+```bash
+bun run test:runner   # offline: the timeout/orphan regression test only
+bun run test:evals    # live smoke evals for /review /ship /investigate — costs real tokens
+EVALS_MODEL=claude-haiku-4-5-20251001 bun run test:evals   # cheaper model
+```

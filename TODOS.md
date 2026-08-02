@@ -2,19 +2,6 @@
 
 ## Open
 
-### E2E skill-eval harness (2026-08-02)
-
-17. **End-to-end skill evals** — a bun harness that spawns real `claude -p`
-    sessions in a sandbox (temp project + project-level `.claude/skills/`),
-    streams the transcript, and asserts skill behavior (e.g. `/autoplan` fires
-    both review voices, `/ship` runs its gates). Today's bash suites cover the
-    renderer, install, binaries, and the browse shim — none exercise a live
-    skill session. Scoped v1: a session-runner helper with timeout/orphan
-    safety + smoke evals for `/ship`, `/autoplan`, `/review`, opt-in via
-    `test:evals` (never in the default suite — costs real tokens).
-    Effort: L. Priority: P2. Trigger: first regression a bash suite could not
-    have caught, or before any large skill refactor.
-
 ### Feature program (2026-06-21) — remaining
 
 The session/preamble/tier-2 + binaries layer is shipped (v1.13.0–v1.15.0). The
@@ -160,15 +147,6 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Priority: P2.
    Depends on: nothing for the drifted families.
 
-2. **Lint rules for `lib/snippets/`** — no duplicate headings, no
-   runtime-execution instructions (a snippet should not contain
-   "you must do X" runtime directives that conflict with the parent
-   skill), max line count. Run as part of `./install --check`.
-   Effort: S.
-   Priority: P3.
-   Depends on: v1 ship + at least 4 snippets in `lib/snippets/` so
-   patterns are visible.
-
 3. **Renderer infra-error fuzz tests** — PATH-shimmed mocks that
    force `mktemp`/`mv` to fail and assert exit 3 + clean error
    messages. Add iff a future refactor of error handling regresses
@@ -176,16 +154,6 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Effort: S.
    Priority: P3.
    Depends on: nothing (can be done anytime if motivated).
-
-5. **Lint rule for unbalanced markdown fences in skill sources** —
-   v1's renderer uses minimal fence-state tracking (toggles `in_fence`
-   on `^\`\`\``). An unbalanced fence in a skill source would silently
-   swallow real directives. Add `./install --check` validation that
-   walks each skill source and asserts even-numbered fence count.
-   Catches the failure mode without adopting a markdown AST parser.
-   Effort: S.
-   Priority: P3.
-   Depends on: v1 ship.
 
 ### From v1.5 install UX polish eng review (2026-05-10)
 
@@ -208,6 +176,28 @@ Source design doc:
    Depends on: v1.5 ship + at least one user report.
 
 ## Completed
+
+### E2E skill-eval harness v1 — shipped in v1.27.0 (2026-08-02)
+
+17. **End-to-end skill evals.** `test/evals/session-runner.ts` spawns real
+    `claude -p` sessions in a sandbox (temp git project + project-level
+    `.claude/skills/` rendered from repo sources, VIBESTACK_HOME isolated),
+    streams NDJSON, and survives timed-out children that leave pipe-holding
+    orphans (reader cancel + stderr race, regression-locked by
+    `session-runner-timeout.test.ts` — offline, always runs). Smoke evals for
+    `/review`, `/ship`, `/investigate` assert skill-specific vocabulary;
+    opt-in via `bun run test:evals` (costs real tokens).
+    **Completed:** v1.27.0 (2026-08-02)
+
+### Source lint (TODOS #2 + #5) — shipped in v1.27.0 (2026-08-02)
+
+2./5. **`bin/vibe-lint-sources`** — fence balance across skill sources and
+    snippets, snippet rules (no duplicate headings, no nested `{{include}}`,
+    max 400 lines). Runs inside `./install` before rendering (fail fast) and
+    in `test/test-source-lint.sh` (7 cases). The "no runtime-execution
+    directives" idea from #2 was dropped — not mechanically lintable without
+    heavy false positives.
+    **Completed:** v1.27.0 (2026-08-02)
 
 ### Install UX polish + atomic install — shipped in v1.5.0 (2026-05-10)
 
