@@ -39,6 +39,11 @@ Options:
                     `all` = claude, cursor, kiro (codex is opt-in, see below).
   --yes, -y         Non-interactive: install into the default set (all three).
                     Equivalent to --target=all.
+  --scope=<s>       user (default) installs into ~/. project installs skills
+                    into <project-root>/.claude/skills etc. — pins the pack's
+                    version per repo. Runtime bin/state stay in ~/.vibestack.
+  --project-root=<d>  Project root for --scope=project (default: $PWD, or
+                    $VIBESTACK_PROJECT_ROOT).
   --dry-run         Preview every output, write nothing.
   -h, --help        Show this help and exit.
 
@@ -58,6 +63,8 @@ Examples:
   ./install --target=codex           # Codex CLI (opt-in)
   ./install --yes                    # Default set, skip prompts (CI-friendly)
   ./install --dry-run                # Interactive preview, write nothing
+  ./install --scope=project --project-root=~/code/myapp --target=claude
+                                     # Pin the pack into one project's tree
 EOF
 }
 
@@ -89,19 +96,26 @@ target_root() {
   echo "${TARGET_ROOT[$1]:-}"
 }
 
-# Detection heuristic (v1.4.0 logic, extracted v1.5.0).
-# Proxy check — see TODO #9 (detection refinement) for v1.6+ candidate.
+# Detection heuristic (tightened from the v1.4.0 proxy check).
+# A target counts as present when its CLI is on PATH, or its home dir exists
+# AND shows recent activity (any file modified in the last 180 days) — a stale
+# `~/.cursor/` left behind by an uninstalled app no longer counts, so the
+# "Enter installs detected" default stops surprising users.
 #
-# VIBE_TEST_MODE=1 disables the `command -v` half (test-only seam) so the
-# integration suite can control detection precisely via $HOME/.<target>/
-# directory presence without picking up real binaries on the dev machine.
+# VIBE_TEST_MODE=1 disables the `command -v` half and the recency filter
+# (test-only seam) so the integration suite can control detection precisely
+# via $HOME/.<target>/ directory presence without picking up real binaries.
 target_detected() {
   local t="$1"
   if [ "${VIBE_TEST_MODE:-0}" = "1" ]; then
     [ -d "$HOME/.${t}" ]
     return $?
   fi
-  [ -d "$HOME/.${t}" ] || command -v "$t" >/dev/null 2>&1
+  command -v "$t" >/dev/null 2>&1 && return 0
+  [ -d "$HOME/.${t}" ] || return 1
+  # Prune the skills tree we manage — our own installs must not refresh a
+  # stale runtime's activity signal indefinitely.
+  [ -n "$(find "$HOME/.${t}" -name skills -prune -o -type f -mtime -180 -print -quit 2>/dev/null)" ]
 }
 
 # Total skill count, computed once. Strip BSD `wc -l` whitespace.
@@ -115,11 +129,19 @@ total_skills=$(find "$SKILLS_SRC" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
 TARGETS_RAW=""
 DRY_RUN=0
 YES_FLAG=0
+SCOPE="user"
+PROJECT_ROOT=""
 
 for arg in "$@"; do
   case "$arg" in
     --target=*)
       TARGETS_RAW="${arg#*=}"
+      ;;
+    --scope=*)
+      SCOPE="${arg#*=}"
+      ;;
+    --project-root=*)
+      PROJECT_ROOT="${arg#*=}"
       ;;
     --yes|-y)
       YES_FLAG=1
@@ -138,6 +160,39 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# Project scope: install skills into a project-local tree instead of $HOME, so
+# a team can pin the pack's version per repo. Runtime bin/state stay global
+# (~/.vibestack) — skills resolve their tools from there regardless of scope.
+case "$SCOPE" in
+  user) ;;
+  project)
+    PROJECT_ROOT="${PROJECT_ROOT:-${VIBESTACK_PROJECT_ROOT:-$PWD}}"
+    # Expand a literal leading ~ (no shell tilde expansion after `--flag=`).
+    case "$PROJECT_ROOT" in "~") PROJECT_ROOT="$HOME" ;; "~/"*) PROJECT_ROOT="$HOME/${PROJECT_ROOT#\~/}" ;; esac
+    [ -d "$PROJECT_ROOT" ] || { echo "ERROR: project root not found: $PROJECT_ROOT" >&2; exit 2; }
+    # Canonicalize (handles `.`, `..`, trailing slashes, symlinks) so hooks
+    # never embed relative paths and the self-install check can't be bypassed.
+    PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)" || { echo "ERROR: cannot resolve project root" >&2; exit 2; }
+    _repo_real="$(cd "$REPO_DIR" && pwd -P)"
+    if [ "$PROJECT_ROOT" = "$_repo_real" ]; then
+      echo "ERROR: --scope=project from inside the vibestack repo needs --project-root=<your project>" >&2
+      echo "       (running from the pack's own checkout would install into the pack itself)" >&2
+      exit 2
+    fi
+    unset _repo_real
+    for _t in "${!TARGET_ROOT[@]}"; do
+      _rel="${TARGET_ROOT[$_t]#$HOME/}"          # .claude/skills etc.
+      TARGET_ROOT[$_t]="$PROJECT_ROOT/$_rel"
+    done
+    unset _t _rel
+    echo "Scope: project ($PROJECT_ROOT)"
+    ;;
+  *)
+    echo "ERROR: invalid --scope '$SCOPE' (user|project)" >&2
+    exit 2
+    ;;
+esac
 
 # ───────────────────────────────────────────────────────────────────────────
 # Signal handlers (placed AFTER arg parsing per eng-review R2).
@@ -373,6 +428,10 @@ fi
 install_skill_to_target() {
   local skill_dir="$1"
   local target_root="$2"
+  # Production root the files will finally live under (differs from
+  # target_root during staged installs). Drives ${CLAUDE_SKILL_DIR}
+  # substitution so hook/body paths are correct per target runtime.
+  local final_root="${3:-$2}"
   local skill_name target
 
   skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null \
@@ -393,7 +452,8 @@ install_skill_to_target() {
 
   [ -L "$target/SKILL.md" ] && rm -f "$target/SKILL.md"
 
-  if ! "$REPO_DIR/bin/vibe-render-skill" "${skill_dir%/}/SKILL.md" "$target/SKILL.md"; then
+  if ! "$REPO_DIR/bin/vibe-render-skill" --skill-dir "$final_root/$skill_name" \
+      "${skill_dir%/}/SKILL.md" "$target/SKILL.md"; then
     echo "ERROR: render failed for $skill_name → $target" >&2
     return 2
   fi
@@ -577,7 +637,7 @@ for target in "${TARGETS[@]}"; do
   for skill_dir in "$SKILLS_SRC"/*/; do
     [ -f "$skill_dir/SKILL.md" ] || continue
 
-    if ! install_skill_to_target "$skill_dir" "$staging_dir"; then
+    if ! install_skill_to_target "$skill_dir" "$staging_dir" "$root"; then
       failed_skill=$(basename "$skill_dir")
       break  # Per-target fail-fast; cross-target continue.
     fi

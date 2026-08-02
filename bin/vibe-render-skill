@@ -6,16 +6,23 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: vibe-render-skill SOURCE DEST" >&2
-  echo "       vibe-render-skill --check SOURCE INSTALLED_PATH" >&2
+  echo "usage: vibe-render-skill [--skill-dir DIR] SOURCE DEST" >&2
+  echo "       vibe-render-skill --check [--skill-dir DIR] SOURCE INSTALLED_PATH" >&2
+  echo "  --skill-dir DIR  substitute \${CLAUDE_SKILL_DIR...} tokens with DIR" >&2
   exit 2
 }
 
 CHECK_MODE=0
-if [ "${1:-}" = "--check" ]; then
-  CHECK_MODE=1
-  shift
-fi
+SKILL_DIR_SUB=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) CHECK_MODE=1; shift ;;
+    --skill-dir) [ $# -ge 2 ] || usage; SKILL_DIR_SUB="$2"; shift 2 ;;
+    --skill-dir=*) SKILL_DIR_SUB="${1#*=}"; shift ;;
+    -*) usage ;;
+    *) break ;;
+  esac
+done
 [ $# -eq 2 ] || usage
 SOURCE="$1"
 
@@ -35,6 +42,11 @@ if [ "$CHECK_MODE" = "1" ]; then
   CHECK_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/vibe-check.XXXXXX")" || {
     echo "render: infra: cannot create temp dir for --check" >&2; exit 3; }
   DEST="$CHECK_TMPDIR/SKILL.md"
+  # Installed output was rendered with --skill-dir; infer it from the installed
+  # path when the caller didn't pass one, so --check compares like with like.
+  if [ -z "$SKILL_DIR_SUB" ] && [ -e "$CHECK_INSTALLED" ]; then
+    SKILL_DIR_SUB="$(cd "$(dirname "$CHECK_INSTALLED")" 2>/dev/null && pwd -P || true)"
+  fi
 else
   DEST="$2"
   CHECK_INSTALLED=""
@@ -113,6 +125,26 @@ while IFS= read -r line || [ -n "$line" ]; do
     printf '%s\n' "$line" >> "$TMP"
   fi
 done < "$SOURCE"
+
+# Optional ${CLAUDE_SKILL_DIR} substitution: replace both the bare token and the
+# `${CLAUDE_SKILL_DIR:-fallback}` shell-default form with the concrete install
+# dir, so hooks and body commands resolve correctly on every target runtime.
+# python3 with a lambda replacement keeps the path fully literal — awk/sed
+# replacement semantics would corrupt paths containing `&` or backslashes.
+if [ -n "$SKILL_DIR_SUB" ]; then
+  SUB_TMP="$(mktemp "$DEST_DIR/.SKILL.sub.XXXXXX")" || {
+    echo "render: infra: cannot create temp file for substitution" >&2; exit 3; }
+  if ! VIBE_SKILL_DIR_SUB="$SKILL_DIR_SUB" python3 - "$TMP" > "$SUB_TMP" <<'PYEOF'
+import os, re, sys
+d = os.environ["VIBE_SKILL_DIR_SUB"]
+t = open(sys.argv[1], encoding="utf-8").read()
+sys.stdout.write(re.sub(r"\$\{CLAUDE_SKILL_DIR(:-[^}]*)?\}", lambda m: d, t))
+PYEOF
+  then
+    rm -f "$SUB_TMP"; echo "render: infra: skill-dir substitution failed" >&2; exit 3
+  fi
+  mv "$SUB_TMP" "$TMP"
+fi
 
 # Atomic move into place. mktemp creates 0600; normalize to 0644 to match install conventions.
 mv "$TMP" "$DEST" || { echo "render: infra: cannot move into $DEST (perms?)" >&2; exit 3; }
