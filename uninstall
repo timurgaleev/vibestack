@@ -15,6 +15,8 @@ Usage: ./uninstall [options]
 
 Options:
   --target=<list>     Comma-separated targets: claude, cursor, kiro, or all.
+  --scope=<s>         user (default) or project — must match how you installed.
+  --project-root=<d>  Project root for --scope=project (default: $PWD).
                       Default: claude (preserves v1.3.x behavior).
   --delete-state      Bypass the prompt and delete ~/.vibestack/ (learnings,
                       analytics, project state).
@@ -31,11 +33,19 @@ EOF
 # Parse args
 TARGETS_RAW=""
 DELETE_STATE_FLAG=0
+SCOPE="user"
+PROJECT_ROOT=""
 
 for arg in "$@"; do
   case "$arg" in
     --target=*)
       TARGETS_RAW="${arg#*=}"
+      ;;
+    --scope=*)
+      SCOPE="${arg#*=}"
+      ;;
+    --project-root=*)
+      PROJECT_ROOT="${arg#*=}"
       ;;
     --delete-state)
       DELETE_STATE_FLAG=1
@@ -64,21 +74,36 @@ else
   fi
   for t in "${TARGETS[@]}"; do
     case "$t" in
-      claude|cursor|kiro) ;;
+      claude|cursor|kiro|codex) ;;
       *)
-        echo "ERROR: unknown target '$t'. Valid: claude, cursor, kiro, all." >&2
+        echo "ERROR: unknown target '$t'. Valid: claude, cursor, kiro, codex, all." >&2
         exit 2
         ;;
     esac
   done
 fi
 
+# Scope resolution (must mirror install's --scope semantics)
+case "$SCOPE" in
+  user) SCOPE_BASE="$HOME" ;;
+  project)
+    PROJECT_ROOT="${PROJECT_ROOT:-${VIBESTACK_PROJECT_ROOT:-$PWD}}"
+    case "$PROJECT_ROOT" in "~") PROJECT_ROOT="$HOME" ;; "~/"*) PROJECT_ROOT="$HOME/${PROJECT_ROOT#\~/}" ;; esac
+    [ -d "$PROJECT_ROOT" ] || { echo "ERROR: project root not found: $PROJECT_ROOT" >&2; exit 2; }
+    PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)" || { echo "ERROR: cannot resolve project root" >&2; exit 2; }
+    SCOPE_BASE="$PROJECT_ROOT"
+    echo "Scope: project ($PROJECT_ROOT)"
+    ;;
+  *) echo "ERROR: invalid --scope '$SCOPE' (user|project)" >&2; exit 2 ;;
+esac
+
 # Map target → root (must match install's mapping)
 target_root() {
   case "$1" in
-    claude) echo "$HOME/.claude/skills" ;;
-    cursor) echo "$HOME/.cursor/skills" ;;
-    kiro)   echo "$HOME/.kiro/skills" ;;
+    claude) echo "$SCOPE_BASE/.claude/skills" ;;
+    cursor) echo "$SCOPE_BASE/.cursor/skills" ;;
+    kiro)   echo "$SCOPE_BASE/.kiro/skills" ;;
+    codex)  echo "$SCOPE_BASE/.codex/skills" ;;
     *)      echo "" ;;
   esac
 }

@@ -29,15 +29,6 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     — it is bin infrastructure against the lightweight-skill-body philosophy. Effort: L.
     Priority: P3. Trigger: the prose preflight proving insufficient in practice.
 
-15. **`${CLAUDE_SKILL_DIR}` render-time substitution (alternative to the `:-` fallback).**
-    Shipped the low-risk shell-default fallback in the safety hooks + two body refs. A
-    fuller fix would have `bin/vibe-render-skill` substitute the token with the actual
-    per-target install dir at render time (covers Cursor/Kiro paths too, not just the
-    `$HOME/.claude` fallback). Deferred because it complicates the `--check` drift
-    semantics (a fresh render would differ from installed unless the substitution is
-    parameterized by target). Effort: M. Priority: P3. Trigger: a Cursor/Kiro user
-    hitting a hook-path miss, or CC dropping `${VAR:-default}` shell expansion.
-
 ### Deferred items (2026-05-28)
 
 Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
@@ -69,16 +60,6 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    the coverage axis — distinct from this *cross-runtime* axis (do skills
    install/behave identically across Claude/Cursor/Kiro). The two could share a report format later.
 
-7. **`./install --scope=user|project` flag** — install to project-local
-   `.cursor/skills/` etc. instead of `~/.cursor/skills/`. Locks
-   vibestack version per repo for teams that want pinned workflow.
-   Needs clear `VIBESTACK_PROJECT_ROOT` convention to resolve `$PWD`
-   ambiguity (the install runs from the cloned vibestack dir, not
-   the user's project).
-   Effort: S (~1 day).
-   Priority: P3.
-   Depends on: v1.4 ship + at least one user requesting it.
-
 ### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
@@ -109,27 +90,25 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Priority: P3.
    Depends on: nothing (can be done anytime if motivated).
 
-### From v1.5 install UX polish eng review (2026-05-10)
-
-Source design doc:
-`~/.vibestack/projects/vibestack/timurgaleev-main-design-20260510-182355.md`
-(APPROVED, eng-review CLEARED with atomic-install pivot per Codex outside-voice).
-
-9. **Detection heuristic refinement** — Codex outside-voice flagged that
-   the v1.4.x detection check (`[ -d "$HOME/.${t}" ] || command -v "$t"
-   >/dev/null 2>&1`) is a proxy, not real detection. An old uninstalled
-   Cursor leaves `~/.cursor/`. A stale Homebrew binary on PATH isn't real
-   detection. With v1.5's "Enter installs detected" default, false positives
-   surprise users (`why did it install Cursor when I uninstalled it months
-   ago?`). Tighten detection: app version metadata (e.g.,
-   `~/.cursor/User/globalStorage/storage.json` recency), recent-mtime on
-   target dir, or an interactive confirmation. OS-specific app-detection
-   logic adds surface; defer until a real false-positive is reported.
-   Effort: M (~1 day, target-by-target detection refinement).
-   Priority: P3.
-   Depends on: v1.5 ship + at least one user report.
-
 ## Completed
+
+### Install family — shipped in v1.29.0 (2026-08-02)
+
+- **#15 `${CLAUDE_SKILL_DIR}` render-time substitution** —
+  `vibe-render-skill --skill-dir <dir>` replaces both the bare token and the
+  `:-fallback` form with the concrete per-target install path; `./install`
+  passes the production path during staged renders, so hooks and body commands
+  resolve correctly on every runtime (fixes the bare-token refs too).
+- **#9 Target-detection refinement** — a stale `~/.cursor/`-style dir no
+  longer counts as detected: CLI on PATH, or home dir with activity in the
+  last 180 days. `VIBE_TEST_MODE` seam unchanged.
+- **#7 `./install --scope=user|project`** — project-local installs into
+  `<project-root>/.claude|.cursor|.kiro/skills` (pins the pack per repo);
+  `--project-root`/`$VIBESTACK_PROJECT_ROOT` resolve the root, self-install
+  into the pack's own checkout is refused, runtime bin/state stay global.
+  `./uninstall` mirrors the flags. Verified round-trip: 52 skills in, hook
+  paths substituted, uninstall leaves zero.
+  **Completed:** v1.29.0 (2026-08-02)
 
 ### Quick-win closeout — shipped in v1.28.0 (2026-08-02)
 

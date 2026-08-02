@@ -136,6 +136,8 @@ bin/vibe-render-skill --check skills/<name>/SKILL.md ~/.claude/skills/<name>/SKI
 ./install --target=claude          # claude only
 ./install --target=cursor,kiro     # cursor + kiro
 ./install --target=codex           # Codex CLI (opt-in — not in `all`, see below)
+./install --scope=project --project-root=<dir> --target=claude
+                                   # project-local: pins the pack into <dir>/.claude/skills
 ./install --yes                    # all three, skip prompts (CI-friendly)
 ./install --dry-run --target=all   # preview, no writes
 
