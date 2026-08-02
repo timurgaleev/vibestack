@@ -1691,6 +1691,8 @@ High-confidence findings (agreed on by multiple sources) should be prioritized f
 
 ---
 
+{{include lib/snippets/askuserquestion-split.md}}
+
 {{include lib/snippets/capture-learnings.md}}
 ## Step 12: Version bump (auto-decide)
 

@@ -2,27 +2,6 @@
 
 ## Open
 
-### Feature program (2026-06-21) — remaining
-
-The session/preamble/tier-2 + binaries layer is shipped (v1.13.0–v1.15.0). The
-one large remaining item:
-
-- **Browse + design daemons (Phase E) — mostly done.** The browse shim has a
-  `chain` verb (one-call sequences) AND a **persistent daemon** (`$B daemon &`)
-  giving cross-call element refs (`snapshot` → `@e1`, then `click @e1` from a
-  separate call) over a unix socket. Done since: upload, dialog capture, cookie import (CDP), tunnel/pairing (ngrok),
-  and design-mockup generation (OpenAI image backend via `vibe-design`). The only
-  deep remainder is a native browser *extension* (Layer-C stealth +
-  cookie import from Chrome's encrypted store without remote-debugging) — a
-  separate native project
-  (CDP element refs, the browser extension, tunnels/pairing) and the design-image
-  daemon are a multi-day vendoring project, not an in-session port. The four
-  interaction-heavy skills (`/browse`, `/open-browser`, `/pair-agent`,
-  `/setup-browser-cookies`) and `/design-*` mockups still degrade to text/shim
-  until that lands. Effort: L. Priority: P2. Trigger: a decision to vendor the
-  daemons.
-
-
 ### Deferred items (2026-06-13)
 
 Shipped: codex outside-voice **default-on** (plan-ceo/eng/devex-review + autoplan
@@ -43,14 +22,6 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     emoji-fallback prose would document capabilities no in-repo binary provides.
     Effort: L. Priority: P3. Trigger: a decision to vendor the make-pdf renderer.
 
-13. **Cross-session decision memory.** DEFERRED — redundant with
-    memex-as-SSOT. A local `decisions.jsonl` event store reinvents what memex
-    already does server-side (`entity_timeline`, `entity_recall`, hybrid search); a
-    local copy would create a rival source of truth — the exact anti-pattern the
-    single-brain policy avoids. If decision capture is ever wanted, the scoped move is a
-    one-line instruction telling plan/ship to write decisions *to memex*, not a local
-    store. Effort: M. Priority: P3. Trigger: explicit need for durable decision capture.
-
 14. **Full brain-aware planning cache.** PARTIALLY ADDRESSED — the
     high-value gap (planning skills ignored the brain) is now closed with a lightweight
     `lib/snippets/brain-preflight.md` model-level memex query. The heavy layer
@@ -67,14 +38,6 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     parameterized by target). Effort: M. Priority: P3. Trigger: a Cursor/Kiro user
     hitting a hook-path miss, or CC dropping `${VAR:-default}` shell expansion.
 
-16. **`/spec` Phase 4.5a Semantic Content Review.** DEFERRED (LOW) —
-    an LLM-judgment pass over the drafted spec for named individuals, customers,
-    NDA material, or unannounced strategy before filing the issue, with
-    "proceed anyway" disabled on public repos. The existing regex redaction gate
-    (Phase 4.5) + the new pre-filing re-scan are a partial backstop, so impact is
-    bounded. Effort: S. Priority: P3. Trigger: a real semantic leak the regex
-    gate misses.
-
 ### Deferred items (2026-05-28)
 
 Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
@@ -86,15 +49,6 @@ issue. Remaining follow-ups:
     `/ios-design-review`, `/ios-clean`, `/ios-sync`) and the bundled Mac-side
     daemon / DebugBridge templates / accessor codegen were removed — out of scope
     for this pack. Skill count 53 → 48.
-
-11. **Broaden the AskUserQuestion split rule (optional).** The "5+ options —
-    split, never drop" snippet is wired into the 4 `plan-*` skills +
-    `/office-hours` (the genuine 5+ scope-decision surfaces). If `/qa`, `/ship`,
-    or `/autoplan` start producing 5+ independent-option asks, add the
-    `{{include lib/snippets/askuserquestion-split.md}}` directive there too.
-    Effort: S.
-    Priority: P3.
-    Depends on: a real 5+ option ask surfacing in one of those skills.
 
 ### v1.5+ candidates from multi-target install eng review (2026-05-09)
 
@@ -176,6 +130,26 @@ Source design doc:
    Depends on: v1.5 ship + at least one user report.
 
 ## Completed
+
+### Quick-win closeout — shipped in v1.28.0 (2026-08-02)
+
+- **Browse + design daemons (Phase E) — COMPLETE.** Everything the old open
+  block listed is shipped: persistent daemon + `chain` (v1.17.0/v1.16.0),
+  upload/dialog/cookies incl. import from the encrypted browser store
+  (`browse/src/cookie-import-browser.ts`, picker UI + `--domain` direct mode),
+  tunnels/pairing (ngrok), design mockups (`vibe-design`), sidebar extension +
+  full TS daemon (v1.24.0), JS stealth layer (v1.19.0). No native browser-patch
+  work remains in scope.
+- **#13 Cross-session decision memory** — implemented as
+  `vibe-decision-log` / `vibe-decision-search` (event-sourced local
+  `decisions.jsonl`); memex stays the semantic-recall layer.
+- **#16 `/spec` Phase 4.5a Semantic Content Review** — LLM-judgment pass over
+  the final draft (named individuals, customer names, unannounced strategy,
+  NDA material, codename bleed) with `SEMANTIC_REVIEW:` marker,
+  public-repo-strict options, injection hardening; regex gate renamed 4.5b and
+  stays the deterministic backstop.
+- **#11 AskUserQuestion split rule** — `askuserquestion-split` snippet now also
+  included in `/qa`, `/ship`, `/autoplan`.
 
 ### E2E skill-eval harness v1 — shipped in v1.27.0 (2026-08-02)
 
