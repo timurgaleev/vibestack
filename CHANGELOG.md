@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.31.0 — 2026-08-02
+
+### Added
+
+- **`vibe-certify` — cross-runtime conformance harness (TODOS #6).** Installs
+  the full pack into a throwaway fixture per target runtime (claude, cursor,
+  kiro, codex) through the real `./install --scope=project` path, then
+  verifies every skill: frontmatter name matches the directory, no unexpanded
+  `{{include}}` directives, no leftover `${CLAUDE_SKILL_DIR}` tokens, all
+  symlinks resolve, full skill count present. Prints a per-target PASS/FAIL
+  matrix and gates by exit code; `test/test-certify.sh` covers the clean and
+  fail-closed paths. Current state: 4/4 targets PASS.
+
 ## 1.30.0 — 2026-08-02
 
 ### Changed
