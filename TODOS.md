@@ -22,44 +22,6 @@ DEFERRED (with reasons), revisit only on the stated trigger:
     emoji-fallback prose would document capabilities no in-repo binary provides.
     Effort: L. Priority: P3. Trigger: a decision to vendor the make-pdf renderer.
 
-14. **Full brain-aware planning cache.** PARTIALLY ADDRESSED — the
-    high-value gap (planning skills ignored the brain) is now closed with a lightweight
-    `lib/snippets/brain-preflight.md` model-level memex query. The heavy layer
-    (`brain-cache` CLI + typed 8-kind schema-pack + TTL cache + resolvers) is NOT ported
-    — it is bin infrastructure against the lightweight-skill-body philosophy. Effort: L.
-    Priority: P3. Trigger: the prose preflight proving insufficient in practice.
-
-### Deferred items (2026-05-28)
-
-Shipped v1.7.0–v1.7.2 (47 → 53 skills): `/spec`, the iOS preview suite, the
-"5+ options — split, never drop" rule, the catalog-token trim, the
-review/retro/deploy correctness guards, and `/ship` auto-closing the `/spec`
-issue. Remaining follow-ups:
-
-10. **iOS suite — REMOVED (v1.10.0).** The 5 iOS skills (`/ios-qa`, `/ios-fix`,
-    `/ios-design-review`, `/ios-clean`, `/ios-sync`) and the bundled Mac-side
-    daemon / DebugBridge templates / accessor codegen were removed — out of scope
-    for this pack. Skill count 53 → 48.
-
-### v1.5+ candidates from multi-target install eng review (2026-05-09)
-
-Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260509-101119.md` (APPROVED, multi-target install for Cursor + Kiro). Ship target: v1.4.0.
-
-6. **`vibe certify` cross-runtime conformance harness** — a command
-   that renders all 53 skills, installs into temp fixtures per target,
-   runs smoke prompts, and prints a coverage report
-   (identical / soft-enforced / hard-enforced / broken). Codex
-   outside-voice idea, validated independently. Turns "multi-target
-   support" from a claim into a measurable badge; catches regressions
-   when Cursor/Kiro change their spec.
-   Effort: M (~3 days).
-   Priority: P3.
-   Depends on: v1.4 ship + a few months of real usage to know which
-   conformance signals actually matter.
-   **Related (shipped v1.7.4):** the local skill-coverage audit already covers
-   the coverage axis — distinct from this *cross-runtime* axis (do skills
-   install/behave identically across Claude/Cursor/Kiro). The two could share a report format later.
-
 ### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
@@ -73,6 +35,28 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Depends on: nothing (can be done anytime if motivated).
 
 ## Completed
+
+### `vibe certify` (TODOS #6) — shipped in v1.31.0 (2026-08-02)
+
+6. **Cross-runtime conformance harness.** `bin/vibe-certify [targets…]`
+   installs the full pack into a throwaway fixture per target via the real
+   `./install --scope=project` path and verifies every skill: frontmatter
+   name, no unexpanded includes, no leftover `${CLAUDE_SKILL_DIR}` tokens,
+   symlinks resolve, full skill count. PASS/FAIL matrix, exit-code gated;
+   `test/test-certify.sh` covers clean + fail-closed paths. Live smoke prompts
+   stay in `bun run test:evals`. Current: 4/4 targets PASS.
+   **Completed:** v1.31.0 (2026-08-02)
+
+### Closed by design (2026-08-02)
+
+14. **Full brain-aware planning cache** — RESOLVED as designed: the
+    lightweight `brain-preflight` snippet IS the intended mechanism; the heavy
+    cache layer is rejected as bin infrastructure against the
+    lightweight-skill-body philosophy. Reopen only if the prose preflight
+    proves insufficient in practice.
+10. **iOS suite** — removed in v1.10.0; out of scope for this pack. Record
+    kept here for history.
+
 
 ### Shared-section dedup (TODOS #1) — shipped in v1.30.0 (2026-08-02)
 

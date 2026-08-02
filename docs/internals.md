@@ -55,6 +55,7 @@ vibestack splits durable knowledge in two:
 | `vibe-decision-log` / `vibe-decision-search` | Event-sourced local decision store (`--supersede` / `--redact`, secret rejection) |
 | `vibestack` | Umbrella CLI — `status` / `doctor` / `skills` / `version`, and dispatch to any `vibe-<tool>` |
 | `vibe-lint-sources` | Static lint over skill sources + snippets (fence balance, duplicate headings, nested includes, size); runs inside `./install` before rendering |
+| `vibe-certify` | Cross-runtime conformance: fixture-install per target + per-skill verification matrix |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
 bin (`~/.vibestack/bin`), and stamps the pack version at `~/.vibestack/version`.
