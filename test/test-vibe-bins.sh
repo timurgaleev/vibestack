@@ -56,6 +56,14 @@ id="$("$BIN/vibe-decision-search" --recent 5 | grep -oE 'd[0-9]+' | head -1)"
   && ok "design available with key" || no "design status wrong with key"
 "$BIN/vibe-design" compare >/dev/null 2>&1 && ok "design skips unsupported verb" || no "design crashed on compare"
 
+# vibestack umbrella CLI
+out="$("$BIN/vibestack" version)"
+grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<<"$out" && ok "vibestack version prints semver" || no "vibestack version got '$out'"
+"$BIN/vibestack" help >/dev/null 2>&1 && ok "vibestack help exits 0" || no "vibestack help failed"
+out="$("$BIN/vibestack" session-kind)"
+[ "$out" = "interactive" ] && ok "vibestack dispatches to vibe-session-kind" || no "vibestack dispatch got '$out'"
+"$BIN/vibestack" no-such-tool >/dev/null 2>&1 && no "vibestack accepted unknown command" || ok "vibestack rejects unknown command"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

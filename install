@@ -474,13 +474,20 @@ if [ "$DRY_RUN" != "1" ]; then
     for script in "$REPO_DIR/bin"/vibe-*; do
       [ -f "$script" ] || continue
       name=$(basename "$script")
-      # vibe-parity-audit is a maintainer/dev tool that must run from the repo
-      # checkout (it reads skills/); don't install it into the runtime bin.
-      case "$name" in vibe-parity-audit) continue;; esac
       cp "$script" "$VIBE_BIN/$name"
       chmod +x "$VIBE_BIN/$name"
     done
+    # Umbrella CLI + version stamp so `vibestack` works anywhere once
+    # $VIBE_BIN is on PATH (like a server-side CLI).
+    if [ -f "$REPO_DIR/bin/vibestack" ]; then
+      cp "$REPO_DIR/bin/vibestack" "$VIBE_BIN/vibestack"
+      chmod +x "$VIBE_BIN/vibestack"
+    fi
     echo "  + vibestack tools → $VIBE_BIN"
+    case ":$PATH:" in
+      *":$VIBE_BIN:"*) : ;;
+      *) echo "  note: add to PATH for the CLI:  export PATH=\"\$PATH:$VIBE_BIN\"" ;;
+    esac
   fi
 
   # Full browse daemon (optional). When bun is available, install the daemon's
@@ -700,6 +707,12 @@ if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo "    installed into non-Claude targets. Their PreToolUse hooks may"
   echo "    not fire identically across Cursor/Kiro."
   echo "    Verify per: docs/hook-verification.md"
+fi
+
+# Version stamp — written only after every target installed successfully, so
+# `vibestack version` never claims a release that failed to land.
+if [ "$DRY_RUN" != "1" ] && [ -f "$REPO_DIR/VERSION" ]; then
+  cp "$REPO_DIR/VERSION" "$VIBE_HOME/version"
 fi
 
 # Happy-path CTA — intent-routed first move.

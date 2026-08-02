@@ -66,6 +66,7 @@ guided, structured, no filler. If `/office-hours` clicks, the rest will too.
 - 🔒 **Yours, private.** No telemetry, no accounts, no cloud. Everything lives on your machine in `~/.vibestack/`.
 - 🔁 **No lock-in.** One source installs into Claude Code, Cursor, and Kiro alike. Switch tools, keep your workflow.
 - 📋 **Copy, run, done.** Two commands to install, `git pull && ./install` to update. Plain bash, zero runtime dependencies.
+- 🧰 **A real CLI.** `vibestack` on your PATH: `status`, `doctor`, `skills`, and every `vibe-*` tool from any directory — like any server-side CLI.
 
 ---
 

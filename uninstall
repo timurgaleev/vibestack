@@ -193,11 +193,12 @@ echo "Skills total: $total_removed processed across ${#TARGETS[@]} target(s), $t
 echo ""
 bin_removed=0
 if [ -d "$VIBE_BIN" ]; then
-  for bin_file in "$VIBE_BIN"/vibe-*; do
+  for bin_file in "$VIBE_BIN"/vibe-* "$VIBE_BIN/vibestack"; do
     [ -f "$bin_file" ] || continue
     rm -f "$bin_file"
     bin_removed=$((bin_removed + 1))
   done
+  rm -f "$VIBE_HOME/version"
   echo "Binaries: $bin_removed removed from $VIBE_BIN"
   if [ -z "$(ls -A "$VIBE_BIN" 2>/dev/null)" ]; then
     rmdir "$VIBE_BIN" 2>/dev/null || true
