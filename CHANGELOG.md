@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.28.0 — 2026-08-02
+
+### Added
+
+- **`/spec` semantic content review (Phase 4.5a).** Before the regex redaction
+  gate, the final draft gets a structured semantic re-read for what regex
+  cannot catch: named individuals attached to negative judgments,
+  customer/vendor names tied to negative events, unannounced strategy,
+  NDA-bound material, and codename bleed. Emits a `SEMANTIC_REVIEW:` verdict,
+  treats the draft as untrusted data (embedded instructions force `flagged`),
+  and disables "acknowledge and proceed" on public repos. The regex gate
+  (now Phase 4.5b) stays the deterministic backstop.
+- **5+ option split rule in `/qa`, `/ship`, `/autoplan`.** The
+  "split, never drop" AskUserQuestion rule now also covers the three skills
+  where large option sets can surface outside plan reviews.
+
+### Changed
+
+- TODOS reconciled with reality: the browse/design-daemon program is fully
+  shipped (cookie import from the encrypted browser store has been in the tree
+  since v1.24.0 — picker UI and `--domain` direct mode included), and
+  cross-session decision memory exists as `vibe-decision-log`/`-search`.
+
 ## 1.27.0 — 2026-08-02
 
 ### Added
