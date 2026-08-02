@@ -86,7 +86,8 @@ install time by `vibe-render-skill`. Preamble/protocol snippets, in load order:
 Plus the focused snippets: `capture-learnings`, `prior-learnings`,
 `brain-preflight`, `secret-scan-patterns`, `askuserquestion-split`,
 `exit-plan-mode-gate`, `unresolved-decisions-status`, `review-readiness-dashboard`,
-`tasks-section-emit` / `-aggregate`, `browse-setup`.
+`tasks-section-emit` / `-aggregate`, `browse-setup`,
+`plan-file-review-report`, `spec-review-loop`.
 
 ## Preamble flags
 
