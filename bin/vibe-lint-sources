@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# vibe-lint-sources — static checks over skill sources and shared snippets.
+#
+# Rules:
+#   fences    — every skills/*/SKILL.md and lib/snippets/*.md has an even
+#               number of ``` fence lines (an unbalanced fence silently
+#               swallows include directives in the renderer).
+#   snippets  — lib/snippets/*.md: no duplicate headings inside one snippet,
+#               no nested {{include}} directives, max 400 lines.
+#
+# Usage: vibe-lint-sources [repo-root]   (default: repo containing this script)
+# Exit: 0 clean, 1 findings (one file:line message per finding).
+set -uo pipefail
+
+ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+errors=0
+say() { echo "$1"; errors=$((errors + 1)); }
+
+# --- fence balance ---------------------------------------------------------
+while IFS= read -r f; do
+  n=$(grep -c '^```' "$f" || true)
+  if [ $((n % 2)) -ne 0 ]; then
+    say "$f: odd number of \`\`\` fence lines ($n) — unbalanced fence swallows directives"
+  fi
+done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
+
+# --- snippet rules ---------------------------------------------------------
+for f in "$ROOT"/lib/snippets/*.md; do
+  [ -f "$f" ] || continue
+
+  lines=$(wc -l < "$f" | tr -d ' ')
+  if [ "$lines" -gt 400 ]; then
+    say "$f: $lines lines (max 400) — split the snippet"
+  fi
+
+  # Nested includes: the renderer supports one level only. Match the exact
+  # directive grammar; indented/fenced occurrences are content, not directives
+  # (fence-aware, same as the renderer's treatment).
+  n=$(awk '
+    /^```/ { fence = !fence; next }
+    !fence && /^\{\{include lib\/snippets\/[A-Za-z0-9_-]+\.md\}\}$/ { print NR; exit }' "$f")
+  if [ -n "$n" ]; then
+    say "$f:$n: nested {{include}} — snippets must not include other snippets"
+  fi
+
+  # Duplicate headings inside one snippet (fence-aware: skip fenced blocks).
+  dup=$(awk '
+    /^```/ { fence = !fence; next }
+    !fence && /^#{1,6} / {
+      if (seen[$0]++) { print NR ": " $0; exit }
+    }' "$f")
+  if [ -n "$dup" ]; then
+    say "$f:${dup%%:*}: duplicate heading (${dup#*: }) inside one snippet"
+  fi
+done
+
+if [ "$errors" -gt 0 ]; then
+  echo "vibe-lint-sources: $errors finding(s)"
+  exit 1
+fi
+echo "vibe-lint-sources: clean"

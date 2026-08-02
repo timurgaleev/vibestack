@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.27.0 — 2026-08-02
+
+### Added
+
+- **E2E skill evals (TODOS #17).** `test/evals/session-runner.ts` runs a real
+  `claude -p` session in a throwaway sandbox — skills render from repo sources
+  into the sandbox's project-level `.claude/skills/` (the path real installs
+  resolve), `VIBESTACK_HOME` is isolated, and the child gets zero MCP servers.
+  The runner streams NDJSON with live tool-call progress and returns collected
+  evidence even when a timed-out child leaves pipe-holding orphans (stdout
+  reader cancel + stderr drain raced against exit with a 5s grace window) —
+  regression-locked by an offline fake-CLI test that always runs
+  (`bun run test:runner`). Live smoke evals for `/review`, `/ship`, and
+  `/investigate` assert skill-specific vocabulary in the transcript, catching
+  the "slash command didn't resolve" regression class no bash suite can see.
+  Opt-in via `bun run test:evals` (costs real tokens; `EVALS_MODEL` overrides
+  the model).
+- **Source lint (TODOS #2 + #5).** `bin/vibe-lint-sources` checks fence
+  balance across every skill source and snippet (an unbalanced fence silently
+  swallows include directives), and snippet hygiene: no duplicate headings,
+  no nested `{{include}}`, max 400 lines. `./install` runs it before rendering
+  and fails fast; `test/test-source-lint.sh` covers the rules (7 cases,
+  including fence-aware false-positive guards).
+
+### Fixed
+
+- `package.json` version now tracks `VERSION` (was stuck at an older release).
+
 ## 1.26.0 — 2026-08-02
 
 ### Added
