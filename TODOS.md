@@ -2,26 +2,6 @@
 
 ## Open
 
-### Deferred items (2026-06-13)
-
-Shipped: codex outside-voice **default-on** (plan-ceo/eng/devex-review + autoplan
-master-switch + new `/document-release` doc-audit), mandatory **unresolved-decisions
-verdict + blocking ExitPlanMode gate** (6 skills via 2 new snippets), **adversarial
-defensive-testing framing** (`/ship` + `/review`), **scoped secret-scan** (modern
-OpenAI key shapes in `/spec`, new pre-sink gate in `/ship` + `/cso` via
-`lib/snippets/secret-scan-patterns.md`), **memex brain-preflight** in 5 planning
-skills, and `${CLAUDE_SKILL_DIR:-…}` fallbacks for the safety hooks. Deliberately
-DEFERRED (with reasons), revisit only on the stated trigger:
-
-12. **make-pdf diagrams / multi-format / `/diagram`.** DEFERRED —
-    vibestack's `/make-pdf` is a doc-only pointer to an unbuilt external binary; there
-    is no renderer, no `print-css`, and no persistent browser tab in-repo. The
-    feature needs a real renderer + a 9.2MB vendored mermaid/excalidraw bundle + a
-    rasterizing browser. Prerequisite: first vendor the actual make-pdf renderer.
-    Until then, porting the `--to html|docx`, fence, image-directive, `--strict`, or
-    emoji-fallback prose would document capabilities no in-repo binary provides.
-    Effort: L. Priority: P3. Trigger: a decision to vendor the make-pdf renderer.
-
 ### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
@@ -35,6 +15,21 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Depends on: nothing (can be done anytime if motivated).
 
 ## Completed
+
+### make-pdf renderer vendored (TODOS #12) — shipped in v1.32.0 (2026-08-03)
+
+12. **make-pdf is a real renderer now.** `make-pdf/{src,test}` vendored and
+    adapted (13 TS modules on bun: marked pipeline, print CSS, Paged.js flow
+    via the browse daemon, image policy/sizing, smartypants, pdftotext
+    verification, docx/html output). `bun run build:make-pdf` compiles
+    `make-pdf/dist/pdf`; `skills/make-pdf/bin/vibe-make-pdf` launcher prefers
+    the binary, falls back to bun. Suite: 194 tests (unit + e2e gates against
+    the bun browse launcher). End-to-end verified: markdown → PDF renders.
+    Diagram fences (mermaid/excalidraw) need the `lib/diagram-render` bundle —
+    resolution + env override are wired; vendoring the 9.3MB bundle is the one
+    follow-up (diagram e2e gates skip until then).
+    **Completed:** v1.32.0 (2026-08-03)
+
 
 ### `vibe certify` (TODOS #6) — shipped in v1.31.0 (2026-08-02)
 

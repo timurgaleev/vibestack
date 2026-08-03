@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.32.0 — 2026-08-03
+
+### Added
+
+- **`/make-pdf` is a real renderer now (TODOS #12).** The pack ships the full
+  make-pdf engine (`make-pdf/`, 13 TypeScript modules on bun): markdown →
+  marked pipeline → print CSS with cover/TOC/watermark/page furniture →
+  Chromium print via the browse daemon (Paged.js flow) → PDF, plus `--to html`
+  (single self-contained file) and `--to docx` output, image policy/sizing,
+  typographic smartypants, and pdftotext verification. `bun run build:make-pdf`
+  compiles a standalone `make-pdf/dist/pdf`; the skill's new
+  `bin/vibe-make-pdf` launcher prefers the binary and falls back to running
+  the CLI on bun. 194 tests vendored with it (unit + e2e gates that exercise
+  the real browse launcher); verified end to end — markdown in, PDF out.
+  Diagram fences resolve the `lib/diagram-render` bundle via env override or
+  repo path; vendoring that bundle is the one recorded follow-up.
+
+### Changed
+
+- `.claude/settings.local.json` is now gitignored (personal machine-local
+  permissions never belong in the tree).
+
 ## 1.31.0 — 2026-08-02
 
 ### Added

@@ -45,22 +45,19 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
-## Step 0: Find the make-pdf binary
+## Step 0: Find the make-pdf renderer
 
 ```bash
-# Check environment override first, then vibestack repo path as fallback
-P="${MAKE_PDF_BIN:-}"
-if [ -z "$P" ]; then
-  _TVIBE_PDF="$HOME/.claude/skills/vibestack/make-pdf/dist/pdf"
-  [ -x "$_TVIBE_PDF" ] && P="$_TVIBE_PDF"
-fi
-[ -n "$P" ] && echo "FOUND: $P" || echo "NOT_FOUND"
+# Env override first, then the launcher installed with this skill (resolves
+# the repo's compiled binary or runs the CLI on bun).
+P="${MAKE_PDF_BIN:-${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/make-pdf}/bin/vibe-make-pdf}"
+[ -x "$P" ] && "$P" version >/dev/null 2>&1 && echo "FOUND: $P" || echo "NOT_FOUND"
 ```
 
 If `NOT_FOUND`, stop and tell the user:
 
-> make-pdf binary not found. The binary must be built from the vibestack repo.
-> Run: `cd ~/.claude/skills/vibestack && bun install && bun run build:make-pdf`
+> make-pdf renderer not found. It ships with the vibestack repo.
+> Run: `cd ~/data/vibestack && bun install && bun run build:make-pdf && ./install`
 > Or set `$MAKE_PDF_BIN` to the path of an existing `make-pdf` binary.
 >
 > After building, re-run `/make-pdf`.

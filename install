@@ -562,7 +562,9 @@ if [ "$DRY_RUN" != "1" ]; then
   # PTY, sidebar extension, content-security). Idempotent; non-fatal — /browse
   # falls back to the bundled stateless Playwright shim when this is absent.
   if [ -f "$REPO_DIR/package.json" ] && command -v bun >/dev/null 2>&1; then
-    if [ ! -d "$REPO_DIR/node_modules/playwright" ]; then
+    # Re-run bun install when ANY runtime dep is missing — checking only
+    # playwright left upgrades without newer deps (e.g. make-pdf's html-to-docx).
+    if [ ! -d "$REPO_DIR/node_modules/playwright" ] || [ ! -d "$REPO_DIR/node_modules/html-to-docx" ]; then
       echo "  + browse daemon: installing deps (bun)…"
       if ( cd "$REPO_DIR" && bun install >/dev/null 2>&1 ); then
         ( cd "$REPO_DIR" && bun run vendor:xterm >/dev/null 2>&1 ) || true
