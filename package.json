@@ -1,6 +1,6 @@
 {
   "name": "vibestack",
-  "version": "1.32.1",
+  "version": "1.32.2",
   "description": "vibestack \u2014 AI coding skills + a fast headless browser daemon. One repo, one install, the whole workflow.",
   "license": "MIT",
   "type": "module",
