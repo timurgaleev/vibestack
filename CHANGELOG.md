@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.32.1 — 2026-08-03
+
+### Added
+
+- **Diagram rendering in `/make-pdf` is live.** The `lib/diagram-render`
+  bundle (mermaid + excalidraw, single self-contained HTML served to the
+  browse daemon) is now vendored, so ```mermaid and ```excalidraw fences
+  render as real vector diagrams in PDF/HTML/DOCX output. All five make-pdf
+  e2e gates now run for real — 9 pass, 0 skip — and a mermaid flowchart was
+  verified end to end in a generated PDF. `bun run build:diagram-render`
+  rebuilds the bundle from source when deps are bumped.
+
+### Fixed
+
+- TODOS entry for the make-pdf port updated: no follow-ups remain.
+
 ## 1.32.0 — 2026-08-03
 
 ### Added
