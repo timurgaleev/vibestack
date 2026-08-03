@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# vibe-make-pdf — launcher for the vendored make-pdf renderer.
+# Resolves the repo through the installed skill's bin symlink, prefers the
+# compiled binary, falls back to running the CLI on bun.
+set -uo pipefail
+
+_src="${BASH_SOURCE[0]}"
+while [ -L "$_src" ]; do _src="$(readlink "$_src")"; done
+_REAL_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
+_REPO="$(cd "$_REAL_DIR/../../.." 2>/dev/null && pwd || true)"
+
+if [ -n "$_REPO" ] && [ -x "$_REPO/make-pdf/dist/pdf" ]; then
+  exec "$_REPO/make-pdf/dist/pdf" "$@"
+fi
+if [ -n "$_REPO" ] && [ -f "$_REPO/make-pdf/src/cli.ts" ] && command -v bun >/dev/null 2>&1; then
+  exec bun "$_REPO/make-pdf/src/cli.ts" "$@"
+fi
+echo "MAKE_PDF_NOT_AVAILABLE: renderer not found (need $_REPO/make-pdf + bun, or a compiled make-pdf/dist/pdf)" >&2
+exit 4
