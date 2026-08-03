@@ -25,10 +25,9 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
     `make-pdf/dist/pdf`; `skills/make-pdf/bin/vibe-make-pdf` launcher prefers
     the binary, falls back to bun. Suite: 194 tests (unit + e2e gates against
     the bun browse launcher). End-to-end verified: markdown → PDF renders.
-    Diagram fences (mermaid/excalidraw) need the `lib/diagram-render` bundle —
-    resolution + env override are wired; vendoring the 9.3MB bundle is the one
-    follow-up (diagram e2e gates skip until then).
-    **Completed:** v1.32.0 (2026-08-03)
+    v1.32.1 completes it: `lib/diagram-render` (mermaid + excalidraw bundle)
+    vendored — all e2e gates run (9/9), mermaid→PDF verified end to end.
+    **Completed:** v1.32.0 + v1.32.1 (2026-08-03)
 
 
 ### `vibe certify` (TODOS #6) — shipped in v1.31.0 (2026-08-02)

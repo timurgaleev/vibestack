@@ -3,6 +3,9 @@ bin/.vibe-render-skill.bak.*
 .env
 node_modules/
 dist/
+# The diagram-render bundle is a committed build artifact (resolved at runtime).
+!lib/diagram-render/dist/
+!lib/diagram-render/dist/**
 .vibestack/
 .claude/skills/
 .claude/scheduled_tasks.lock
