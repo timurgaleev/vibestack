@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.32.2 — 2026-08-03
+
+### Fixed
+
+- **Third-party client key scrubbed from the diagram bundle.** The vendored
+  excalidraw build ships its own public Firebase web config; that client key
+  is dead code in this offline renderer but trips secret scanners on the
+  committed bundle. The key is replaced with an inert placeholder in
+  `dist/diagram-render.html`, the build script now scrubs it on every rebuild,
+  and `BUILD_INFO.json` hashes are synced. Diagram e2e gates still 9/9;
+  mermaid → PDF re-verified.
+
 ## 1.32.1 — 2026-08-03
 
 ### Added

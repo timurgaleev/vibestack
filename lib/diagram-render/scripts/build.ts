@@ -74,7 +74,10 @@ const tail = `
 </html>
 `;
 
-const html = head + inlineJs + tail;
+// Scrub third-party client keys baked into vendored deps (excalidraw ships
+// its public Firebase web config; dead code in this offline renderer, but it
+// trips secret scanners on the committed bundle).
+const html = (head + inlineJs + tail).replace(/AIza[0-9A-Za-z_-]{20,}/g, "OFFLINE-RENDERER-NO-KEY");
 await Bun.write(DIST_HTML, html);
 
 const sha256 = createHash("sha256").update(html).digest("hex");
