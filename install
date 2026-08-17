@@ -20,6 +20,11 @@ SKILLS_SRC="$REPO_DIR/skills"
 VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 VIBE_BIN="$VIBE_HOME/bin"
 
+# Renderer seam (test-only override, same spirit as VIBE_TEST_MODE). The suite
+# injects a fail-on-match stub through this instead of overwriting the tracked
+# bin/vibe-render-skill, which a hard-killed run used to leave replaced.
+RENDERER_BIN="${VIBE_RENDER_SKILL:-$REPO_DIR/bin/vibe-render-skill}"
+
 # ───────────────────────────────────────────────────────────────────────────
 # Multi-target configuration (v1.4.0+)
 #
@@ -452,7 +457,7 @@ install_skill_to_target() {
 
   [ -L "$target/SKILL.md" ] && rm -f "$target/SKILL.md"
 
-  if ! "$REPO_DIR/bin/vibe-render-skill" --skill-dir "$final_root/$skill_name" \
+  if ! "$RENDERER_BIN" --skill-dir "$final_root/$skill_name" \
       "${skill_dir%/}/SKILL.md" "$target/SKILL.md"; then
     echo "ERROR: render failed for $skill_name → $target" >&2
     return 2
@@ -472,6 +477,53 @@ install_skill_to_target() {
   done
 
   return 0
+}
+
+# ───────────────────────────────────────────────────────────────────────────
+# Ownership boundary.
+#
+# The atomic swap replaces a target's whole skills/ root, so anything in there
+# that vibestack did not write — a hand-authored skill, another installer's
+# skill, a runtime's own bundled set (Codex keeps its system skills in
+# `.system/`) — would be carried off to .old and deleted by a later recovery
+# pass. We own our own skill names and nothing else: every other entry is
+# adopted back into the live root.
+#
+# `vibestack_owned_names` derives names exactly as install_skill_to_target
+# does (frontmatter `name:`, falling back to the directory basename) so the two
+# can never disagree about what belongs to us.
+# ───────────────────────────────────────────────────────────────────────────
+vibestack_owned_names() {
+  local skill_dir name
+  for skill_dir in "$SKILLS_SRC"/*/; do
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null \
+      | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
+    [ -z "$name" ] && name="$(basename "$skill_dir")"
+    echo "$name"
+  done
+}
+
+# Move every entry in $1 that is not a vibestack skill into $2. Dotfiles
+# included — `.system/` is exactly the case that matters. An entry whose name
+# already exists in the destination is left behind rather than overwritten:
+# the live root wins, and the leftover stays in .old for inspection.
+adopt_foreign_entries() {
+  local from="$1" to="$2"
+  [ -d "$from" ] && [ -d "$to" ] || return 0
+
+  local owned entry base
+  owned=$'\n'"$(vibestack_owned_names)"$'\n'
+
+  for entry in "$from"/* "$from"/.[!.]* "$from"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    base="$(basename "$entry")"
+    case "$owned" in *$'\n'"$base"$'\n'*) continue ;; esac
+    if [ -e "$to/$base" ] || [ -L "$to/$base" ]; then
+      continue
+    fi
+    mv "$entry" "$to/$base" 2>/dev/null || true
+  done
 }
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -496,10 +548,13 @@ recover_target_state() {
     fi
   fi
 
-  # Clean stale .old directories older than 1 hour (3600s).
+  # Clean stale .old directories older than 1 hour (3600s). Rescue any
+  # foreign entry still parked there first — a run interrupted between the swap
+  # and its adopt step leaves other installers' skills in .old, and deleting
+  # them here would make that interruption permanent.
   if [ -d "$old_dir" ]; then
-    local age_seconds=0
     if [ -n "$(find "$old_dir" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+      adopt_foreign_entries "$old_dir" "$root"
       rm -rf "$old_dir"
     fi
   fi
@@ -676,6 +731,7 @@ for target in "${TARGETS[@]}"; do
         # .old` would move root INSIDE the existing .old dir (POSIX mv behavior
         # when target is a non-empty dir), corrupting the rollback layout and
         # accumulating nested backups across reruns.
+        adopt_foreign_entries "${root}.old" "$root"
         rm -rf "${root}.old" 2>/dev/null
         if ! mv "$root" "${root}.old" 2>/dev/null; then
           echo "ERROR: cannot move $root aside for atomic swap" >&2
@@ -695,6 +751,11 @@ for target in "${TARGETS[@]}"; do
         echo "  installing $total_skills skills... failed at swap"
         continue
       fi
+      # The staged tree holds only vibestack skills, so the swap just carried
+      # every foreign entry off to .old. Put them back into the live root —
+      # without this, an unrelated skill (or Codex's bundled `.system/`) is
+      # silently removed here and deleted for good by a later recovery pass.
+      adopt_foreign_entries "${root}.old" "$root"
       # Old install lingers as .old until next run's recovery pass cleans it.
     fi
     echo "  installing $total_skills skills... done ($installed/$total_skills)"
