@@ -14,7 +14,7 @@ usage() {
 Usage: ./uninstall [options]
 
 Options:
-  --target=<list>     Comma-separated targets: claude, cursor, kiro, or all.
+  --target=<list>     Comma-separated targets: claude, cursor, kiro, codex, or all.
   --scope=<s>         user (default) or project — must match how you installed.
   --project-root=<d>  Project root for --scope=project (default: $PWD).
                       Default: claude (preserves v1.3.x behavior).
@@ -24,7 +24,7 @@ Options:
 
 Examples:
   ./uninstall                          # Claude Code only
-  ./uninstall --target=all             # Claude + Cursor + Kiro
+  ./uninstall --target=all             # Claude + Cursor + Kiro + Codex
   ./uninstall --target=cursor          # Cursor only
   ./uninstall --target=all --delete-state  # full removal, non-interactive
 EOF
@@ -68,7 +68,7 @@ if [ -z "$TARGETS_RAW" ]; then
   TARGETS=("claude")
 else
   if [ "$TARGETS_RAW" = "all" ]; then
-    TARGETS=("claude" "cursor" "kiro")
+    TARGETS=("claude" "cursor" "kiro" "codex")
   else
     IFS=',' read -ra TARGETS <<< "$TARGETS_RAW"
   fi
@@ -103,7 +103,9 @@ target_root() {
     claude) echo "$SCOPE_BASE/.claude/skills" ;;
     cursor) echo "$SCOPE_BASE/.cursor/skills" ;;
     kiro)   echo "$SCOPE_BASE/.kiro/skills" ;;
-    codex)  echo "$SCOPE_BASE/.codex/skills" ;;
+    # Codex reads skills from .agents/skills, not .codex/skills — ~/.codex holds
+    # its config only. Matches install's TARGET_ROOT / TARGET_PROJECT_REL.
+    codex)  echo "$SCOPE_BASE/.agents/skills" ;;
     *)      echo "" ;;
   esac
 }

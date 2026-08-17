@@ -201,16 +201,20 @@ test_regression_claude_target_byte_identical_to_renderer() {
   done
 }
 
-# --- Default invocation (non-tty) installs all 3 targets
+# --- Default invocation (non-tty) installs every target in ALL_TARGETS
 test_default_non_tty_installs_all_three() {
   "$INSTALL" < /dev/null >/dev/null 2>&1
   assert_dir_exists "$HOME/.claude/skills" || return 1
   assert_dir_exists "$HOME/.cursor/skills" || return 1
   assert_dir_exists "$HOME/.kiro/skills" || return 1
-  # Spot check: office-hours present in all three
+  assert_dir_exists "$HOME/.agents/skills" || return 1
+  # Spot check: office-hours present in every target
   assert_file_exists "$HOME/.claude/skills/office-hours/SKILL.md" || return 1
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
   assert_file_exists "$HOME/.kiro/skills/office-hours/SKILL.md" || return 1
+  assert_file_exists "$HOME/.agents/skills/office-hours/SKILL.md" || return 1
+  # Never the config dir — ~/.codex holds config, not skills.
+  assert_file_missing "$HOME/.codex/skills" || return 1
 }
 
 # --- Single target (cursor only) doesn't touch other targets
@@ -246,6 +250,13 @@ test_dry_run_reports_all_three_targets() {
   echo "$out" | grep -q "Claude Code" || { echo "    missing Claude Code in dry-run output" >&2; return 1; }
   echo "$out" | grep -q "Cursor"      || { echo "    missing Cursor in dry-run output" >&2; return 1; }
   echo "$out" | grep -q "Kiro"        || { echo "    missing Kiro in dry-run output" >&2; return 1; }
+  echo "$out" | grep -q "Codex CLI"   || { echo "    missing Codex CLI in dry-run output" >&2; return 1; }
+  # Codex's root is .agents/skills, not .codex/skills — the plan must print the
+  # path Codex actually reads.
+  echo "$out" | grep -q "\.agents/skills" || { echo "    dry-run plan does not name ~/.agents/skills for codex" >&2; return 1; }
+  if echo "$out" | grep -q "\.codex/skills"; then
+    echo "    dry-run plan still points codex at ~/.codex/skills" >&2; return 1
+  fi
 }
 
 # --- All 3 targets get byte-identical content for the same skill
@@ -254,7 +265,7 @@ test_dry_run_reports_all_three_targets() {
 # the install dir), so they get an expected-render comparison instead.
 test_all_three_targets_byte_identical_per_skill() {
   "$INSTALL" --target=all < /dev/null >/dev/null 2>&1
-  local skill t root rendered probe h_claude h_cursor h_kiro
+  local skill t root rendered probe h_claude h_cursor h_kiro h_codex
   for skill in office-hours review ship; do
     # Whether a skill is per-target cannot be read off its source: the
     # ${CLAUDE_SKILL_DIR} token often arrives through an {{include}}d snippet.
@@ -266,8 +277,8 @@ test_all_three_targets_byte_identical_per_skill() {
       rm -f "$probe"
       # Per-target by design: each target's copy must equal a render made with
       # that target's own --skill-dir, and must carry that target's path.
-      for t in claude cursor kiro; do
-        root="$HOME/.$t/skills"
+      for t in claude cursor kiro codex; do
+        if [ "$t" = "codex" ]; then root="$HOME/.agents/skills"; else root="$HOME/.$t/skills"; fi
         rendered=$(mktemp)
         "$REPO_DIR/bin/vibe-render-skill" --skill-dir "$root/$skill" \
           "$REPO_DIR/skills/$skill/SKILL.md" "$rendered"
@@ -286,7 +297,8 @@ test_all_three_targets_byte_identical_per_skill() {
       h_claude=$(md5 -q "$HOME/.claude/skills/$skill/SKILL.md")
       h_cursor=$(md5 -q "$HOME/.cursor/skills/$skill/SKILL.md")
       h_kiro=$(md5 -q "$HOME/.kiro/skills/$skill/SKILL.md")
-      if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ]; then
+      h_codex=$(md5 -q "$HOME/.agents/skills/$skill/SKILL.md")
+      if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ] || [ "$h_claude" != "$h_codex" ]; then
         echo "    drift on $skill: claude=$h_claude cursor=$h_cursor kiro=$h_kiro" >&2
         return 1
       fi
@@ -440,14 +452,16 @@ test_install_plan_empty_default_enter_exits_with_hint() {
 # --- #5: `e` falls through to per-target loop with flipped defaults
 test_install_plan_e_falls_through_to_per_target() {
   mark_detected claude
-  # `e` then Enter for Claude (default Y), Enter for Cursor (default N), Enter for Kiro (default N)
+  # `e`, then one Enter per entry in ALL_TARGETS: Claude (default Y, detected),
+  # then Cursor, Kiro and Codex (default N).
   local out="$FAKE_HOME/out.log"
-  pty_install "$out" 'e\n\n\n\n'
+  pty_install "$out" 'e\n\n\n\n\n'
   [ "$RC" = "77" ] && return 77
   assert_eq "0" "$RC" "exit code" || { cat "$out" >&2; return 1; }
   assert_file_exists "$HOME/.claude/skills/office-hours/SKILL.md" || return 1
   assert_file_missing "$HOME/.cursor/skills" || return 1
   assert_file_missing "$HOME/.kiro/skills" || return 1
+  assert_file_missing "$HOME/.agents/skills" || return 1
 }
 
 # --- #7: partial-fail continues across targets, exits non-zero
@@ -578,6 +592,42 @@ test_install_atomic_swap_on_success() {
     echo "    expected $want skills after atomic swap, got $count" >&2
     return 1
   fi
+}
+
+# --- codex: install lands in ~/.agents/skills, and a superseded copy under
+#     ~/.codex/skills is pruned — but only OUR names. Codex scans both roots, so
+#     a leftover copy would show every skill twice and never update.
+test_install_codex_prunes_superseded_root() {
+  local legacy="$HOME/.codex/skills"
+  # Pre-seed the legacy root the way an older vibestack would have: our skill
+  # plus Codex's own bundled set plus an unrelated skill.
+  mkdir -p "$legacy/office-hours" "$legacy/.system/bundled" "$legacy/someone-else"
+  echo "stale vibestack copy" > "$legacy/office-hours/SKILL.md"
+  echo "BUNDLED" > "$legacy/.system/bundled/SKILL.md"
+  echo "THEIRS"  > "$legacy/someone-else/SKILL.md"
+
+  "$INSTALL" --target=codex < /dev/null >/dev/null 2>&1
+
+  # Installed where Codex documents user skills.
+  assert_file_exists "$HOME/.agents/skills/office-hours/SKILL.md" || return 1
+  # Our stale copy is gone from the legacy root.
+  assert_file_missing "$legacy/office-hours" || {
+    echo "    superseded copy left in $legacy — Codex would list it twice" >&2; return 1; }
+  # Everything we do not own stays put.
+  assert_file_exists "$legacy/.system/bundled/SKILL.md" || {
+    echo "    pruning removed Codex's bundled .system/" >&2; return 1; }
+  assert_file_exists "$legacy/someone-else/SKILL.md" || {
+    echo "    pruning removed an unrelated skill" >&2; return 1; }
+}
+
+# --- codex project scope resolves to .agents/skills, not .codex/skills
+test_install_codex_project_scope_uses_agents_dir() {
+  local proj="$FAKE_HOME/proj"
+  mkdir -p "$proj"
+  "$INSTALL" --scope=project --project-root="$proj" --target=codex < /dev/null >/dev/null 2>&1
+  assert_file_exists "$proj/.agents/skills/office-hours/SKILL.md" || return 1
+  assert_file_missing "$proj/.codex/skills" || {
+    echo "    project scope installed into .codex/skills" >&2; return 1; }
 }
 
 # --- #13b: the swap must NOT delete skills vibestack does not own.
@@ -723,6 +773,8 @@ run_test "v1.5: plan unknown input retries then exits"          test_install_pla
 run_test "v1.5: --dry-run prompt says preview"                  test_install_dry_run_prompt_says_preview
 run_test "v1.5: atomic swap on success"                         test_install_atomic_swap_on_success
 run_test "swap preserves foreign skills (.system, others)"      test_install_preserves_foreign_skills
+run_test "codex installs to .agents/skills, prunes legacy root" test_install_codex_prunes_superseded_root
+run_test "codex project scope uses .agents/skills"              test_install_codex_project_scope_uses_agents_dir
 run_test "v1.5: staging failure preserves prod"                 test_install_staging_failure_preserves_prod
 run_test "v1.5: recovery cleans orphaned staging"               test_install_recovery_orphaned_staging
 run_test "v1.5: rapid rerun does not nest .old (codex P2 fix)"  test_install_rapid_rerun_does_not_nest_old

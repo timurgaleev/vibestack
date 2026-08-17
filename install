@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vibestack install — register skills with Claude Code, Cursor, and Kiro
+# vibestack install — register skills with Claude Code, Cursor, Kiro, Codex CLI
 # v1.5.0: install plan UX + per-target atomic stage-and-swap
 
 set -uo pipefail
@@ -29,8 +29,8 @@ RENDERER_BIN="${VIBE_RENDER_SKILL:-$REPO_DIR/bin/vibe-render-skill}"
 # Multi-target configuration (v1.4.0+)
 #
 # vibestack installs into one or more agent runtimes that adopt the Agent
-# Skills open standard (agentskills.io): Claude Code, Cursor, Kiro. Same
-# rendered SKILL.md to each target's conventional skills path. See
+# Skills open standard (agentskills.io): Claude Code, Cursor, Kiro, Codex CLI.
+# Same rendered SKILL.md to each target's conventional skills path. See
 # docs/agent-skills-compatibility-audit.md for runtime caveats.
 # ───────────────────────────────────────────────────────────────────────────
 
@@ -41,8 +41,8 @@ Usage: ./install [options]
 Options:
   --target=<list>   Comma-separated targets: claude, cursor, kiro, codex, or all.
                     Bypasses the interactive prompt. Default behavior asks.
-                    `all` = claude, cursor, kiro (codex is opt-in, see below).
-  --yes, -y         Non-interactive: install into the default set (all three).
+                    `all` = claude, cursor, kiro, codex.
+  --yes, -y         Non-interactive: install into the default set (all four).
                     Equivalent to --target=all.
   --scope=<s>       user (default) installs into ~/. project installs skills
                     into <project-root>/.claude/skills etc. — pins the pack's
@@ -54,18 +54,19 @@ Options:
 
 Default behavior:
   Interactive (TTY):     shows write plan + Enter installs detected
-  Non-interactive (CI):  installs into the default set (claude, cursor, kiro)
+  Non-interactive (CI):  installs into the default set (claude, cursor, kiro,
+                         codex)
 
-  `codex` is a known target (installs into ~/.codex/skills) but is excluded from
-  `all`/`--yes` until its skill-path loading is confirmed on your setup — select
-  it explicitly with `--target=codex`.
+  Codex reads user skills from ~/.agents/skills and repo skills from
+  .agents/skills — not from ~/.codex, which holds only its config. A superseded
+  copy under ~/.codex/skills is pruned (our skill names only).
 
 Examples:
   ./install                          # Interactive: install plan + Enter
-  ./install --target=all             # claude, cursor, kiro (default set)
+  ./install --target=all             # claude, cursor, kiro, codex (default set)
   ./install --target=cursor          # Cursor only
   ./install --target=cursor,kiro     # Cursor + Kiro
-  ./install --target=codex           # Codex CLI (opt-in)
+  ./install --target=codex           # Codex CLI only
   ./install --yes                    # Default set, skip prompts (CI-friendly)
   ./install --dry-run                # Interactive preview, write nothing
   ./install --scope=project --project-root=~/code/myapp --target=claude
@@ -73,25 +74,52 @@ Examples:
 EOF
 }
 
-# Target registry (data-driven). Add a runtime by adding one row to each map;
-# label/root/detection all read from here instead of hardcoded case arms.
+# Target registry (data-driven). Add a runtime by adding one row to each map.
+#
+# A target name is NOT a directory name. Codex reads user skills from
+# ~/.agents/skills and repo skills from .agents/skills, while its config lives
+# in ~/.codex — three different strings for one target. Hence three maps:
+# where its config lives (detection), where user-scope skills go, and what the
+# project-scope path is relative to a project root.
 declare -A TARGET_LABEL=(
   [claude]="Claude Code"
   [cursor]="Cursor"
   [kiro]="Kiro"
   [codex]="Codex CLI"
 )
+# Config dir — drives detection only, never receives skills.
+declare -A TARGET_CONFIG_DIR=(
+  [claude]="$HOME/.claude"
+  [cursor]="$HOME/.cursor"
+  [kiro]="$HOME/.kiro"
+  [codex]="${CODEX_HOME:-$HOME/.codex}"
+)
 declare -A TARGET_ROOT=(
   [claude]="$HOME/.claude/skills"
   [cursor]="$HOME/.cursor/skills"
   [kiro]="$HOME/.kiro/skills"
-  [codex]="$HOME/.codex/skills"
+  # Codex's documented user-skill scope. Not under $CODEX_HOME — the docs place
+  # user skills at $HOME/.agents/skills regardless of where its config lives.
+  [codex]="$HOME/.agents/skills"
+)
+# Project scope (`--scope=project`), relative to the project root.
+declare -A TARGET_PROJECT_REL=(
+  [claude]=".claude/skills"
+  [cursor]=".cursor/skills"
+  [kiro]=".kiro/skills"
+  [codex]=".agents/skills"
 )
 
-# Default "all"/`--yes` set — the runtimes whose skill-loading path is verified.
-# `codex` is a KNOWN target (installable via `--target=codex`) but stays out of
-# the default set until its skill-path loading is confirmed on the user's box.
-ALL_TARGETS=("claude" "cursor" "kiro")
+# Superseded user-scope roots. vibestack shipped codex installs into
+# ~/.codex/skills before the documented path was confirmed; Codex 0.147.0 scans
+# both, so leaving them there shows every skill twice. Only our own skill names
+# are pruned from these — see prune_legacy_root.
+declare -A TARGET_LEGACY_ROOT=(
+  [codex]="${CODEX_HOME:-$HOME/.codex}/skills"
+)
+
+# Default "all"/`--yes` set — every runtime whose skill-loading path is verified.
+ALL_TARGETS=("claude" "cursor" "kiro" "codex")
 
 target_label() {
   echo "${TARGET_LABEL[$1]:-$1}"
@@ -112,15 +140,16 @@ target_root() {
 # via $HOME/.<target>/ directory presence without picking up real binaries.
 target_detected() {
   local t="$1"
+  local cfg="${TARGET_CONFIG_DIR[$t]:-$HOME/.${t}}"
   if [ "${VIBE_TEST_MODE:-0}" = "1" ]; then
-    [ -d "$HOME/.${t}" ]
+    [ -d "$cfg" ]
     return $?
   fi
   command -v "$t" >/dev/null 2>&1 && return 0
-  [ -d "$HOME/.${t}" ] || return 1
+  [ -d "$cfg" ] || return 1
   # Prune the skills tree we manage — our own installs must not refresh a
   # stale runtime's activity signal indefinitely.
-  [ -n "$(find "$HOME/.${t}" -name skills -prune -o -type f -mtime -180 -print -quit 2>/dev/null)" ]
+  [ -n "$(find "$cfg" -name skills -prune -o -type f -mtime -180 -print -quit 2>/dev/null)" ]
 }
 
 # Total skill count, computed once. Strip BSD `wc -l` whitespace.
@@ -186,11 +215,14 @@ case "$SCOPE" in
       exit 2
     fi
     unset _repo_real
+    # Read the per-target relative path from the registry rather than stripping
+    # $HOME off the user-scope root: codex's repo scope is `.agents/skills`, and
+    # its user root isn't under $HOME/.codex at all, so the strip would produce
+    # a bogus path. Mirrors uninstall's target_root().
     for _t in "${!TARGET_ROOT[@]}"; do
-      _rel="${TARGET_ROOT[$_t]#$HOME/}"          # .claude/skills etc.
-      TARGET_ROOT[$_t]="$PROJECT_ROOT/$_rel"
+      TARGET_ROOT[$_t]="$PROJECT_ROOT/${TARGET_PROJECT_REL[$_t]:-.$_t/skills}"
     done
-    unset _t _rel
+    unset _t
     echo "Scope: project ($PROJECT_ROOT)"
     ;;
   *)
@@ -263,9 +295,9 @@ print_install_plan() {
 #
 # Priority order (eng-review R2 ordering preserved):
 #   1. --target=<list>   → use as-is (validated)
-#   2. --yes / -y        → all three
+#   2. --yes / -y        → all four
 #   3. TTY available     → install plan + Enter UX (NEW v1.5.0)
-#   4. Non-TTY (CI)      → all three
+#   4. Non-TTY (CI)      → all four
 # ───────────────────────────────────────────────────────────────────────────
 declare -a TARGETS
 
@@ -313,7 +345,7 @@ elif [ -r /dev/tty ] && [ -t 0 ]; then
       ""|y|Y)
         if [ "${#default_targets[@]}" -eq 0 ]; then
           echo ""
-          echo "No targets detected. Run with \`a\` to install all three, or pass" >&2
+          echo "No targets detected. Run with \`a\` to install all four, or pass" >&2
           echo "\`--target=<list>\` explicitly." >&2
           exit 0
         fi
@@ -388,7 +420,7 @@ elif [ -r /dev/tty ] && [ -t 0 ]; then
     esac
   done
 else
-  # Non-TTY (CI, piped) → install all three (v1.4.0 default preserved).
+  # Non-TTY (CI, piped) → install the full default set.
   TARGETS=("${ALL_TARGETS[@]}")
 fi
 
@@ -524,6 +556,42 @@ adopt_foreign_entries() {
     fi
     mv "$entry" "$to/$base" 2>/dev/null || true
   done
+}
+
+# Remove our own skills from a target's superseded user-scope root. Codex scans
+# both ~/.agents/skills and the ~/.codex/skills we used to install into, so a
+# leftover copy shows every skill twice — and the stale copy never updates.
+#
+# Only our own names are removed, one directory at a time, and only from the
+# legacy root. Never the root itself: a runtime's bundled skills live there
+# (Codex's `.system/`) and so may skills another tool installed.
+prune_legacy_root() {
+  local t="$1"
+  local legacy="${TARGET_LEGACY_ROOT[$t]:-}"
+  local current="${TARGET_ROOT[$t]:-}"
+  [ -n "$legacy" ] || return 0
+  [ -d "$legacy" ] || return 0
+  # Only prune when we are installing somewhere else — never delete the copy we
+  # just wrote (a user with $CODEX_HOME pointing at the new root, say).
+  [ "$legacy" = "$current" ] && return 0
+
+  local name pruned=0
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    # Ours only if it carries the marks of a vibestack render.
+    if [ -f "$legacy/$name/SKILL.md" ] || [ -f "$legacy/$name/.vibe-render.json" ]; then
+      if [ "$DRY_RUN" = "1" ]; then
+        echo "  would prune superseded: $legacy/$name"
+      else
+        rm -rf "$legacy/$name" 2>/dev/null && pruned=$((pruned + 1))
+      fi
+    fi
+  done <<< "$(vibestack_owned_names)"
+
+  if [ "$pruned" -gt 0 ]; then
+    echo "  pruned $pruned superseded skill(s) from $legacy"
+    rmdir "$legacy" 2>/dev/null || true
+  fi
 }
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -757,6 +825,9 @@ for target in "${TARGETS[@]}"; do
       # silently removed here and deleted for good by a later recovery pass.
       adopt_foreign_entries "${root}.old" "$root"
       # Old install lingers as .old until next run's recovery pass cleans it.
+      # Our skills landed in the current root — drop any copy still sitting in a
+      # superseded one (user scope only; project scope has no legacy path).
+      [ "$SCOPE" = "user" ] && prune_legacy_root "$target"
     fi
     echo "  installing $total_skills skills... done ($installed/$total_skills)"
   fi
@@ -807,7 +878,7 @@ if [ "$any_failed" = "1" ]; then
     echo ""
     echo "  ⚠ Hook-bearing skills (careful, freeze, guard, investigate) were"
     echo "    installed into non-Claude targets that completed. Their PreToolUse"
-    echo "    hooks may not fire identically across Cursor/Kiro."
+    echo "    hooks may not fire identically across Cursor/Kiro/Codex."
     echo "    Verify per: docs/hook-verification.md"
   fi
   # Happy-path CTA suppressed on partial failure.
@@ -835,7 +906,7 @@ if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo ""
   echo "  ⚠ Hook-bearing skills (careful, freeze, guard, investigate) were"
   echo "    installed into non-Claude targets. Their PreToolUse hooks may"
-  echo "    not fire identically across Cursor/Kiro."
+  echo "    not fire identically across Cursor/Kiro/Codex."
   echo "    Verify per: docs/hook-verification.md"
 fi
 

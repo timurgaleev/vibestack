@@ -20,15 +20,17 @@
 
 ## What is this? (30-second version)
 
-**If you use an AI coding assistant** (Claude Code, Cursor, or Kiro), vibestack
-adds a menu of expert workflows you trigger by typing `/`. Instead of "write me
-some code," you get `/office-hours` to shape the idea, `/review` to catch bugs,
-and `/ship` to open a clean pull request — each one a structured, opinionated
-process, not a vague prompt.
+**If you use an AI coding assistant** (Claude Code, Cursor, Kiro, or Codex CLI),
+vibestack adds a menu of expert workflows you trigger by name — `/` in Claude
+Code, Cursor and Kiro, `$` in Codex. Instead of "write me some code," you get
+`/office-hours` to shape the idea, `/review` to catch bugs, and `/ship` to open a
+clean pull request — each one a structured, opinionated process, not a vague
+prompt.
 
 **For engineers:** 50+ portable `SKILL.md` workflows — planning, TDD, security
 audit, cross-model review, debugging, release. Same source installs into Claude
-Code, Cursor, and Kiro. No lock-in, no telemetry, state stays in `~/.vibestack/`.
+Code, Cursor, Kiro, and Codex CLI. No lock-in, no telemetry, state stays in
+`~/.vibestack/`.
 
 > Think of it as turning a junior-level "just do it" assistant into one that
 > plans, gets a second opinion, tests, and ships like a team would.
@@ -64,7 +66,7 @@ guided, structured, no filler. If `/office-hours` clicks, the rest will too.
 - 🚀 **Idea → shipped, guided the whole way.** `/office-hours` → `/plan-eng-review` → `/tdd` → `/review` → `/ship`. The chain is built for you.
 - 🧠 **A real second opinion.** Reviews run a cross-model check (a different AI) automatically, so two models have to agree before you ship.
 - 🔒 **Yours, private.** No telemetry, no accounts, no cloud. Everything lives on your machine in `~/.vibestack/`.
-- 🔁 **No lock-in.** One source installs into Claude Code, Cursor, and Kiro alike. Switch tools, keep your workflow.
+- 🔁 **No lock-in.** One source installs into Claude Code, Cursor, Kiro, and Codex CLI alike. Switch tools, keep your workflow.
 - 📋 **Copy, run, done.** Two commands to install, `git pull && ./install` to update. Plain bash, zero runtime dependencies.
 - 🧰 **A real CLI.** `vibestack` on your PATH: `status`, `doctor`, `skills`, and every `vibe-*` tool from any directory — like any server-side CLI.
 
@@ -80,9 +82,11 @@ flowchart LR
   I --> A["Claude Code"]
   I --> B["Cursor"]
   I --> C["Kiro"]
+  I --> D["Codex CLI"]
   A --> U["Type /command → expert workflow runs"]
   B --> U
   C --> U
+  D --> V["Type $skill → expert workflow runs"]
 ```
 
 Each skill is a plain `SKILL.md` file your agent discovers and exposes as a
@@ -113,7 +117,7 @@ A few highlights:
 ## More
 
 ```bash
-./install --target=all      # Claude Code + Cursor + Kiro, non-interactive
+./install --target=all      # Claude Code + Cursor + Kiro + Codex, non-interactive
 ./install --dry-run         # Preview every change, write nothing
 git pull && ./install       # Update
 ~/.claude/skills/vibestack/uninstall --target=all   # Remove
