@@ -72,35 +72,30 @@ mark_detected() {
   done
 }
 
-# Replace bin/vibe-render-skill with a stub that fails when the destination
-# path matches a glob substring. Keeps a backup; restore_renderer reverts.
-# Fails ONLY for the matched target_substring/skill_substring combo, passing
-# through to the real renderer for everything else.
+# Point install at a stub renderer that fails when the destination path matches
+# a substring, and delegates to the real renderer for everything else. Injected
+# through install's $VIBE_RENDER_SKILL seam — the tracked bin/vibe-render-skill
+# is never written to, so a hard-killed run cannot leave it replaced.
 RENDERER_PATH="$REPO_DIR/bin/vibe-render-skill"
-# The backup must live in bin/ (not a tempdir): the stub delegates via
-# `exec "$RENDERER_BAK"`, and the renderer resolves lib/snippets/ relative to
-# its own path (dirname $0). Running it from outside the repo would break
-# snippet resolution. It's gitignored, so a hard-killed run can't pollute
-# `git status`, and the startup sweep below clears any orphan.
-RENDERER_BAK="$REPO_DIR/bin/.vibe-render-skill.bak.$$"
+# The stub lives in bin/ rather than a tempdir only so its own path sits beside
+# the repo; it delegates by absolute path, and the real renderer resolves
+# lib/snippets/ relative to its own location. Gitignored; swept on startup.
+RENDERER_STUB="$REPO_DIR/bin/.vibe-render-skill.stub.$$"
 
-# Self-heal from a previously crashed run: traps don't fire on SIGKILL, so an
-# interrupted test can leave the tracked renderer replaced by the stub below.
-# Detect the stub's own marker (never present in the real renderer) and restore
-# the committed version; also sweep any legacy in-tree backups from old runs.
-if grep -q "FAKE_RENDERER: failing" "$RENDERER_PATH" 2>/dev/null; then
-  git -C "$REPO_DIR" checkout -- bin/vibe-render-skill 2>/dev/null || true
-fi
-rm -f "$REPO_DIR"/bin/.vibe-render-skill.bak.* 2>/dev/null || true
+# Sweep stubs and legacy backups left by a crashed run (traps don't fire on
+# SIGKILL). Nothing tracked is ever restored here — there is nothing to restore.
+rm -f "$REPO_DIR"/bin/.vibe-render-skill.stub.* \
+      "$REPO_DIR"/bin/.vibe-render-skill.bak.* 2>/dev/null || true
 
 with_failing_renderer() {
   local skill_substring="$1"   # e.g. "office-hours"
   local target_substring="$2"  # e.g. "cursor" — only fail for this target
-  cp "$RENDERER_PATH" "$RENDERER_BAK"
-  cat > "$RENDERER_PATH" <<STUB
+  cat > "$RENDERER_STUB" <<STUB
 #!/usr/bin/env bash
 # Test stub: fail-on-match, otherwise delegate to the real renderer.
-src="\$1"; dst="\$2"
+# install passes \`--skill-dir DIR SOURCE DEST\`, so SOURCE/DEST are the last
+# two arguments — read those and forward the vector untouched.
+src="\${@: -2:1}"; dst="\${@: -1}"
 if [ -n "$skill_substring" ] && [ -n "$target_substring" ] \
     && echo "\$src" | grep -q "/$skill_substring/"; then
   if echo "\$dst" | grep -q "$target_substring"; then
@@ -108,17 +103,15 @@ if [ -n "$skill_substring" ] && [ -n "$target_substring" ] \
     exit 2
   fi
 fi
-exec "$RENDERER_BAK" "\$src" "\$dst"
+exec "$RENDERER_PATH" "\$@"
 STUB
-  chmod +x "$RENDERER_PATH"
+  chmod +x "$RENDERER_STUB"
+  export VIBE_RENDER_SKILL="$RENDERER_STUB"
 }
 
 restore_renderer() {
-  if [ -f "$RENDERER_BAK" ]; then
-    cp "$RENDERER_BAK" "$RENDERER_PATH"
-    rm -f "$RENDERER_BAK"
-    chmod +x "$RENDERER_PATH"
-  fi
+  unset VIBE_RENDER_SKILL
+  rm -f "$RENDERER_STUB" 2>/dev/null || true
 }
 
 # Compose teardown: renderer restore + fake-home cleanup.
@@ -184,17 +177,27 @@ assert_eq() {
 # --- Regression: claude target produces same content as v1.3.0 (byte-identical)
 test_regression_claude_target_byte_identical_to_renderer() {
   "$INSTALL" --target=claude < /dev/null >/dev/null 2>&1
-  # Spot-check 3 representative skills against the renderer's direct output
+  # Spot-check 3 representative skills against the renderer's direct output.
+  # `careful` and `ship` carry ${CLAUDE_SKILL_DIR} tokens, which install
+  # substitutes with the per-target install dir (v1.29.0) — so the expected
+  # output has to be rendered with that same --skill-dir.
   for skill in office-hours careful ship; do
-    local installed="$HOME/.claude/skills/$skill/SKILL.md"
+    local root="$HOME/.claude/skills"
+    local installed="$root/$skill/SKILL.md"
     local rendered=$(mktemp)
-    "$REPO_DIR/bin/vibe-render-skill" "$REPO_DIR/skills/$skill/SKILL.md" "$rendered"
+    "$REPO_DIR/bin/vibe-render-skill" --skill-dir "$root/$skill" \
+      "$REPO_DIR/skills/$skill/SKILL.md" "$rendered"
     if ! cmp -s "$installed" "$rendered"; then
       echo "    drift in $skill" >&2
       rm -f "$rendered"
       return 1
     fi
     rm -f "$rendered"
+    # Substitution must be complete — a leftover token means a broken hook path.
+    if grep -q 'CLAUDE_SKILL_DIR' "$installed"; then
+      echo "    unresolved \${CLAUDE_SKILL_DIR} token left in $skill" >&2
+      return 1
+    fi
   done
 }
 
@@ -246,16 +249,47 @@ test_dry_run_reports_all_three_targets() {
 }
 
 # --- All 3 targets get byte-identical content for the same skill
+# Skills carrying no ${CLAUDE_SKILL_DIR} token render identically for every
+# target; ones that do carry it are per-target by design (v1.29.0 substitutes
+# the install dir), so they get an expected-render comparison instead.
 test_all_three_targets_byte_identical_per_skill() {
   "$INSTALL" --target=all < /dev/null >/dev/null 2>&1
-  local h_claude h_cursor h_kiro
+  local skill t root rendered probe h_claude h_cursor h_kiro
   for skill in office-hours review ship; do
-    h_claude=$(md5 -q "$HOME/.claude/skills/$skill/SKILL.md")
-    h_cursor=$(md5 -q "$HOME/.cursor/skills/$skill/SKILL.md")
-    h_kiro=$(md5 -q "$HOME/.kiro/skills/$skill/SKILL.md")
-    if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ]; then
-      echo "    drift on $skill: claude=$h_claude cursor=$h_cursor kiro=$h_kiro" >&2
-      return 1
+    # Whether a skill is per-target cannot be read off its source: the
+    # ${CLAUDE_SKILL_DIR} token often arrives through an {{include}}d snippet.
+    # Render once with a sentinel dir and see whether it lands in the output.
+    probe=$(mktemp)
+    "$REPO_DIR/bin/vibe-render-skill" --skill-dir "/__probe__" \
+      "$REPO_DIR/skills/$skill/SKILL.md" "$probe"
+    if grep -q '/__probe__' "$probe"; then
+      rm -f "$probe"
+      # Per-target by design: each target's copy must equal a render made with
+      # that target's own --skill-dir, and must carry that target's path.
+      for t in claude cursor kiro; do
+        root="$HOME/.$t/skills"
+        rendered=$(mktemp)
+        "$REPO_DIR/bin/vibe-render-skill" --skill-dir "$root/$skill" \
+          "$REPO_DIR/skills/$skill/SKILL.md" "$rendered"
+        if ! cmp -s "$root/$skill/SKILL.md" "$rendered"; then
+          echo "    $skill drift for $t against its own --skill-dir render" >&2
+          rm -f "$rendered"
+          return 1
+        fi
+        rm -f "$rendered"
+        grep -q "$root/$skill" "$root/$skill/SKILL.md" || {
+          echo "    $skill for $t does not carry its own install dir" >&2; return 1; }
+      done
+    else
+      rm -f "$probe"
+      # No substitution → every target gets the same bytes.
+      h_claude=$(md5 -q "$HOME/.claude/skills/$skill/SKILL.md")
+      h_cursor=$(md5 -q "$HOME/.cursor/skills/$skill/SKILL.md")
+      h_kiro=$(md5 -q "$HOME/.kiro/skills/$skill/SKILL.md")
+      if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ]; then
+        echo "    drift on $skill: claude=$h_claude cursor=$h_cursor kiro=$h_kiro" >&2
+        return 1
+      fi
     fi
   done
 }
@@ -271,6 +305,15 @@ test_repo_inside_target_installs_all_targets() {
   bash "$nested/install" --target=claude,cursor,kiro < /dev/null >/dev/null 2>&1
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
   assert_file_exists "$HOME/.kiro/skills/office-hours/SKILL.md" || return 1
+  # The checkout lives inside claude's root (README's documented clone path), so
+  # the swap must adopt it back rather than carry it off to .old. A second run
+  # exercises the .old cleanup path, where it used to be deleted for good.
+  assert_file_exists "$nested/install" || {
+    echo "    the nested checkout was destroyed by its own install" >&2; return 1; }
+  assert_file_exists "$HOME/.claude/skills/office-hours/SKILL.md" || return 1
+  bash "$nested/install" --target=claude < /dev/null >/dev/null 2>&1
+  assert_file_exists "$nested/install" || {
+    echo "    the nested checkout was destroyed on the second run" >&2; return 1; }
   local want n_cursor n_kiro
   want=$(find "$REPO_DIR/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   n_cursor=$(find "$HOME/.cursor/skills" -maxdepth 2 -name SKILL.md | wc -l | tr -d ' ')
@@ -514,25 +557,50 @@ test_install_dry_run_prompt_says_preview() {
   fi
 }
 
-# --- #13: atomic swap on success — old install replaced cleanly
+# --- #13: atomic swap on success — our own skill dirs replaced wholesale
 test_install_atomic_swap_on_success() {
   # First install.
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
-  # Mark a sentinel inside skills/ to prove the dir is replaced (not appended).
-  touch "$HOME/.cursor/skills/.sentinel-from-prior-run"
-  # Second install — atomic swap should produce a fresh skills/ without the sentinel.
+  # Leftover inside a skill dir WE own — the swap must drop it.
+  touch "$HOME/.cursor/skills/office-hours/.stale-from-prior-run"
+  # Second install — the staged tree replaces our dirs, so the leftover goes.
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
-  if [ -e "$HOME/.cursor/skills/.sentinel-from-prior-run" ]; then
-    echo "    sentinel survived — install was NOT atomic (skills/ wasn't fully replaced)" >&2
+  if [ -e "$HOME/.cursor/skills/office-hours/.stale-from-prior-run" ]; then
+    echo "    leftover survived inside our own skill dir — swap did not replace it" >&2
     return 1
   fi
-  # All 46 skills should still be present.
-  local count=$(find "$HOME/.cursor/skills" -mindepth 2 -name SKILL.md | wc -l | tr -d ' ')
-  if [ "$count" -lt 46 ]; then
-    echo "    expected 46 skills after atomic swap, got $count" >&2
+  # Every skill should still be present.
+  local want count
+  want=$(find "$REPO_DIR/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+  count=$(find "$HOME/.cursor/skills" -mindepth 2 -name SKILL.md | wc -l | tr -d ' ')
+  if [ "$count" -lt "$want" ]; then
+    echo "    expected $want skills after atomic swap, got $count" >&2
     return 1
   fi
+}
+
+# --- #13b: the swap must NOT delete skills vibestack does not own.
+#     The staged tree holds only our skills, so a root-level swap carries every
+#     foreign entry off to .old. Regression: Codex keeps its bundled skills in
+#     `.system/` inside the very root we install into.
+test_install_preserves_foreign_skills() {
+  local root="$HOME/.cursor/skills"
+  mkdir -p "$root/.system/bundled-skill" "$root/someone-elses-skill"
+  echo "BUNDLED" > "$root/.system/bundled-skill/SKILL.md"
+  echo "THEIRS"  > "$root/someone-elses-skill/SKILL.md"
+
+  # Two runs: the first exercises the swap, the second the .old cleanup path.
+  "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
+  "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
+
+  assert_file_exists "$root/.system/bundled-skill/SKILL.md" || {
+    echo "    a runtime's bundled .system/ skill was deleted by install" >&2; return 1; }
+  assert_file_exists "$root/someone-elses-skill/SKILL.md" || {
+    echo "    an unrelated skill was deleted by install" >&2; return 1; }
+  assert_eq "THEIRS" "$(cat "$root/someone-elses-skill/SKILL.md")" "foreign skill content" || return 1
+  # Ours landed too.
+  assert_file_exists "$root/office-hours/SKILL.md" || return 1
 }
 
 # --- #14: staging failure preserves existing production install
@@ -654,6 +722,7 @@ run_test "v1.5: plan d runs dry-run of detected"                test_install_pla
 run_test "v1.5: plan unknown input retries then exits"          test_install_plan_unknown_input_retries_once_then_exits
 run_test "v1.5: --dry-run prompt says preview"                  test_install_dry_run_prompt_says_preview
 run_test "v1.5: atomic swap on success"                         test_install_atomic_swap_on_success
+run_test "swap preserves foreign skills (.system, others)"      test_install_preserves_foreign_skills
 run_test "v1.5: staging failure preserves prod"                 test_install_staging_failure_preserves_prod
 run_test "v1.5: recovery cleans orphaned staging"               test_install_recovery_orphaned_staging
 run_test "v1.5: rapid rerun does not nest .old (codex P2 fix)"  test_install_rapid_rerun_does_not_nest_old
