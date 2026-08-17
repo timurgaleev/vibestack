@@ -2,6 +2,54 @@
 
 ## Open
 
+### Codex CLI as a default target (found 2026-08-17)
+
+1. **Install into `~/.agents/skills`, then promote `codex` into `all`.**
+   `install` still points `TARGET_ROOT[codex]` at `$HOME/.codex/skills` and keeps
+   `codex` out of `ALL_TARGETS`. Verified against the current OpenAI docs and by
+   experiment on codex-cli 0.147.0:
+   - Documented discovery is `$HOME/.agents/skills` (user), `.agents/skills`
+     (repo), `/etc/codex/skills` (admin), plus OpenAI's bundled system set.
+     `~/.codex/skills` is **not** documented anywhere as a user-skill location.
+   - Sentinel experiment: a fresh Codex process listed skills planted in
+     `~/.agents/skills` **and** in `~/.codex/skills`. So 0.147.0 scans both —
+     today's path works, but on undocumented behavior that can be dropped.
+   - `~/.agents/` is also Codex's plugin-marketplace root
+     (`~/.agents/plugins/marketplace.json`). Skills and plugins share the tree.
+
+   Blocked-on notes for whoever picks this up:
+   - A target name is no longer the same thing as a directory name. Split the
+     registry into user-root and project-relative-path maps rather than deriving
+     `.<target>/skills` from the target name (`install`'s project-scope loop).
+   - `target_detected` checks `$HOME/.<target>`, so a Codex install driven purely
+     by `$CODEX_HOME` reads as absent.
+   - Four-target coverage is missing from the dry-run, uninstall round-trip,
+     `a=all`, bin-link and partial-success tests; the hook warning counts a
+     target but names only Cursor/Kiro.
+   - `uninstall` hardcodes its own target list, so the "one row per map" claim in
+     `CLAUDE.md` is not true of uninstall.
+   - Codex Track B is unverified: `$skill-name` / implicit invocation, helper
+     symlinks, unsupported `hooks:` frontmatter failing safely, and whether all
+     52 descriptions survive Codex's initial-list budget (2% of context or 8,000
+     chars, after which it shortens descriptions and may omit skills).
+   - README says Codex users type `/command`; Codex documents `$skill-name` and
+     `/skills`. Fix the wording in the same change.
+   Effort: M.
+   Priority: P1.
+   Depends on: nothing (the data-loss blocker is fixed).
+
+2. **Doc accuracy sweep in the compatibility audit.** Two known-stale claims:
+   `docs/agent-skills-compatibility-audit.md` lists 6 skills as using
+   `${CLAUDE_SKILL_DIR}`, but the token also arrives through `{{include}}`d
+   snippets — `office-hours` substitutes it and is not on the list, so the real
+   set is larger. Separately, `docs/external-tools.md` calls Kiro hooks pending
+   while the audit says Track B completed. Derive the substitution list
+   mechanically (render with a sentinel `--skill-dir` and grep) instead of
+   maintaining it by hand.
+   Effort: S.
+   Priority: P3.
+   Depends on: nothing.
+
 ### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
 
 Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
@@ -15,6 +63,50 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Depends on: nothing (can be done anytime if motivated).
 
 ## Completed
+
+### Install no longer deletes skills it does not own (2026-08-17)
+
+**Data loss, reproduced before and after.** The atomic swap replaced a target's
+whole `skills/` root with the staged tree, which holds only vibestack skills.
+Every other entry in that root was carried off to `.old` and deleted by the next
+run's recovery pass. Two concrete victims:
+
+- A runtime's own bundled skills. Codex keeps its system set in
+  `<root>/.system/` — the exact directory we would install alongside.
+- The clone path README documents (`~/.claude/skills/vibestack`). The swap moved
+  the checkout aside, left the generated symlinks pointing at the vanished path,
+  then deleted the checkout on a later run.
+
+Fix: `adopt_foreign_entries` moves everything that is not one of our own skill
+names back into the live root, called after a successful swap, before the
+pre-swap `.old` purge, and in the recovery pass before a stale `.old` is
+removed — so an interrupted run still recovers. Ownership is derived by
+`vibestack_owned_names` exactly as `install_skill_to_target` derives names, so
+the two cannot disagree. Dotfiles are included; the live root wins on a name
+clash.
+
+Also in this change:
+- `test_install_atomic_swap_on_success` asserted the opposite property (an
+  unrelated root-level sentinel had to be **deleted** for the test to pass) — it
+  now checks that leftovers inside *our own* skill dirs are replaced, and the new
+  `test_install_preserves_foreign_skills` locks the ownership boundary. The
+  nested-checkout test now asserts the checkout survives two runs.
+- The suite stopped overwriting the tracked `bin/vibe-render-skill`: install
+  reads a `$VIBE_RENDER_SKILL` seam and the fail-injection stub is written to a
+  gitignored path, so a hard-killed run can no longer leave the tracked renderer
+  replaced (and the `git checkout --` self-heal is gone).
+- Renderer test debt from v1.29.0 closed. The stub read `src="$1"; dst="$2"`
+  while install passes `--skill-dir DIR SOURCE DEST`, so it failed *every* skill
+  instead of the one it targeted. The two byte-identical tests assumed one
+  rendering for all targets; per-target substitution makes that false. Detection
+  is now a sentinel render (the token often arrives via an `{{include}}`d
+  snippet, so the skill source cannot be grepped for it), and per-target skills
+  are compared against a render made with their own `--skill-dir` plus a
+  no-unresolved-token assertion.
+
+Suite: 31 passed, 0 failed (was 26/4 — those 4 were red on `main` before this
+change). `vibe-certify`: 4/4 targets PASS.
+**Completed:** 2026-08-17
 
 ### make-pdf renderer vendored (TODOS #12) — shipped in v1.32.0 (2026-08-03)
 

@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.32.3 — 2026-08-17
+
+### Fixed
+
+- **Install no longer deletes skills it does not own.** The atomic swap replaced a
+  target's whole `skills/` root with the staged tree, which holds only vibestack
+  skills — so every other entry in that root was carried off to `.old` and deleted
+  by the next run's recovery pass. Two real victims: a runtime's own bundled skills
+  (Codex keeps its system set in `<root>/.system/`), and the checkout path the
+  README documents (`~/.claude/skills/vibestack`), whose install destroyed its own
+  clone on the second run. Anything that is not one of our skill names is now
+  adopted back into the live root — after a successful swap, before the pre-swap
+  `.old` purge, and in the recovery pass before a stale `.old` is removed, so an
+  interrupted run still recovers.
+- **Renderer test seam.** `./install` resolves the renderer through
+  `$VIBE_RENDER_SKILL`, so the test suite injects its fail-on-match stub instead of
+  overwriting the tracked `bin/vibe-render-skill`. A hard-killed run can no longer
+  leave the tracked renderer replaced by a stub.
+
+### Changed
+
+- **Install-suite coverage corrected.** `test_install_atomic_swap_on_success`
+  asserted the opposite of the intended property — an unrelated root-level sentinel
+  had to be *deleted* for it to pass. It now checks that leftovers inside our own
+  skill dirs are replaced, with a new test locking the ownership boundary and the
+  nested-checkout test asserting the clone survives two runs. Renderer test debt
+  from 1.29.0 is closed: the stub read positional `$1`/`$2` while install passes
+  `--skill-dir DIR SOURCE DEST`, and the byte-identical tests assumed one rendering
+  for every target. Per-target substitution is now detected by a sentinel render
+  (the token often arrives through an `{{include}}`d snippet, so the skill source
+  cannot be grepped for it). Suite: 31 passed, 0 failed — up from 26 passed, 4
+  failed on `main`.
+
 ## 1.32.2 — 2026-08-03
 
 ### Fixed
