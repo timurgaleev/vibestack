@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.33.0 — 2026-08-17
+
+### Added
+
+- **Codex CLI is a default install target.** `./install`, `--target=all` and
+  `--yes` now cover four runtimes. Skills land where Codex documents them:
+  `~/.agents/skills` in user scope, `.agents/skills` in project scope. Invoke
+  them with `$name` or the `/skills` picker.
+
+### Changed
+
+- **A target name is no longer a directory name.** The registry splits into
+  `TARGET_CONFIG_DIR` (detection only — Codex's config lives in `~/.codex` and
+  never receives skills), `TARGET_ROOT` (user scope) and `TARGET_PROJECT_REL`
+  (project scope). Project scope reads the map instead of deriving
+  `.<target>/skills` from the name, and detection honors `$CODEX_HOME`, which
+  previously made a Codex install driven purely by that variable read as absent.
+  `uninstall` and `bin/vibe-certify` mirror the mapping.
+- **A superseded skills root is pruned by name.** vibestack used to install
+  Codex skills into `~/.codex/skills`; Codex 0.147.0 scans that path *and* the
+  documented one, so a leftover copy would list every skill twice and never
+  update. `prune_legacy_root` removes only our own skill names — never the root
+  itself, where Codex keeps its bundled `.system/` set.
+- Docs corrected: `docs/external-tools.md` listed Codex as "not yet a target",
+  the README claimed Codex users type `/command` (it is `$name` / `/skills`), and
+  the compatibility audit now carries Codex's caveats — Track B unverified, and
+  Codex caps its initial skill list at 2% of context (or 8,000 characters), after
+  which it shortens descriptions and may omit skills.
+
 ## 1.32.3 — 2026-08-17
 
 ### Fixed

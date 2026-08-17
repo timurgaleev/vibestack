@@ -41,7 +41,12 @@ for t in "${TARGETS[@]}"; do
     continue
   fi
 
-  skills_root="$root/.$t/skills"
+  # A target's directory is not its name — Codex uses .agents/skills. Mirrors
+  # install's TARGET_PROJECT_REL.
+  case "$t" in
+    codex) skills_root="$root/.agents/skills" ;;
+    *)     skills_root="$root/.$t/skills" ;;
+  esac
   installed=$(find "$skills_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
   fails=0
   for d in "$skills_root"/*/; do

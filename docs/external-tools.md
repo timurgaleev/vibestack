@@ -8,7 +8,7 @@ This page documents the gap honestly so you can decide whether to install the de
 
 ## Supported agent runtimes
 
-As of v1.4.0, vibestack installs into three agent runtimes that all implement
+vibestack installs into four agent runtimes that all implement
 the [Agent Skills open standard](https://agentskills.io/specification):
 
 - **Claude Code** — `~/.claude/skills/`. Full feature support (hooks, subagents).
@@ -16,11 +16,14 @@ the [Agent Skills open standard](https://agentskills.io/specification):
   skills' runtime behavior verified manually per `docs/hook-verification.md`.
 - **Kiro** — `~/.kiro/skills/`. Same status as Cursor; runtime hooks pending
   per-target verification.
+- **Codex CLI** — `~/.agents/skills/` (user scope), `.agents/skills` (repo
+  scope). `~/.codex` holds config only and never receives skills; a superseded
+  copy there is pruned by name. Skills are invoked as `$name` or via `/skills`.
+  Runtime hooks unverified — same status as Cursor/Kiro before their Track B pass.
 
-Other Agent-Skills-compatible runtimes (Codex CLI, Gemini CLI, Antigravity,
-OpenCode, Windsurf — all of which use `.agents/skills/`) are not yet a `--target=`
-option. The SKILL.md files would work; the only blocker is wiring up an
-additional case in `./install`. Tracked as a v1.5+ candidate.
+Other Agent-Skills-compatible runtimes (Gemini CLI, Antigravity, OpenCode,
+Windsurf) are not yet a `--target=` option. The SKILL.md files would work; the
+only blocker is one row per map in the target registry in `./install`.
 
 ---
 

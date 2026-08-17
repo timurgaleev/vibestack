@@ -131,34 +131,41 @@ bin/vibe-render-skill --check skills/<name>/SKILL.md ~/.claude/skills/<name>/SKI
 ## Install and update
 
 ```bash
-./install                          # interactive: asks per-target (claude, cursor, kiro)
-./install --target=all             # all three, non-interactive
+./install                          # interactive: asks per-target (claude, cursor, kiro, codex)
+./install --target=all             # all four, non-interactive
 ./install --target=claude          # claude only
 ./install --target=cursor,kiro     # cursor + kiro
-./install --target=codex           # Codex CLI (opt-in — not in `all`, see below)
+./install --target=codex           # Codex CLI only
 ./install --scope=project --project-root=<dir> --target=claude
                                    # project-local: pins the pack into <dir>/.claude/skills
-./install --yes                    # all three, skip prompts (CI-friendly)
+./install --yes                    # all four, skip prompts (CI-friendly)
 ./install --dry-run --target=all   # preview, no writes
 
 ./uninstall                        # claude only (default for v1.3.x compat)
-./uninstall --target=all           # remove from all three
+./uninstall --target=all           # remove from all four
 ./uninstall --target=cursor        # cursor only
 ```
 
-vibestack supports three agent runtimes via the [Agent Skills open
+vibestack supports four agent runtimes via the [Agent Skills open
 standard](https://agentskills.io/specification): Claude Code
-(`~/.claude/skills/`), Cursor (`~/.cursor/skills/`), and Kiro
-(`~/.kiro/skills/`). The same rendered `SKILL.md` is written to each
-target's directory — no format translation. `bin/` and sub-doc symlinks
-are installed per target so the "edit source, immediately reflected"
-workflow works in any chosen target.
+(`~/.claude/skills/`), Cursor (`~/.cursor/skills/`), Kiro
+(`~/.kiro/skills/`), and Codex CLI (`~/.agents/skills/`). The same rendered
+`SKILL.md` is written to each target's directory — no format translation.
+`bin/` and sub-doc symlinks are installed per target so the "edit source,
+immediately reflected" workflow works in any chosen target.
 
-A fourth target, **Codex CLI** (`~/.codex/skills/`), is wired into the same
-data-driven registry (`TARGET_LABEL`/`TARGET_ROOT` in `install`) but kept out of
-the default `all`/`--yes` set until its skill-path loading is confirmed on a real
-Codex setup — select it with `--target=codex`. Adding another runtime is now one
-row per map. The `agents/openai.yaml` manifest registers the pack with Codex.
+**A target name is not a directory name.** Codex reads user skills from
+`~/.agents/skills` and repo skills from `.agents/skills`, while its config lives
+in `~/.codex` — so `install` keeps three maps: `TARGET_CONFIG_DIR` (detection
+only), `TARGET_ROOT` (user scope) and `TARGET_PROJECT_REL` (project scope).
+`TARGET_LEGACY_ROOT` names superseded roots; `prune_legacy_root` removes **our
+own skill names** from them (never the root — Codex's bundled `.system/` lives
+there). Adding a runtime is one row per map. The `agents/openai.yaml` manifest
+registers the pack with Codex.
+
+Invocation differs per runtime: Claude Code, Cursor and Kiro expose skills as
+`/name`; Codex uses `$name` plus a `/skills` picker, and can also invoke a skill
+implicitly from its description.
 
 Update flow: `git pull && ./install`. The install is idempotent — re-runs
 produce identical bytes. No restart needed if your agent supports
@@ -167,7 +174,7 @@ hot-reload; otherwise start a new session.
 ## Multi-target output
 
 When adding a new skill, remember it'll install into Claude Code, Cursor,
-and Kiro by default. Three implications:
+Kiro, and Codex CLI by default. Three implications:
 
 1. **Write skill bodies in tool-name terms that modern LLMs understand.**
    Claude Code tools like `AskUserQuestion`, `Agent`, `Read`, `Edit` are

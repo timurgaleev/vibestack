@@ -11,6 +11,17 @@ implement. The spec standardizes the SKILL.md **file shape** — frontmatter +
 markdown body. It does **not** standardize runtime behavior (hooks, env vars,
 tool permissions, invocation semantics).
 
+**Codex CLI** joined the default install set after v1.32.3, at
+`~/.agents/skills/` (user) and `.agents/skills` (repo) — its documented scopes.
+It reads the same file shape, so Track A below applies unchanged. Its runtime
+column is **not** in the per-skill table: Track B has never been run against
+Codex, so treat hook-bearing and `${CLAUDE_SKILL_DIR}`-dependent skills there as
+unverified — the caveat Cursor/Kiro carried before their own Track B pass. Two
+Codex-specific unknowns: invocation is `$name` / `/skills` rather than `/name`,
+and Codex caps its initial skill list at 2% of the context window (or 8,000
+chars), shortening descriptions and possibly omitting skills beyond that — with
+53 skills, some may not surface in the initial list.
+
 **Track A (file-shape spec compliance)** is below. **Track B (per-target runtime
 verification)** has been completed empirically against installed Cursor and Kiro;
 results are in the new "Track B — Empirical Verification" section near the end.

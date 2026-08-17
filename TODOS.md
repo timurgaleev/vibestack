@@ -2,50 +2,16 @@
 
 ## Open
 
-### Codex CLI as a default target (found 2026-08-17)
+### Doc accuracy (2026-08-17)
 
-1. **Install into `~/.agents/skills`, then promote `codex` into `all`.**
-   `install` still points `TARGET_ROOT[codex]` at `$HOME/.codex/skills` and keeps
-   `codex` out of `ALL_TARGETS`. Verified against the current OpenAI docs and by
-   experiment on codex-cli 0.147.0:
-   - Documented discovery is `$HOME/.agents/skills` (user), `.agents/skills`
-     (repo), `/etc/codex/skills` (admin), plus OpenAI's bundled system set.
-     `~/.codex/skills` is **not** documented anywhere as a user-skill location.
-   - Sentinel experiment: a fresh Codex process listed skills planted in
-     `~/.agents/skills` **and** in `~/.codex/skills`. So 0.147.0 scans both —
-     today's path works, but on undocumented behavior that can be dropped.
-   - `~/.agents/` is also Codex's plugin-marketplace root
-     (`~/.agents/plugins/marketplace.json`). Skills and plugins share the tree.
-
-   Blocked-on notes for whoever picks this up:
-   - A target name is no longer the same thing as a directory name. Split the
-     registry into user-root and project-relative-path maps rather than deriving
-     `.<target>/skills` from the target name (`install`'s project-scope loop).
-   - `target_detected` checks `$HOME/.<target>`, so a Codex install driven purely
-     by `$CODEX_HOME` reads as absent.
-   - Four-target coverage is missing from the dry-run, uninstall round-trip,
-     `a=all`, bin-link and partial-success tests; the hook warning counts a
-     target but names only Cursor/Kiro.
-   - `uninstall` hardcodes its own target list, so the "one row per map" claim in
-     `CLAUDE.md` is not true of uninstall.
-   - Codex Track B is unverified: `$skill-name` / implicit invocation, helper
-     symlinks, unsupported `hooks:` frontmatter failing safely, and whether all
-     52 descriptions survive Codex's initial-list budget (2% of context or 8,000
-     chars, after which it shortens descriptions and may omit skills).
-   - README says Codex users type `/command`; Codex documents `$skill-name` and
-     `/skills`. Fix the wording in the same change.
-   Effort: M.
-   Priority: P1.
-   Depends on: nothing (the data-loss blocker is fixed).
-
-2. **Doc accuracy sweep in the compatibility audit.** Two known-stale claims:
-   `docs/agent-skills-compatibility-audit.md` lists 6 skills as using
-   `${CLAUDE_SKILL_DIR}`, but the token also arrives through `{{include}}`d
-   snippets — `office-hours` substitutes it and is not on the list, so the real
-   set is larger. Separately, `docs/external-tools.md` calls Kiro hooks pending
-   while the audit says Track B completed. Derive the substitution list
-   mechanically (render with a sentinel `--skill-dir` and grep) instead of
-   maintaining it by hand.
+1. **Derive the `${CLAUDE_SKILL_DIR}` list mechanically.**
+   `docs/agent-skills-compatibility-audit.md` lists 6 skills as using the token,
+   but it also arrives through `{{include}}`d snippets — `office-hours`
+   substitutes it and is not on the list, so the real set is larger. The install
+   suite already detects this correctly (render with a sentinel `--skill-dir`,
+   grep the output); apply the same method to the doc instead of hand-maintaining
+   it. Separately, `docs/external-tools.md` calls Kiro hooks pending while the
+   audit says Track B completed — reconcile.
    Effort: S.
    Priority: P3.
    Depends on: nothing.
@@ -63,6 +29,52 @@ Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-2026
    Depends on: nothing (can be done anytime if motivated).
 
 ## Completed
+
+### Codex CLI is a default target (2026-08-17)
+
+Shipped in **v1.33.0**. `codex` installs into the paths Codex documents and joins
+`ALL_TARGETS`, so `./install`, `--target=all` and `--yes` all cover four runtimes.
+
+Evidence for the path (the earlier `~/.codex/skills` was never documented):
+- Current OpenAI docs: user skills `$HOME/.agents/skills`, repo skills
+  `.agents/skills`, admin `/etc/codex/skills`, plus OpenAI's bundled system set.
+- Sentinel experiment on codex-cli 0.147.0: a fresh Codex process listed probe
+  skills planted in **both** `~/.agents/skills` and `~/.codex/skills`. The old
+  path worked, but on undocumented behavior.
+- `~/.agents/` is also the plugin-marketplace root
+  (`~/.agents/plugins/marketplace.json`) — skills and plugins share the tree.
+
+What shipped:
+- **A target name is no longer a directory name.** Three maps instead of one:
+  `TARGET_CONFIG_DIR` (detection only — `~/.codex` for codex), `TARGET_ROOT`
+  (user scope — `~/.agents/skills`), `TARGET_PROJECT_REL` (project scope —
+  `.agents/skills`). The project-scope loop reads the registry instead of
+  deriving `.<target>/skills` from the name, and `target_detected` reads the
+  config-dir map, so `$CODEX_HOME` no longer reads as absent.
+- **`prune_legacy_root`** removes **our own skill names** from a superseded root
+  (`TARGET_LEGACY_ROOT`). Codex scans both roots, so a leftover copy would list
+  every skill twice and never update. The root itself is never touched — Codex's
+  bundled `.system/` and anyone else's skills stay.
+- `uninstall` mirrors the mapping (`.agents/skills` for codex, four-target
+  `all`). `bin/vibe-certify` too — it derived the same path from the name.
+- Docs corrected: `docs/external-tools.md` (which listed Codex as "not yet a
+  target"), `CLAUDE.md`, the audit doc's Codex caveat, and the README's claim
+  that Codex users type `/command` — Codex uses `$name` and `/skills`.
+- Hook warning now names Codex alongside Cursor/Kiro.
+
+New tests: `codex installs to .agents/skills, prunes legacy root` (our stale copy
+goes, `.system/` and an unrelated skill stay) and `codex project scope uses
+.agents/skills`. Dry-run, non-TTY default set, per-skill byte-identity and the
+`e` per-target prompt all cover four targets now.
+
+Codex Track B stays unverified: `$name` / implicit invocation, helper symlinks,
+`hooks:` failing safely, and whether all 52 descriptions survive Codex's
+initial-list budget (2% of context or 8,000 chars, after which it shortens
+descriptions and may omit skills). `uninstall` still hardcodes its target list
+rather than sharing the registry — a real inconsistency, not a blocker.
+
+Suite: 33 passed, 0 failed. `vibe-certify`: 4/4 targets PASS.
+**Completed:** v1.33.0 (2026-08-17)
 
 ### Install no longer deletes skills it does not own (2026-08-17)
 
