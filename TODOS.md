@@ -2,33 +2,45 @@
 
 ## Open
 
-### Doc accuracy (2026-08-17)
-
-1. **Derive the `${CLAUDE_SKILL_DIR}` list mechanically.**
-   `docs/agent-skills-compatibility-audit.md` lists 6 skills as using the token,
-   but it also arrives through `{{include}}`d snippets — `office-hours`
-   substitutes it and is not on the list, so the real set is larger. The install
-   suite already detects this correctly (render with a sentinel `--skill-dir`,
-   grep the output); apply the same method to the doc instead of hand-maintaining
-   it. Separately, `docs/external-tools.md` calls Kiro hooks pending while the
-   audit says Track B completed — reconcile.
-   Effort: S.
-   Priority: P3.
-   Depends on: nothing.
-
-### v2 candidates from SKILL.md composition refactor (CEO review 2026-05-08)
-
-Source design doc: `~/.vibestack/projects/vibestack/timurgaleev-main-design-20260508-205253.md` (APPROVED, mode HOLD).
-
-3. **Renderer infra-error fuzz tests** — PATH-shimmed mocks that
-   force `mktemp`/`mv` to fail and assert exit 3 + clean error
-   messages. Add iff a future refactor of error handling regresses
-   silently (i.e., add reactively, not pre-emptively).
-   Effort: S.
-   Priority: P3.
-   Depends on: nothing (can be done anytime if motivated).
+_Nothing open._
 
 ## Completed
+
+### Renderer infra-error coverage + doc accuracy (2026-08-18)
+
+Shipped in **v1.33.1**. Closes both remaining P3 items, and the fuzz tests found a
+real bug while being written.
+
+**`bin/vibe-render-skill` had one unguarded `mv`.** Every other infra failure exits 3
+with a clean message; `mv "$SUB_TMP" "$TMP"` after `${CLAUDE_SKILL_DIR}` substitution
+did not. On failure the renderer reported success while the caller got a
+half-substituted file, and `SUB_TMP` — absent from the cleanup trap — was left behind
+in the destination directory. Both fixed: the move is guarded, and `SUB_TMP` joins the
+trap.
+
+**Fuzz tests.** `test/fixtures/render/13-infra-errors/` PATH-shims `mktemp` and `mv`
+to force failure and asserts exit 3, the exact stderr line, destination contents, and
+that no temp file leaks. Six cases, covering every guarded infra path reachable that
+way. Each was mutation-tested: neutering a guard flips exactly its own case and no
+other. The one guard left uncovered (`skill-dir substitution failed`, needs a failing
+`python3`) is noted in the fixture README.
+
+**`${CLAUDE_SKILL_DIR}` list derived mechanically.** The audit doc claimed 6 skills.
+The real number is **19** — the token usually arrives through an `{{include}}`d
+snippet (`browse-detect` / `browse-setup` reference `../browse/bin/vibe-browse`), so a
+skill's own source cannot be grepped for it. The doc now carries the correct list, the
+corrected per-skill matrix column, and the sentinel-render command that regenerates it,
+so the next person re-derives instead of hand-editing.
+
+**Track B claims reconciled.** `docs/external-tools.md` called Kiro hooks "pending
+verification" while the audit recorded Track B as completed on 2026-05-09. The audit
+was right; external-tools now states what Track B actually found — on both Cursor and
+Kiro hook-bearing skills install but their hooks do not fire, and only Cursor has a
+native sandbox behind them.
+
+Suites: render 22/0, install-integration 33/0, source-lint 8/0, vibe-bins 18/0,
+certify 2/0 plus 4/4 targets PASS.
+**Completed:** v1.33.1 (2026-08-18)
 
 ### Codex CLI is a default target (2026-08-17)
 

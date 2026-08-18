@@ -150,6 +150,112 @@ run_arg_parsing_fixture() {
   done
 }
 
+# ── infra-error harness (13-infra-errors) ─────────────────────────────────
+# The renderer's `exit 3` guards only fire when mktemp/mv fail. Shim both onto
+# PATH so the failure is forced rather than simulated — every call a case does
+# not target still reaches the real binary.
+INFRA_NAME=""
+INFRA_FIX=""
+INFRA_TMP=""
+INFRA_SHIMS=""
+
+make_infra_shims() {
+  local real_mktemp real_mv
+  real_mktemp="$(command -v mktemp)"
+  real_mv="$(command -v mv)"
+  mkdir -p "$INFRA_SHIMS"
+  cat > "$INFRA_SHIMS/mktemp" <<EOF
+#!/usr/bin/env bash
+# Fails only under FAIL_MKTEMP=1; FAIL_MKTEMP_MATCH narrows it to one template.
+if [ "\${FAIL_MKTEMP:-0}" = "1" ]; then
+  m="\${FAIL_MKTEMP_MATCH:-}"
+  if [ -z "\$m" ]; then echo "mktemp: shim: forced failure" >&2; exit 1; fi
+  for a in "\$@"; do
+    case "\$a" in *"\$m"*) echo "mktemp: shim: forced failure" >&2; exit 1 ;; esac
+  done
+fi
+exec "$real_mktemp" "\$@"
+EOF
+  cat > "$INFRA_SHIMS/mv" <<EOF
+#!/usr/bin/env bash
+if [ "\${FAIL_MV:-0}" = "1" ]; then echo "mv: shim: forced failure" >&2; exit 1; fi
+exec "$real_mv" "\$@"
+EOF
+  chmod +x "$INFRA_SHIMS/mktemp" "$INFRA_SHIMS/mv"
+}
+
+# infra_case LABEL WANT_RC WANT_MSG [VAR=VAL ...] RENDERER ARGS...
+# Seeds $INFRA_TMP/LABEL/SKILL.md with a sentinel, so "the destination was left
+# alone" is asserted by content, not merely by exit code.
+infra_case() {
+  local label="$1" want_rc="$2" want_msg="$3"; shift 3
+  local d="$INFRA_TMP/$label"
+  mkdir -p "$d"
+  printf 'SENTINEL\n' > "$d/SKILL.md"
+  set +e
+  env PATH="$INFRA_SHIMS:$PATH" VIBESTACK_REPO_ROOT="$INFRA_FIX" "$@" \
+    >/dev/null 2>"$d/stderr"
+  local rc=$?
+  set -e
+  if [ "$rc" != "$want_rc" ]; then
+    fail "$INFRA_NAME/$label" "expected exit $want_rc, got $rc. stderr: $(cat "$d/stderr")"
+    return
+  fi
+  if ! grep -q "$want_msg" "$d/stderr"; then
+    fail "$INFRA_NAME/$label" "stderr missing '$want_msg': $(cat "$d/stderr")"
+    return
+  fi
+  if [ "$(cat "$d/SKILL.md")" != "SENTINEL" ]; then
+    fail "$INFRA_NAME/$label" "destination SKILL.md was overwritten or half-written"
+    return
+  fi
+  local leftovers
+  leftovers="$(find "$d" -maxdepth 1 -name '.SKILL.*' | wc -l | tr -d ' ')"
+  if [ "$leftovers" != "0" ]; then
+    fail "$INFRA_NAME/$label" "$leftovers renderer temp file(s) left in dest dir"
+    return
+  fi
+  pass "$INFRA_NAME/$label"
+}
+
+run_infra_error_fixture() {
+  local fix="$1"
+  INFRA_FIX="$fix"
+  INFRA_NAME="$(basename "$fix")"
+  INFRA_TMP="$(mktemp -d "${TMPDIR:-/tmp}/vibe-test.XXXXXX")"
+  INFRA_SHIMS="$INFRA_TMP/shims"
+  make_infra_shims
+
+  local source; source="$(find_source "$fix")"
+  if [ -z "$source" ]; then
+    fail "$INFRA_NAME" "no source file found"
+    rm -rf "$INFRA_TMP"; return
+  fi
+  local sd="/opt/vibe-test-skill-dir"   # never touched; only drives substitution
+
+  # DEST_DIR is a regular file, so mkdir -p fails for any uid (root included).
+  infra_case mkdir_dest_dir 3 "render: infra: cannot create dest dir" \
+    "$RENDER" "$source" "$INFRA_TMP/mkdir_dest_dir/SKILL.md/SKILL.md"
+
+  infra_case mktemp_check_tmpdir 3 "render: infra: cannot create temp dir for --check" \
+    FAIL_MKTEMP=1 "$RENDER" --check "$source" "$INFRA_TMP/mktemp_check_tmpdir/SKILL.md"
+
+  infra_case mktemp_dest_temp 3 "render: infra: cannot create temp file in" \
+    FAIL_MKTEMP=1 "$RENDER" "$source" "$INFRA_TMP/mktemp_dest_temp/SKILL.md"
+
+  infra_case mktemp_sub_temp 3 "render: infra: cannot create temp file for substitution" \
+    FAIL_MKTEMP=1 FAIL_MKTEMP_MATCH=.SKILL.sub. \
+    "$RENDER" --skill-dir "$sd" "$source" "$INFRA_TMP/mktemp_sub_temp/SKILL.md"
+
+  infra_case mv_final 3 "render: infra: cannot move into" \
+    FAIL_MV=1 "$RENDER" "$source" "$INFRA_TMP/mv_final/SKILL.md"
+
+  infra_case mv_substitution 3 "render: infra: cannot replace temp file after substitution" \
+    FAIL_MV=1 "$RENDER" --skill-dir "$sd" "$source" "$INFRA_TMP/mv_substitution/SKILL.md"
+
+  rm -rf "$INFRA_TMP"
+}
+
 # Find renderer
 [ -x "$RENDER" ] || { echo "renderer not found or not executable: $RENDER" >&2; exit 1; }
 
@@ -166,6 +272,9 @@ for fix in "$FIXTURES"/*/; do
       ;;
     12-arg-parsing)
       run_arg_parsing_fixture
+      ;;
+    13-infra-errors)
+      run_infra_error_fixture "$fix"
       ;;
     *)
       run_render_fixture "$fix"

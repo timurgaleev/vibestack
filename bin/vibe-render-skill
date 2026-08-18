@@ -29,9 +29,11 @@ SOURCE="$1"
 # Cleanup trap installed BEFORE any resource creation so early-exit paths
 # (validation errors before TMP/CHECK_TMPDIR exist) don't leak temp resources.
 TMP=""
+SUB_TMP=""
 CHECK_TMPDIR=""
 cleanup() {
   [ -n "${TMP:-}" ] && rm -f "$TMP"
+  [ -n "${SUB_TMP:-}" ] && rm -f "$SUB_TMP"
   [ -n "${CHECK_TMPDIR:-}" ] && rm -rf "$CHECK_TMPDIR"
   return 0
 }
@@ -143,7 +145,9 @@ PYEOF
   then
     rm -f "$SUB_TMP"; echo "render: infra: skill-dir substitution failed" >&2; exit 3
   fi
-  mv "$SUB_TMP" "$TMP"
+  mv "$SUB_TMP" "$TMP" || {
+    echo "render: infra: cannot replace temp file after substitution" >&2; exit 3; }
+  SUB_TMP=""
 fi
 
 # Atomic move into place. mktemp creates 0600; normalize to 0644 to match install conventions.
