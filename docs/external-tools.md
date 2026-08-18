@@ -12,10 +12,14 @@ vibestack installs into four agent runtimes that all implement
 the [Agent Skills open standard](https://agentskills.io/specification):
 
 - **Claude Code** — `~/.claude/skills/`. Full feature support (hooks, subagents).
-- **Cursor** — `~/.cursor/skills/`. SKILL.md content portable; hook-bearing
-  skills' runtime behavior verified manually per `docs/hook-verification.md`.
-- **Kiro** — `~/.kiro/skills/`. Same status as Cursor; runtime hooks pending
-  per-target verification.
+- **Cursor** — `~/.cursor/skills/`. Track B verified 2026-05-09 (Cursor
+  `2026.05.07-42ddaca`): hook-bearing skills install but their hooks do **not**
+  fire, though Cursor's own shell-permission sandbox blocks `rm -rf`
+  independently. Procedure: `docs/hook-verification.md`.
+- **Kiro** — `~/.kiro/skills/`. Track B verified 2026-05-09 (Kiro CLI 2.2.2):
+  hook-bearing skills install but their hooks do **not** fire, and unlike Cursor
+  there is no native sandbox behind them — destructive commands run unimpeded
+  and the safety skills degrade to LLM instruction-following.
 - **Codex CLI** — `~/.agents/skills/` (user scope), `.agents/skills` (repo
   scope). `~/.codex` holds config only and never receives skills; a superseded
   copy there is pruned by name. Skills are invoked as `$name` or via `/skills`.

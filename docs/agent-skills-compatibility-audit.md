@@ -36,11 +36,26 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Description ≤ 1024 chars (spec limit) | 53/53 PASS | — |
 | YAML frontmatter parseable | 53/53 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 6 skills | careful, freeze, guard, investigate, ship, design-review (cross-skill ref to `../browse/bin/vibe-browse`) |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 19 skills | benchmark, canary, careful, connect-chrome, design-consultation, design-html, design-review, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, qa, qa-only, scrape, ship. Six carry the token in their own SKILL.md; the other 13 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
 | Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
 | Skills using `AskUserQuestion` (Claude-specific) | ~53 skills | most of the pack |
+
+The `${CLAUDE_SKILL_DIR}` row above and the matrix column below are derived
+mechanically rather than hand-maintained — the token often arrives through an
+`{{include}}`d snippet, so it cannot be read off a skill's own source; regenerate
+the list with the same sentinel-render probe `test/test-install-integration.sh`
+uses:
+
+```bash
+tmp=$(mktemp -d)
+for s in $(ls skills); do
+  bin/vibe-render-skill --skill-dir /__probe__ "skills/$s/SKILL.md" "$tmp/$s.md" >/dev/null
+  grep -q /__probe__ "$tmp/$s.md" && echo "$s"
+done
+rm -rf "$tmp"
+```
 
 **Verdict:** All 53 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
@@ -51,21 +66,23 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | Skill | Hooks | `${CLAUDE_SKILL_DIR}` | `Agent` tool | Tier (claude / cursor / kiro) |
 |---|---|---|---|---|
 | autoplan | — | — | yes | full / instr-only / instr-only |
-| benchmark | — | — | — | full / full / full |
+| benchmark | — | yes | — | full / full / full |
 | benchmark-models | — | — | — | full / full / full |
 | browse | — | — | — | full / full / full |
-| canary | — | — | — | full / full / full |
+| canary | — | yes | — | full / full / full |
 | careful | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | claude | — | — | — | full / full / full |
 | codex | — | — | — | full / full / full |
+| connect-chrome | — | yes | — | full / full / full |
 | context-restore | — | — | — | full / full / full |
 | context-save | — | — | — | full / full / full |
 | cso | — | — | yes | full / instr-only / instr-only |
-| design-consultation | — | — | yes | full / instr-only / instr-only |
-| design-html | — | — | yes | full / instr-only / instr-only |
-| design-review | — | — | yes | full / instr-only / instr-only |
+| design-consultation | — | yes | yes | full / instr-only / instr-only |
+| design-html | — | yes | yes | full / instr-only / instr-only |
+| design-review | — | yes | yes | full / instr-only / instr-only |
 | design-shotgun | — | — | yes | full / instr-only / instr-only |
-| devex-review | — | — | — | full / full / full |
+| devex-review | — | yes | — | full / full / full |
+| diagram | — | yes | — | full / full / full |
 | document-generate | — | — | — | full / full / full |
 | document-release | — | — | — | full / full / full |
 | freeze | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
@@ -73,11 +90,11 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | health | — | — | — | full / full / full |
 | improve-arch | — | — | — | full / full / full |
 | investigate | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
-| land-and-deploy | — | — | — | full / full / full |
+| land-and-deploy | — | yes | — | full / full / full |
 | landing-report | — | — | — | full / full / full |
 | learn | — | — | — | full / full / full (`sync` needs memex MCP; degrades to "not connected" without it) |
-| make-pdf | — | — | — | full / full / full |
-| office-hours | — | — | yes | full / instr-only / instr-only |
+| make-pdf | — | yes | — | full / full / full |
+| office-hours | — | yes | yes | full / instr-only / instr-only |
 | open-browser | — | — | — | full / full / full |
 | pair-agent | — | — | — | full / full / full |
 | plan-ceo-review | — | — | — | full / full / full |
@@ -86,12 +103,13 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | plan-eng-review | — | — | — | full / full / full |
 | plan-tune | — | — | — | full / full / full |
 | pr-summary | — | — | — | full / full / full |
-| qa | — | — | — | full / full / full |
-| qa-only | — | — | — | full / full / full |
+| qa | — | yes | — | full / full / full |
+| qa-only | — | yes | — | full / full / full |
 | reroll-buddy | — | — | — | full / full / full |
 | retro | — | — | — | full / full / full |
 | review | — | — | — | full / full / full |
 | reroll-buddy | — | — | — | full / full / full |
+| scrape | — | yes | — | full / full / full |
 | setup-browser-cookies | — | — | — | full / full / full |
 | setup-deploy | — | — | — | full / full / full |
 | ship | — | yes (in body, not hook) | — | full / full / full |
@@ -130,10 +148,15 @@ sibling skill directory exists at runtime. Day 0 Track B must verify whether
 Cursor and Kiro keep skills in per-skill directories (where the relative path
 resolves) or in some other layout.
 
-### F3 — 5 skills use `${CLAUDE_SKILL_DIR}` env var substitution
+### F3 — 19 skills use `${CLAUDE_SKILL_DIR}` env var substitution
 
-`careful`, `freeze`, `guard`, `investigate`, `ship`. The first 4 use it in
-`hooks:` commands; `ship` uses it in the body to reference its own sub-doc.
+`careful`, `freeze`, `guard` and `investigate` use it in `hooks:` commands;
+`make-pdf` and `ship` use it in their bodies to reach their own `bin/` and a
+sibling skill's sub-doc. The other 13 — `benchmark`, `canary`,
+`connect-chrome`, `design-consultation`, `design-html`, `design-review`,
+`devex-review`, `diagram`, `land-and-deploy`, `office-hours`, `qa`, `qa-only`,
+`scrape` — never name the token themselves; it reaches them through the
+`browse-detect` / `browse-setup` snippets they `{{include}}`.
 
 **Risk:** if Cursor and Kiro don't substitute `${CLAUDE_SKILL_DIR}` (or its
 target-specific equivalent), the hook commands and the body reference will

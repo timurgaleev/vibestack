@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.33.1 — 2026-08-18
+
+### Fixed
+
+- **The renderer's last unguarded `mv`.** Every infra failure in
+  `bin/vibe-render-skill` exits 3 with a clean message — except the move that put
+  the `${CLAUDE_SKILL_DIR}`-substituted file back into place. When it failed the
+  renderer reported success while handing back a half-substituted skill, and its
+  temp file, missing from the cleanup trap, was left behind in the destination
+  directory. Both fixed. Found by the new fuzz tests while they were being written.
+
+### Added
+
+- **Infra-error fuzz tests for the renderer.** `mktemp` and `mv` are PATH-shimmed
+  to fail, and each of the six guarded paths is asserted on exit code, exact stderr
+  line, destination contents, and temp-file leakage. Every case was mutation-tested:
+  neutering one guard flips exactly its own case.
+
+### Changed
+
+- **The `${CLAUDE_SKILL_DIR}` skill list is derived, not hand-maintained.** The
+  compatibility audit claimed 6 skills; the real number is 19. The token usually
+  arrives through an `{{include}}`d snippet, so a skill's own source cannot be
+  grepped for it. The doc now carries the correct list, a corrected per-skill matrix,
+  and the command that regenerates both.
+- **Track B status reconciled.** `docs/external-tools.md` called Kiro hooks "pending
+  verification" while the audit had recorded Track B as done on 2026-05-09. It now
+  states what Track B actually found: on Cursor and Kiro alike, hook-bearing skills
+  install but their hooks do not fire, and only Cursor has a native sandbox behind
+  them.
+
 ## 1.33.0 — 2026-08-17
 
 ### Added
