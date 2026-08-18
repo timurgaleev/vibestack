@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.33.2 — 2026-08-18
+
+### Fixed
+
+- **How you invoke a skill in Codex.** v1.33.0 replaced one wrong claim with another:
+  it said Codex uses `$name` "plus a `/skills` picker". There is no `/skills` picker in
+  codex-cli 0.147.0 — every occurrence of that string in the binary is a filesystem or
+  source path. `/` is reserved for Codex's own commands, so `/office-hours` completes to
+  nothing. A skill is referenced as `$name` inside an ordinary message
+  (`Use $office-hours to shape this idea`), or triggered implicitly from its
+  `description` — which Codex's own bundled `skill-creator` calls "the primary triggering
+  mechanism". Verified: `Use $office-hours` loads the skill body.
+- **Where to clone.** The README told you to clone into `~/.claude/skills/vibestack` —
+  inside an agent's skills directory. Agents index that tree recursively, so the
+  checkout's own `skills/` source directory is picked up as a second set and every skill
+  appears twice in the picker (seen as `/office-hours` alongside
+  `/vibestack-skills-office-hours`). The README now clones to `~/vibestack` and says why.
+  v1.32.3 had already stopped the installer from *deleting* a checkout parked there; this
+  closes the other half.
+- Documented binary paths no longer assume where the checkout lives. Skills resolve the
+  browse daemon relative to their own installed directory
+  (`${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse`, falling back to `PATH`), which works
+  in both user and project scope.
+
 ## 1.33.1 — 2026-08-18
 
 ### Fixed

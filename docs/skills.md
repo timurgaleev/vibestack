@@ -391,7 +391,7 @@ Generate professional PDFs from markdown, code, or HTML.
 
 Supports cover pages, tables of contents, watermarks, custom margins, and page sizes. Includes a preview mode to open a temporary PDF in the system viewer, and a setup mode to configure per-project defaults.
 
-Requires the `make-pdf` binary at `~/.claude/skills/vibestack/make-pdf/dist/pdf`, or override via `$MAKE_PDF_BIN`.
+Requires the `make-pdf` binary at `<vibestack checkout>/make-pdf/dist/pdf`, or override via `$MAKE_PDF_BIN`.
 
 Triggers: `make pdf`, `generate pdf`, `create pdf`, `export pdf`, `pdf preview`
 
@@ -418,7 +418,7 @@ Triggers: `benchmark models`, `compare models`, `test models`
 ### `/browse`
 Fast headless browser for QA testing and site dogfooding.
 
-Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires a browse daemon binary at `~/.claude/skills/vibestack/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
+Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires a browse daemon binary at `<vibestack checkout>/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `browse a page`, `headless browser`, `take page screenshot`
 
@@ -436,7 +436,7 @@ Triggers: `claude review`, `claude challenge`, `ask claude`
 ### `/open-browser`
 Launch vibestack Browser — AI-controlled Chromium with sidebar extension.
 
-Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires a browse daemon binary at `~/.claude/skills/vibestack/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
+Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires a browse daemon binary at `<vibestack checkout>/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `open browser`, `launch chromium`, `show me the browser`
 

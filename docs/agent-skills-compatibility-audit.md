@@ -17,7 +17,8 @@ It reads the same file shape, so Track A below applies unchanged. Its runtime
 column is **not** in the per-skill table: Track B has never been run against
 Codex, so treat hook-bearing and `${CLAUDE_SKILL_DIR}`-dependent skills there as
 unverified — the caveat Cursor/Kiro carried before their own Track B pass. Two
-Codex-specific unknowns: invocation is `$name` / `/skills` rather than `/name`,
+Codex-specific unknowns: invocation is `$name` inside a message, or implicit from
+the `description`, rather than `/name`,
 and Codex caps its initial skill list at 2% of the context window (or 8,000
 chars), shortening descriptions and possibly omitting skills beyond that — with
 53 skills, some may not surface in the initial list.

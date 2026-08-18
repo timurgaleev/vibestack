@@ -22,7 +22,9 @@ the [Agent Skills open standard](https://agentskills.io/specification):
   and the safety skills degrade to LLM instruction-following.
 - **Codex CLI** — `~/.agents/skills/` (user scope), `.agents/skills` (repo
   scope). `~/.codex` holds config only and never receives skills; a superseded
-  copy there is pruned by name. Skills are invoked as `$name` or via `/skills`.
+  copy there is pruned by name. Skills are referenced as `$name` inside a normal
+  message, or triggered implicitly from their `description` — `/` is reserved for
+  Codex's own commands and does not complete skill names.
   Runtime hooks unverified — same status as Cursor/Kiro before their Track B pass.
 
 Other Agent-Skills-compatible runtimes (Gemini CLI, Antigravity, OpenCode,
@@ -58,14 +60,13 @@ the full daemon.
 **What it is:** a persistent headless Chromium daemon that exposes a fast (~100ms) command interface for navigating, screenshotting, asserting, and interacting with web pages. Skills that depend on it expect a binary at:
 
 ```
-~/.claude/skills/vibestack/browse/dist/browse
+<vibestack checkout>/browse/dist/browse
 ```
 
-or, in repo-local mode, at:
-
-```
-<repo>/.claude/skills/vibestack/browse/dist/browse
-```
+Skills locate it relative to their own installed directory rather than to any fixed
+path — `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse`, falling back to `vibe-browse`
+on `PATH`. That resolves correctly in both user and project scope, and does not depend
+on where the checkout lives.
 
 **Status:** vibestack does **not** include the browse daemon source or binary. There is currently no public, vibestack-bundled implementation. The four affected skills will detect the missing binary and emit `BROWSE_NOT_AVAILABLE` so the agent can fall back to text-only checks (curl, basic HTTP) where possible.
 
