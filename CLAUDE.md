@@ -163,9 +163,13 @@ own skill names** from them (never the root — Codex's bundled `.system/` lives
 there). Adding a runtime is one row per map. The `agents/openai.yaml` manifest
 registers the pack with Codex.
 
-Invocation differs per runtime: Claude Code, Cursor and Kiro expose skills as
-`/name`; Codex uses `$name` plus a `/skills` picker, and can also invoke a skill
-implicitly from its description.
+Invocation differs per runtime. Claude Code, Cursor and Kiro expose skills as
+`/name`. **Codex does not** — `/` there is reserved for its own commands, so `/office-hours`
+completes to nothing. A Codex skill is referenced as `$name` inside an ordinary message
+(`Use $office-hours to shape this idea`), or triggered implicitly from its `description`,
+which its bundled `skill-creator` calls "the primary triggering mechanism". Verified
+against codex-cli 0.147.0: `Use $office-hours` loads the skill body; there is no
+`/skills` picker in that build.
 
 Update flow: `git pull && ./install`. The install is idempotent — re-runs
 produce identical bytes. No restart needed if your agent supports

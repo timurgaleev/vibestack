@@ -40,9 +40,13 @@ Code, Cursor, Kiro, and Codex CLI. No lock-in, no telemetry, state stays in
 ## Install in 30 seconds
 
 ```bash
-git clone https://github.com/timurgaleev/vibestack ~/.claude/skills/vibestack
-~/.claude/skills/vibestack/install
+git clone https://github.com/timurgaleev/vibestack ~/vibestack
+~/vibestack/install
 ```
+
+Clone anywhere **outside** an agent's skills directory. The installer renders the
+skills into each agent's own folder; a checkout sitting inside one of those folders
+gets indexed a second time, so every skill shows up twice in the picker.
 
 That's it. Open a new session of your agent and type `/office-hours`:
 
@@ -120,7 +124,7 @@ A few highlights:
 ./install --target=all      # Claude Code + Cursor + Kiro + Codex, non-interactive
 ./install --dry-run         # Preview every change, write nothing
 git pull && ./install       # Update
-~/.claude/skills/vibestack/uninstall --target=all   # Remove
+~/vibestack/uninstall --target=all      # Remove
 ```
 
 - [`docs/skills.md`](docs/skills.md) — all skills, with descriptions
