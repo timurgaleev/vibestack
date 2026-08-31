@@ -52,10 +52,28 @@ Hook scripts live in `skills/<name>/bin/`. Rules:
 
 - Read JSON from stdin (the tool call payload from Claude Code)
 - Return `{}` to allow the tool call through silently
-- Return `{"permissionDecision":"ask","message":"..."}` to pause and ask the user
-- Return `{"permissionDecision":"deny","message":"..."}` to block
+- To pause or block, return the decision **nested under `hookSpecificOutput`**:
+  ```json
+  {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"..."}}
+  ```
+  `permissionDecision` is `"ask"` or `"deny"`; the human-readable text goes in
+  `permissionDecisionReason`. **Claude Code ignores a top-level
+  `permissionDecision`** — a hook that emits one runs, matches, prints, and
+  changes nothing. The failure is silent, so it survives casual testing.
+- Never hand-build that JSON with `printf`/`sed` interpolation. A path or
+  message containing a quote or newline produces malformed JSON, and the whole
+  decision is discarded. Source `skills/careful/bin/hook-extract.sh` and call
+  `vibe_hook_decision <ask|deny> "<reason>"`.
+- Parse the payload with `vibe_hook_extract_field "$INPUT" <field>` from the same
+  file, never with `grep -o '"field"..."[^"]*"'` — that pattern truncates at
+  the first escaped quote, so `git commit -m "wip" && rm -rf /` reaches the
+  checks as `git commit -m \`.
+- Decide the polarity for an unreadable payload deliberately, and say which you
+  chose in a comment. Ask-tier hooks (`/careful`) ask; deny-tier boundary hooks
+  (`/freeze`) deny. A boundary that fails open is not a boundary.
 - Use `#!/usr/bin/env bash` with `set -euo pipefail`
-- Use POSIX ERE patterns — `[[:space:]]` not `\s` (macOS BSD sed does not support `\s`)
+- Use POSIX ERE patterns — `[[:space:]]` not `\s`, `(^|[^[:alnum:]_])x` not `\bx\b`
+  (BSD grep and sed on macOS do not support the GNU escapes)
 - Use `^` anchors in sed, not `.*pattern` greedy matches
 - Be executable (`chmod +x`)
 
@@ -71,9 +89,20 @@ bash "${CLAUDE_SKILL_DIR}/../other-skill/bin/script.sh"
 echo '{"tool_input":{"command":"rm -rf node_modules"}}' \
   | bash skills/careful/bin/check-careful.sh
 
-# Dangerous path — should return permissionDecision:ask
+# Dangerous path — should return an "ask" decision under hookSpecificOutput
 echo '{"tool_input":{"command":"rm -rf /var/important"}}' \
   | bash skills/careful/bin/check-careful.sh
+
+# Catastrophic path — should return a "deny" decision
+echo '{"tool_input":{"command":"rm -rf /"}}' \
+  | bash skills/careful/bin/check-careful.sh
+
+# Quoted argument ahead of a destructive tail — must NOT return {}
+echo '{"tool_input":{"command":"git commit -m \"wip\" && rm -rf /"}}' \
+  | bash skills/careful/bin/check-careful.sh
+
+# Unparseable payload — careful asks, freeze denies; neither returns {}
+echo 'not json' | bash skills/careful/bin/check-careful.sh
 
 # Freeze check with no state file — should return {}
 echo '{"tool_input":{"file_path":"/tmp/test.txt"}}' \

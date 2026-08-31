@@ -59,7 +59,10 @@ pty_install() {
     return 77   # GNU automake skip code
   fi
   set +e
-  python3 "$PTY_RUN" --timeout 60 --input "$input" -- bash "$INSTALL" "$@" \
+  # 60s is comfortable on a developer machine (a 3-target install runs in ~14s
+  # here) but not on a cold CI runner, where the macOS image is several times
+  # slower. Overridable so CI can buy headroom without loosening it for everyone.
+  python3 "$PTY_RUN" --timeout "${PTY_TIMEOUT:-60}" --input "$input" -- bash "$INSTALL" "$@" \
     > "$outfile" 2>&1
   RC=$?
   set -e

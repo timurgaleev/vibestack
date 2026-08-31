@@ -246,7 +246,38 @@ _LOG="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/question-log.jsonl"
 if [ ! -f "$_LOG" ]; then
   echo "NO_LOG"
 else
+  python3 - "$_LOG" <<'PYEOF'
+import json, sys
+from collections import OrderedDict
 
+by_id = OrderedDict()
+with open(sys.argv[1]) as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        qid = e.get("question_id") or "(unlabelled)"
+        row = by_id.setdefault(qid, {"count": 0, "skill": e.get("skill", "?"),
+                                     "summary": e.get("question_summary", ""),
+                                     "followed": 0, "overridden": 0})
+        row["count"] += 1
+        if e.get("followed_recommendation") is True:
+            row["followed"] += 1
+        elif e.get("followed_recommendation") is False:
+            row["overridden"] += 1
+
+rows = sorted(by_id.items(), key=lambda kv: kv[1]["count"], reverse=True)
+for qid, r in rows[:20]:
+    print("%dx  %s  (%s)  followed:%d overridden:%d" % (r["count"], qid, r["skill"], r["followed"], r["overridden"]))
+    if r["summary"]:
+        print("     %s" % r["summary"])
+if len(rows) > 20:
+    print("... and %d more question ids not shown" % (len(rows) - 20))
+PYEOF
 fi
 ```
 
@@ -333,28 +364,35 @@ is a trust boundary (Codex #15 in the design doc).
 2. Confirm via AskUserQuestion:
    > "Got it — update `declared.<dimension>` from `<old>` to `<new>`? [Y/n]"
 
-3. After Y, write:
+3. After Y, write **only the one dimension being edited**. Substitute `<DIM>`
+   with its key and `<NEW_VALUE>` with the number — this is an edit, not the
+   five-question setup, and rewriting all five would silently discard the four
+   the user never mentioned:
    ```bash
    _PROFILE="${VIBESTACK_HOME:-$HOME/.vibestack}/developer-profile.json"
-   python3 - <<'PYEOF'
+   python3 - "$_PROFILE" '<DIM>' '<NEW_VALUE>' <<'PYEOF'
 import json, os, sys
-profile_path = os.path.expanduser("$_PROFILE")
+from datetime import datetime, timezone
+
+profile_path, dim, new_value = sys.argv[1], sys.argv[2], sys.argv[3]
+
+VALID = {"scope_appetite", "risk_tolerance", "detail_preference", "autonomy", "architecture_care"}
+if dim not in VALID:
+    sys.exit("unknown dimension: %s" % dim)
+
 try:
     p = json.load(open(profile_path))
 except (FileNotFoundError, json.JSONDecodeError):
     p = {}
 p.setdefault("declared", {})
-p["declared"]["scope_appetite"]    = "<Q1_VALUE>"
-p["declared"]["risk_tolerance"]    = "<Q2_VALUE>"
-p["declared"]["detail_preference"] = "<Q3_VALUE>"
-p["declared"]["autonomy"]          = "<Q4_VALUE>"
-p["declared"]["architecture_care"] = "<Q5_VALUE>"
-from datetime import datetime, timezone
+p["declared"][dim] = round(min(1.0, max(0.0, float(new_value))), 2)
 p["declared_at"] = datetime.now(timezone.utc).isoformat()
+
 tmp = profile_path + ".tmp"
 with open(tmp, "w") as f:
     json.dump(p, f, indent=2)
 os.replace(tmp, profile_path)
+print("declared.%s = %s" % (dim, p["declared"][dim]))
 PYEOF
    ```
 

@@ -25,8 +25,12 @@ if command -v jq >/dev/null 2>&1; then
       # Filter to current branch + recent commits, then keep records for the
       # latest run_id only. (Single phase may have multiple files if the user
       # re-ran the review; aggregator takes the newest.)
+      # .commit must be bound BEFORE piping into the split commit array: the
+      # pipe rebinds jq's `.`, so a bare .commit after it indexes the ARRAY
+      # with a string. Every line then errors into 2>/dev/null and the
+      # aggregate is empty forever — the zero-tasks bug.
       jq -c --arg branch "$BRANCH" --arg commits "$COMMITS_RECENT" \
-        'select(.branch == $branch and ($commits | split("|") | index(.commit) != null))' \
+        '.commit as $c | select(.branch == $branch and ($commits | split("|") | index($c) != null))' \
         "$f" 2>/dev/null >> "$ALL_JSONL" || true
     done < <(find "$TASKS_DIR" -maxdepth 1 -name "tasks-$phase-*.jsonl" 2>/dev/null | sort)
     # Reduce to latest run_id per phase

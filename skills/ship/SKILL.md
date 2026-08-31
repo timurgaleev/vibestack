@@ -248,41 +248,70 @@ git fetch origin <base> && git merge origin/<base> --no-edit
 
 ## Test Framework Bootstrap
 
-**Detect existing test framework and project runtime:**
+**Read the project's CLAUDE.md (and TESTING.md if present) FIRST.** If it documents a test command, the project already told you: no detection, no bootstrap. Skip the rest of bootstrap and use that command in Step 5.
+
+**Otherwise gather markers. Every marker below is EVIDENCE for the question you ask — never a command to run blind.** A marker tells you which ecosystem you're in and which command to OFFER. It does not tell you the command works. Do not execute a candidate test command to "check" it: a probe on a project that never had that runner fails loudly and teaches you nothing, and installing a second framework over a working one is worse.
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Detect project runtime
-[ -f Gemfile ] && echo "RUNTIME:ruby"
+# Definitive ecosystem markers (presence = ecosystem, NOT a command to run)
+[ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django MARKER:manage.py"
+{ [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
+{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
-[ -f requirements.txt ] || [ -f pyproject.toml ] && echo "RUNTIME:python"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
 [ -f composer.json ] && echo "RUNTIME:php"
 [ -f mix.exs ] && echo "RUNTIME:elixir"
+[ -f pom.xml ] && echo "RUNTIME:jvm BUILD:maven"
+{ [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "RUNTIME:jvm BUILD:gradle"
 # Detect sub-frameworks
 [ -f Gemfile ] && grep -q "rails" Gemfile 2>/dev/null && echo "FRAMEWORK:rails"
 [ -f package.json ] && grep -q '"next"' package.json 2>/dev/null && echo "FRAMEWORK:nextjs"
-# Check for existing test infrastructure
-ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini pyproject.toml phpunit.xml 2>/dev/null
-ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
+# Existing test path — config files, declared scripts, AND test FILES.
+# A project with real tests and no config file is the common miss.
+ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini tox.ini phpunit.xml* 2>/dev/null
+[ -f package.json ] && grep -q '"test"[[:space:]]*:' package.json && echo "SCRIPT:package.json test"
+[ -f Makefile ] && grep -qE '^(test|check):' Makefile && echo "TARGET:make test"
+[ -f pyproject.toml ] && grep -q "pytest" pyproject.toml && echo "CONFIG:pyproject pytest"
+git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\.py$|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
+# Rust keeps unit tests inside src/, so file names alone miss them
+[ -f Cargo.toml ] && git grep -lF '#[test]' -- 'src' >/dev/null 2>&1 && echo "TESTS:rust in-source"
 # Check opt-out marker
 [ -f .vibestack/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
 ```
 
-**If test framework detected** (config files or test directories found):
-Print "Test framework detected: {name} ({N} existing tests). Skipping bootstrap."
+Map the markers to the command you will OFFER — never to one you run on a guess:
+
+| Marker | Ecosystem | Candidate command to offer |
+|--------|-----------|----------------------------|
+| `manage.py` | Django | `python manage.py test` (or `pytest` when pytest-django is in the deps) |
+| `pytest.ini` / `tox.ini` / pytest in `pyproject.toml` / `test_*.py` | Python | `pytest` |
+| `go.mod` (+ any `*_test.go`) | Go | `go test ./...` |
+| `Cargo.toml` | Rust | `cargo test` |
+| `pom.xml` | JVM (Maven) | `mvn test` |
+| `build.gradle` / `build.gradle.kts` | JVM (Gradle) | `./gradlew test` |
+| `Gemfile` / `Rakefile` / `.rspec` | Ruby | `bundle exec rspec`, `bin/rails test`, or `rake test` |
+| `mix.exs` | Elixir | `mix test` |
+| `composer.json` | PHP | `composer test` or `./vendor/bin/phpunit` |
+| `package.json` with a `test` script | Node | that script, run with the package manager the lockfile names |
+| `Makefile` with a `test:` target | any | `make test` |
+
+**If ANY existing-test evidence appears** (a config file, a declared test script or make target, a nonzero `TESTFILES:` count, or `TESTS:rust in-source`): the project has tests. **Do NOT bootstrap.** Print "Existing tests detected: {the evidence}." Then get the command the same way Step 5 does — CLAUDE.md/TESTING.md if documented, otherwise AskUserQuestion offering the candidates from the table above plus "Other", and persist the answer to CLAUDE.md's `## Testing` section so it is never asked again. When the ecosystem ships a runner (Django, Go, Rust, Elixir, Maven/Gradle), that runner is the candidate — never install a second framework beside a working one.
 Read 2-3 existing test files to learn conventions (naming, imports, assertion style, setup patterns).
 Store conventions as prose context for use in Phase 8e.5 or Step 7. **Skip the rest of bootstrap.**
 
+Absent config files and absent `tests/` directories are NOT evidence of "no tests": Django keeps tests in `<app>/tests.py`, Go in `*_test.go` beside the source, Rust in `#[test]` blocks inside `src/`. A green `python manage.py test` with no `pytest.ini` is a tested project, not a bootstrap candidate.
+
 **If BOOTSTRAP_DECLINED** appears: Print "Test bootstrap previously declined — skipping." **Skip the rest of bootstrap.**
 
-**If NO runtime detected** (no config files found): Use AskUserQuestion:
+**If NO ecosystem marker matched:** Use AskUserQuestion:
 "I couldn't detect your project's language. What runtime are you using?"
 Options: A) Node.js/TypeScript B) Ruby/Rails C) Python D) Go E) Rust F) PHP G) Elixir H) This project doesn't need tests.
+If the runtime you need isn't listed, offer "Other" and take the runtime plus the test command as free text.
 If user picks H → write `.vibestack/no-test-bootstrap` and continue without tests.
 
-**If runtime detected but no test framework — bootstrap:**
+**If an ecosystem matched but there is no existing-test evidence at all — bootstrap:**
 
 ### B2. Research best practices
 
@@ -612,14 +641,23 @@ Before analyzing coverage, detect the project's test framework:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Detect project runtime
-[ -f Gemfile ] && echo "RUNTIME:ruby"
+[ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django"
+{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
-[ -f requirements.txt ] || [ -f pyproject.toml ] && echo "RUNTIME:python"
+{ [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f tox.ini ] || [ -f setup.cfg ]; } && echo "RUNTIME:python"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
-# Check for existing test infrastructure
-ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pytest.ini phpunit.xml 2>/dev/null
-ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
+[ -f pom.xml ] && echo "RUNTIME:jvm BUILD:maven"
+{ [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "RUNTIME:jvm BUILD:gradle"
+# Existing test evidence — config files, declared runners, AND test FILES.
+# Ecosystems that keep tests beside the source (Django, Go, Rust) have neither
+# a config file nor a tests/ directory, and reading their absence as "no tests"
+# is what sends a tested project into bootstrap.
+ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pytest.ini tox.ini phpunit.xml* 2>/dev/null
+[ -f package.json ] && grep -q '"test"[[:space:]]*:' package.json && echo "SCRIPT:package.json test"
+[ -f Makefile ] && grep -qE '^(test|check):' Makefile && echo "TARGET:make test"
+git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\.py$|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
+[ -f Cargo.toml ] && git grep -lF '#[test]' -- 'src' >/dev/null 2>&1 && echo "TESTS:rust in-source"
 ```
 
 3. **If no framework detected:** falls through to the Test Framework Bootstrap step (Step 4) which handles full setup.
@@ -1216,7 +1254,12 @@ Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "is
 7. **Codex design voice** (optional, automatic if available):
 
 ```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+# A live Codex session exports CODEX_THREAD_ID / CODEX_SANDBOX into every shell
+# it spawns. Spawning `codex exec` from inside one is the same model reviewing
+# itself at multiplied cost — treat it as unavailable unless forced.
+if [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  echo "CODEX_NOT_AVAILABLE (running under Codex — force with VIBE_FORCE_CODEX_REVIEW=1)"
+elif command -v codex >/dev/null 2>&1; then echo "CODEX_AVAILABLE"; else echo "CODEX_NOT_AVAILABLE"; fi
 ```
 
 If Codex is available, run a lightweight design check on the diff:
@@ -1357,7 +1400,12 @@ CHECKLIST:
 
 **Subagent configuration:**
 - Use `subagent_type: "general-purpose"`
-- Do NOT use `run_in_background` — all specialists must complete before merge
+- Pass `run_in_background: false` on every specialist Agent call — subagents run
+  in the BACKGROUND by default since Claude Code v2.1.198, and all specialists
+  must complete before the merge step reads their findings. Merely omitting the
+  flag no longer produces a foreground run: the calls return immediately with
+  nothing, the merge sees an empty set, and the run reports a clean review it
+  never performed.
 - If any specialist subagent fails or times out, log the failure and continue with results from successful specialists. Specialists are additive — partial results are better than no results.
 
 ---
@@ -1576,7 +1624,12 @@ Every diff gets adversarial review from both Claude and Codex. LOC is not a prox
 DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
 DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+# A live Codex session exports CODEX_THREAD_ID / CODEX_SANDBOX into every shell
+# it spawns. Spawning `codex exec` from inside one is the same model reviewing
+# itself at multiplied cost — treat it as unavailable unless forced.
+if [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  echo "CODEX_NOT_AVAILABLE (running under Codex — force with VIBE_FORCE_CODEX_REVIEW=1)"
+elif command -v codex >/dev/null 2>&1; then echo "CODEX_AVAILABLE"; else echo "CODEX_NOT_AVAILABLE"; fi
 # Legacy opt-out — only gates Codex passes, Claude always runs
 OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
 echo "DIFF_SIZE: $DIFF_TOTAL"
@@ -1638,8 +1691,24 @@ If `DIFF_TOTAL >= 200` AND Codex is available AND `OLD_CFG` is NOT `disabled`:
 TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
-command -v codex >/dev/null 2>&1 && codex review "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the diff against the base branch." --base <base> -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+command -v codex >/dev/null 2>&1 && codex review --base <base> -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 ```
+
+**Sandbox pinned read-only.** `codex review` has no `-s`/`--sandbox` flag, so without the
+config override it inherits `~/.codex/config.toml` — on a user who granted write access to
+trusted projects, that is Codex with write permission on the repo during what this step
+reports as a read-only review.
+
+**No prompt argument.** `--base` is what scopes the review, and the positional
+`[PROMPT]` is mutually exclusive with it — Codex CLI rejects the pair at argv
+parsing, so a call carrying both never runs and the gate silently records a
+default PASS. The filesystem-boundary preamble that used to ride in that prompt
+goes with it; `codex review` is internally diff-scoped, and the skill files under
+`.claude/` and `agents/` are public, so the cost is a few wasted tokens if the
+diff happens to touch them, not a safety gap. Do NOT "fix" a rejection by
+dropping `--base` and keeping the prompt: that reviews the uncommitted working
+tree instead of the branch diff, which is a different question with the same
+green checkmark.
 
 Set the Bash tool's `timeout` parameter to `300000` (5 minutes). Do NOT use the `timeout` shell command — it doesn't exist on macOS. Present output under `CODEX SAYS (code review):` header.
 Check for `[P1]` markers: found → `GATE: FAIL`, not found → `GATE: PASS`.

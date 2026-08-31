@@ -1,0 +1,109 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same PR cancels the first — the older run's verdict is
+# about code nobody will merge.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: ${{ matrix.suite }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One red suite should not hide the state of the other nine.
+      fail-fast: false
+      matrix:
+        # macOS is where the BSD/GNU split bites (grep -E without \s and \b,
+        # sed without \+), and it is what most contributors develop on. Linux
+        # is where anyone running this in a container will hit it.
+        os: [ubuntu-latest, macos-latest]
+        suite:
+          - test-hooks.sh
+          - test-render-skill.sh
+          - test-source-lint.sh
+          - test-vibe-bins.sh
+          - test-certify.sh
+          - test-first-task-detect.sh
+          - test-learn-sync.sh
+          - test-install-integration.sh
+    steps:
+      - uses: actions/checkout@v4
+
+      # ./install requires bash 4+ and stock macOS ships 3.2, so the suites that
+      # exercise it cannot run on the runner's /bin/bash.
+      - name: Install bash 4+ (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
+      - name: Run test/${{ matrix.suite }}
+        env:
+          # The PTY-driven install tests time out at 60s locally; the hosted
+          # macOS image is slow enough to exceed that on a cold run.
+          PTY_TIMEOUT: 240
+        run: bash "test/${{ matrix.suite }}"
+
+  drift:
+    name: installed skills match sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install into an isolated HOME
+        env:
+          VIBESTACK_HOME: ${{ runner.temp }}/vibestack-home
+        run: ./install --target=claude --yes
+
+      - name: Every rendered SKILL.md matches its source
+        run: |
+          # Sources carry {{include}} directives; the installed copy is the
+          # expansion. A hand-edit to either side shows up here rather than as
+          # a skill that behaves differently from the file under review.
+          status=0
+          for src in skills/*/SKILL.md; do
+            name=$(basename "$(dirname "$src")")
+            out="$HOME/.claude/skills/$name/SKILL.md"
+            if [ ! -f "$out" ]; then
+              echo "::error file=$src::$name did not install to $out"
+              status=1
+              continue
+            fi
+            if ! bin/vibe-render-skill --check "$src" "$out"; then
+              echo "::error file=$src::rendered output drifted from source"
+              status=1
+            fi
+          done
+          exit $status
+
+  hooks-are-executable:
+    name: hook scripts are runnable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every bin/ script has the executable bit and parses
+        run: |
+          # A hook that lost +x, or that has a syntax error, fails silently at
+          # the point it was supposed to block something.
+          status=0
+          # Only scripts something actually EXECUTES: skill hooks, and the
+          # top level of bin/. Runtime modules a shim imports (bin/*/**.mjs,
+          # skills/*/runtime/) are libraries — they are not meant to be +x, and
+          # demanding it of them fails the job for no defect.
+          while IFS= read -r script; do
+            [ -x "$script" ] || { echo "::error file=$script::not executable"; status=1; }
+            case "$(head -n1 "$script")" in
+              *bash*|*sh) bash -n "$script" || { echo "::error file=$script::syntax error"; status=1; } ;;
+            esac
+          done < <({ find skills -type f -path '*/bin/*.sh'; find bin -maxdepth 1 -type f; } 2>/dev/null)
+          exit $status

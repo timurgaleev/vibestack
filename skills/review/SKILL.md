@@ -607,7 +607,12 @@ CHECKLIST:
 
 **Subagent configuration:**
 - Use `subagent_type: "general-purpose"`
-- Do NOT use `run_in_background` — all specialists must complete before merge
+- Pass `run_in_background: false` on every specialist Agent call — subagents run
+  in the BACKGROUND by default since Claude Code v2.1.198, and all specialists
+  must complete before the merge step reads their findings. Merely omitting the
+  flag no longer produces a foreground run: the calls return immediately with
+  nothing, the merge sees an empty set, and the run reports a clean review it
+  never performed.
 - If any specialist subagent fails or times out, log the failure and continue with results from successful specialists. Specialists are additive — partial results are better than no results.
 
 ---
@@ -924,8 +929,24 @@ If `DIFF_TOTAL >= 200` AND Codex is available AND `OLD_CFG` is NOT `disabled`:
 TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
-command -v codex >/dev/null 2>&1 && codex review "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the diff against the base branch." --base <base> -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+command -v codex >/dev/null 2>&1 && codex review --base <base> -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 ```
+
+**Sandbox pinned read-only.** `codex review` has no `-s`/`--sandbox` flag, so without the
+config override it inherits `~/.codex/config.toml` — on a user who granted write access to
+trusted projects, that is Codex with write permission on the repo during what this step
+reports as a read-only review.
+
+**No prompt argument.** `--base` is what scopes the review, and the positional
+`[PROMPT]` is mutually exclusive with it — Codex CLI rejects the pair at argv
+parsing, so a call carrying both never runs and the gate silently records a
+default PASS. The filesystem-boundary preamble that used to ride in that prompt
+goes with it; `codex review` is internally diff-scoped, and the skill files under
+`.claude/` and `agents/` are public, so the cost is a few wasted tokens if the
+diff happens to touch them, not a safety gap. Do NOT "fix" a rejection by
+dropping `--base` and keeping the prompt: that reviews the uncommitted working
+tree instead of the branch diff, which is a different question with the same
+green checkmark.
 
 Set the Bash tool's `timeout` parameter to `300000` (5 minutes). Do NOT use the `timeout` shell command — it doesn't exist on macOS. Present output under `CODEX SAYS (code review):` header.
 Check for `[P1]` markers: found → `GATE: FAIL`, not found → `GATE: PASS`.

@@ -48,6 +48,10 @@ Clone anywhere **outside** an agent's skills directory. The installer renders th
 skills into each agent's own folder; a checkout sitting inside one of those folders
 gets indexed a second time, so every skill shows up twice in the picker.
 
+**macOS needs a newer bash.** The installer uses associative arrays and refuses to
+run on the bash 3.2 Apple still ships as `/bin/bash`. `brew install bash` is
+enough — nothing else changes, and the skills themselves run fine on 3.2.
+
 That's it. Open a new session of your agent and type `/office-hours`:
 
 ```
@@ -101,7 +105,7 @@ Each skill is a plain `SKILL.md` file your agent discovers and exposes as a
 
 ## A taste of the skills
 
-52 skills across planning, shipping, QA, design, and security.
+53 skills across planning, shipping, QA, design, and security.
 A few highlights:
 
 | Command | What it does |

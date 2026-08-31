@@ -195,6 +195,13 @@ exclusive at argv level), so the previously-prefixed filesystem boundary cannot
 be carried in review mode. Two paths:
 
 **Default path (no custom user instructions):** call `codex review --base` bare.
+
+**The sandbox is pinned read-only via config override, not a flag.** Top-level
+`codex review` has no `-s` / `--sandbox` (verified on codex-cli 0.149.1 — its
+only relevant option is `-c`), so without `-c 'sandbox_mode="read-only"'` the
+call inherits whatever `~/.codex/config.toml` sets. On a user who granted write
+access to trusted projects, that means this skill runs Codex with write
+permission on the repo while telling them the run is read-only.
 Codex's review prompt template is internally diff-scoped, so the model focuses on
 the changes against the base branch. The filesystem boundary that previously
 prefixed every review call is no longer carried in bare review mode; the skill
@@ -210,7 +217,7 @@ cd "$_REPO_ROOT"
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 # 330s (5.5min) is slightly longer than the Bash 300s so the shell wrapper
 # only fires if Bash's own timeout doesn't.
-${_CX_TO:+$_CX_TO 330} codex review --base "$BASE" -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+${_CX_TO:+$_CX_TO 330} codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 _CODEX_EXIT=$?
 if [ "$_CODEX_EXIT" = "124" ]; then
   true # vibe-review-log codex_timeout 330 (not yet implemented)
