@@ -61,11 +61,15 @@ echo "Freeze boundary set: $FREEZE_DIR"
 
 Tell the user:
 - "**Guard mode active.** Two protections are now running:"
-- "1. **Destructive command warnings** — rm -rf, DROP TABLE, force-push, etc. will warn before executing (you can override)"
+- "1. **Destructive command guard** — rm -rf, DROP TABLE, force-push, etc. warn before executing (you can override); catastrophic shapes (recursive delete of `/` or `~`, force-push to the default branch) are blocked outright"
 - "2. **Edit boundary** — file edits restricted to `<path>/`. Edits outside this directory are blocked."
 - "To remove the edit boundary, run `/unfreeze`. To deactivate everything, end the session."
 
 ## What's protected
 
-See `/careful` for the full list of destructive command patterns and safe exceptions.
+See `/careful` for the two decision tiers, the full pattern list, and the safe exceptions.
 See `/freeze` for how edit boundary enforcement works.
+
+Both hooks fail safe when they cannot read a tool payload — `/careful` asks,
+`/freeze` denies. Guard mode runs both, so an unreadable Edit or Write payload
+is blocked, not waved through.

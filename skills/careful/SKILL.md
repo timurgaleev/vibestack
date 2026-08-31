@@ -1,7 +1,7 @@
 ---
 name: careful
 description: |
-  Safety guardrails for destructive commands. Warns before rm -rf, DROP TABLE, force-push, git reset --hard, kubectl delete, and similar destructive operations. User can override each warning.
+  Safety guardrails for destructive commands. Warns before rm -rf, DROP TABLE, force-push, git reset --hard, kubectl delete, and similar destructive operations. User can override each warning; a small catastrophic set (recursive delete of / or the home directory, force-push to the default branch) is hard-denied instead.
 allowed-tools:
   - Bash
   - Read
@@ -26,8 +26,19 @@ Use when touching prod, debugging live systems, or working in a shared environme
 # /careful — Destructive Command Guardrails
 
 Safety mode is now **active**. Every bash command will be checked for destructive
-patterns before running. If a destructive command is detected, you will be warned
-and can choose to proceed or cancel.
+patterns before running. Most matches warn and are overridable; a small
+catastrophic set is blocked outright.
+
+## Two tiers
+
+| Tier | Decision | Applies to |
+|------|----------|------------|
+| HIGH | `deny` — blocked, not overridable while `/careful` is active | Recursive delete of `/` or the home directory; force-push to the repo's default branch. Only **simple** commands qualify — anything with `;`, `&&`, `||`, a pipe, or a newline falls through to the warn tier, because string matching cannot resolve what a compound command does. `--force-with-lease` never hard-denies. |
+| MEDIUM | `ask` — warns, always overridable | Every pattern in the table below. |
+
+This is a best-effort advisory stop, not a policy boundary: it reads the command
+as text and cannot out-parse a shell. To lift a HIGH deny, end the `/careful`
+session.
 
 ## What's protected
 
@@ -48,8 +59,22 @@ and can choose to proceed or cancel.
 
 ## How it works
 
-The hook reads the command from the tool input, checks it against the patterns
-above, and returns `permissionDecision: "ask"` with a warning message if a match
-is found. You can always override the warning and proceed.
+The hook parses the tool payload with a real JSON parser, checks the command
+against the patterns above, and returns a `hookSpecificOutput` envelope carrying
+`permissionDecision` (`ask` or `deny`) plus `permissionDecisionReason`. The
+decision must be nested under `hookSpecificOutput` — Claude Code ignores a
+top-level `permissionDecision`, and a hook that emits one silently no-ops.
+
+Two edge rules, opposite by design:
+
+- **Unparseable payload → `ask`.** careful is the ask tier, so an unreadable
+  payload prompts rather than passes.
+- **Shell obfuscation → `ask`.** `${IFS}` word-splitting and base64-to-shell
+  assemble a command the pattern checks never see, so the primitives themselves
+  are the signal.
+
+`/freeze`, the deny tier, fails closed on the same unreadable payload. Both
+hooks share one extractor (`careful/bin/hook-extract.sh`) so a parsing fix
+cannot land in one and miss the other.
 
 To deactivate: end the conversation or start a new one. Hooks are session-scoped.

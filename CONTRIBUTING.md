@@ -64,15 +64,33 @@ cat > skills/my-skill/bin/check-my-skill.sh << 'EOF'
 set -euo pipefail
 
 INPUT=$(cat)
-CMD=$(printf '%s' "$INPUT" | python3 -c \
-  'import sys,json; print(json.loads(sys.stdin.read()).get("tool_input",{}).get("command",""))' \
-  2>/dev/null || true)
+
+# Shared JSON helpers: a real parser plus a safe decision encoder.
+# Never extract with grep (it truncates at the first escaped quote) and never
+# hand-build the decision JSON (a quote in the message discards the decision).
+_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_HOOK_HELPER="$_HOOK_DIR/../../careful/bin/hook-extract.sh"
+if [ ! -f "$_HOOK_HELPER" ] || ! . "$_HOOK_HELPER" 2>/dev/null; then
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"[my-skill] Hook helpers unavailable."}}\\n'
+  exit 0
+fi
+
+set +e
+CMD=$(vibe_hook_extract_field "$INPUT" command)
+EXTRACT_RC=$?
+set -e
+
+# Unreadable payload: pick a polarity on purpose. Ask-tier asks; a boundary denies.
+if [ "$EXTRACT_RC" -ne 0 ] && [ -n "$INPUT" ]; then
+  vibe_hook_decision ask "[my-skill] Could not parse the tool payload."
+  exit 0
+fi
 
 [ -z "$CMD" ] && echo '{}' && exit 0
 
 # Your check logic here
 if printf '%s' "$CMD" | grep -q 'dangerous-pattern'; then
-  printf '{"permissionDecision":"ask","message":"[my-skill] Warning: ..."}\\n'
+  vibe_hook_decision ask "[my-skill] Warning: ..."
 else
   echo '{}'
 fi
@@ -94,7 +112,11 @@ hooks:
 
 **Hook script rules:**
 - POSIX-portable: use `[[:space:]]` not `\s`, use `^` anchors in sed not `.*pattern`
-- Fail safe: return `{}` on error or empty input
+- Emit decisions through `vibe_hook_decision` — the payload must be nested under
+  `hookSpecificOutput`, because Claude Code ignores a top-level `permissionDecision`
+  and the resulting no-op is silent
+- Fail safe, not fail open: `{}` is the *allow* answer, so never return it for an
+  error you did not understand. Ask-tier hooks ask; boundary hooks deny
 - Fast: hooks run before every matching tool call
 
 ### 4. Test
@@ -108,7 +130,10 @@ echo '{"tool_input":{"command":"safe command"}}' | bash skills/my-skill/bin/chec
 # Expected: {}
 
 echo '{"tool_input":{"command":"dangerous command"}}' | bash skills/my-skill/bin/check-my-skill.sh
-# Expected: {"permissionDecision":"ask","message":"..."}
+# Expected: {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"..."}}
+
+echo 'not json' | bash skills/my-skill/bin/check-my-skill.sh
+# Expected: a decision, never {} — an unreadable payload must not be an allow
 
 # Test the full skill in your agent (Claude Code, Cursor, or Kiro):
 # Start a new session and invoke /my-skill

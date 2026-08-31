@@ -57,8 +57,16 @@ again. To remove it, run `/unfreeze`."
 
 ## How it works
 
-The hook reads `file_path` from each Edit/Write call and checks whether the path
-starts with the frozen directory. If not, it returns `permissionDecision: "deny"`.
+The hook parses `file_path` out of each Edit/Write payload, resolves the path
+fully — including a final component that is itself a symlink — and checks whether
+it starts with the frozen directory. If not, it returns a `hookSpecificOutput`
+envelope carrying `permissionDecision: "deny"`. The nesting matters: Claude Code
+ignores a top-level `permissionDecision`, so a deny emitted at the top level lets
+the edit through.
+
+Freeze is the **deny tier**, so it fails closed: a payload it cannot parse is
+blocked, not allowed. Its ask-tier sibling `/careful` makes the opposite call on
+the same input. Both share one extractor (`careful/bin/hook-extract.sh`).
 
 The freeze boundary persists for the session via `~/.vibestack/freeze-dir.txt`.
 
@@ -67,4 +75,5 @@ The freeze boundary persists for the session via `~/.vibestack/freeze-dir.txt`.
 - The trailing `/` prevents `/src` from matching `/src-old`
 - Applies to Edit and Write tools only — Read, Bash, Glob, Grep are unaffected
 - Bash commands like `sed -i` can still modify files outside the boundary
+- A symlink inside the boundary pointing outside it is resolved and blocked
 - To deactivate: run `/unfreeze` or end the conversation
