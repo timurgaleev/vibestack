@@ -1,5 +1,124 @@
 # Changelog
 
+## 1.34.0 — 2026-08-31
+
+### Fixed
+
+- **The safety skills enforced nothing.** `/careful`, `/freeze` and `/guard` printed
+  their decisions at the top level of the hook response. Claude Code reads the
+  decision from a nested `PreToolUse` envelope and discards anything else, so all
+  three detected destructive commands and boundary violations correctly and then
+  let every one of them through. The failure was silent — the hook ran, matched,
+  printed, and the tool call proceeded — which is why it survived. Decisions now go
+  out as `hookSpecificOutput` with `permissionDecisionReason`, and
+  `test/test-hooks.sh` asserts the wire format as well as the verdict.
+- **A quoted argument was enough to walk a destructive command past `/careful`.**
+  The command extractor was a `grep -o` whose character class stops at the first
+  escaped quote, so `git commit -m "wip" && rm -rf /` reached the pattern checks as
+  `git commit -m \` and returned an allow. The python fallback only ran when the
+  grep result was *empty*, so a truncated one was never repaired. Both hooks parse
+  the payload with a real JSON parser now.
+- **`/freeze` failed open, twice.** An unparseable payload returned an allow, and
+  the path resolver stopped at the parent directory — so a symlink inside the
+  boundary pointing outside it was judged in-boundary while the write landed
+  outside. It resolves the full path now, final component included, and an
+  unreadable payload is denied. `/` as the boundary used to deny everything.
+- **`/guard` lost its hard stop.** Recursive deletes of `/` or the home directory
+  and force-pushes to the default branch are denied outright again, not warned
+  about. Only simple commands qualify — anything with `;`, `&&`, `||`, a pipe or a
+  newline falls back to a warning, since string matching cannot resolve what a
+  compound command does. `--force-with-lease` never hard-denies.
+- **`/autoplan` lost every task its review phases produced.** The aggregator piped
+  into a split array and then indexed it with a bare `.commit`, so jq errored on
+  every line into `2>/dev/null` and the Final Approval Gate always rendered "no
+  tasks".
+- **`/autoplan` ran the shipping gate fourth.** Eng review — the gate `/ship`
+  treats as required — ran before the DX phase, so DX amendments (a renamed flag,
+  a rewritten error message, a new getting-started step) shipped without ever
+  being reviewed for architecture, tests, security or performance. DX is Phase 2.5
+  now and Eng runs last, always. Its Codex prompt carries the DX consensus the way
+  it already carried CEO's and Design's.
+- **`/autoplan` stopped mid-run despite promising it wouldn't.** Clearly-wrong
+  premises are still never auto-decided, but they are queued for the Final
+  Approval Gate instead of blocking Phase 1 — which mattered most in the spawned
+  and non-interactive runs where nobody was there to answer. Gate option B2 had no
+  handling rule at all, and option D's re-run map predated the DX phase; both fixed.
+- **`/ship` and `/review` called `codex review` in a form that cannot run.** A
+  positional prompt and `--base` are mutually exclusive, so the structured review
+  died at argument parsing on every diff over 200 lines and the P1 gate recorded a
+  default pass.
+- **Their specialist reviewers returned nothing.** Both skills instructed "do NOT
+  use `run_in_background`", but since Claude Code v2.1.198 subagents run in the
+  background unless the flag is explicitly `false` — so every specialist returned
+  immediately with no findings, the merge step scored an empty set, and the run
+  reported a clean review it never performed.
+- **`/ship` and `/qa` installed a second test framework over working tests.**
+  Detection looked only for config files and `tests/` directories, so Django
+  (`<app>/tests.py`), Go (`*_test.go`), Rust (`#[test]` in `src/`), Maven and
+  Gradle projects all read as "no tests". Detection now also reads declared
+  scripts, make targets and tracked test files, and every marker is evidence for a
+  question rather than a command to run blind.
+- **`/land-and-deploy`'s VERSION collision gate was commented out** — the
+  assignment, not the block, so three orphaned continuation lines sat under it and
+  the variable was never set. Uncommenting it exposed two more: the tally counted
+  the PR being landed as claiming its own slot (so every PR read as stale), and the
+  bump level was hard-coded to `patch` (so a minor release compared against the
+  wrong slot). Both fixed.
+- **`/plan-tune` was observational with nothing to observe.** It read a
+  `question-log.jsonl` that nothing in the repo wrote, and its aggregation step was
+  an empty `else` branch under an instruction to report counts. Adds
+  `bin/vibe-question-log`, wires the call into the shared state-protocols snippet,
+  and implements the aggregation. Its "edit declared profile" step also overwrote
+  all five profile dimensions with placeholders when asked to change one.
+- **`/pair-agent` asked for your ngrok authtoken in chat** so it could pass it as a
+  Bash argument — into the transcript and shell history both. You run that in your
+  own terminal now; the skill only verifies the result. It also opened an
+  internet-reachable tunnel into your logged-in browser with no opt-in, which is
+  now a standing per-machine consent gate, and documented `$B tunnel revoke` and
+  `$B tunnel rotate` as the kill switch. Neither exists — the daemon exposes
+  `/tunnel/start` and nothing else — so anyone who ran them believed a shared
+  browser session had been cut off when it had not.
+- **`/document-release` read the fetched PR body straight into context** while
+  holding Edit, Write and Bash. Anyone who can open a PR writes that text. Adds
+  `bin/vibe-untrusted`, which wraps externally-authored text in a labelled
+  envelope, marks every line, and flags instruction-shaped ones for you rather
+  than stripping them.
+- **`/diagram` fetched Mermaid from a CDN** while the offline renderer sat unused
+  in `lib/diagram-render/`. It renders through that bundle now and inlines the SVG,
+  so the HTML artifact needs no network at render time or ever after.
+- **`/open-browser` could never find its own binary.** It looked under
+  `~/.claude/skills/vibestack/`, a directory the installer does not create, so every
+  installed user hit `NEEDS_SETUP`.
+- **`/codex` ran reviews unpinned** while telling you they were read-only.
+  `codex review` has no `-s`/`--sandbox` flag, so without the config override it
+  inherits `~/.codex/config.toml` — on a machine that grants write access to
+  trusted projects, that is Codex with write permission on your repo.
+- **`/claude` refused to run on an authenticated machine** whenever
+  `~/.claude/.credentials.json` was missing. Claude Code may keep credentials in an
+  OS keychain the host's sandbox cannot see; auth is judged by what the invocation
+  returns now.
+- **The scope gate in `/plan-eng-review` and `/plan-design-review`** had been
+  reduced to three sentences of "ask once if the target is ambiguous". It is a hard
+  STOP again: the first tool call is the question, with no repo exploration before
+  the answer.
+
+### Added
+
+- **CI.** The repo had none. Eight shell suites on Linux and macOS — the BSD/GNU
+  split is exactly what these hooks kept tripping over — plus a drift job proving
+  installed skills still match their sources, and a check that every hook script is
+  executable and parses.
+- **`test/test-hooks.sh`** — 51 cases covering the hook wire format, the extractor
+  bypass, both fail-closed polarities, boundary escapes and the force-push tiers.
+  Every case is a bug that shipped.
+- **`/vibe`** — a router that names the right skill for a task. Mostly for Codex,
+  which has no slash-command picker: `agents/openai.yaml` pointed at a `$vibestack`
+  skill that did not exist.
+- **A nested-Codex guard** in every Codex preflight. vibestack ships Codex as a
+  first-class runtime, so running a plan review or `/ship` inside it used to spawn
+  `codex exec` — the same model reviewing itself at multiplied cost.
+  `VIBE_FORCE_CODEX_REVIEW=1` forces the nested pass.
+
 ## 1.33.2 — 2026-08-18
 
 ### Fixed
