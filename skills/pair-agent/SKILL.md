@@ -151,7 +151,31 @@ using the generic remote flow instead.
 
 ### If different machine (option B):
 
-First, detect ngrok status:
+**Consent gate (once per machine).** The tunnel exposes this browser beyond the
+machine, so it stays off until the user opts in. Check the standing consent:
+
+```bash
+~/.vibestack/bin/vibe-config get pair_agent 2>/dev/null || echo "unset"
+```
+
+If the value is not `on`, ask via AskUserQuestion. This is a one-way door — it
+opens a path from the internet to a browser that is already logged into the
+user's accounts — so ask it every time consent is absent, and never let a
+question preference suppress it:
+
+> "Remote pairing runs an ngrok tunnel from the internet to this machine's
+> browser. The remote agent gets a scoped token and a command allowlist, but the
+> browser it reaches is the one holding your sessions. Enable pair-agent on this
+> machine?"
+
+Options: A) Enable — run `~/.vibestack/bin/vibe-config set pair_agent on`, confirm
+it reads back `on`, and continue. B) No — stop here; local pairing (option A
+above) still works and exposes nothing.
+
+If the value is already `on`, say nothing and continue — consent stands until
+`vibe-config set pair_agent off`.
+
+Then detect ngrok status:
 
 ```bash
 which ngrok 2>/dev/null && echo "NGROK_INSTALLED" || echo "NGROK_NOT_INSTALLED"
@@ -181,23 +205,33 @@ Then tell the user:
 "Copy the block above and paste it into your other agent's chat. The setup key
 expires in 5 minutes."
 
-**If ngrok is installed but NOT authed:** Walk the user through authentication:
+**If ngrok is installed but NOT authed:** Walk the user through authentication.
+
+SECURITY: the ngrok authtoken must NEVER pass through this chat, a Bash tool
+call, or shell history — a token pasted here lands in the transcript, and in
+anything the transcript is synced or shared to. The user runs the auth command in
+their OWN terminal; you only verify the result.
 
 Tell the user:
-"ngrok is installed but not logged in. Let's fix that:
+"ngrok is installed but not logged in. Let's fix that — in your own terminal
+(not here; the token should never enter this chat):
 
 1. Go to https://dashboard.ngrok.com/get-started/your-authtoken
 2. Copy your auth token
-3. Come back here and I'll run the auth command for you."
+3. In YOUR terminal, run: ngrok config add-authtoken <paste your token>
+4. Tell me 'done' when finished."
 
-STOP here and wait for the user to provide their auth token.
+STOP here and wait for the user to say they have run it. Do NOT ask for the
+token and do NOT accept a pasted one. If the user pastes it anyway, tell them to
+rotate it at https://dashboard.ngrok.com — it is in the transcript now — and to
+re-auth in their terminal with the new one.
 
-When they provide it, run:
+When they say done, verify without ever touching the token:
 ```bash
-ngrok config add-authtoken THEIR_TOKEN
+ngrok config check 2>/dev/null && echo "NGROK_AUTHED" || echo "NGROK_NOT_AUTHED"
 ```
 
-Then retry `$B pair-agent --client TARGET_HOST`.
+If `NGROK_AUTHED`: retry `$B pair-agent --client TARGET_HOST`.
 
 **If ngrok is NOT installed:** Walk the user through installation:
 
@@ -278,18 +312,29 @@ When using `--local cursor`, credentials are written to
 
 ## Revoking access
 
-To disconnect a specific agent:
+**Stopping the daemon revokes everything.** Scoped tokens live in daemon memory
+and are never written to the state file, so the next command boots a fresh daemon
+with a new root token and every previously issued token — session tokens and
+unexchanged setup keys alike — is dead:
 
 ```bash
-$B tunnel revoke AGENT_NAME
+$B stop
 ```
 
-To disconnect all agents and rotate the root token:
+Also close the tunnel if one is running, so the URL stops resolving:
 
 ```bash
-# This invalidates ALL scoped tokens immediately
-$B tunnel rotate
+pkill -f "ngrok http" || true
 ```
+
+**There is no per-agent revoke in this build.** `$B tunnel revoke` and
+`$B tunnel rotate` are not implemented — the daemon exposes `/tunnel/start` and
+nothing else — so do not tell a user to run them; they would believe a shared
+browser session had been cut off when it had not. To drop one agent out of
+several, stop the daemon and re-pair the agents you still want.
+
+Tokens expire on their own (24h by default), and a setup key expires in 5
+minutes if never exchanged.
 
 ## Orchestrator injection prompts
 

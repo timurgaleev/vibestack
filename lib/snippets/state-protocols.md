@@ -59,6 +59,16 @@ Exit 3 / `ONE_WAY` → ask it regardless of preference. Exit 0 / `TWO_WAY` → t
 preference may suppress it. If the binary is absent, fail safe: treat the
 question as one-way and ask.
 
+**After the user answers, log the event** — best-effort, never blocking. This is
+the only thing that writes the log `/plan-tune` reads; without it the whole
+question-tuning surface stays empty no matter how many questions get asked. The
+log is local, records the option keys rather than the user's prose, and is sent
+nowhere:
+
+```bash
+~/.vibestack/bin/vibe-question-log '{"skill":"{SKILL_NAME}","question_id":"{SKILL_NAME}:<question-id>","question_summary":"<short>","category":"<approval|clarification|routing>","options_count":N,"user_choice":"<key>","recommended":"<key>"}' 2>/dev/null || true
+```
+
 ### Voice
 
 Speech-to-text invocations are noisy. Treat near-miss aliases of a skill's

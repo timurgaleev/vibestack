@@ -742,8 +742,8 @@ COMMAND REFERENCE:
 
 SCOPES: ${scopeDesc}.
 ${scopes.includes('control') ? '' : `To get browser control access (stop, restart, disconnect), ask the user to re-pair with --control.\n`}
-TOKEN: Expires ${expiresAt}. Revoke: ask the user to run
-  $B tunnel revoke <your-name>
+TOKEN: Expires ${expiresAt}. Revoke: ask the user to stop the browse daemon
+  ($B stop) — that invalidates every issued token immediately.
 
 ERRORS:
   401 → Token expired/revoked. Ask user to run /pair-agent again.

@@ -150,6 +150,10 @@ FILE_PATH=$(printf '%s' "$FILE_PATH" | sed 's|/\+|/|g;s|/$||')
 # yet (new file) has nothing to follow and parent resolution is correct.
 _resolve_path() {
   local _p="$1" _dir _base _tgt _i=0
+  # The root directory is its own dirname and its own basename, so the generic
+  # path below reassembles it as "//" — a boundary string nothing matches,
+  # which turns a freeze on / into "deny every edit".
+  [ "$_p" = "/" ] && { printf '/'; return; }
   while [ -L "$_p" ] && [ "$_i" -lt 40 ]; do
     _tgt=$(readlink "$_p" 2>/dev/null) || break
     case "$_tgt" in
@@ -170,8 +174,19 @@ _resolve_path() {
 FILE_PATH=$(_resolve_path "$FILE_PATH")
 FREEZE_DIR=$(_resolve_path "$FREEZE_DIR")
 
-case "$FILE_PATH" in
-  "${FREEZE_DIR}/"*|"${FREEZE_DIR}")
+# A boundary of / contains every absolute path; matching "${FREEZE_DIR}/"*
+# there would build the pattern "//"* and deny everything.
+_INSIDE=0
+if [ "$FREEZE_DIR" = "/" ]; then
+  _INSIDE=1
+else
+  case "$FILE_PATH" in
+    "${FREEZE_DIR}/"*|"${FREEZE_DIR}") _INSIDE=1 ;;
+  esac
+fi
+
+case "$_INSIDE" in
+  1)
     _vibestack_log freeze allow inside-boundary "$FILE_PATH"
     echo '{}'
     ;;

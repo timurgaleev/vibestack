@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# vibe-question-log — append an AskUserQuestion event to the project's question-log.jsonl
+#
+# Usage:
+#   vibe-question-log '{"skill":"ship","question_id":"ship:test-failure-triage",
+#     "question_summary":"Tests failed","options_count":3,"user_choice":"fix-now",
+#     "recommended":"fix-now"}'
+#
+# /plan-tune reads this log to show what it asked, how often, and how often the
+# user overrode the recommendation. Nothing else consumes it, and nothing is
+# sent anywhere — the file stays under ~/.vibestack/projects/<slug>/.
+#
+# Schema:
+#   skill                   — skill name (kebab-case)                 [required]
+#   question_id             — registered id, or `<skill>:<slug>`      [required]
+#   question_summary        — one-liner of what was asked, <=200 chars
+#   category                — approval | clarification | routing | cherry-pick | feedback-loop
+#   door_type               — one-way | two-way
+#   options_count           — number of options presented (positive integer)
+#   user_choice             — option key the user selected
+#   recommended             — option key the agent recommended
+#   followed_recommendation — bool; computed when user_choice and recommended are both present
+#   ts                      — ISO 8601, injected when missing
+set -euo pipefail
+
+if [ $# -eq 0 ]; then
+  echo "Usage: vibe-question-log '<json>'" >&2
+  exit 1
+fi
+
+JSON="$1"
+
+eval "$(bash "$(dirname "$0")/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+
+VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+LOG_DIR="$VIBESTACK_HOME/projects/${SLUG:-unknown}"
+mkdir -p "$LOG_DIR"
+
+TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# The payload arrives on argv, so it is passed to python as an argument rather
+# than interpolated into the program text — a question summary containing a
+# quote or a newline must not be able to rewrite the script.
+ENTRY=$(LOG_TS="$TS" python3 - "$JSON" <<'PYEOF'
+import json, os, sys
+
+try:
+    entry = json.loads(sys.argv[1])
+except (ValueError, IndexError):
+    sys.stderr.write("Error: invalid JSON\n")
+    sys.exit(1)
+
+if not isinstance(entry, dict):
+    sys.stderr.write("Error: payload must be a JSON object\n")
+    sys.exit(1)
+
+for field in ("skill", "question_id"):
+    if not entry.get(field):
+        sys.stderr.write("Error: missing required field: %s\n" % field)
+        sys.exit(1)
+
+VALID_CATEGORY = {"approval", "clarification", "routing", "cherry-pick", "feedback-loop"}
+VALID_DOOR = {"one-way", "two-way"}
+
+if entry.get("category") and entry["category"] not in VALID_CATEGORY:
+    sys.stderr.write("Error: category must be one of %s\n" % ", ".join(sorted(VALID_CATEGORY)))
+    sys.exit(1)
+if entry.get("door_type") and entry["door_type"] not in VALID_DOOR:
+    sys.stderr.write("Error: door_type must be one-way or two-way\n")
+    sys.exit(1)
+
+summary = entry.get("question_summary")
+if isinstance(summary, str) and len(summary) > 200:
+    entry["question_summary"] = summary[:197] + "..."
+
+# The whole point of the log is the follow/override ratio, so derive it here
+# rather than trusting every caller to compute it the same way.
+if "followed_recommendation" not in entry and entry.get("user_choice") and entry.get("recommended"):
+    entry["followed_recommendation"] = entry["user_choice"] == entry["recommended"]
+
+entry.setdefault("ts", os.environ["LOG_TS"])
+
+print(json.dumps(entry, separators=(",", ":")))
+PYEOF
+)
+
+printf '%s\n' "$ENTRY" >> "$LOG_DIR/question-log.jsonl"

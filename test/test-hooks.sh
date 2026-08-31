@@ -125,6 +125,13 @@ assert_decision "internal space: outside"       "$FREEZE" "{\"tool_input\":{\"fi
 # A quote in the path used to produce malformed JSON, which discarded the deny.
 assert_valid_json "quote in path stays valid JSON" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/out/a\\\"b.txt\"}}"
 
+echo "freeze — root as the boundary"
+# / is its own dirname and basename, so naive resolution rebuilt it as "//" and
+# the containment pattern became "//"* — a freeze on / denied every edit.
+printf '/\n' > "$VIBESTACK_HOME/freeze-dir.txt"
+assert_decision "root boundary contains all"    "$FREEZE" '{"tool_input":{"file_path":"/etc/hosts"}}' allow
+assert_decision "root boundary contains home"   "$FREEZE" "{\"tool_input\":{\"file_path\":\"$HOME/x.txt\"}}" allow
+
 echo "freeze — missing shared helper fails closed"
 HELPER="$ROOT/skills/careful/bin/hook-extract.sh"
 mv "$HELPER" "$HELPER.bak"
