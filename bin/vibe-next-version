@@ -56,13 +56,21 @@ def run(cmd):
         return None
 
 
-def open_pr_versions():
-    """Claimed versions from open PR titles. None if no working PR host."""
-    out = run(["gh", "pr", "list", "--state", "open", "--json", "title", "--limit", "100"])
+def open_pr_versions(exclude_pr=None):
+    """Claimed versions from open PR titles. None if no working PR host.
+
+    `exclude_pr` drops one PR number from the tally. A caller asking "is my own
+    version still the next free slot?" is itself an open PR whose title carries
+    that version — counting it means the answer is always "no, advance", and
+    every drift gate built on this reports stale on a perfectly current PR.
+    """
+    out = run(["gh", "pr", "list", "--state", "open", "--json", "title,number", "--limit", "100"])
     if out is not None:
         try:
             claimed = []
             for pr in json.loads(out):
+                if exclude_pr is not None and pr.get("number") == exclude_pr:
+                    continue
                 m = TITLE_VER.search(pr.get("title", ""))
                 if m:
                     p = parse(m.group(1))
@@ -77,6 +85,8 @@ def open_pr_versions():
         try:
             claimed = []
             for mr in json.loads(out):
+                if exclude_pr is not None and mr.get("iid") == exclude_pr:
+                    continue
                 m = TITLE_VER.search(mr.get("title", ""))
                 if m:
                     p = parse(m.group(1))
@@ -93,6 +103,9 @@ def main() -> int:
     ap.add_argument("--base", default="main")
     ap.add_argument("--bump", default="patch")
     ap.add_argument("--current-version", required=True)
+    ap.add_argument("--exclude-pr", type=int, default=None,
+                    help="PR/MR number to ignore when tallying claimed slots — "
+                         "pass your own when checking whether your version is still free")
     args = ap.parse_args()
 
     cur = parse(args.current_version)
@@ -103,7 +116,7 @@ def main() -> int:
         return 0
 
     target = bump(cur, args.bump)
-    claimed = open_pr_versions()
+    claimed = open_pr_versions(exclude_pr=args.exclude_pr)
 
     if claimed is None:
         print(json.dumps({"offline": True, "version": fmt(target),

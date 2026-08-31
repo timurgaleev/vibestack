@@ -50,9 +50,12 @@ versions never clobber each other:
 OUT="${OUT:-./diagram}"            # base path; produces $OUT.mmd, $OUT.html, $OUT.png
 mkdir -p "$(dirname "$OUT")"
 
+# The renderer is linked into this skill's own directory at install time
+# (skills/diagram/renderer -> lib/diagram-render), so it resolves the same way
+# in a user-scope install, a project-scope install, and the checkout itself.
 BUNDLE=""
-for c in "$(git rev-parse --show-toplevel 2>/dev/null)/lib/diagram-render/dist/diagram-render.html" \
-         "$HOME/.claude/skills/vibestack/lib/diagram-render/dist/diagram-render.html"; do
+for c in "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/diagram}/renderer/dist/diagram-render.html" \
+         "$(git rev-parse --show-toplevel 2>/dev/null)/lib/diagram-render/dist/diagram-render.html"; do
   [ -f "$c" ] && BUNDLE="$c" && break
 done
 if [ -z "$BUNDLE" ] || [ -z "${B:-}" ] || [ "$("$B" status 2>/dev/null)" = "BROWSE_NOT_AVAILABLE" ]; then

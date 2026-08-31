@@ -117,8 +117,9 @@ EXTRACT_RC=$?
 set -e
 
 # Unparseable payload (or no parser available): DENY. A boundary hook that
-# allows what it cannot read is not a boundary.
-if [ "$EXTRACT_RC" -ne 0 ] && [ -n "$INPUT" ]; then
+# allows what it cannot read is not a boundary — and empty stdin is unreadable
+# too, since a real PreToolUse call always carries a payload.
+if [ "$EXTRACT_RC" -ne 0 ]; then
   _vibestack_log freeze deny unparseable-payload ""
   _vibestack_analytics deny unparseable_payload
   vibe_hook_decision deny "[freeze] Could not parse the tool payload to check the freeze boundary. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"

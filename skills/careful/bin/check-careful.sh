@@ -103,7 +103,10 @@ EXTRACT_RC=$?
 set -e
 
 # No parser available, or the payload is not parseable JSON. Fail closed.
-if [ "$EXTRACT_RC" -ne 0 ] && [ -n "$INPUT" ]; then
+# Empty stdin counts as unreadable too: a PreToolUse call always carries a
+# payload, so nothing on stdin means something upstream broke — not that there
+# is nothing to check.
+if [ "$EXTRACT_RC" -ne 0 ]; then
   _vibestack_log careful ask unparseable-payload ""
   vibe_hook_decision ask "[careful] Could not parse the tool payload to safety-check this command. Approve only if you know what it does."
   exit 0
@@ -166,7 +169,17 @@ if [ "$_IS_SIMPLE" -eq 1 ]; then
         # is the most common suffix on agent-generated commands), backgrounding.
         sudo|rm|-*|--|[0-9]'>'*|'>'*|'<'*|'&') continue ;;
         '/'|'~'|'~/'|'$HOME'|'$HOME/'|'${HOME}'|'${HOME}/'|'/*'|'//') _ROOT_TARGETS=1 ;;
-        *) _SAFE_TARGETS=1 ;;
+        *)
+          # `rm -rf /Users/alice` is the same command as `rm -rf ~` when that
+          # IS the home directory; matching only the textual forms let the
+          # spelled-out path through with an overridable warning.
+          _TOK_NOSLASH="${_TOK%/}"
+          if [ -n "${HOME:-}" ] && { [ "$_TOK_NOSLASH" = "${HOME%/}" ] || [ "$_TOK_NOSLASH" = "${HOME%/}/*" ]; }; then
+            _ROOT_TARGETS=1
+          else
+            _SAFE_TARGETS=1
+          fi
+          ;;
       esac
     done
     set +f
@@ -212,6 +225,8 @@ if [ "$_IS_SIMPLE" -eq 1 ]; then
           case "$_TOK" in git|push|sudo|-*) continue ;; esac
           _REF="${_TOK#+}"          # +main -> main
           _REF="${_REF##*:}"        # HEAD:main / src:main -> main
+          _REF="${_REF#refs/heads/}" # refs/heads/main -> main; a fully
+                                     # qualified destination is the same push
           if [ "$_REF" = "$_DEFAULT_BRANCH" ]; then
             _TARGETS_DEFAULT=1
             break
@@ -288,8 +303,16 @@ if [ -z "$WARN" ] && printf '%s' "$CMD_LOWER" | grep -qE '(^|[^[:alnum:]_])trunc
   WARN="Destructive: SQL TRUNCATE detected. This deletes all rows from a table."
 fi
 
+# git carries force either by flag or by a leading + on the refspec (+main,
+# +HEAD:refs/heads/main), which needs no flag at all. Matching only the flag
+# let the refspec form through with no warning whatsoever.
 if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+push[[:space:]]+.*(-f([[:space:]]|$)|--force)' 2>/dev/null; then
   WARN="Destructive: git force-push rewrites remote history. Other contributors may lose work."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+push[[:space:]]' 2>/dev/null \
+  && printf '%s' "$CMD" | grep -qE '(^|[[:space:]])\+[^[:space:]-][^[:space:]]*' 2>/dev/null; then
+  WARN="Destructive: git force-push (+refspec) rewrites remote history. Other contributors may lose work."
 fi
 
 if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+reset[[:space:]]+--hard' 2>/dev/null; then

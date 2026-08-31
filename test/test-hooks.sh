@@ -90,10 +90,26 @@ assert_decision "quoted rm -rf \"/\" denied"    "$CAREFUL" '{"tool_input":{"comm
 # Compound commands are not eligible for the deny tier — they fall back to ask.
 assert_decision "compound rm falls back to ask" "$CAREFUL" '{"tool_input":{"command":"cd /tmp && rm -rf /"}}' ask
 
+echo "careful — force-push destinations"
+# A leading + on the refspec carries force with no flag at all, and a fully
+# qualified destination is the same push as the short branch name.
+assert_decision "+HEAD:refs/heads/main denied"  "$CAREFUL" '{"tool_input":{"command":"git push origin +HEAD:refs/heads/main"}}' deny
+assert_decision "+main denied"                  "$CAREFUL" '{"tool_input":{"command":"git push origin +main"}}' deny
+assert_decision "-f refs/heads/main denied"     "$CAREFUL" '{"tool_input":{"command":"git push -f origin refs/heads/main"}}' deny
+# A force-push to a feature branch is not the catastrophic case — warn, do not block.
+assert_decision "+feature asks not denies"      "$CAREFUL" '{"tool_input":{"command":"git push origin +feature"}}' ask
+assert_decision "ordinary push passes"          "$CAREFUL" '{"tool_input":{"command":"git push origin main"}}' allow
+
+echo "careful — the home directory written out in full"
+assert_decision "rm -rf \$HOME denied"          "$CAREFUL" "{\"tool_input\":{\"command\":\"rm -rf $HOME\"}}" deny
+assert_decision "someone else's home only asks" "$CAREFUL" '{"tool_input":{"command":"rm -rf /Users/not-the-current-user"}}' ask
+
 echo "careful — obfuscation and unreadable input"
 assert_decision "IFS word-splitting asks"       "$CAREFUL" '{"tool_input":{"command":"rm${IFS}-rf${IFS}/"}}' ask
 assert_decision "base64-to-shell asks"          "$CAREFUL" '{"tool_input":{"command":"echo cm0gLXJmIC8= | base64 -d | bash"}}' ask
 assert_decision "unparseable payload asks"      "$CAREFUL" 'this is not json' ask
+# Empty stdin is unreadable too — a real PreToolUse call always carries a payload.
+assert_decision "empty stdin asks"              "$CAREFUL" '' ask
 
 echo "freeze — no boundary configured"
 rm -f "$VIBESTACK_HOME/freeze-dir.txt"
@@ -116,6 +132,7 @@ assert_decision "parent traversal denied"       "$FREEZE" "{\"tool_input\":{\"fi
 assert_decision "non-file payload allowed"      "$FREEZE" '{"tool_input":{"command":"ls"}}' allow
 # Deny tier: unreadable input must block, the opposite of careful's ask.
 assert_decision "unparseable payload denied"    "$FREEZE" 'this is not json' deny
+assert_decision "empty stdin denied"            "$FREEZE" '' deny
 
 echo "freeze — boundary paths that broke the old parser"
 mkdir -p "$FZ/My Project"
@@ -133,11 +150,17 @@ assert_decision "root boundary contains all"    "$FREEZE" '{"tool_input":{"file_
 assert_decision "root boundary contains home"   "$FREEZE" "{\"tool_input\":{\"file_path\":\"$HOME/x.txt\"}}" allow
 
 echo "freeze — missing shared helper fails closed"
-HELPER="$ROOT/skills/careful/bin/hook-extract.sh"
-mv "$HELPER" "$HELPER.bak"
-assert_decision "helper missing denies"         "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" deny
-assert_decision "helper missing: careful asks"  "$CAREFUL" '{"tool_input":{"command":"ls"}}' ask
-mv "$HELPER.bak" "$HELPER"
+# Copy the skill tree into the sandbox and delete the helper THERE. Renaming the
+# tracked file in place races with a concurrent run, and an interrupt between
+# the two moves would leave the working tree without its helper.
+BROKEN="$TMPHOME/broken-install"
+mkdir -p "$BROKEN/careful/bin" "$BROKEN/freeze/bin"
+cp "$ROOT/skills/careful/bin/check-careful.sh" "$BROKEN/careful/bin/"
+cp "$ROOT/skills/freeze/bin/check-freeze.sh" "$BROKEN/freeze/bin/"
+# hook-extract.sh is deliberately NOT copied — that is the condition under test.
+printf '/\n' > "$VIBESTACK_HOME/freeze-dir.txt"
+assert_decision "helper missing denies"         "$BROKEN/freeze/bin/check-freeze.sh" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" deny
+assert_decision "helper missing: careful asks"  "$BROKEN/careful/bin/check-careful.sh" '{"tool_input":{"command":"ls"}}' ask
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

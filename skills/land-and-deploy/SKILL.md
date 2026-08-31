@@ -433,9 +433,14 @@ BASE_VERSION=$(git show origin/$BASE_BRANCH:VERSION 2>/dev/null | tr -d '\r\n[:s
 # We don't need the exact original level — we just need "a level" that passes to the util.
 # If the minor digit advanced, call it minor; patch digit, patch; etc. If base > branch, skip (not ours to land).
 # For simplicity: use "patch" as a conservative default; util handles collision-past regardless of input level.
+# --exclude-pr is not optional here: this PR is itself open and its title
+# carries the version being landed, so counting it as a claim would advance
+# NEXT_SLOT past BRANCH_VERSION and report drift on every single PR.
+PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null || echo "")
 QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
   --base "$BASE_BRANCH" \
   --bump patch \
+  ${PR_NUMBER:+--exclude-pr "$PR_NUMBER"} \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
 NEXT_SLOT=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
 OFFLINE=$(echo "$QUEUE_JSON" | jq -r '.offline // false')
