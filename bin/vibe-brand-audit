@@ -16,6 +16,12 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The file scan is always about THIS repo, so it runs from the script's own
+# root and the tool works when invoked by absolute path from anywhere. The
+# commit scan is about whatever repo the caller is standing in — cd-ing first
+# made `--commits` silently scan this repo's history instead of theirs, which
+# reads as a clean pass on a range that was never examined.
+CALLER_REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 2
 
 RANGE=""
@@ -79,13 +85,13 @@ fi
 if [ -n "$RANGE" ]; then
   while IFS= read -r sha; do
     [ -n "$sha" ] || continue
-    msg=$(git log -1 --format='%B' "$sha" 2>/dev/null)
+    msg=$(git -C "$CALLER_REPO" log -1 --format='%B' "$sha" 2>/dev/null)
     m=$(printf '%s' "$msg" | grep -nEi "$NAMES|$PHRASES")
     if [ -n "$m" ]; then
-      report "Commit $(git log -1 --format='%h %s' "$sha") names another project:"
+      report "Commit $(git -C "$CALLER_REPO" log -1 --format='%h %s' "$sha") names another project:"
       printf '%s\n' "$m" | sed 's/^/  /'
     fi
-  done < <(git rev-list --no-merges "$RANGE" 2>/dev/null)
+  done < <(git -C "$CALLER_REPO" rev-list --no-merges "$RANGE" 2>/dev/null)
 fi
 
 # --- arbitrary text (PR body, release notes) ---------------------------------

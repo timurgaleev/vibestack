@@ -24,7 +24,10 @@
 
 - **`test/test-brand-audit.sh`** — 19 cases, half of them asserting the audit
   does *not* fire on ordinary engineering English. A check that cries wolf gets
-  routed around, which is the same as having no check.
+  routed around, which is the same as having no check. The suite earned its
+  keep immediately: it caught the audit scanning its own repository's history
+  instead of the caller's, which would have reported a clean pass on a commit
+  range nobody had examined.
 
 ### Changed
 
