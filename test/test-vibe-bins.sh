@@ -14,8 +14,12 @@ no()   { fail=$((fail+1)); echo "  FAIL $1"; }
 trap 'rm -rf "$TMP"' EXIT
 
 # vibe-session-kind
-out="$("$BIN/vibe-session-kind")"
+# $CI is what the binary reads to say "headless", and CI is exactly where this
+# suite runs — unset it for the default-case assertions or they test the runner.
+out="$(env -u CI -u VIBESTACK_HEADLESS "$BIN/vibe-session-kind")"
 [ "$out" = "interactive" ] && ok "session-kind defaults interactive" || no "session-kind got '$out'"
+out="$(CI=true "$BIN/vibe-session-kind")"
+[ "$out" = "headless" ] && ok "session-kind headless under CI" || no "session-kind CI got '$out'"
 out="$(VIBESTACK_HEADLESS=1 "$BIN/vibe-session-kind")"
 [ "$out" = "headless" ] && ok "session-kind headless via env" || no "session-kind headless got '$out'"
 
@@ -90,7 +94,7 @@ grep -q 'empty — the source had no content' <<<"$out" && ok "untrusted labels 
 out="$("$BIN/vibestack" version)"
 grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<<"$out" && ok "vibestack version prints semver" || no "vibestack version got '$out'"
 "$BIN/vibestack" help >/dev/null 2>&1 && ok "vibestack help exits 0" || no "vibestack help failed"
-out="$("$BIN/vibestack" session-kind)"
+out="$(env -u CI -u VIBESTACK_HEADLESS "$BIN/vibestack" session-kind)"
 [ "$out" = "interactive" ] && ok "vibestack dispatches to vibe-session-kind" || no "vibestack dispatch got '$out'"
 "$BIN/vibestack" no-such-tool >/dev/null 2>&1 && no "vibestack accepted unknown command" || ok "vibestack rejects unknown command"
 

@@ -38,6 +38,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ./install requires bash 4+ and stock macOS ships 3.2, so the suites that
+      # exercise it cannot run on the runner's /bin/bash.
+      - name: Install bash 4+ (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
       - name: Run test/${{ matrix.suite }}
         run: bash "test/${{ matrix.suite }}"
 
@@ -84,10 +92,14 @@ jobs:
           # A hook that lost +x, or that has a syntax error, fails silently at
           # the point it was supposed to block something.
           status=0
+          # Only scripts something actually EXECUTES: skill hooks, and the
+          # top level of bin/. Runtime modules a shim imports (bin/*/**.mjs,
+          # skills/*/runtime/) are libraries — they are not meant to be +x, and
+          # demanding it of them fails the job for no defect.
           while IFS= read -r script; do
             [ -x "$script" ] || { echo "::error file=$script::not executable"; status=1; }
             case "$(head -n1 "$script")" in
               *bash*|*sh) bash -n "$script" || { echo "::error file=$script::syntax error"; status=1; } ;;
             esac
-          done < <(find skills bin -type f \( -name '*.sh' -o -name 'vibe-*' -o -name 'vibestack' \) 2>/dev/null)
+          done < <({ find skills -type f -path '*/bin/*.sh'; find bin -maxdepth 1 -type f; } 2>/dev/null)
           exit $status

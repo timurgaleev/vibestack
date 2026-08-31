@@ -90,17 +90,7 @@ assert_decision "quoted rm -rf \"/\" denied"    "$CAREFUL" '{"tool_input":{"comm
 # Compound commands are not eligible for the deny tier — they fall back to ask.
 assert_decision "compound rm falls back to ask" "$CAREFUL" '{"tool_input":{"command":"cd /tmp && rm -rf /"}}' ask
 
-echo "careful — force-push destinations"
-# A leading + on the refspec carries force with no flag at all, and a fully
-# qualified destination is the same push as the short branch name.
-assert_decision "+HEAD:refs/heads/main denied"  "$CAREFUL" '{"tool_input":{"command":"git push origin +HEAD:refs/heads/main"}}' deny
-assert_decision "+main denied"                  "$CAREFUL" '{"tool_input":{"command":"git push origin +main"}}' deny
-assert_decision "-f refs/heads/main denied"     "$CAREFUL" '{"tool_input":{"command":"git push -f origin refs/heads/main"}}' deny
-# A force-push to a feature branch is not the catastrophic case — warn, do not block.
-assert_decision "+feature asks not denies"      "$CAREFUL" '{"tool_input":{"command":"git push origin +feature"}}' ask
-assert_decision "ordinary push passes"          "$CAREFUL" '{"tool_input":{"command":"git push origin main"}}' allow
-
-echo "careful — force-push with no refspec, standing on the default branch"
+echo "careful — force-push destinations, standing on the default branch"
 # The deny needs the current branch to BE the default, so build a throwaway repo
 # rather than depending on whatever branch the suite happens to run from.
 FORCE_REPO="$TMPHOME/force-repo"
@@ -123,6 +113,18 @@ assert_decision_in() {
   esac
 }
 
+# Every case below needs the repo to HAVE a default branch: the hook resolves it
+# from origin/HEAD (falling back to origin/main / origin/master), and a CI
+# checkout has none — which is why these have to run in the built repo, not
+# wherever the suite happens to be invoked from.
+#
+# A leading + on the refspec carries force with no flag at all, and a fully
+# qualified destination is the same push as the short branch name.
+assert_decision_in "$FORCE_REPO" "+HEAD:refs/heads/main denied" '{"tool_input":{"command":"git push origin +HEAD:refs/heads/main"}}' deny
+assert_decision_in "$FORCE_REPO" "+main denied"                 '{"tool_input":{"command":"git push origin +main"}}' deny
+assert_decision_in "$FORCE_REPO" "-f refs/heads/main denied"    '{"tool_input":{"command":"git push -f origin refs/heads/main"}}' deny
+assert_decision_in "$FORCE_REPO" "+feature asks not denies"     '{"tool_input":{"command":"git push origin +feature"}}' ask
+assert_decision_in "$FORCE_REPO" "ordinary push passes"         '{"tool_input":{"command":"git push origin main"}}' allow
 # A remote name is not a target: `git push --force origin` still force-pushes the
 # current branch's upstream, which is the default branch when you are on it.
 assert_decision_in "$FORCE_REPO" "bare --force denied"        '{"tool_input":{"command":"git push --force"}}' deny
