@@ -385,6 +385,15 @@ of /document-release, not an opt-in. It is **informational** — it never auto-e
 _CODEX_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
 if [ "$_CODEX_CFG" = "disabled" ]; then
   CODEX_MODE="disabled"
+# Running-under-Codex probe. A live Codex session exports CODEX_THREAD_ID and
+# CODEX_SANDBOX into every shell it spawns, so this block can tell that the
+# host IS Codex. vibestack ships Codex as a first-class runtime, which makes
+# that the normal case, not an exotic one — and spawning `codex exec` from
+# inside it means the same model reviewing itself at multiplied token cost,
+# with no cross-model value at all. Set VIBE_FORCE_CODEX_REVIEW=1 to spawn the
+# nested pass anyway.
+elif [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  CODEX_MODE="under_codex"
 elif ! command -v codex >/dev/null 2>&1; then
   CODEX_MODE="not_installed"
 elif ! codex --version >/dev/null 2>&1; then
@@ -396,6 +405,7 @@ echo "CODEX_MODE: $CODEX_MODE"
 ```
 
 - **`disabled`** — skip this step entirely. Print: "Doc review skipped (codex_reviews disabled). Re-enable: `vibe-config set codex_reviews enabled`."
+- **`under_codex`** — the host is already Codex; a nested `codex exec` is the same model reviewing itself at multiplied cost. Run the review with a Claude subagent instead (a genuinely different model here), printing "Doc review running under Codex — using a Claude subagent. Force the nested pass with `VIBE_FORCE_CODEX_REVIEW=1`."
 - **`not_installed` / `not_authed`** — run the same review with a Claude subagent instead of Codex, printing a one-line reason ("Codex unavailable — using a Claude subagent for the doc review").
 - **`ready`** — run the Codex pass below.
 

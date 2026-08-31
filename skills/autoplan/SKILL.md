@@ -225,7 +225,12 @@ preference." The user still decides, but the framing is appropriately urgent.
 
 ## Sequential Execution — MANDATORY
 
-Phases MUST execute in strict order: CEO → Design → Eng → DX.
+Phases MUST execute in strict order: CEO → Design (if UI scope) → DX (if
+developer-facing scope) → Eng. **Eng runs LAST, always.** It is the required
+shipping gate, so it has to review the FINAL amended plan — every other phase's
+amendments must land before it. With Eng in the middle, a DX-phase rename of a
+CLI flag or an error message ships without ever being reviewed for
+architecture, tests, security, or performance.
 Each phase MUST complete fully before the next begins.
 NEVER run phases in parallel — each builds on the previous.
 
@@ -241,8 +246,13 @@ the ANALYSIS. Every section in the loaded skill files must still be executed at 
 same depth as the interactive version. The only thing that changes is who answers the
 AskUserQuestion: you do, using the 6 principles, instead of the user.
 
-**Two exceptions — never auto-decided:**
-1. Premises (Phase 1) — require human judgment about what problem to solve.
+**One exception — never auto-decided:**
+1. Premises (Phase 1) — these require human judgment about what problem to solve,
+   so a clearly-wrong premise is NOT auto-decided. It is also not a mid-run stop:
+   queue it as a User-Challenge-shaped item and surface it at the Final Approval
+   Gate with everything else. autoplan's promise is that the user is interrupted
+   exactly once; stopping in Phase 1 breaks that, and in a non-interactive or
+   spawned run it blocks there with nobody to answer.
 2. User Challenges — when both models agree the user's stated direction should change
    (merge, split, add, remove features/workflows). The user always has context models
    lack. See Decision Classification above.
@@ -375,6 +385,15 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 if [ "$_CODEX_CFG" = "disabled" ]; then
   echo "[codex disabled by config — Claude subagent only] Re-enable: vibe-config set codex_reviews enabled"
   _CODEX_AVAILABLE=false
+# Running-under-Codex probe. A live Codex session exports CODEX_THREAD_ID and
+# CODEX_SANDBOX into every shell it spawns. vibestack ships Codex as a
+# first-class runtime, so this is a normal host, not an exotic one — and
+# autoplan spawns a Codex voice in EVERY phase, so a nested run multiplies
+# token burn four times over for the same model reviewing itself.
+# VIBE_FORCE_CODEX_REVIEW=1 spawns the nested passes anyway.
+elif [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  echo "[codex-unavailable: running under Codex] — proceeding with Claude subagent only. Force nested passes with VIBE_FORCE_CODEX_REVIEW=1."
+  _CODEX_AVAILABLE=false
 # Check Codex binary. If missing, tag the degradation matrix and continue
 # with Claude subagent only (autoplan's existing degradation fallback).
 elif ! command -v codex >/dev/null 2>&1; then
@@ -392,7 +411,7 @@ else
 fi
 ```
 
-If `_CODEX_AVAILABLE=false`, all Phase 1-3.5 Codex voices below degrade to
+If `_CODEX_AVAILABLE=false`, all Phase 1-3 Codex voices below degrade to
 `[codex-unavailable]` in the degradation matrix. /autoplan completes with
 Claude subagent only — saves token spend on Codex prompts we can't use.
 
@@ -406,8 +425,10 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 **Override rules:**
 - Mode selection: SELECTIVE EXPANSION
 - Premises: accept reasonable ones (P6), challenge only clearly wrong ones
-- **GATE: Present premises to user for confirmation** — this is the ONE AskUserQuestion
-  that is NOT auto-decided. Premises require human judgment.
+- Premises: assess them, do NOT stop for them. Accept the reasonable ones (P6);
+  for each clearly-wrong one, queue a User-Challenge-shaped item — the premise as
+  stated, why both voices think it is wrong, and what it should be — for the Final
+  Approval Gate. No AskUserQuestion fires in this phase.
 - Alternatives: pick highest completeness (P1). If tied, pick simplest (P5).
   If top 2 are close → mark TASTE DECISION.
 - Scope expansion: in blast radius + <1d CC → approve (P2). Outside → defer to TODOS.md (P3).
@@ -511,8 +532,9 @@ Sections 1-10 — for EACH section, run the evaluation criteria from the loaded 
 > Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
 > Passing to Phase 2.
 
-Do NOT begin Phase 2 until all Phase 1 outputs are written to the plan file
-and the premise gate has been passed.
+Do NOT begin Phase 2 until all Phase 1 outputs are written to the plan file,
+including any queued premise challenges. There is no gate to pass here — the
+pipeline runs straight through to Phase 4.
 
 ---
 
@@ -520,7 +542,7 @@ and the premise gate has been passed.
 - [ ] CEO completion summary written to plan file
 - [ ] CEO dual voices ran (Codex + Claude subagent, or noted unavailable)
 - [ ] CEO consensus table produced
-- [ ] Premise gate passed (user confirmed)
+- [ ] Premises assessed (clearly-wrong ones queued as Final Gate items — no mid-run stop)
 - [ ] Phase-transition summary emitted
 
 ## Phase 2: Design Review (conditional — skip if no UI scope)
@@ -607,6 +629,113 @@ Do NOT begin Phase 3 until all Phase 2 outputs (if run) are written to the plan 
 - [ ] Design consensus table produced (if Phase 2 ran)
 - [ ] Phase-transition summary emitted
 
+## Phase 2.5: DX Review (conditional — skip if no developer-facing scope)
+
+Follow plan-devex-review/SKILL.md — all 8 DX dimensions, full depth.
+Override: every AskUserQuestion → auto-decide using the 6 principles.
+
+**Skip condition:** If DX scope was NOT detected in Phase 0, skip this phase entirely.
+Log: "Phase 2.5 skipped — no developer-facing scope detected."
+
+**Override rules:**
+- Mode selection: DX POLISH
+- Persona: infer from README/docs, pick the most common developer type (P6)
+- Competitive benchmark: run searches if WebSearch available, use reference benchmarks otherwise (P1)
+- Magical moment: pick the lowest-effort delivery vehicle that achieves the competitive tier (P5)
+- Getting started friction: always optimize toward fewer steps (P5, simpler over clever)
+- Error message quality: always require problem + cause + fix (P1, completeness)
+- API/CLI naming: consistency wins over cleverness (P5)
+- DX taste decisions (e.g., opinionated defaults vs flexibility): mark TASTE DECISION
+- Dual voices: always run BOTH Claude subagent AND Codex if available (P6).
+
+  **Codex DX voice** (via Bash):
+  ```bash
+  _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
+  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+
+  Read the plan file at <plan_path>. Evaluate this plan's developer experience.
+
+  Also consider these findings from prior review phases:
+  CEO: <insert CEO consensus summary>
+  Eng: <insert Eng consensus summary>
+
+  You are a developer who has never seen this product. Evaluate:
+  1. Time to hello world: how many steps from zero to working? Target is under 5 minutes.
+  2. Error messages: when something goes wrong, does the dev know what, why, and how to fix?
+  3. API/CLI design: are names guessable? Are defaults sensible? Is it consistent?
+  4. Docs: can a dev find what they need in under 2 minutes? Are examples copy-paste-complete?
+  5. Upgrade path: can devs upgrade without fear? Migration guides? Deprecation warnings?
+  Be adversarial. Think like a developer who is evaluating this against 3 competitors." -C "$_REPO_ROOT" -s read-only --enable web_search_cached < /dev/null
+  _CODEX_EXIT=$?
+  if [ "$_CODEX_EXIT" = "124" ]; then
+    true # "codex_timeout" "600"
+    true # "autoplan" "0"
+    echo "[codex stalled past 10 minutes — tagging as [codex-unavailable] for this phase and proceeding with Claude subagent only]"
+  fi
+  ```
+  Timeout: 10 minutes (shell-wrapper) + 12 minutes (Bash outer gate). On hang, auto-degrades this phase's Codex voice.
+
+  **Claude DX subagent** (via Agent tool):
+  "Read the plan file at <plan_path>. You are an independent DX engineer
+  reviewing this plan. You have NOT seen any prior review. Evaluate:
+  1. Getting started: how many steps from zero to hello world? What's the TTHW?
+  2. API/CLI ergonomics: naming consistency, sensible defaults, progressive disclosure?
+  3. Error handling: does every error path specify problem + cause + fix + docs link?
+  4. Documentation: copy-paste examples? Information architecture? Interactive elements?
+  5. Escape hatches: can developers override every opinionated default?
+  For each finding: what's wrong, severity (critical/high/medium), and the fix."
+  NO prior-phase context — subagent must be truly independent.
+
+  Error handling: same as Phase 1 (both foreground/blocking, degradation matrix applies).
+
+- DX choices: if codex disagrees with a DX decision with valid developer empathy reasoning
+  → TASTE DECISION. Scope changes both models agree on → USER CHALLENGE.
+
+**Required execution checklist (DX):**
+
+1. Step 0 (DX Scope Assessment): Auto-detect product type. Map the developer journey.
+   Rate initial DX completeness 0-10. Assess TTHW.
+
+2. Step 0.5 (Dual Voices): Run Claude subagent (foreground) first, then Codex. Present
+   under CODEX SAYS (DX — developer experience challenge) and CLAUDE SUBAGENT
+   (DX — independent review) headers. Produce DX consensus table:
+
+```
+DX DUAL VOICES — CONSENSUS TABLE:
+═══════════════════════════════════════════════════════════════
+  Dimension                           Claude  Codex  Consensus
+  ──────────────────────────────────── ─────── ─────── ─────────
+  1. Getting started < 5 min?          —       —      —
+  2. API/CLI naming guessable?         —       —      —
+  3. Error messages actionable?        —       —      —
+  4. Docs findable & complete?         —       —      —
+  5. Upgrade path safe?                —       —      —
+  6. Dev environment friction-free?    —       —      —
+═══════════════════════════════════════════════════════════════
+CONFIRMED = both agree. DISAGREE = models differ (→ taste decision).
+Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = flagged regardless.
+```
+
+3. Passes 1-8: Run each from loaded skill. Rate 0-10. Auto-decide each issue.
+   DISAGREE items from consensus table → raised in the relevant pass with both perspectives.
+
+4. DX Scorecard: Produce the full scorecard with all 8 dimensions scored.
+
+**Mandatory outputs from Phase 2.5:**
+- Developer journey map (9-stage table)
+- Developer empathy narrative (first-person perspective)
+- DX Scorecard with all 8 dimension scores
+- DX Implementation Checklist
+- TTHW assessment with target
+
+**PHASE 2.5 COMPLETE.** Emit phase-transition summary:
+> **Phase 2.5 complete.** DX overall: [N]/10. TTHW: [N] min → [target] min.
+> Codex: [N concerns]. Claude subagent: [N issues].
+> Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
+> Passing to Phase 3 (Eng Review — the required gate reviews the final amended plan).
+
+---
+
 ## Phase 3: Eng Review + Dual Voices
 
 Follow plan-eng-review/SKILL.md — all sections, full depth.
@@ -627,6 +756,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   Also consider these findings from prior review phases:
   CEO: <insert CEO consensus table summary — key concerns, DISAGREEs>
   Design: <insert Design consensus table summary, or 'skipped, no UI scope'>
+  DX: <insert DX consensus table summary, or 'skipped, no developer-facing scope'>
 
   File: <plan_path>" -C "$_REPO_ROOT" -s read-only --enable web_search_cached < /dev/null
   _CODEX_EXIT=$?
@@ -714,116 +844,10 @@ Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = fl
 **PHASE 3 COMPLETE.** Emit phase-transition summary:
 > **Phase 3 complete.** Codex: [N concerns]. Claude subagent: [N issues].
 > Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
-> Passing to Phase 3.5 (DX Review) or Phase 4 (Final Gate).
+> Passing to Phase 2.5 (DX Review) or Phase 3 (Eng Review).
 
 ---
 
-## Phase 3.5: DX Review (conditional — skip if no developer-facing scope)
-
-Follow plan-devex-review/SKILL.md — all 8 DX dimensions, full depth.
-Override: every AskUserQuestion → auto-decide using the 6 principles.
-
-**Skip condition:** If DX scope was NOT detected in Phase 0, skip this phase entirely.
-Log: "Phase 3.5 skipped — no developer-facing scope detected."
-
-**Override rules:**
-- Mode selection: DX POLISH
-- Persona: infer from README/docs, pick the most common developer type (P6)
-- Competitive benchmark: run searches if WebSearch available, use reference benchmarks otherwise (P1)
-- Magical moment: pick the lowest-effort delivery vehicle that achieves the competitive tier (P5)
-- Getting started friction: always optimize toward fewer steps (P5, simpler over clever)
-- Error message quality: always require problem + cause + fix (P1, completeness)
-- API/CLI naming: consistency wins over cleverness (P5)
-- DX taste decisions (e.g., opinionated defaults vs flexibility): mark TASTE DECISION
-- Dual voices: always run BOTH Claude subagent AND Codex if available (P6).
-
-  **Codex DX voice** (via Bash):
-  ```bash
-  _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
-
-  Read the plan file at <plan_path>. Evaluate this plan's developer experience.
-
-  Also consider these findings from prior review phases:
-  CEO: <insert CEO consensus summary>
-  Eng: <insert Eng consensus summary>
-
-  You are a developer who has never seen this product. Evaluate:
-  1. Time to hello world: how many steps from zero to working? Target is under 5 minutes.
-  2. Error messages: when something goes wrong, does the dev know what, why, and how to fix?
-  3. API/CLI design: are names guessable? Are defaults sensible? Is it consistent?
-  4. Docs: can a dev find what they need in under 2 minutes? Are examples copy-paste-complete?
-  5. Upgrade path: can devs upgrade without fear? Migration guides? Deprecation warnings?
-  Be adversarial. Think like a developer who is evaluating this against 3 competitors." -C "$_REPO_ROOT" -s read-only --enable web_search_cached < /dev/null
-  _CODEX_EXIT=$?
-  if [ "$_CODEX_EXIT" = "124" ]; then
-    true # "codex_timeout" "600"
-    true # "autoplan" "0"
-    echo "[codex stalled past 10 minutes — tagging as [codex-unavailable] for this phase and proceeding with Claude subagent only]"
-  fi
-  ```
-  Timeout: 10 minutes (shell-wrapper) + 12 minutes (Bash outer gate). On hang, auto-degrades this phase's Codex voice.
-
-  **Claude DX subagent** (via Agent tool):
-  "Read the plan file at <plan_path>. You are an independent DX engineer
-  reviewing this plan. You have NOT seen any prior review. Evaluate:
-  1. Getting started: how many steps from zero to hello world? What's the TTHW?
-  2. API/CLI ergonomics: naming consistency, sensible defaults, progressive disclosure?
-  3. Error handling: does every error path specify problem + cause + fix + docs link?
-  4. Documentation: copy-paste examples? Information architecture? Interactive elements?
-  5. Escape hatches: can developers override every opinionated default?
-  For each finding: what's wrong, severity (critical/high/medium), and the fix."
-  NO prior-phase context — subagent must be truly independent.
-
-  Error handling: same as Phase 1 (both foreground/blocking, degradation matrix applies).
-
-- DX choices: if codex disagrees with a DX decision with valid developer empathy reasoning
-  → TASTE DECISION. Scope changes both models agree on → USER CHALLENGE.
-
-**Required execution checklist (DX):**
-
-1. Step 0 (DX Scope Assessment): Auto-detect product type. Map the developer journey.
-   Rate initial DX completeness 0-10. Assess TTHW.
-
-2. Step 0.5 (Dual Voices): Run Claude subagent (foreground) first, then Codex. Present
-   under CODEX SAYS (DX — developer experience challenge) and CLAUDE SUBAGENT
-   (DX — independent review) headers. Produce DX consensus table:
-
-```
-DX DUAL VOICES — CONSENSUS TABLE:
-═══════════════════════════════════════════════════════════════
-  Dimension                           Claude  Codex  Consensus
-  ──────────────────────────────────── ─────── ─────── ─────────
-  1. Getting started < 5 min?          —       —      —
-  2. API/CLI naming guessable?         —       —      —
-  3. Error messages actionable?        —       —      —
-  4. Docs findable & complete?         —       —      —
-  5. Upgrade path safe?                —       —      —
-  6. Dev environment friction-free?    —       —      —
-═══════════════════════════════════════════════════════════════
-CONFIRMED = both agree. DISAGREE = models differ (→ taste decision).
-Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = flagged regardless.
-```
-
-3. Passes 1-8: Run each from loaded skill. Rate 0-10. Auto-decide each issue.
-   DISAGREE items from consensus table → raised in the relevant pass with both perspectives.
-
-4. DX Scorecard: Produce the full scorecard with all 8 dimensions scored.
-
-**Mandatory outputs from Phase 3.5:**
-- Developer journey map (9-stage table)
-- Developer empathy narrative (first-person perspective)
-- DX Scorecard with all 8 dimension scores
-- DX Implementation Checklist
-- TTHW assessment with target
-
-**PHASE 3.5 COMPLETE.** Emit phase-transition summary:
-> **Phase 3.5 complete.** DX overall: [N]/10. TTHW: [N] min → [target] min.
-> Codex: [N concerns]. Claude subagent: [N issues].
-> Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
-> Passing to Phase 4 (Final Gate).
-
----
 
 ## Decision Audit Trail
 
@@ -865,6 +889,15 @@ produced. Check the plan file and conversation for each item.
 - [ ] Dual voices ran (or noted unavailable/skipped with phase)
 - [ ] Design litmus scorecard produced
 
+**Phase 2.5 (DX) outputs — only if DX scope detected:**
+- [ ] All 8 DX dimensions evaluated with scores
+- [ ] Developer journey map produced
+- [ ] Developer empathy narrative written
+- [ ] TTHW assessment with target
+- [ ] DX Implementation Checklist produced
+- [ ] Dual voices ran (or noted unavailable/skipped with phase)
+- [ ] DX consensus table produced
+
 **Phase 3 (Eng) outputs:**
 - [ ] Scope challenge with actual code analysis (not just "scope is fine")
 - [ ] Architecture ASCII diagram produced
@@ -877,14 +910,6 @@ produced. Check the plan file and conversation for each item.
 - [ ] Dual voices ran (Codex + Claude subagent, or noted unavailable)
 - [ ] Eng consensus table produced
 
-**Phase 3.5 (DX) outputs — only if DX scope detected:**
-- [ ] All 8 DX dimensions evaluated with scores
-- [ ] Developer journey map produced
-- [ ] Developer empathy narrative written
-- [ ] TTHW assessment with target
-- [ ] DX Implementation Checklist produced
-- [ ] Dual voices ran (or noted unavailable/skipped with phase)
-- [ ] DX consensus table produced
 
 **Cross-phase:**
 - [ ] Cross-phase themes section written
@@ -979,7 +1004,15 @@ AskUserQuestion options:
 - A: mark APPROVED, write review logs, suggest /ship
 - B: ask which overrides, apply, re-present gate
 - C: answer freeform, re-present gate
-- D: make changes, re-run affected phases (scope→1B, design→2, test plan→3, arch→3). Max 3 cycles.
+- B2: walk the User Challenges one at a time, accepting or rejecting each.
+  Rejected → note that the user's direction stands, change nothing. Accepted →
+  amend the plan for that challenge, then re-run Eng on the amended plan (same
+  rule as D: the gate always reviews the final plan), then re-present the gate.
+  Counts toward the same 3-cycle cap as D.
+- D: make changes, re-run affected phases (scope→1B, design→2, dx→2.5, test
+  plan→3, arch→3). A re-run of ANY earlier phase re-runs Eng after it — Eng is
+  the shipping gate and must review the final plan, never a superseded one.
+  Max 3 cycles.
 - E: start over
 
 ---
@@ -1004,7 +1037,7 @@ If Phase 2 ran (UI scope):
 ~/.vibestack/bin/vibe-review-log '{"skill":"plan-design-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
-If Phase 3.5 ran (DX scope):
+If Phase 2.5 ran (DX scope):
 ```bash
 ~/.vibestack/bin/vibe-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
@@ -1021,7 +1054,7 @@ If Phase 2 ran (UI scope), also log:
 ~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
-If Phase 3.5 ran (DX scope), also log:
+If Phase 2.5 ran (DX scope), also log:
 ```bash
 ~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
@@ -1036,10 +1069,11 @@ Suggest next step: `/ship` when ready to create the PR.
 ## Important Rules
 
 - **Never abort.** The user chose /autoplan. Respect that choice. Surface all taste decisions, never redirect to interactive review.
-- **Two gates.** The non-auto-decided AskUserQuestions are: (1) premise confirmation in Phase 1, and (2) User Challenges — when both models agree the user's stated direction should change. Everything else is auto-decided using the 6 principles.
+- **One gate.** The only non-auto-decided AskUserQuestions surface at the Final Approval Gate: User Challenges — when both models agree the user's stated direction should change — including clearly-wrong premises queued from Phase 1. Everything else resolves to the recommended option using the 6 principles, so the pipeline never stops mid-run.
 - **Log every decision.** No silent auto-decisions. Every choice gets a row in the audit trail.
 - **Full depth means full depth.** Do not compress or skip sections from the loaded skill files (except the skip list in Phase 0). "Full depth" means: read the code the section asks you to read, produce the outputs the section requires, identify every issue, and decide each one. A one-sentence summary of a section is not "full depth" — it is a skip. If you catch yourself writing fewer than 3 sentences for any review section, you are likely compressing.
 - **Artifacts are deliverables.** Test plan artifact, failure modes registry, error/rescue table, ASCII diagrams — these must exist on disk or in the plan file when the review completes. If they don't exist, the review is incomplete.
-- **Sequential order.** CEO → Design → Eng → DX. Each phase builds on the last.
+- **Sequential order.** CEO → Design (if UI scope) → DX (if developer-facing scope) → Eng, always last.
+  Each phase builds on the last, and Eng — the required shipping gate — must see the final amended plan.
 
 {{include lib/snippets/askuserquestion-split.md}}

@@ -1254,7 +1254,12 @@ Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "is
 7. **Codex design voice** (optional, automatic if available):
 
 ```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+# A live Codex session exports CODEX_THREAD_ID / CODEX_SANDBOX into every shell
+# it spawns. Spawning `codex exec` from inside one is the same model reviewing
+# itself at multiplied cost — treat it as unavailable unless forced.
+if [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  echo "CODEX_NOT_AVAILABLE (running under Codex — force with VIBE_FORCE_CODEX_REVIEW=1)"
+elif command -v codex >/dev/null 2>&1; then echo "CODEX_AVAILABLE"; else echo "CODEX_NOT_AVAILABLE"; fi
 ```
 
 If Codex is available, run a lightweight design check on the diff:
@@ -1619,7 +1624,12 @@ Every diff gets adversarial review from both Claude and Codex. LOC is not a prox
 DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
 DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+# A live Codex session exports CODEX_THREAD_ID / CODEX_SANDBOX into every shell
+# it spawns. Spawning `codex exec` from inside one is the same model reviewing
+# itself at multiplied cost — treat it as unavailable unless forced.
+if [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  echo "CODEX_NOT_AVAILABLE (running under Codex — force with VIBE_FORCE_CODEX_REVIEW=1)"
+elif command -v codex >/dev/null 2>&1; then echo "CODEX_AVAILABLE"; else echo "CODEX_NOT_AVAILABLE"; fi
 # Legacy opt-out — only gates Codex passes, Claude always runs
 OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
 echo "DIFF_SIZE: $DIFF_TOTAL"
