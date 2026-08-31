@@ -73,6 +73,14 @@ else
 fi
 ```
 
+**Both failure lines are terminal — STOP, do not continue to Step 3.** With no
+`$TAB` and no `$OUT.svg`, the steps below would build an HTML file around a
+file that does not exist and screenshot a blank page, reporting success. On
+`RENDER_UNAVAILABLE`, tell the user which half is missing (the bundle, or the
+browse shim) and that `cd ~/.claude/skills/vibestack && ./setup` installs both.
+On `TAB_OPEN_FAILED`, tell them to check `$B status` — the daemon is busy or
+wedged — and re-run.
+
 Every `$B js` / `$B wait` / `$B closetab` below MUST pass `--tab-id $TAB`. Without
 it the call hits whatever tab is active, which may be a live `/qa` or `/scrape`
 session sharing the daemon.

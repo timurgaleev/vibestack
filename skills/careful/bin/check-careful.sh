@@ -233,9 +233,12 @@ if [ "$_IS_SIMPLE" -eq 1 ]; then
           fi
         done
         set +f
-        if [ "$_TARGETS_DEFAULT" -eq 0 ] && printf '%s' "$CMD" | grep -qE '^[[:space:]]*git[[:space:]]+push([[:space:]]+(-f|--force))*[[:space:]]*$' 2>/dev/null; then
-          # Bare `git push --force` (force flags only, no remote/ref): targets
-          # the current branch's upstream — the default branch only when ON it.
+        if [ "$_TARGETS_DEFAULT" -eq 0 ] && printf '%s' "$CMD" | grep -qE '^[[:space:]]*git[[:space:]]+push([[:space:]]+(-f|--force))*([[:space:]]+[A-Za-z0-9._-]+)?([[:space:]]+(-f|--force))*[[:space:]]*$' 2>/dev/null; then
+          # `git push --force` with no refspec — with or without a remote name —
+          # targets the current branch's upstream, which is the default branch
+          # exactly when you are standing on it. A remote alone is not a target;
+          # `git push --force origin main` names one and is caught by the token
+          # loop above, so it never reaches here.
           _CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || true)
           [ -n "$_CURRENT_BRANCH" ] && [ "$_CURRENT_BRANCH" = "$_DEFAULT_BRANCH" ] && _TARGETS_DEFAULT=1
         fi

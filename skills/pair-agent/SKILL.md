@@ -321,11 +321,10 @@ unexchanged setup keys alike — is dead:
 $B stop
 ```
 
-Also close the tunnel if one is running, so the URL stops resolving:
-
-```bash
-pkill -f "ngrok http" || true
-```
+That also drops the tunnel: the daemon holds the ngrok listener in-process, so
+it goes down with the daemon and the public URL stops resolving. Do NOT reach
+for `pkill -f ngrok` — it would kill every unrelated ngrok the user is running
+and still not be the thing serving this tunnel.
 
 **There is no per-agent revoke in this build.** `$B tunnel revoke` and
 `$B tunnel rotate` are not implemented — the daemon exposes `/tunnel/start` and

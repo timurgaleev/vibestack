@@ -1691,8 +1691,13 @@ If `DIFF_TOTAL >= 200` AND Codex is available AND `OLD_CFG` is NOT `disabled`:
 TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
-command -v codex >/dev/null 2>&1 && codex review --base <base> -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+command -v codex >/dev/null 2>&1 && codex review --base <base> -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 ```
+
+**Sandbox pinned read-only.** `codex review` has no `-s`/`--sandbox` flag, so without the
+config override it inherits `~/.codex/config.toml` — on a user who granted write access to
+trusted projects, that is Codex with write permission on the repo during what this step
+reports as a read-only review.
 
 **No prompt argument.** `--base` is what scopes the review, and the positional
 `[PROMPT]` is mutually exclusive with it — Codex CLI rejects the pair at argv

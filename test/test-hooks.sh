@@ -100,6 +100,39 @@ assert_decision "-f refs/heads/main denied"     "$CAREFUL" '{"tool_input":{"comm
 assert_decision "+feature asks not denies"      "$CAREFUL" '{"tool_input":{"command":"git push origin +feature"}}' ask
 assert_decision "ordinary push passes"          "$CAREFUL" '{"tool_input":{"command":"git push origin main"}}' allow
 
+echo "careful — force-push with no refspec, standing on the default branch"
+# The deny needs the current branch to BE the default, so build a throwaway repo
+# rather than depending on whatever branch the suite happens to run from.
+FORCE_REPO="$TMPHOME/force-repo"
+mkdir -p "$FORCE_REPO"
+(
+  cd "$FORCE_REPO"
+  git init -q -b main .
+  git -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init
+  git remote add origin https://example.com/x.git
+  git update-ref refs/remotes/origin/main HEAD
+) >/dev/null 2>&1
+
+assert_decision_in() {
+  local dir="$1" name="$2" payload="$3" expected="$4" out
+  out=$(cd "$dir" && printf '%s' "$payload" | bash "$CAREFUL" 2>/dev/null)
+  case "$out" in
+    '{}') [ "$expected" = allow ] && ok "$name" || bad "$name" "$expected" "{} (allowed)" ;;
+    '{"hookSpecificOutput":'*'"permissionDecision":"'"$expected"'"'*) ok "$name" ;;
+    *) bad "$name" "$expected decision" "$out" ;;
+  esac
+}
+
+# A remote name is not a target: `git push --force origin` still force-pushes the
+# current branch's upstream, which is the default branch when you are on it.
+assert_decision_in "$FORCE_REPO" "bare --force denied"        '{"tool_input":{"command":"git push --force"}}' deny
+assert_decision_in "$FORCE_REPO" "--force origin denied"      '{"tool_input":{"command":"git push --force origin"}}' deny
+assert_decision_in "$FORCE_REPO" "-f origin denied"           '{"tool_input":{"command":"git push -f origin"}}' deny
+assert_decision_in "$FORCE_REPO" "--force origin main denied" '{"tool_input":{"command":"git push --force origin main"}}' deny
+# A feature branch is not the catastrophic case, and lease is the safe variant.
+assert_decision_in "$FORCE_REPO" "--force origin feature asks" '{"tool_input":{"command":"git push --force origin feature"}}' ask
+assert_decision_in "$FORCE_REPO" "--force-with-lease asks"     '{"tool_input":{"command":"git push --force-with-lease origin"}}' ask
+
 echo "careful — the home directory written out in full"
 assert_decision "rm -rf \$HOME denied"          "$CAREFUL" "{\"tool_input\":{\"command\":\"rm -rf $HOME\"}}" deny
 assert_decision "someone else's home only asks" "$CAREFUL" '{"tool_input":{"command":"rm -rf /Users/not-the-current-user"}}' ask

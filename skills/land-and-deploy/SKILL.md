@@ -429,17 +429,26 @@ BRANCH_VERSION=$(git show HEAD:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || ec
 BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)
 BASE_VERSION=$(git show origin/$BASE_BRANCH:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
 
-# Imply bump level by comparing branch VERSION to base (crude but good enough for drift detection)
-# We don't need the exact original level — we just need "a level" that passes to the util.
-# If the minor digit advanced, call it minor; patch digit, patch; etc. If base > branch, skip (not ours to land).
-# For simplicity: use "patch" as a conservative default; util handles collision-past regardless of input level.
+# Derive the bump level from base vs branch. "patch" is NOT a safe default here:
+# for a PR claiming v1.34.0 off base v1.33.2, a patch query answers "v1.33.3 is
+# free", and the later `BRANCH_VERSION >= NEXT_SLOT` comparison then passes —
+# even when another open PR is claiming v1.34.0 too. The level has to match the
+# release the PR is actually making.
+_BUMP=patch
+if [ -n "$BRANCH_VERSION" ] && [ -n "$BASE_VERSION" ]; then
+  _B_MAJ=${BRANCH_VERSION%%.*}; _R_MAJ=${BASE_VERSION%%.*}
+  _B_MIN=$(echo "$BRANCH_VERSION" | cut -d. -f2); _R_MIN=$(echo "$BASE_VERSION" | cut -d. -f2)
+  if [ "$_B_MAJ" != "$_R_MAJ" ]; then _BUMP=major
+  elif [ "$_B_MIN" != "$_R_MIN" ]; then _BUMP=minor
+  fi
+fi
 # --exclude-pr is not optional here: this PR is itself open and its title
 # carries the version being landed, so counting it as a claim would advance
 # NEXT_SLOT past BRANCH_VERSION and report drift on every single PR.
 PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null || echo "")
 QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
   --base "$BASE_BRANCH" \
-  --bump patch \
+  --bump "$_BUMP" \
   ${PR_NUMBER:+--exclude-pr "$PR_NUMBER"} \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
 NEXT_SLOT=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
