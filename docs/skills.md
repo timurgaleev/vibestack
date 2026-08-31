@@ -372,6 +372,13 @@ Triggers: `full safety mode`, `guard against mistakes`, `maximum safety`, `guard
 
 ## Tooling & Integrations
 
+### `/vibe`
+Router for the suite — name the task, get pointed at the right skill. Mostly for Codex and other hosts with no slash-command picker, where a skill is referenced as `$vibe` inside an ordinary message; `agents/openai.yaml` names it as the pack's entry point. Routes on intent rather than listing every skill, and hands off to this file for the full index.
+
+Triggers: `which vibestack skill`, `list vibestack skills`, `vibe help`
+
+---
+
 ### `/codex`
 Second-opinion code reviewer via OpenAI Codex CLI.
 

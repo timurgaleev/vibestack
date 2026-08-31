@@ -65,18 +65,16 @@ CLAUDE_BIN=$(command -v claude 2>/dev/null || echo "")
 If `NOT_FOUND`, stop and tell the user:
 "Claude CLI not found. Install Claude Code, then re-run this skill."
 
-Check auth:
+Do not infer authentication state from credential files or environment
+variables, and do not gate on them. Claude Code may hold its credentials in an
+OS keychain that is invisible from inside the host agent's sandbox, so a
+file-existence check reports a blocker on a perfectly authenticated machine and
+the skill refuses to run at all. Only report an authentication problem when the
+actual `claude -p` invocation below returns an auth, login, or unauthorized
+error.
 
-```bash
-if [ -f "$HOME/.claude/.credentials.json" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "AUTH_FOUND"
-else
-  echo "AUTH_MISSING"
-fi
-```
-
-If `AUTH_MISSING`, stop and tell the user:
-"No Claude authentication found. Run `claude` interactively to log in, or export `ANTHROPIC_API_KEY`, then re-run this skill."
+Resolve the binary and invoke it in the same host execution context — do not
+resolve it inside a sandbox and then run a different `claude` from another PATH.
 
 ---
 

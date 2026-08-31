@@ -50,8 +50,12 @@ anti-bot stealth, and real-time visibility. You see every action as it happens.
 ```bash
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/vibestack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/vibestack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/vibestack/browse/dist/browse"
+# install renders each skill to <root>/skills/<name>/ and links its bin/ — there
+# is no skills/vibestack/ directory and no dist/browse, so the previous paths
+# could never resolve and this skill always dead-ended at NEEDS_SETUP.
+[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/browse/bin/vibe-browse" ] && B="$_ROOT/.claude/skills/browse/bin/vibe-browse"
+[ -z "$B" ] && [ -x "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/open-browser}/../browse/bin/vibe-browse" ] && B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/open-browser}/../browse/bin/vibe-browse"
+[ -z "$B" ] && B="$(command -v vibe-browse || true)"
 if [ -x "$B" ]; then echo "READY: $B"; else echo "NEEDS_SETUP"; fi
 ```
 
@@ -133,8 +137,11 @@ Also find the extension path so you can help the user if they need to load it ma
 ```bash
 _EXT_PATH=""
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-[ -n "$_ROOT" ] && [ -f "$_ROOT/.claude/skills/vibestack/extension/manifest.json" ] && _EXT_PATH="$_ROOT/.claude/skills/vibestack/extension"
-[ -z "$_EXT_PATH" ] && [ -f "$HOME/.claude/skills/vibestack/extension/manifest.json" ] && _EXT_PATH="$HOME/.claude/skills/vibestack/extension"
+# Same correction as the binary above: the extension lives in the checkout, and
+# the skill reaches it through the repo root, never through a skills/vibestack/
+# directory that install does not create.
+[ -n "$_ROOT" ] && [ -f "$_ROOT/extension/manifest.json" ] && _EXT_PATH="$_ROOT/extension"
+[ -z "$_EXT_PATH" ] && [ -f "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/open-browser}/extension/manifest.json" ] && _EXT_PATH="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/open-browser}/extension"
 echo "EXTENSION_PATH: ${_EXT_PATH:-NOT FOUND}"
 ```
 

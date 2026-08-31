@@ -101,7 +101,7 @@ Each skill is a plain `SKILL.md` file your agent discovers and exposes as a
 
 ## A taste of the skills
 
-52 skills across planning, shipping, QA, design, and security.
+53 skills across planning, shipping, QA, design, and security.
 A few highlights:
 
 | Command | What it does |
