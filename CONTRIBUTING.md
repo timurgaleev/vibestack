@@ -81,7 +81,10 @@ EXTRACT_RC=$?
 set -e
 
 # Unreadable payload: pick a polarity on purpose. Ask-tier asks; a boundary denies.
-if [ "$EXTRACT_RC" -ne 0 ] && [ -n "$INPUT" ]; then
+# Empty stdin counts as unreadable — a PreToolUse call always carries a payload,
+# so nothing on stdin means something upstream broke. Do NOT add a `-n "$INPUT"`
+# guard here: it turns the fail-closed branch into an allow.
+if [ "$EXTRACT_RC" -ne 0 ]; then
   vibe_hook_decision ask "[my-skill] Could not parse the tool payload."
   exit 0
 fi

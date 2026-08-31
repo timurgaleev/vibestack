@@ -616,9 +616,9 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 **PHASE 2 COMPLETE.** Emit phase-transition summary:
 > **Phase 2 complete.** Codex: [N concerns]. Claude subagent: [N issues].
 > Consensus: [X/Y confirmed, Z disagreements → surfaced at gate].
-> Passing to Phase 3.
+> Passing to Phase 2.5 (DX Review) or Phase 3 (Eng Review).
 
-Do NOT begin Phase 3 until all Phase 2 outputs (if run) are written to the plan file.
+Do NOT begin the next phase until all Phase 2 outputs (if run) are written to the plan file.
 
 ---
 
@@ -657,7 +657,7 @@ Log: "Phase 2.5 skipped — no developer-facing scope detected."
 
   Also consider these findings from prior review phases:
   CEO: <insert CEO consensus summary>
-  Eng: <insert Eng consensus summary>
+  Design: <insert Design consensus summary, or 'skipped, no UI scope'>
 
   You are a developer who has never seen this product. Evaluate:
   1. Time to hello world: how many steps from zero to working? Target is under 5 minutes.
@@ -844,7 +844,11 @@ Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = fl
 **PHASE 3 COMPLETE.** Emit phase-transition summary:
 > **Phase 3 complete.** Codex: [N concerns]. Claude subagent: [N issues].
 > Consensus: [X/6 confirmed, Y disagreements → surfaced at gate].
-> Passing to Phase 2.5 (DX Review) or Phase 3 (Eng Review).
+> Passing to Phase 4 (Final Approval Gate).
+
+Eng is the last review phase. Do not re-enter Phase 2 or 2.5 from here — the
+only path back into a review phase is option D or B2 at the gate, which re-runs
+Eng afterward so the gate always sees the final plan.
 
 ---
 

@@ -76,10 +76,12 @@ fi
 **Both failure lines are terminal — STOP, do not continue to Step 3.** With no
 `$TAB` and no `$OUT.svg`, the steps below would build an HTML file around a
 file that does not exist and screenshot a blank page, reporting success. On
-`RENDER_UNAVAILABLE`, tell the user which half is missing (the bundle, or the
-browse shim) and that `cd ~/.claude/skills/vibestack && ./setup` installs both.
-On `TAB_OPEN_FAILED`, tell them to check `$B status` — the daemon is busy or
-wedged — and re-run.
+`RENDER_UNAVAILABLE`, say which half is missing. A missing bundle means an
+incomplete checkout — re-run `./install` from it. A missing shim means the
+browse dependencies were never fetched; `$B status` bootstraps them on first
+use and prints `BROWSE_NOT_AVAILABLE` when it cannot (npm absent). On
+`TAB_OPEN_FAILED`, report what `$B status` says — the daemon is busy, wedged,
+or unable to open a tab — and re-run.
 
 Every `$B js` / `$B wait` / `$B closetab` below MUST pass `--tab-id $TAB`. Without
 it the call hits whatever tab is active, which may be a live `/qa` or `/scrape`
@@ -133,8 +135,8 @@ List the artifacts: `.mmd` (the source to edit), `.svg` (vector for docs),
   tool.
 - **Fully offline.** The renderer is vendored in the repo, and the HTML artifact
   carries the finished SVG inline — no CDN, no network, at render time or later.
-- If `RENDER_UNAVAILABLE` printed, the bundle is missing from the install. Tell
-  the user to run `cd ~/.claude/skills/vibestack && ./setup` rather than
-  rendering from a CDN behind their back.
+- If `RENDER_UNAVAILABLE` printed, say what is missing and how to get it back
+  (`./install` from the checkout for the bundle; `$B status` to bootstrap the
+  browse dependencies). Never fall back to a CDN behind the user's back.
 
 {{include lib/snippets/capture-learnings.md}}
