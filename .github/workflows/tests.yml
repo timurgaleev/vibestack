@@ -35,6 +35,7 @@ jobs:
           - test-first-task-detect.sh
           - test-learn-sync.sh
           - test-install-integration.sh
+          - test-brand-audit.sh
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +53,38 @@ jobs:
           # macOS image is slow enough to exceed that on a cold run.
           PTY_TIMEOUT: 240
         run: bash "test/${{ matrix.suite }}"
+
+  brand:
+    name: nothing names another project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit scan walks base..HEAD, so a shallow clone would have
+          # nothing to walk.
+          fetch-depth: 0
+
+      - name: Tracked files and commit messages
+        run: |
+          # Commit messages are as public as the code and cannot be corrected
+          # after a merge without rewriting published history — so this has to
+          # fail here, on the PR, not afterwards.
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            bin/vibe-brand-audit --commits "${{ github.event.pull_request.base.sha }}..HEAD"
+          else
+            bin/vibe-brand-audit
+          fi
+
+      - name: PR title and body
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # Passed through the environment, never interpolated into the script:
+          # a PR body is attacker-controlled text.
+          printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" > /tmp/pr-text.md
+          bin/vibe-brand-audit --text /tmp/pr-text.md
 
   drift:
     name: installed skills match sources

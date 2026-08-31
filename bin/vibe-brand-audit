@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# vibe-brand-audit — fail if anything published from this repo names a source
+# other than vibestack.
+#
+# Everything this repo ships is published under the project's own name. That
+# covers the obvious surface (tracked files) and the one people forget: commit
+# messages, which are as public as the code and cannot be edited after a merge
+# without rewriting history.
+#
+# Usage:
+#   vibe-brand-audit                  # tracked files only
+#   vibe-brand-audit --commits <range># also scan commit messages in a git range
+#   vibe-brand-audit --text <file>    # also scan an arbitrary file (PR body, release notes)
+#
+# Exit 0 clean, 1 on a hit. Every hit prints file:line and the matched text.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT" || exit 2
+
+RANGE=""
+TEXT_FILES=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --commits) RANGE="${2:-}"; shift 2 ;;
+    --text)    TEXT_FILES+=("${2:-}"); shift 2 ;;
+    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "vibe-brand-audit: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+# Names that may never appear. The leading boundary keeps ordinary identifiers
+# out of it — `isBackTrackingStack` ends in "gStack" and is not a brand hit.
+NAMES='(^|[^A-Za-z])(gstack|garrytan|gbrain)'
+
+# Phrases that assert this project derives from somewhere else. Bare "upstream"
+# is deliberately NOT here: it is ordinary git vocabulary ("the branch's
+# upstream", "something upstream broke"), and banning the word outright trains
+# people to route around the check. These are the shapes that only make sense
+# if another repository is the source.
+PHRASES='(upstream (carries|fixed|has|had|documents|added|removed|kept|calls|says|expects|does|already)|upstreams|the upstream (repo|project|version|skill|file)|upstream'"'"'s|parity (audit|wave|pass) (against|with)|our fork|this fork|forked from|(^|[^A-Za-z])ported from|copied from|vendored from|original repo)'
+
+# Vendored third-party files are excluded, and deliberately: their headers carry
+# licence text and author attribution that MUST stay (removing it is a licence
+# violation), and `bun run vendor:*` would restore it on the next run anyway.
+# Crediting a dependency's authors is not the same as implying this project was
+# copied from somewhere — the check is about the latter.
+EXCLUDES=(
+  ':!lib/diagram-render/dist' ':!bun.lock' ':!package-lock.json' ':!node_modules'
+  ':!extension/lib'
+  # The checker and its fixtures have to contain what they reject, or they
+  # cannot test for it. Nothing else may be added to these two lines.
+  ':!bin/vibe-brand-audit' ':!test/test-brand-audit.sh'
+)
+
+status=0
+
+report() { # report LABEL
+  status=1
+  printf '\n%s\n' "$1"
+}
+
+# --- tracked files -----------------------------------------------------------
+hits=$(git grep -nEI "$NAMES" -- . "${EXCLUDES[@]}" 2>/dev/null)
+if [ -n "$hits" ]; then
+  report "Tracked files name another project:"
+  printf '%s\n' "$hits" | sed 's/^/  /'
+fi
+
+hits=$(git grep -nEIi "$PHRASES" -- . "${EXCLUDES[@]}" 2>/dev/null)
+if [ -n "$hits" ]; then
+  report "Tracked files describe this project as derived from another:"
+  printf '%s\n' "$hits" | sed 's/^/  /'
+fi
+
+# --- commit messages ---------------------------------------------------------
+# A merged commit message cannot be corrected without rewriting published
+# history, so this has to fail BEFORE the merge, not after.
+if [ -n "$RANGE" ]; then
+  while IFS= read -r sha; do
+    [ -n "$sha" ] || continue
+    msg=$(git log -1 --format='%B' "$sha" 2>/dev/null)
+    m=$(printf '%s' "$msg" | grep -nEi "$NAMES|$PHRASES")
+    if [ -n "$m" ]; then
+      report "Commit $(git log -1 --format='%h %s' "$sha") names another project:"
+      printf '%s\n' "$m" | sed 's/^/  /'
+    fi
+  done < <(git rev-list --no-merges "$RANGE" 2>/dev/null)
+fi
+
+# --- arbitrary text (PR body, release notes) ---------------------------------
+for f in "${TEXT_FILES[@]:-}"; do
+  [ -n "$f" ] && [ -f "$f" ] || continue
+  m=$(grep -nEi "$NAMES|$PHRASES" "$f")
+  if [ -n "$m" ]; then
+    report "$f names another project:"
+    printf '%s\n' "$m" | sed 's/^/  /'
+  fi
+done
+
+if [ "$status" -eq 0 ]; then
+  echo "brand audit: clean"
+else
+  cat <<'MSG'
+
+Everything this repo publishes is published under its own name. Describe what
+the code does and why, not where a behavior came from — "the deny tier covers
+recursive deletes of /", not "the deny tier another project carries".
+
+Commit messages count: once merged they cannot be corrected without rewriting
+published history.
+MSG
+fi
+exit "$status"

@@ -223,6 +223,31 @@ Kiro, and Codex CLI by default. Three implications:
    uninstall.** Covers regression (claude byte-identical), multi-target
    install, idempotency, dry-run, hook warnings, uninstall round-trip.
 
+## Naming and attribution
+
+Everything this repo publishes goes out under its own name. Describe what the
+code does and why — never where a behavior came from.
+
+This applies to **commit messages, PR titles and bodies, and release notes** as
+much as to the files themselves. A commit message is as public as the code, and
+once merged it cannot be corrected without rewriting published history.
+
+```bash
+bin/vibe-brand-audit                      # tracked files
+bin/vibe-brand-audit --commits main..HEAD # + this branch's commit messages
+bin/vibe-brand-audit --text /tmp/pr.md    # + a PR body or release notes
+```
+
+CI runs all three on every PR. `bin/vibe-brand-audit --help` lists what it
+looks for. Two deliberate carve-outs:
+
+- Bare `upstream` is fine — it is git vocabulary ("the branch's upstream",
+  "something upstream broke"). Only phrasings that assert another project is
+  the source are rejected.
+- Vendored third-party files (`extension/lib/`, `lib/diagram-render/dist/`) are
+  skipped. Their headers carry licence text and author credit that must stay;
+  crediting a dependency's authors is a different thing entirely.
+
 ## Commit discipline
 
 - One logical change per commit

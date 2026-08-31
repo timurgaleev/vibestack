@@ -1,5 +1,19 @@
 # Contributing
 
+
+## Naming
+
+Everything here is published under this project's own name. Write about what the
+code does, not where a behavior came from — in files, and equally in commit
+messages, PR text and release notes.
+
+```bash
+bin/vibe-brand-audit --commits main..HEAD
+```
+
+CI runs this on every PR. It is checked before a merge on purpose: a merged
+commit message cannot be corrected without rewriting published history.
+
 ## Setup
 
 ```bash

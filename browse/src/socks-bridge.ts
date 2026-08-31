@@ -11,11 +11,11 @@
  *   Chromium  →  socks5://127.0.0.1:<ephemeral>  (this bridge, no auth)
  *                  └→ authenticated SOCKS5 to reference  →  destination
  *
- * Ported from wintermute's scripts/socks-bridge.mjs with TS types, ephemeral
- * port (no hardcoded 1090), 127.0.0.1-only bind, and a stream-error policy
- * that closes the affected client connection without transport retries (a
- * SOCKS bridge is transport, not request-aware — retries can corrupt browser
- * traffic mid-stream).
+ * Design notes: the listen port is ephemeral (never a hardcoded 1090) and the
+ * bind is 127.0.0.1-only, so the bridge is unreachable from off-box. A stream
+ * error closes the affected client connection and does not retry — a SOCKS
+ * bridge is transport, not request-aware, and a retry can corrupt browser
+ * traffic mid-stream.
  */
 
 import * as net from 'net';

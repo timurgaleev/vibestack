@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.35.0 — 2026-08-31
+
+### Added
+
+- **`bin/vibe-brand-audit`** — everything this repo publishes goes out under its
+  own name, and until now nothing enforced that. The audit scans tracked files,
+  commit messages in a range, and any text file (a PR body, release notes), and
+  fails on names or phrasings that assert this project derives from somewhere
+  else. CI runs all three on every PR.
+
+  Commit messages are the surface this exists for: they are as public as the
+  code, and once merged they cannot be corrected without rewriting published
+  history — so the check has to fail on the PR, not after it.
+
+  Two deliberate carve-outs, both covered by tests. Bare `upstream` passes: it
+  is ordinary git vocabulary ("the branch's upstream", "something upstream
+  broke"), and banning the word outright would only teach people to phrase
+  around the check. Vendored third-party files are skipped, because their
+  headers carry licence text and author credit that must stay — crediting a
+  dependency's authors is a different thing from claiming an external origin
+  for this project.
+
+- **`test/test-brand-audit.sh`** — 19 cases, half of them asserting the audit
+  does *not* fire on ordinary engineering English. A check that cries wolf gets
+  routed around, which is the same as having no check.
+
+### Changed
+
+- A comment in `browse/src/socks-bridge.ts` described the bridge by where it
+  came from rather than by what it does. It now documents the design that
+  matters at that call site: ephemeral port, loopback-only bind, and why a
+  stream error closes the client connection instead of retrying.
+
 ## 1.34.0 — 2026-08-31
 
 ### Fixed
