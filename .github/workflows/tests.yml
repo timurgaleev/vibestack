@@ -47,6 +47,10 @@ jobs:
           echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
 
       - name: Run test/${{ matrix.suite }}
+        env:
+          # The PTY-driven install tests time out at 60s locally; the hosted
+          # macOS image is slow enough to exceed that on a cold run.
+          PTY_TIMEOUT: 240
         run: bash "test/${{ matrix.suite }}"
 
   drift:
