@@ -57,10 +57,12 @@ def stage_json(path, mutate):
     mutate(obj)
     if json.dumps(obj, sort_keys=True) == before:
         return None  # already at the target version; nothing to do
-    # Match npm's own formatting: two-space indent and a trailing newline. A
-    # reformatted lockfile is a diff nobody asked for and a merge conflict
-    # waiting for the next person to run npm.
-    return json.dumps(obj, indent=2) + "\n"
+    # Match npm's own formatting: two-space indent, a trailing newline, and
+    # non-ASCII left alone. A reformatted file is a diff nobody asked for and a
+    # merge conflict waiting for the next person to run npm -- and json.dumps
+    # escapes non-ASCII by default, which rewrote an em dash in a description
+    # field into \u2014 on the first real bump this tool did.
+    return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
 
 
 def main():
