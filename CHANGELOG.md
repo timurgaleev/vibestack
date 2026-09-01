@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.37.1 — 2026-09-01
+
+### Fixed
+
+- **`vibe-version-bump` announced files it had not bumped.** The report was
+  printed before the writes, so a run whose rename failed partway rolled the
+  files back and then listed every one of them as bumped — telling the reader
+  the opposite of what happened. Reports now name only what actually landed,
+  and `--dry-run` says "would bump".
+- **And it printed those names as traversal paths.** Targets are resolved
+  through `realpath` so a symlink survives a bump, but the report measured that
+  resolved path against the unresolved root; on macOS, where `/var` is itself a
+  symlink, that produced a run of `../..` instead of `VERSION`.
+
+### Testing
+
+The rollback path is exercised rather than only reasoned about. Staging cannot
+be made to fail there — that aborts before any rename, and is covered
+separately — so the failure is injected into `os.replace` through a
+`sitecustomize` the interpreter imports at startup. The first file lands, the
+second raises, and the test asserts the first is restored, the others are
+untouched, no staging temp files survive, the run claims nothing was bumped,
+and the same tree still bumps cleanly afterwards.
+
+`test/test-evidence-bins.sh`: 65 → 74 cases.
+
 ## 1.37.0 — 2026-09-01
 
 ### Added

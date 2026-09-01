@@ -98,9 +98,18 @@ def main():
 
     # Resolve each candidate through realpath. os.replace on a symlink
     # replaces the LINK with a regular file and leaves the real target stale.
+    #
+    # The resolved path is for writing only. Reports use the name the caller
+    # would recognise: relpath against the unresolved root turns a resolved
+    # /private/var path into a run of "../.." on macOS, where /var is itself a
+    # symlink.
+    display = {}
+
     def target(name):
         p = os.path.join(root, name)
-        return os.path.realpath(p) if os.path.exists(p) else p
+        resolved = os.path.realpath(p) if os.path.exists(p) else p
+        display[resolved] = name
+        return resolved
 
     vf = target("VERSION")
     if os.path.exists(vf):
@@ -148,12 +157,11 @@ def main():
               "(no VERSION, package.json or lockfile)" % root, file=sys.stderr)
         return 1
 
-    for path, _ in staged:
-        print("%s %s -> %s" % ("would bump" if dry else "bumped",
-                               os.path.relpath(path, root), version))
     for name, why in skipped:
         print("skipped %s (%s)" % (name, why))
     if dry:
+        for path, _ in staged:
+            print("would bump %s -> %s" % (display.get(path, path), version))
         return 0
 
     # Everything parsed. Write temp files first, then rename them all in. The
@@ -198,6 +206,9 @@ def main():
                     pass
         print("vibe-version-bump: write failed, rolled back: %s" % e, file=sys.stderr)
         return 1
+
+    for path in done:
+        print("bumped %s -> %s" % (display.get(path, path), version))
     return 0
 
 

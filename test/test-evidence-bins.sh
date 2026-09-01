@@ -160,6 +160,58 @@ chk "a symlinked package.json updates its target too" "$(python3 -c 'import json
 # Rewriting bytes through a temp file would hand the result the caller's umask.
 chk "the file keeps its own mode" "$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$LINKED/real/package.json")" "0o640"
 
+# The rollback claim: if a rename fails PARTWAY, the ones already done are
+# undone. Staging cannot be made to fail here -- that path aborts before any
+# rename and is covered above -- so the failure is injected into os.replace
+# itself, via a sitecustomize the interpreter imports at startup. That runs the
+# real rollback code rather than a stand-in for it.
+INJ="$TMP/inject"; mkdir -p "$INJ"
+cat > "$INJ/sitecustomize.py" <<'PYINJ'
+import os
+_real = os.replace
+_calls = {"n": 0}
+
+
+def _replace(src, dst, **kw):
+    _calls["n"] += 1
+    # Let the first file land, then fail. That is the state the rollback
+    # exists for: some renamed, some not.
+    if _calls["n"] >= 2:
+        raise OSError(28, "No space left on device (injected)")
+    return _real(src, dst, **kw)
+
+
+os.replace = _replace
+PYINJ
+ROLL="$TMP/rollback"; mkdir -p "$ROLL"
+printf '5.0.0\n' > "$ROLL/VERSION"
+printf '{\n  "name": "z",\n  "version": "5.0.0"\n}\n' > "$ROLL/package.json"
+printf '{\n  "name": "z",\n  "version": "5.0.0",\n  "lockfileVersion": 3,\n  "packages": {\n    "": {\n      "version": "5.0.0"\n    }\n  }\n}\n' > "$ROLL/package-lock.json"
+ROLLOUT=$(PYTHONPATH="$INJ" "$V" 6.0.0 --root "$ROLL" 2>/dev/null)
+RC=$?
+chk "a rename failing partway exits nonzero" "$RC" "1"
+# The report used to be printed before the writes, so a run that rolled back
+# still announced every file as bumped -- telling the reader the opposite of
+# what happened.
+printf '%s' "$ROLLOUT" | grep -q '^bumped' && no "a rolled-back run still claimed it bumped files" \
+                                           || ok "a rolled-back run claims nothing was bumped"
+chk "the file that had already been renamed is restored" "$(cat "$ROLL/VERSION")" "5.0.0"
+chk "the file that never landed is untouched" "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$ROLL/package.json")" "5.0.0"
+chk "and so is the lockfile" "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$ROLL/package-lock.json")" "5.0.0"
+[ -z "$(ls "$ROLL"/*.vibe-bump.*.tmp 2>/dev/null)" ] && ok "no staging temp files are left behind" \
+                                                    || no "staging temp files survived the rollback"
+# The same fixture must still bump cleanly once nothing is injected -- a
+# rollback that leaves the tree unusable would pass every check above.
+CLEANOUT=$("$V" 6.0.0 --root "$ROLL" 2>/dev/null)
+chk "the same tree still bumps cleanly afterwards" "$(cat "$ROLL/VERSION")" "6.0.0"
+# Reports name the file the caller asked about. relpath against an unresolved
+# root turned a realpath'd target into a run of "../.." on macOS, where /var is
+# itself a symlink.
+printf '%s' "$CLEANOUT" | grep -q '\.\./' && no "the report leaked a traversal path" \
+                                            || ok "the report names files plainly"
+printf '%s' "$CLEANOUT" | grep -q '^bumped VERSION -> 6.0.0$' && ok "and says exactly what landed" \
+                                                              || no "report line not in the expected shape"
+
 "$V" 1.2.3 --root "$TMP/nope" >/dev/null 2>&1; chk "a missing root is an error" "$?" "2"
 
 echo "vibe-detach"
