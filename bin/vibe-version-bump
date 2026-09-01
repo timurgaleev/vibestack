@@ -140,10 +140,17 @@ def main():
     if dry:
         return 0
 
-    # Everything parsed. Write temp files first, then rename them all in. A
-    # rename on the same filesystem is atomic per file, and by this point no
-    # parse can still fail, so the set lands together.
+    # Everything parsed. Write temp files first, then rename them all in. The
+    # temp sits beside its target, so the rename is same-filesystem and atomic
+    # per file.
+    #
+    # Per-file atomicity is not the claim, though -- the claim is that the SET
+    # lands together, and a rename can still fail partway on a full disk or a
+    # read-only file. So the original bytes are kept and the renames already
+    # done are undone, rather than leaving VERSION bumped and a manifest behind.
+    originals = {path: open(path, "rb").read() for path, _ in staged}
     tmps = []
+    done = []
     try:
         for path, body in staged:
             tmp = path + ".vibe-bump.tmp"
@@ -152,13 +159,22 @@ def main():
             tmps.append((tmp, path))
         for tmp, path in tmps:
             os.replace(tmp, path)
+            done.append(path)
     except OSError as e:
-        for tmp, _ in tmps:
+        for path in done:
             try:
-                os.unlink(tmp)
+                with open(path, "wb") as fh:
+                    fh.write(originals[path])
             except OSError:
-                pass
-        print("vibe-version-bump: write failed, nothing changed: %s" % e, file=sys.stderr)
+                print("vibe-version-bump: could not restore %s -- it is at the "
+                      "new version while others are not" % path, file=sys.stderr)
+        for tmp, path in tmps:
+            if path not in done:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+        print("vibe-version-bump: write failed, rolled back: %s" % e, file=sys.stderr)
         return 1
     return 0
 

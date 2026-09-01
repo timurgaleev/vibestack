@@ -124,6 +124,20 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 chk "an argument with spaces stays one argument" "$("$D" log "$ID3" | tr -d '\n')" "one two three"
+# The whole point: the job has to outlive the shell that started it. Started
+# from a subshell that exits at once, and polled from here afterwards.
+ID4=$(bash -c "\"$D\" start --label survives -- sh -c 'sleep 3; echo alive'")
+sleep 1
+S4=$("$D" status "$ID4" 2>/dev/null || true)
+chk "the job is still running after its launching shell exited" "$S4" "running"
+for _ in $(seq 1 30); do
+  S4=$("$D" status "$ID4" 2>/dev/null || true)
+  case "$S4" in exit:*) break ;; esac
+  sleep 1
+done
+chk "and it finishes on its own" "$S4" "exit:0"
+"$D" log "$ID4" | grep -q alive && ok "its output survived too" || no "output lost"
+
 "$D" status nosuchjob >/dev/null 2>&1; chk "an unknown job id is an error" "$?" "2"
 "$D" status ../escape >/dev/null 2>&1; chk "a traversing job id is rejected" "$?" "2"
 
