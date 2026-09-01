@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""vibe-version-bump — move a project to a new version, all files or none.
+
+Writing VERSION and package.json by hand leaves every OTHER file that carries
+the version behind. A lockfile still naming the old version is not cosmetic:
+`npm ci` reconciles the lockfile against the manifest and fails the build, and
+it fails after the release commit is already pushed.
+
+Usage:
+  vibe-version-bump 1.37.0                 # repo root
+  vibe-version-bump 1.37.0 --root packages/cli
+  vibe-version-bump 1.37.0 --dry-run
+
+Handles VERSION, package.json, package-lock.json and npm-shrinkwrap.json (both
+the top-level "version" and the packages[""] self-entry a lockfileVersion 2/3
+file carries). Files that are not present are skipped, not created.
+
+Atomic across the whole set: every file is parsed and staged first, and nothing
+is moved into place until all of them have been staged successfully. A malformed
+lockfile therefore aborts the bump with the tree untouched, rather than leaving
+VERSION ahead of a manifest that never got written.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+LOCKS = ("package-lock.json", "npm-shrinkwrap.json")
+
+
+def repo_root():
+    try:
+        out = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return os.getcwd()
+
+
+def stage_json(path, mutate):
+    """Parse path, apply mutate(obj), return the bytes to write. Never writes."""
+    with open(path) as fh:
+        obj = json.load(fh)
+    before = json.dumps(obj, sort_keys=True)
+    mutate(obj)
+    if json.dumps(obj, sort_keys=True) == before:
+        return None  # already at the target version; nothing to do
+    # Match npm's own formatting: two-space indent and a trailing newline. A
+    # reformatted lockfile is a diff nobody asked for and a merge conflict
+    # waiting for the next person to run npm.
+    return json.dumps(obj, indent=2) + "\n"
+
+
+def main():
+    argv = sys.argv[1:]
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0 if argv else 1
+
+    version = argv[0]
+    root = None
+    dry = False
+    i = 1
+    while i < len(argv):
+        if argv[i] == "--root" and i + 1 < len(argv):
+            root = argv[i + 1]; i += 2
+        elif argv[i] == "--dry-run":
+            dry = True; i += 1
+        else:
+            print("vibe-version-bump: unexpected argument: %s" % argv[i], file=sys.stderr)
+            return 2
+
+    if not SEMVER.match(version):
+        print("vibe-version-bump: %r is not a semantic version" % version, file=sys.stderr)
+        return 2
+
+    root = os.path.abspath(root or repo_root())
+    if not os.path.isdir(root):
+        print("vibe-version-bump: no such directory: %s" % root, file=sys.stderr)
+        return 2
+
+    staged = []   # (path, bytes)
+    skipped = []
+
+    vf = os.path.join(root, "VERSION")
+    if os.path.exists(vf):
+        if open(vf).read().strip() != version:
+            staged.append((vf, version + "\n"))
+        else:
+            skipped.append(("VERSION", "already at %s" % version))
+
+    pj = os.path.join(root, "package.json")
+    if os.path.exists(pj):
+        try:
+            body = stage_json(pj, lambda o: o.__setitem__("version", version))
+        except ValueError as e:
+            print("vibe-version-bump: %s is not valid JSON: %s" % (pj, e), file=sys.stderr)
+            return 1
+        if body:
+            staged.append((pj, body))
+        else:
+            skipped.append(("package.json", "already at %s" % version))
+
+    def bump_lock(o):
+        o["version"] = version
+        pkgs = o.get("packages")
+        # The "" key is the project's own entry. Dependencies keep their own
+        # versions and must not be touched.
+        if isinstance(pkgs, dict) and isinstance(pkgs.get(""), dict):
+            pkgs[""]["version"] = version
+
+    for name in LOCKS:
+        lp = os.path.join(root, name)
+        if not os.path.exists(lp):
+            continue
+        try:
+            body = stage_json(lp, bump_lock)
+        except ValueError as e:
+            print("vibe-version-bump: %s is not valid JSON: %s" % (lp, e), file=sys.stderr)
+            return 1
+        if body:
+            staged.append((lp, body))
+        else:
+            skipped.append((name, "already at %s" % version))
+
+    if not staged and not skipped:
+        print("vibe-version-bump: nothing to bump under %s "
+              "(no VERSION, package.json or lockfile)" % root, file=sys.stderr)
+        return 1
+
+    for path, _ in staged:
+        print("%s %s -> %s" % ("would bump" if dry else "bumped",
+                               os.path.relpath(path, root), version))
+    for name, why in skipped:
+        print("skipped %s (%s)" % (name, why))
+    if dry:
+        return 0
+
+    # Everything parsed. Write temp files first, then rename them all in. A
+    # rename on the same filesystem is atomic per file, and by this point no
+    # parse can still fail, so the set lands together.
+    tmps = []
+    try:
+        for path, body in staged:
+            tmp = path + ".vibe-bump.tmp"
+            with open(tmp, "w") as fh:
+                fh.write(body)
+            tmps.append((tmp, path))
+        for tmp, path in tmps:
+            os.replace(tmp, path)
+    except OSError as e:
+        for tmp, _ in tmps:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        print("vibe-version-bump: write failed, nothing changed: %s" % e, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""vibe-evidence — record what a command actually did, so a later gate can check
+it instead of trusting prose.
+
+A skill that says "tests pass" has told you nothing checkable: the claim and a
+fabricated claim are the same bytes. This records the three facts that make it
+checkable — the command, its exit status, and the content fingerprint of the
+tree it ran against — so a gate can ask "did THIS tree pass?" and get an answer
+from the ledger rather than from the summary.
+
+Usage:
+  vibe-evidence run --skill ship --label tests -- pytest -q
+  vibe-evidence read [--skill S] [--label L] [--tree H] [--limit N]
+  vibe-evidence check --label tests [--skill S] [--tree H]
+
+`run` streams the command's output through untouched and exits with the
+command's own status, so it drops into a pipeline without changing behavior.
+
+`check` exits 0 when a PASSING (exit 0) record exists for the label at the given
+tree hash (default: the tree right now), 1 when it does not, so a gate can be a
+plain `if`. A missing ledger is a failed check, never a passing one — absent
+evidence is not evidence.
+
+Only the command line, its exit status and the tree hash are stored. Command
+OUTPUT is deliberately not recorded: it is unbounded, and it is the most likely
+place for a token or a customer identifier to appear. A command line carrying a
+high-confidence secret is rejected outright (exit 2, nothing written).
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+HOME = os.environ.get("VIBESTACK_HOME", os.path.expanduser("~/.vibestack"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Same shapes vibe-review-log refuses. Kept in step with it deliberately: a
+# secret that one ledger rejects and the other stores is still a leaked secret.
+SECRETS = [
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"gh[posr]_[A-Za-z0-9]{36}"),
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9]{48}"),
+    re.compile(r"-----BEGIN[^-]*PRIVATE KEY-----"),
+]
+
+
+def _run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        return ""
+
+
+def slug():
+    m = re.search(r"SLUG=([^\s]+)", _run([os.path.join(HERE, "vibe-slug")]))
+    return m.group(1) if m else "unknown"
+
+
+def tree_hash():
+    """Current content fingerprint, or "" when it cannot be computed.
+
+    "" is never treated as a match by `check` — an unknown tree must not
+    silently satisfy a gate that asked about a specific one.
+    """
+    return _run([os.path.join(HERE, "vibe-tree-hash")])
+
+
+def ledger():
+    d = os.path.join(HOME, "projects", slug())
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, "evidence.jsonl")
+
+
+def read_all():
+    p = ledger()
+    if not os.path.exists(p):
+        return []
+    out = []
+    with open(p) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue  # a torn line is skipped, never fatal
+    return out
+
+
+def cmd_run(argv):
+    skill = label = None
+    rest = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--skill" and i + 1 < len(argv):
+            skill = argv[i + 1]; i += 2
+        elif argv[i] == "--label" and i + 1 < len(argv):
+            label = argv[i + 1]; i += 2
+        elif argv[i] == "--":
+            rest = argv[i + 1:]; break
+        else:
+            print("vibe-evidence: unexpected argument: %s" % argv[i], file=sys.stderr)
+            return 2
+    if not rest:
+        print("vibe-evidence run: nothing after --", file=sys.stderr)
+        return 2
+
+    command = " ".join(rest)
+    if any(p.search(command) for p in SECRETS):
+        print("vibe-evidence: command line carries a high-confidence secret; refusing to record", file=sys.stderr)
+        return 2
+
+    # The tree is fingerprinted BEFORE the command runs. A command that writes
+    # to the tree (a formatter, a codegen step) would otherwise be recorded
+    # against the tree it produced rather than the one it was checking.
+    tree = tree_hash()
+    proc = subprocess.run(rest)
+
+    entry = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "skill": skill or "unknown",
+        "label": label or (rest[0] if rest else "unknown"),
+        "command": command,
+        "exit": proc.returncode,
+        "tree": tree,
+        "branch": _run(["git", "branch", "--show-current"]) or "unknown",
+    }
+    with open(ledger(), "a") as fh:
+        fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    return proc.returncode
+
+
+def cmd_read(argv):
+    f = {"skill": None, "label": None, "tree": None}
+    limit = 20
+    i = 0
+    while i < len(argv):
+        if argv[i] in ("--skill", "--label", "--tree") and i + 1 < len(argv):
+            f[argv[i][2:]] = argv[i + 1]; i += 2
+        elif argv[i] == "--limit" and i + 1 < len(argv):
+            limit = int(argv[i + 1]); i += 2
+        else:
+            print("vibe-evidence: unexpected argument: %s" % argv[i], file=sys.stderr)
+            return 2
+    rows = [r for r in read_all()
+            if all(f[k] is None or r.get(k) == f[k] for k in f)]
+    for r in rows[-limit:]:
+        print("%s  %-10s %-12s exit=%-3s tree=%s  %s"
+              % (r.get("ts", "?"), r.get("skill", "?"), r.get("label", "?"),
+                 r.get("exit", "?"), r.get("tree", "?"), r.get("command", "")))
+    if not rows:
+        print("no evidence recorded")
+    return 0
+
+
+def cmd_check(argv):
+    skill = label = tree = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--skill" and i + 1 < len(argv):
+            skill = argv[i + 1]; i += 2
+        elif argv[i] == "--label" and i + 1 < len(argv):
+            label = argv[i + 1]; i += 2
+        elif argv[i] == "--tree" and i + 1 < len(argv):
+            tree = argv[i + 1]; i += 2
+        else:
+            print("vibe-evidence: unexpected argument: %s" % argv[i], file=sys.stderr)
+            return 2
+    if not label:
+        print("vibe-evidence check: --label is required", file=sys.stderr)
+        return 2
+    want = tree or tree_hash()
+    if not want:
+        # No fingerprint means the question "did THIS tree pass?" has no
+        # subject. Fail rather than match everything.
+        print("STALE — cannot fingerprint the tree")
+        return 1
+    for r in read_all():
+        if r.get("label") == label and r.get("tree") == want and r.get("exit") == 0:
+            if skill and r.get("skill") != skill:
+                continue
+            print("FRESH — %s passed at tree %s (%s)" % (label, want, r.get("ts", "?")))
+            return 0
+    print("STALE — no passing %s recorded at tree %s" % (label, want))
+    return 1
+
+
+def main():
+    argv = sys.argv[1:]
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0 if argv else 1
+    sub, rest = argv[0], argv[1:]
+    if sub == "run":
+        return cmd_run(rest)
+    if sub == "read":
+        return cmd_read(rest)
+    if sub == "check":
+        return cmd_check(rest)
+    print("vibe-evidence: unknown subcommand: %s" % sub, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

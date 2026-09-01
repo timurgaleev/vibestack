@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# vibe-codex-probe — is the Codex CLI actually usable, not merely installed?
+#
+# `codex --version` succeeds while logged out, and the presence of an auth.json
+# says nothing about whether the token in it still works. Skills that gate the
+# outside voice on either signal read an unauthenticated Codex as available and
+# then fail in the middle of a review, after the expensive prompt was built.
+# Degrading up front is cheap; degrading halfway is not.
+#
+# Usage:
+#   vibe-codex-probe            # cached verdict, probing only when stale
+#   vibe-codex-probe --refresh  # ignore the cache
+#   vibe-codex-probe --ttl 600  # cache lifetime in seconds (default 3600)
+#
+# Prints exactly one verdict line and exits 0 ONLY for `usable`:
+#   CODEX: usable          -- a real round trip returned successfully
+#   CODEX: missing         -- no codex binary on PATH
+#   CODEX: unauthenticated -- no credentials, or the round trip was refused
+#   CODEX: unresponsive    -- credentials present, no answer within the timeout
+#   CODEX: error           -- a round trip failed for some other reason
+#
+# The negatives are ordered cheapest-first, so the paid round trip only runs
+# when the answer could still be `usable`.
+set -uo pipefail
+
+VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+CACHE="$VIBESTACK_HOME/codex-probe.txt"
+TTL=3600
+REFRESH=0
+TIMEOUT="${VIBE_CODEX_PROBE_TIMEOUT:-25}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --refresh) REFRESH=1; shift ;;
+    --ttl) TTL="${2:-3600}"; shift 2 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "vibe-codex-probe: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+emit() { # emit VERDICT [skip-cache]
+  printf 'CODEX: %s\n' "$1"
+  if [ "${2:-}" != "nocache" ]; then
+    mkdir -p "$VIBESTACK_HOME" 2>/dev/null || true
+    printf '%s %s\n' "$(date +%s)" "$1" > "$CACHE" 2>/dev/null || true
+  fi
+  [ "$1" = usable ] && exit 0 || exit 1
+}
+
+# --- rung 1: is there a binary at all? ---------------------------------------
+command -v codex >/dev/null 2>&1 || emit missing
+
+# --- rung 2: a fresh cached verdict answers without paying again -------------
+if [ "$REFRESH" -eq 0 ] && [ -f "$CACHE" ]; then
+  read -r _ts _verdict < "$CACHE" 2>/dev/null || { _ts=""; _verdict=""; }
+  case "$_ts" in
+    ''|*[!0-9]*) _ts="" ;;   # a corrupt cache is ignored, never trusted
+  esac
+  if [ -n "$_ts" ] && [ -n "${_verdict:-}" ]; then
+    _age=$(( $(date +%s) - _ts ))
+    if [ "$_age" -ge 0 ] && [ "$_age" -lt "$TTL" ]; then
+      printf 'CODEX: %s\n' "$_verdict"
+      [ "$_verdict" = usable ] && exit 0 || exit 1
+    fi
+  fi
+fi
+
+# --- rung 3: no credentials anywhere is a free negative ----------------------
+_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+if [ -z "${CODEX_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ ! -f "$_CODEX_HOME/auth.json" ]; then
+  emit unauthenticated
+fi
+
+# --- rung 4: the success branch — a real round trip ---------------------------
+# GNU coreutils `timeout` is absent on stock macOS, so the bound is enforced
+# here: run in the background, poll, and kill the process group if it overruns.
+_OUT=$(mktemp "${TMPDIR:-/tmp}/vibe-codex-probe.XXXXXX")
+trap 'rm -f "$_OUT"' EXIT
+
+codex exec -c 'sandbox_mode="read-only"' 'Reply with the single word OK.' \
+  > "$_OUT" 2>&1 < /dev/null &
+_PID=$!
+
+_waited=0
+while kill -0 "$_PID" 2>/dev/null; do
+  if [ "$_waited" -ge "$TIMEOUT" ]; then
+    kill -TERM "$_PID" 2>/dev/null || true
+    sleep 1
+    kill -KILL "$_PID" 2>/dev/null || true
+    wait "$_PID" 2>/dev/null || true
+    emit unresponsive
+  fi
+  sleep 1
+  _waited=$(( _waited + 1 ))
+done
+wait "$_PID" 2>/dev/null
+_RC=$?
+
+[ "$_RC" -eq 0 ] && emit usable
+
+# A non-zero exit still has to be classified. Auth failures are the common one
+# and are worth naming separately, because the fix ("run codex login") differs
+# from every other failure's.
+if grep -qiE '401|unauthor|not logged in|invalid[_ ]api[_ ]key|authentication' "$_OUT" 2>/dev/null; then
+  emit unauthenticated
+fi
+emit error

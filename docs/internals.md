@@ -66,6 +66,11 @@ vibestack splits durable knowledge in two:
 | `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it |
 | `vibe-design` | Design-asset generation; reports `DESIGN_NOT_AVAILABLE` without an API key |
 | `vibe-specialist-stats` | Aggregate specialist-reviewer findings across runs |
+| `vibe-tree-hash` | Content fingerprint of the tracked working tree — a git tree id, so a commit or rebase that changes no bytes changes no hash |
+| `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose |
+| `vibe-version-bump` | Move VERSION, `package.json` and the lockfiles together or not at all; `--root` for a manifest in a subdirectory |
+| `vibe-detach` | Run a command past the turn boundary; `status` separates running (exit 2) from failed (exit 1) |
+| `vibe-codex-probe` | Whether Codex is *usable*, not merely installed — cheap negatives first, one cached round trip for the positive |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
 bin (`~/.vibestack/bin`), and stamps the pack version at `~/.vibestack/version`.
@@ -181,6 +186,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-install-integration.sh` | `./install` / `./uninstall` across targets: byte-identical renders, atomic swap, recovery, PTY-driven prompts (`PTY_TIMEOUT` raises the 60s default for slow machines) |
 | `test-source-lint.sh` | `vibe-lint-sources` static checks over skill sources |
 | `test-vibe-bins.sh` | Smoke tests for the `vibe-*` binaries |
+| `test-evidence-bins.sh` | The evidence/version/detach/probe helpers, asserted in both directions — each must also FAIL when it should |
 | `test-certify.sh` | Cross-runtime conformance fixtures |
 | `test-first-task-detect.sh` | First-run repo classification |
 | `test-learn-sync.sh` | `/learn sync` planning and dedup |

@@ -2,49 +2,49 @@
 
 ## Open
 
-### Remaining gaps — items that need a new capability, not new prose (2026-09-01)
-
-The review sweep's medium/low findings are closed except for these, which every
-attempt to write as skill text would only describe a mechanism that does not
-exist. Each names what has to be built first.
-
-**1. Evidence ledger + working-tree fingerprint.** Several review-staleness and
-readiness rules want to answer "has the content actually changed since this was
-reviewed?" — not "have there been commits since?". A rebase, a revert, or a
-formatting-only commit all move the commit count without changing what a review
-looked at. That needs two things `bin/vibe-review-log` does not record: a hash of
-the working tree at review time, and a per-command evidence line (command, exit
-status, tree hash) that a later gate can check mechanically instead of trusting
-prose. Affects the staleness dashboards in `/ship` and `/land-and-deploy`, and
-`/ship`'s Step 16 freshness rule.
-*Blocked on:* a `vibe-evidence` writer and a tree-hash helper, plus new fields in
-`vibe-review-log` / `vibe-review-read`.
-
-**2. Version-bump helper.** `/ship` writes VERSION and `package.json` inline. It
-does not update lockfiles (`package-lock.json`, `npm-shrinkwrap.json`) and cannot
-be pointed at a manifest in a subdirectory, so a monorepo or a lockfile-carrying
-project ends up internally inconsistent after a bump.
-*Blocked on:* a `vibe-version-bump` helper that owns the whole set atomically.
-
-**3. Detached long-running evals.** Long eval suites are launched in the
-foreground, so a turn boundary kills them mid-run and the result is lost.
-*Blocked on:* a detach helper that survives the turn and can be polled.
-
-**4. Codex auth probing.** Several skills use `codex --version` as an auth check.
-It succeeds while logged out, so an unauthenticated Codex reads as available and
-the outside voice fails mid-review instead of degrading up front. A real probe is
-a cheap round-trip that can distinguish "installed" from "usable", and it wants
-caching so every skill does not pay for it.
-*Blocked on:* a shared `vibe-codex-probe` the skills can source.
-
-**Checked and NOT a gap:** the PR-body secret scan was reported as something
-`vibe-redact` should perform. It cannot — `vibe-redact` installs a pre-push hook,
-and its scanning half (`vibe-redact-prepush`) reads a pushed diff, not arbitrary
-text. The prose scan over the exact bytes about to be published is the correct
-mechanism for that sink, and it stays.
-
+Nothing open.
 
 ## Completed
+
+### Evidence, version, detach and probe helpers (2026-09-01)
+
+The four items that could not be written as skill text because the mechanism
+did not exist. Each is a binary now, with both directions asserted in
+`test/test-evidence-bins.sh` (43 cases).
+
+- **`vibe-tree-hash`** answers "has the content changed?" where a commit count
+  cannot. It writes the tracked working tree into a throwaway index and returns
+  the resulting git tree id, so a rebase, an amend or a commit of already-written
+  content leaves the fingerprint identical, and an uncommitted edit moves it. An
+  earlier construction hashed the HEAD tree id together with `git diff HEAD` and
+  failed exactly the commit case; the test that caught it is kept.
+- **`vibe-evidence`** records the command, its exit status and the tree hash it
+  ran against, so a gate asks the ledger instead of trusting a summary. `check`
+  exits 0 only for a passing record at the current tree; a missing ledger fails.
+  Command output is never stored -- unbounded, and the likeliest place for a
+  token to appear -- and a command line carrying a high-confidence secret is
+  refused outright.
+- **`vibe-version-bump`** moves VERSION, `package.json`, `package-lock.json` and
+  `npm-shrinkwrap.json` (including the `packages[""]` self-entry) together, and
+  takes `--root` for a manifest in a subdirectory. Every file is parsed and
+  staged before any is written, so a malformed lockfile aborts with the tree
+  untouched rather than leaving VERSION ahead of a manifest that never landed.
+- **`vibe-detach`** runs a command past the turn boundary and records its output
+  and exit status to disk. `status` distinguishes running (exit 2) from failed
+  (exit 1) -- conflating them reports a running job as a failure. The command is
+  written into a runner with `printf %q` rather than re-parsed from a string, so
+  an argument containing a space stays one argument.
+- **`vibe-codex-probe`** replaces `codex --version` as an availability check,
+  which succeeds while logged out. Cheapest negatives first (no binary, then a
+  cached verdict, then no credentials anywhere), and only then the paid round
+  trip that can return `usable`. The result is cached with a TTL; a corrupt
+  cache is ignored rather than trusted.
+
+`install` picks all five up through its existing `bin/vibe-*` glob.
+
+Still not a gap: the PR-body secret scan cannot move to `vibe-redact`, which
+installs a pre-push hook and whose scanning half reads a pushed diff rather than
+arbitrary text. The prose scan over the exact bytes about to be published stays.
 
 ### Renderer infra-error coverage + doc accuracy (2026-08-18)
 
