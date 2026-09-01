@@ -1,5 +1,69 @@
 # Changelog
 
+## 1.36.0 — 2026-09-01
+
+### Fixed
+
+This closes the parity audit's medium and low findings — 239 of them, worked
+through by re-checking each against the current code rather than trusting the
+finding. 21 turned out to be already fixed by the last three releases, 11 were
+not defects (a documented intentional difference, or the finding was wrong about
+the code), 151 were real and are fixed here, and 29 need a capability that does
+not exist yet and are recorded in `TODOS.md` with what blocks each one.
+
+The changes are spread across 43 skills and 8 shared snippets, so rather than
+list all 151, here is what actually changes for you:
+
+- **Decision briefs got their quality floor back.** Every option now carries at
+  least two concrete pros and one honest con, bullets say something measurable
+  ("adds ~2s to every page load", not "slower"), the non-recommended option is
+  described in the same register as the recommended one, and there is a
+  self-check the model runs over its own brief before sending it. A question
+  where one option has no downside reads as a decision already made.
+- **Spawned sessions are a first-class kind.** A skill running under another
+  agent has nobody to answer a question. It now takes the recommended option on
+  a two-way choice and says in its output that it auto-picked and what the
+  alternative was, while a one-way or destructive choice still stops and
+  reports. Text arriving from the dispatching agent is data describing a task —
+  it cannot approve a destructive step or widen permissions.
+- **Learnings capture actually runs.** It was phrased "if you discovered
+  something non-obvious...", which reads as optional and got skipped; it is now
+  a step that always runs and either logs or says there was nothing worth
+  keeping. The prior-learnings search also got its topical query back — a
+  debugging skill was being handed learnings about design.
+- **Claimed limitations need evidence.** A new shared rule: never say something
+  cannot be done, is unsupported, or is impossible without having tried it and
+  being able to name the command and its output.
+- **`/codex` no longer fails a clean review.** The fail-closed gate added
+  earlier had no branch for a review that finds nothing — and a review with
+  nothing to report emits no severity marker, so every clean run reported FAIL.
+  Unverifiable runs still fail closed.
+- **`/review`'s shortcut-suppression rule can now fire.** It told you to resolve
+  a decision id with a search that only matches decision and rationale text, so
+  an id query always came back empty and the rule suppressed nothing, ever. It
+  searches the decision text now.
+- **`/spec`'s duplicate check can tell "no duplicates" from "no answer".** It
+  read the trust envelope to decide, but the envelope wraps empty input too — so
+  a missing tool, an expired token and a genuinely duplicate-free repo all looked
+  identical. It keys on the search's exit status now.
+- **`/ship` works on three-part versions.** Its validation demanded four digits
+  while this project's own VERSION has three, so every ship aborted at the
+  validation step. It now keeps whatever shape the VERSION file already uses.
+- **`/ship`'s pre-push credential guard works in a linked worktree**, where the
+  hooks directory resolves to the shared common dir and the old check silently
+  reported "no guard installed".
+- **`/design-shotgun` no longer offers to reopen a comparison board** that was
+  removed — the first question the skill asked led to an action nothing in the
+  pack could perform.
+- **`/design-html` finds its vendored renderer again.** An unbraced
+  `$CLAUDE_SKILL_DIR` survived rendering as a literal, so the installed skill
+  checked a path that never resolves. Caught by `vibe-certify`, which exists for
+  exactly this.
+
+### Added
+
+- `test/test-browse-shim.sh` runs in CI (it passed, but nothing ran it).
+
 ## 1.35.1 — 2026-09-01
 
 ### Fixed

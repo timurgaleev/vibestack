@@ -98,10 +98,13 @@ Common flags:
 - `--cover` — add a cover page (uses repo name + date)
 - `--toc` — add a table of contents
 - `--watermark "<text>"` — overlay watermark text (e.g., "DRAFT", "CONFIDENTIAL")
-- `--margins "<top> <right> <bottom> <left>"` — custom margins in mm (default: `20 20 20 20`)
+- `--margins <dim>` — one dimension for all four margins (default: `1in`; also `72pt`, `2.54cm`, `25mm`)
 - `--page-size <size>` — A4 (default), Letter, Legal
 - `--title "<title>"` — override document title
 - `--author "<name>"` — set author metadata
+- `--to pdf|html|docx` — output format (default: `pdf`)
+- `--no-confidential` — suppress the CONFIDENTIAL footer stamped by default
+- `--strict` — missing or remote images fail the run instead of warning
 
 4. Report the result:
 
@@ -130,13 +133,15 @@ This generates a temporary PDF and opens it in the system PDF viewer. Report the
 
 ## Step 2C: Setup mode
 
-Run the setup wizard to configure defaults for this project:
+Verify the render toolchain — browse binary, Chromium launch, `pdftotext` (optional) — then
+generate and open a smoke-test PDF:
 
 ```bash
 "$P" setup
 ```
 
-This writes a `.make-pdf.json` config file in the project root. Show the user what was configured.
+It writes no config file. Report which checks passed and, if Chromium or the browse binary
+failed, relay the fix it printed before attempting any other mode.
 
 ---
 
@@ -144,11 +149,20 @@ This writes a `.make-pdf.json` config file in the project root. Show the user wh
 
 ### 80% case — memo/letter
 
-One command, no flags. Gets a clean PDF with running header + page numbers.
+One command, no flags. Gets a clean PDF with running header, page numbers, and a
+CONFIDENTIAL right-footer.
 
 ```bash
 "$P" generate letter.md                 # writes /tmp/letter.pdf
 "$P" generate letter.md letter.pdf      # explicit output path
+```
+
+### Brand-free — no CONFIDENTIAL footer
+
+The footer is on by default, so anything meant to leave the building needs it turned off:
+
+```bash
+"$P" generate --no-confidential memo.md memo.pdf
 ```
 
 ### Publication mode — cover + TOC + chapter breaks
@@ -167,6 +181,67 @@ Each top-level H1 starts a new page. Disable with `--no-chapter-breaks` for memo
 
 Diagonal DRAFT across every page. Drop the flag when final.
 
+### Diagrams — mermaid and excalidraw fences render as pictures
+
+A column-0 ```` ```mermaid ```` or ```` ```excalidraw ```` fence renders as a vector diagram,
+offline. Indented fences are left alone, so a fence quoted inside a list stays a code block.
+
+Info-string options on the opening fence:
+
+- `title="Auth flow"` — accessible label for the rendered figure
+- `render=false` — leave this fence as a plain code block (the escape hatch when the source
+  is what the reader needs to see)
+- `page=landscape` / `page=portrait` — force or veto a landscape page for this diagram
+
+A fence whose source fails to parse becomes a visible red diagnostic block carrying the error
+and an excerpt — never a silently missing figure. When that shows up, fix the diagram source
+rather than dropping the fence.
+
+### Images — scaled right, never truncated
+
+A directive suffix on a markdown image tunes its placement:
+
+```markdown
+![chart](data.png){width=full}
+![chart](data.png){width=50%}
+![diagram](wide.svg){page=landscape}
+![diagram](wide.svg){page=portrait}
+```
+
+`width` takes `full`, a percentage, or an absolute dimension (`in`, `cm`, `mm`, `pt`, `px`).
+By default an image renders at its intrinsic size, capped at the content box and never
+upscaled.
+
+Wide, small-text images auto-promote to their own landscape page. The heuristic is deliberately
+conservative — aspect ratio at least 1.8, intrinsic width over roughly 2.5x the content box,
+*and* either diagram provenance or a diagram-ish word in the alt text — so it misses more often
+than it fires. `{page=landscape}` forces promotion; `{page=portrait}` vetoes it.
+
+Local images are inlined as data URIs and rasters wider than print resolution are downscaled.
+An image that is missing, not a regular file, or over 64MB degrades to a visible placeholder
+with a warning; one resolving outside the markdown's own directory is inlined but warned about,
+because an agent rendering untrusted markdown should not quietly embed a file from elsewhere on
+the machine into a shareable document.
+
+### Other formats — single-file HTML and Word
+
+```bash
+"$P" generate readme.md out.html --to html     # one self-contained file, no network refs
+"$P" generate readme.md out.docx --to docx     # content fidelity; diagrams become PNG
+```
+
+`--to` is the output format. `--format` is something else entirely — an alias for
+`--page-size` — so `--format html` asks for a page size named "html", not HTML output.
+
+### CI mode — fail loud on missing assets
+
+```bash
+"$P" generate docs.md --strict
+```
+
+Missing, unreadable, oversized, out-of-tree, and remote images become hard failures instead of
+warnings, so a broken asset path fails the build rather than shipping a placeholder.
+
 ### Fast iteration via preview
 
 ```bash
@@ -180,9 +255,12 @@ Renders with print CSS and opens in browser. Skip the PDF round trip until you'r
 ## Common flags
 
 ```
+Output format:
+  --to pdf|html|docx         What to produce (default: pdf)
+
 Page layout:
   --margins <dim>            1in (default) | 72pt | 2.54cm | 25mm
-  --page-size letter|a4|legal
+  --page-size letter|a4|legal   (alias --format — page SIZE, not --to)
 
 Structure:
   --cover                    Cover page (title, author, date)
@@ -193,6 +271,7 @@ Branding:
   --watermark <text>         Diagonal watermark ("DRAFT", "CONFIDENTIAL")
   --header-template <html>   Custom running header
   --footer-template <html>   Custom footer (mutex with --page-numbers)
+  --no-confidential          Suppress the CONFIDENTIAL right-footer (on by default)
 
 Output:
   --page-numbers             "N of M" footer (default on)
@@ -200,6 +279,9 @@ Output:
   --outline                  PDF bookmarks from headings (default on)
   --quiet                    Suppress progress on stderr
   --verbose                  Per-stage timings
+
+Images:
+  --strict                   Missing/remote images fail the run (CI mode)
 
 Network:
   --allow-network            Fetch external images. Off by default
@@ -248,6 +330,9 @@ Capture the path: `PDF=$("$P" generate letter.md)` — then use `$PDF`.
 - **Fragmented text on copy-paste** → remove fenced code blocks and regenerate
 - **Timeout** → no headings in the markdown, drop `--toc`
 - **External image missing** → the binary fetches external images only when `--allow-network` is set
+- **Wrong text metrics or ▯ boxes where emoji should be (Linux, containers)** → the print CSS
+  falls back to Liberation Sans and a system color-emoji font; install `fonts-liberation` and a
+  Noto color-emoji package, neither of which the vibestack installer provides
 
 ---
 

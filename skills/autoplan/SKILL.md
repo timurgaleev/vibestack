@@ -365,12 +365,12 @@ Loaded review skills from disk. Starting full review pipeline with auto-decision
 
 ---
 
-## Phase 0.5: Codex auth + version preflight
+## Phase 0.5: Codex preflight
 
-Before invoking any Codex voice, preflight the CLI: verify auth (multi-signal) and
-warn on known-bad CLI versions. This is infrastructure for all 4 phases below —
-source it once here and the helper functions stay in scope for the rest of the
-workflow.
+Before invoking any Codex voice, preflight the CLI: verify auth (multi-signal),
+then confirm the configured model actually answers. This is infrastructure for all
+4 phases below — source it once here and the helper functions stay in scope for the
+rest of the workflow.
 
 ```bash
 _TEL=$(~/.vibestack/bin/vibe-config get telemetry 2>/dev/null || echo off)
@@ -407,13 +407,31 @@ elif ! { [ -n "${CODEX_API_KEY:-}" ] || [ -n "${OPENAI_API_KEY:-}" ] || [ -f "$H
   echo "[codex-unavailable: auth missing] — proceeding with Claude subagent only. Run \`codex login\` or set \$CODEX_API_KEY to enable dual-voice review."
   _CODEX_AVAILABLE=false
 else
-  _CODEX_AVAILABLE=true
+  # Round-trip probe. Auth can pass while the account's configured model is
+  # rejected — a stale `model =` pin in ~/.codex/config.toml answers every call
+  # with an HTTP 400. Without this, the four phases each spend a full Codex
+  # invocation discovering the same failure mid-run and degrade silently. Costs
+  # one short call; a TIMEOUT fails OPEN, because a slow network is not a bad pin.
+  ${_CX_TO:+$_CX_TO 45} codex exec "Reply with the single word: ok" -s read-only < /dev/null >/dev/null 2>&1
+  _CX_PROBE_RC=$?
+  if [ "$_CX_PROBE_RC" -ne 0 ] && [ "$_CX_PROBE_RC" != "124" ]; then
+    echo "[codex-unavailable: configured model rejected] — proceeding with Claude subagent only. Check the \`model =\` line in ~/.codex/config.toml."
+    _CODEX_AVAILABLE=false
+  else
+    _CODEX_AVAILABLE=true
+  fi
 fi
 ```
 
 If `_CODEX_AVAILABLE=false`, all Phase 1-3 Codex voices below degrade to
 `[codex-unavailable]` in the degradation matrix. /autoplan completes with
 Claude subagent only — saves token spend on Codex prompts we can't use.
+
+If `_CX_TO` came back empty — stock macOS with neither `gtimeout` nor `timeout` —
+every `codex exec` below runs unwrapped and the shell can never report exit 124.
+The Bash tool's own timeout is then the sole bound, so set it to 12 minutes on
+each Codex call and treat a Bash-tool timeout exactly like the 124 branch: tag
+that phase `[codex-unavailable]` and continue with the Claude subagent.
 
 ---
 
@@ -435,9 +453,11 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   Duplicates → reject (P4). Borderline (3-5 files) → mark TASTE DECISION.
 - All 10 review sections: run fully, auto-decide each issue, log every decision.
 - Dual voices: always run BOTH Claude subagent AND Codex if available (P6).
-  Run them sequentially in foreground. First the Claude subagent (Agent tool,
-  foreground — do NOT use run_in_background), then Codex (Bash). Both must
-  complete before building the consensus table.
+  Run them sequentially in foreground. First the Claude subagent (Agent tool with
+  `run_in_background: false` stated **explicitly** — never rely on the default,
+  which on current hosts backgrounds the agent and hands back an empty result the
+  consensus table then treats as a voice), then Codex (Bash). Both must complete
+  before building the consensus table.
 
   **Codex CEO voice** (via Bash):
   ```bash
@@ -1081,3 +1101,10 @@ Suggest next step: `/ship` when ready to create the PR.
   Each phase builds on the last, and Eng — the required shipping gate — must see the final amended plan.
 
 {{include lib/snippets/askuserquestion-split.md}}
+
+{{include lib/snippets/capture-learnings.md}}
+The pipeline itself is a source of these: a Codex degradation you had to work
+around, a phase that kept surfacing the same repo-specific gap, a design doc that
+changed the review's shape. Review the run for them before you finish, and say
+"No durable learnings this session" in the completion summary when there are
+genuinely none — an empty result, not a skipped step.

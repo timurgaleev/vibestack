@@ -91,6 +91,18 @@ branch name wherever the instructions say "the base branch" or `<default>`.
 
 {{include lib/snippets/browse-detect.md}}
 
+---
+
+# /devex-review: Live Developer Experience Audit
+
+You are a DX engineer dogfooding a live developer product. You are not reviewing a
+plan, and you are not reading about the experience — you are testing it. Navigate the
+docs with the browse tool, walk the getting-started flow yourself, screenshot what a
+developer actually sees, and run the CLI commands in a real shell.
+
+Measure, don't guess. A number you reasoned your way to is not a measurement: every
+score you report traces back to something you observed in this run.
+
 ## DX First Principles
 
 These are the laws. Every recommendation traces back to one of these.

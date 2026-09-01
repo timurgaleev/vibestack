@@ -334,6 +334,42 @@ if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'docker[[:space:]]+(rm[[:spac
   WARN="Destructive: Docker force-remove or prune. May delete running containers or cached images."
 fi
 
+# --- Project patterns (additive only) ---
+# One POSIX ERE per line; blank lines and `#` comments are ignored. Consulted
+# only after every built-in family above, so a config file can ADD a warning but
+# can never suppress a baseline one — a guard a project can silence is not a
+# guard. An unusable regex is skipped rather than aborting: a typo in a config
+# file must not take the whole hook down.
+_match_pattern_file() {
+  local _pf="$1" _line
+  [ -f "$_pf" ] || return 1
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    case "$_line" in ''|'#'*) continue ;; esac
+    if printf '%s' "$CMD" | grep -qE "$_line" 2>/dev/null; then
+      printf '%s' "$_line"
+      return 0
+    fi
+  done < "$_pf"
+  return 1
+}
+
+if [ -z "$WARN" ]; then
+  _CFG_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
+  _PAT=$(_match_pattern_file "$_CFG_DIR/careful-patterns.txt") || _PAT=""
+  # The per-project file needs a slug, and resolving one costs a git call on
+  # every command — only pay it when project state actually exists.
+  if [ -z "$_PAT" ] && [ -d "$_CFG_DIR/projects" ] && [ -x "$HOME/.vibestack/bin/vibe-slug" ]; then
+    SLUG=""
+    eval "$("$HOME/.vibestack/bin/vibe-slug" 2>/dev/null || true)" 2>/dev/null || SLUG=""
+    if [ -n "${SLUG:-}" ]; then
+      _PAT=$(_match_pattern_file "$_CFG_DIR/projects/$SLUG/careful-patterns.txt") || _PAT=""
+    fi
+  fi
+  if [ -n "$_PAT" ]; then
+    WARN="Destructive (project rule): this command matches the configured pattern /$_PAT/."
+  fi
+fi
+
 if [ -n "$WARN" ]; then
   _vibestack_log careful ask "$WARN" "$CMD"
   _vibestack_analytics ask "$(printf '%s' "$WARN" | cut -d: -f1)"

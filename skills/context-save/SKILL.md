@@ -287,3 +287,12 @@ If there are no saved contexts, tell the user: "No saved contexts yet. Run
 - **This is a vibestack skill, not a Claude Code built-in.** When the user types
   `/context-save`, invoke this skill via the Skill tool. The old `/checkpoint`
   name collided with Claude Code's native `/rewind` alias — the rename fixed that.
+
+---
+
+Run this step before finishing. A saved context file is read once, by whoever
+restores it; a learning outlives it and surfaces in every later session's
+preamble. If the session genuinely surfaced none, say "no durable learnings this
+session" rather than inventing one.
+
+{{include lib/snippets/capture-learnings.md}}

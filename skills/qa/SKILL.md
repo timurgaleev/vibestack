@@ -225,10 +225,12 @@ If WebSearch is unavailable, use this built-in knowledge table:
 | Node.js | vitest + @testing-library | jest + @testing-library |
 | Next.js | vitest + @testing-library/react + playwright | jest + cypress |
 | Python | pytest + pytest-cov | unittest |
+| Django | pytest + pytest-django | Django's built-in `manage.py test` |
 | Go | stdlib testing + testify | stdlib only |
 | Rust | cargo test (built-in) + mockall | — |
 | PHP | phpunit + mockery | pest |
 | Elixir | ExUnit (built-in) + ex_machina | — |
+| JVM (Maven/Gradle) | JUnit 5 + AssertJ | JUnit 5 + Mockito |
 
 ### B3. Framework selection
 
@@ -663,6 +665,20 @@ Sort all discovered issues by severity, then decide which to fix based on the se
 - **Exhaustive:** Fix all, including cosmetic/low severity.
 
 Mark issues that cannot be fixed from source code (e.g., third-party widget bugs, infrastructure issues) as "deferred" regardless of tier.
+
+### Refresh learnings for the component the bug lives in
+
+The top-of-skill learnings pull was keyed to QA broadly. Now that triage has named the components you are about to touch, re-pull learnings keyed to each one, so a prior fix for the same component surfaces *before* you write a new one rather than after you have repeated a known-bad approach.
+
+For each component you are about to fix, pick ONE keyword: the component or page name, or the basename of the file you expect to change (without extension). The keyword MUST be alphanumeric or hyphen only — no quotes, slashes, dots, colons, or whitespace. If your candidate has any of those, simplify to the alphanumeric stem, because the search treats the query as a literal term and a stray character returns nothing.
+
+Worked examples: good keywords are `checkout-button`, `signup-form`, `payment`. Bad: `tests are failing`, `<failing-test>`, `app/views/checkout.erb`.
+
+```bash
+~/.vibestack/bin/vibe-learnings-search --query "<your-keyword>" --limit 5 2>/dev/null || true
+```
+
+If any learnings come back, name which one applies to the fix in one sentence before writing it. If none come back, continue — the absence of a prior learning for this component is itself worth knowing.
 
 ---
 

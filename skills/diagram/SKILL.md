@@ -35,7 +35,25 @@ from the same `$B` you already use for QA.
 
 If the user gave Mermaid, use it. Otherwise write it from their description
 (`flowchart`, `sequenceDiagram`, `erDiagram`, `classDiagram`, `gantt`, etc.).
-Pick an output base path (default `./diagram`).
+
+Authoring rules, all in service of one thing — a diagram nobody can read is
+worse than a paragraph:
+
+- **Direction follows the subject.** `graph LR` for pipelines and flows, where
+  the eye should travel with the data; `graph TD` for hierarchies and
+  decompositions, where depth is the point.
+- **5-15 nodes is the readable range.** Keep labels to a few words. If the ask
+  genuinely needs more, split it into two diagrams along a seam the reader
+  already understands (one per subsystem, or overview plus detail) rather than
+  shrinking everything to fit.
+- **Say what the arrows mean** when a graph mixes kinds of edge — a call, a
+  data flow and a deploy step look identical otherwise.
+
+Then pick an output base path. In a git repo, default to a diagram directory
+the repo already uses (or `docs/`) with a slug from the diagram's subject, so
+the artifacts land somewhere tracked and stop overwriting each other. Outside a
+repo, default to `./diagram`. Confirm the path with the user if the diagram is
+one they will commit.
 
 Write the Mermaid source to `$OUT.mmd` with the Write tool. Passing it through a
 heredoc mangles quotes and backslashes in edge labels, and it is the artifact the
@@ -135,6 +153,9 @@ List the artifacts: `.mmd` (the source to edit), `.svg` (vector for docs),
   tool.
 - **Fully offline.** The renderer is vendored in the repo, and the HTML artifact
   carries the finished SVG inline — no CDN, no network, at render time or later.
+- **PDF-bound diagrams belong to `/make-pdf`.** It renders a ```` ```mermaid ````
+  fence as a vector figure inside the document, which beats pasting this skill's
+  PNG into a page. Say so when the user's real target is a PDF.
 - If `RENDER_UNAVAILABLE` printed, say what is missing and how to get it back
   (`./install` from the checkout for the bundle; `$B status` to bootstrap the
   browse dependencies). Never fall back to a CDN behind the user's back.

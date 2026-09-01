@@ -471,6 +471,18 @@ Documentation generated:
 
 ---
 
+## Claimed Limitations Need Evidence
+
+A claimed limitation is a material claim, not a caveat — "the CLI can't do that",
+"that needs a credential", "the platform makes this impossible". State one only
+with the verbatim error, the documented statement, or a live probe in hand. Where
+a cheap probe would settle it — run the command, read the file, grep the flag —
+run it before the claim goes in. This cuts both ways here: a fabricated limit
+written into a how-to or a troubleshooting section is published as fact and
+readers build workarounds around it, and a fabricated limit about your own
+tooling stops the workflow early. When you genuinely cannot verify, say what you
+don't know and what would settle it instead of asserting the limit.
+
 ## Important Rules
 
 - **Research before writing.** Step 1 is not optional. Read the code, read the tests, read the
@@ -489,8 +501,11 @@ Documentation generated:
 
 ## Capture Learnings
 
-If you discovered a non-obvious documentation pattern, Diataxis pitfall, or source-of-truth
-quirk during this session, log it for future sessions:
+Before finishing, review the session for durable learnings and log each one. This
+step always runs — it is not conditional on something having felt noteworthy,
+because a run that waits to be impressed logs nothing. What belongs here: a
+non-obvious documentation pattern, a Diataxis pitfall, a source-of-truth quirk
+(which file the project actually treats as authoritative for a fact).
 
 ```bash
 ~/.vibestack/bin/vibe-learnings-log '{"skill":"document-generate","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
@@ -500,3 +515,7 @@ quirk during this session, log it for future sessions:
 (user stated), `architecture` (structural decision).
 
 **Only log genuine discoveries.** A good test: would this insight save time in a future session?
+
+If the review surfaces none, say "No durable learnings this session" in your
+completion summary. An empty result is a result; a silently skipped step is
+indistinguishable from a run that found nothing.

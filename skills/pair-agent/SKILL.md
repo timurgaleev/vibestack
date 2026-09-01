@@ -67,15 +67,22 @@ The skill will tell you if one is needed and how to set it up.
 ## SETUP (run this check BEFORE any browse command)
 
 ```bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/vibestack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/vibestack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/vibestack/browse/dist/browse"
-if [ -x "$B" ]; then echo "READY: $B"; else echo "NEEDS_SETUP"; fi
+B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/pair-agent}/../browse/bin/vibe-browse"
+[ -x "$B" ] || B="$(command -v vibe-browse || true)"
+if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
+  echo "READY: $B"
+else
+  echo "NEEDS_SETUP"
+fi
 ```
 
-If `NEEDS_SETUP`, stop and tell the user:
-"The browse daemon is required for this skill but is not installed. **vibestack does not bundle the browse daemon** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon) for current options."
+If `NEEDS_SETUP`, stop and tell the user the browse binary could not be found or
+could not start — node is missing, or first-run setup was declined.
+
+Pairing needs the full browse daemon: the stateless fallback shim has no token
+registry to mint against and answers `NOT_SUPPORTED:pair-agent`. If you see
+that, say the daemon is not running in this checkout and stop — never describe a
+pairing that did not happen.
 
 ## Step 1: Check prerequisites
 
@@ -275,11 +282,23 @@ With default access (read + write + admin + meta):
 - Navigate to URLs, click elements, fill forms, take screenshots
 - Read page content (text, HTML, snapshot)
 - Create new tabs (each agent gets its own)
-- Cannot execute arbitrary JavaScript, read cookies, or access storage
 
-With admin access (--admin flag):
-- Everything above, plus JS execution, cookie access, storage access
-- Use sparingly. Only for agents you fully trust.
+`--control` (and its `--admin` alias) adds the browser-wide destructive
+commands: stop, restart, disconnect. `--restrict` is what narrows access.
+
+**Scope is not the only gate.** A remote agent reaches the daemon through the
+tunnel surface, which serves a fixed command allowlist on top of whatever the
+token grants. `eval` is on it; `js`, `cookies` and `storage` are not, and no
+scope makes them dispatchable remotely. `eval --out` is also refused there —
+`--out` is a disk write, and the tunnel surface never grants disk-write
+capability. An agent paired with `--local` talks to the daemon directly and gets
+all four. Explain the asymmetry when a remote agent reports a command "missing":
+it is a boundary, not a bug.
+
+**Never pass `root` as a client name.** `root` is the daemon's own identity, and
+the scope, domain and rate-limit checks all short-circuit for it — an agent
+paired under that name would inherit unrestricted access no `--restrict` could
+claw back.
 
 ## Troubleshooting
 
@@ -288,6 +307,13 @@ it didn't create. Tell it to run `newtab` first to get its own tab.
 
 **"Domain not allowed"** — The token has domain restrictions. Re-pair with broader
 domain access or no domain restrictions.
+
+**Re-pairing replaces, but only under the same name.** Minting a session token
+for a client name revokes that name's previous session token. So tightening an
+agent that is already live means re-pairing it with the **same `--client` name**
+and the narrower `--restrict`. Give it a new name and you have not tightened
+anything — you have two live agents, the over-scoped one still holding its
+token until it expires.
 
 **"Rate limit exceeded"** — The agent is sending > 10 requests/second. It should
 wait for the Retry-After header and slow down.
@@ -319,6 +345,18 @@ When using `--local cursor`, credentials are written to
 `~/.cursor/skills/vibestack/browse-remote.json`.
 
 ## Revoking access
+
+**See who holds access first.** The daemon serves a root-only listing of live
+agents — client name, scopes, domain restrictions, expiry, command count:
+
+```bash
+curl -H "Authorization: Bearer $ROOT_TOKEN" "http://127.0.0.1:<port>/agents"
+```
+
+It lists exchanged session tokens only. A setup key nobody has redeemed yet does
+not appear, so an empty list is not proof that no pairing is in flight — a key
+minted in the last five minutes may still be exchangeable. There is no CLI
+wrapper for this listing; `$B tunnel agents` does not exist.
 
 **Stopping the daemon revokes everything.** Scoped tokens live in daemon memory
 and are never written to the state file, so the next command boots a fresh daemon

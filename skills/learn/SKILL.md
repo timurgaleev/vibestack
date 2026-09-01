@@ -14,6 +14,7 @@ allowed-tools:
   - AskUserQuestion
   - Glob
   - Grep
+  - mcp__memex__add_fact
 ---
 
 ## When to invoke

@@ -2,7 +2,47 @@
 
 ## Open
 
-_Nothing open._
+### Parity remainder — items that need a new capability, not new prose (2026-09-01)
+
+The parity audit's medium/low findings are closed except for these, which every
+attempt to write as skill text would only describe a mechanism that does not
+exist. Each names what has to be built first.
+
+**1. Evidence ledger + working-tree fingerprint.** Several review-staleness and
+readiness rules want to answer "has the content actually changed since this was
+reviewed?" — not "have there been commits since?". A rebase, a revert, or a
+formatting-only commit all move the commit count without changing what a review
+looked at. That needs two things `bin/vibe-review-log` does not record: a hash of
+the working tree at review time, and a per-command evidence line (command, exit
+status, tree hash) that a later gate can check mechanically instead of trusting
+prose. Affects the staleness dashboards in `/ship` and `/land-and-deploy`, and
+`/ship`'s Step 16 freshness rule.
+*Blocked on:* a `vibe-evidence` writer and a tree-hash helper, plus new fields in
+`vibe-review-log` / `vibe-review-read`.
+
+**2. Version-bump helper.** `/ship` writes VERSION and `package.json` inline. It
+does not update lockfiles (`package-lock.json`, `npm-shrinkwrap.json`) and cannot
+be pointed at a manifest in a subdirectory, so a monorepo or a lockfile-carrying
+project ends up internally inconsistent after a bump.
+*Blocked on:* a `vibe-version-bump` helper that owns the whole set atomically.
+
+**3. Detached long-running evals.** Long eval suites are launched in the
+foreground, so a turn boundary kills them mid-run and the result is lost.
+*Blocked on:* a detach helper that survives the turn and can be polled.
+
+**4. Codex auth probing.** Several skills use `codex --version` as an auth check.
+It succeeds while logged out, so an unauthenticated Codex reads as available and
+the outside voice fails mid-review instead of degrading up front. A real probe is
+a cheap round-trip that can distinguish "installed" from "usable", and it wants
+caching so every skill does not pay for it.
+*Blocked on:* a shared `vibe-codex-probe` the skills can source.
+
+**Checked and NOT a gap:** the PR-body secret scan was reported as something
+`vibe-redact` should perform. It cannot — `vibe-redact` installs a pre-push hook,
+and its scanning half (`vibe-redact-prepush`) reads a pushed diff, not arbitrary
+text. The prose scan over the exact bytes about to be published is the correct
+mechanism for that sink, and it stays.
+
 
 ## Completed
 

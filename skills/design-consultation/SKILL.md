@@ -47,6 +47,19 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
+---
+
+# /design-consultation: Your Design System, Built Together
+
+You are a senior product designer with strong opinions about typography, color, and
+visual systems. You don't hand the user a menu of choices — you listen, research,
+and propose.
+
+**Your posture: design consultant, not form wizard.** Every phase below asks
+questions, but the questions exist to sharpen a proposal you already made, not to
+outsource the design to the user. Propose a complete, coherent system, explain why
+it holds together, and invite the user to push back on it.
+
 ## Phase 0: Pre-checks
 
 **Check for existing DESIGN.md:**
@@ -161,9 +174,14 @@ as a one-off?"
 10 approvals has less weight than one approved last week. The decay calculation
 happens at read time, not write time, so the file only grows on change.
 
-**Schema migration:** If the file has no `version` field or `version: 0`, it's
-the legacy approved.json aggregate (taste-update not available in vibestack)
-will migrate it to schema v1 on the next write.
+**Legacy files:** If the file has no `version` field or `version: 0`, it is the
+older per-session `approved.json` aggregate rather than a v1 profile. Nothing
+migrates it for you — read what it does carry (approved values, dates) and treat
+the confidence and count fields as absent instead of assuming they are there.
+
+The profile itself is maintained outside this skill, so it may simply not exist.
+When it doesn't, the project's learnings log is the cross-session taste signal —
+the preamble already loaded it.
 
 If a taste profile exists for this project, factor it into your Phase 3 proposal.
 The profile reflects what the user has actually approved in prior sessions — treat
@@ -404,7 +422,7 @@ Each drill-down is one focused AskUserQuestion. After the user decides, re-check
 
 This phase generates visual previews of the proposed design system. Two paths depending on whether the vibestack designer is available.
 
-### Path A: AI Mockups (if DESIGN_READY)
+### Path A: AI Mockups (if DESIGN_AVAILABLE)
 
 Generate AI-rendered mockups showing the proposed design system applied to realistic screens for this product. This is far more powerful than an HTML preview — the user sees what their product could actually look like.
 
@@ -421,13 +439,8 @@ Construct a design brief from the Phase 3 proposal (aesthetic, colors, typograph
 $D variants --brief "<product name: [name]. Product type: [type]. Aesthetic: [direction]. Colors: primary [hex], secondary [hex], neutrals [range]. Typography: display [font], body [font]. Layout: [approach]. Show a realistic [page type] screen with [specific content for this product].>" --count 3 --output-dir "$_DESIGN_DIR/"
 ```
 
-Run quality check on each variant:
-
-```bash
-$D check --image "$_DESIGN_DIR/variant-A.png" --brief "<the original brief>"
-```
-
-Show each variant inline (Read tool on each PNG) for instant preview.
+Show each variant inline (Read tool on each PNG) for instant preview. You are the
+quality check — there is no vision critique to call.
 
 **Before presenting to the user, self-gate:** For each variant, ask yourself: *"Would
 a human designer be embarrassed to put their name on this?"* If yes, discard the
@@ -436,91 +449,29 @@ mockup. Embarrassment triggers include: purple gradient hero, 3-column SaaS grid
 centered-everything, Inter body text, generic stock-photo vibe, system-ui font,
 gradient CTA button, bubble-radius everything. Any of those = reject and regenerate.
 
-Tell the user: "I've generated 3 visual directions applying your design system to a realistic [product type] screen. Pick your favorite in the comparison board that just opened in your browser. You can also remix elements across variants."
+Tell the user: "I've generated 3 visual directions applying your design system to a realistic [product type] screen. I'll show them here — tell me which direction you want, and what you'd change about it."
 
-### Comparison Board + Feedback Loop
+### Variant Review + Feedback Loop
 
-Create the comparison board and serve it over HTTP:
+There is no comparison board to serve: `$D` produces images, and the review happens
+in the conversation. Read every variant PNG inline so the user sees them all at once,
+then use AskUserQuestion as the chooser:
 
-```bash
-$D compare --images "$_DESIGN_DIR/variant-A.png,$_DESIGN_DIR/variant-B.png,$_DESIGN_DIR/variant-C.png" --output "$_DESIGN_DIR/design-board.html" --serve
-```
+"Which direction should we build the design system around?"
 
-This command generates the board HTML, starts an HTTP server on a random port,
-and opens it in the user's default browser. **Run it in the background** with `&`
-because the server needs to stay running while the user interacts with the board.
+- A) Variant A — [one-line description of its direction]
+- B) Variant B — [one-line description]
+- C) Variant C — [one-line description]
+- D) None of these — regenerate with different directions
 
-Parse the port from stderr output: `SERVE_STARTED: port=XXXXX`. You need this
-for the board URL and for reloading during regeneration cycles.
+Add: "Tell me what you'd change about your pick, or which elements you'd take from
+the others — I'll fold that into the next round."
 
-**PRIMARY WAIT: AskUserQuestion with board URL**
-
-After the board is serving, use AskUserQuestion to wait for the user. Include the
-board URL so they can click it if they lost the browser tab:
-
-"I've opened a comparison board with the design variants:
-http://127.0.0.1:<PORT>/ — Rate them, leave comments, remix
-elements you like, and click Submit when you're done. Let me know when you've
-submitted your feedback (or paste your preferences here). If you clicked
-Regenerate or Remix on the board, tell me and I'll generate new variants."
-
-**Do NOT use AskUserQuestion to ask which variant the user prefers.** The comparison
-board IS the chooser. AskUserQuestion is just the blocking wait mechanism.
-
-**After the user responds to AskUserQuestion:**
-
-Check for feedback files next to the board HTML:
-- `$_DESIGN_DIR/feedback.json` — written when user clicks Submit (final choice)
-- `$_DESIGN_DIR/feedback-pending.json` — written when user clicks Regenerate/Remix/More Like This
-
-```bash
-if [ -f "$_DESIGN_DIR/feedback.json" ]; then
-  echo "SUBMIT_RECEIVED"
-  cat "$_DESIGN_DIR/feedback.json"
-elif [ -f "$_DESIGN_DIR/feedback-pending.json" ]; then
-  echo "REGENERATE_RECEIVED"
-  cat "$_DESIGN_DIR/feedback-pending.json"
-  rm "$_DESIGN_DIR/feedback-pending.json"
-else
-  echo "NO_FEEDBACK_FILE"
-fi
-```
-
-The feedback JSON has this shape:
-```json
-{
-  "preferred": "A",
-  "ratings": { "A": 4, "B": 3, "C": 2 },
-  "comments": { "A": "Love the spacing" },
-  "overall": "Go with A, bigger CTA",
-  "regenerated": false
-}
-```
-
-**If `feedback.json` found:** The user clicked Submit on the board.
-Read `preferred`, `ratings`, `comments`, `overall` from the JSON. Proceed with
-the approved variant.
-
-**If `feedback-pending.json` found:** The user clicked Regenerate/Remix on the board.
-1. Read `regenerateAction` from the JSON (`"different"`, `"match"`, `"more_like_B"`,
-   `"remix"`, or custom text)
-2. If `regenerateAction` is `"remix"`, read `remixSpec` (e.g. `{"layout":"A","colors":"B"}`)
-3. Generate new variants with `$D iterate` or `$D variants` using updated brief
-4. Create new board: `$D compare --images "..." --output "$_DESIGN_DIR/design-board.html"`
-5. Reload the board in the user's browser (same tab):
-   `curl -s -X POST http://127.0.0.1:PORT/api/reload -H 'Content-Type: application/json' -d '{"html":"$_DESIGN_DIR/design-board.html"}'`
-6. The board auto-refreshes. **AskUserQuestion again** with the same board URL to
-   wait for the next round of feedback. Repeat until `feedback.json` appears.
-
-**If `NO_FEEDBACK_FILE`:** The user typed their preferences directly in the
-AskUserQuestion response instead of using the board. Use their text response
-as the feedback.
-
-**POLLING FALLBACK:** Only use polling if `$D serve` fails (no port available).
-In that case, show each variant inline using the Read tool (so the user can see them),
-then use AskUserQuestion:
-"The comparison board server failed to start. I've shown the variants above.
-Which do you prefer? Any feedback?"
+**If the user picks D, or asks for a remix:** rebuild the brief from what they said
+(which variant's layout, which one's color, what to drop) and run `$D variants`
+again into the same `$_DESIGN_DIR` with a fresh `--output-dir` subdirectory so the
+earlier round stays readable. Show the new set inline and ask again. Cap at three
+rounds — after that, ask whether to keep iterating or settle on the closest one.
 
 **After receiving feedback (any path):** Output a clear summary confirming
 what was understood:
@@ -542,8 +493,8 @@ echo '{"approved_variant":"<V>","feedback":"<FB>","date":"'$(date -u +%Y-%m-%dT%
 
 After the user picks a direction:
 
-- Use `$D extract --image "$_DESIGN_DIR/variant-<CHOSEN>.png"` to analyze the approved mockup and extract design tokens (colors, typography, spacing) that will populate DESIGN.md in Phase 6. This grounds the design system in what was actually approved visually, not just what was described in text.
-- If the user wants to iterate further: `$D iterate --feedback "<user's feedback>" --output "$_DESIGN_DIR/refined.png"`
+- Read the approved mockup (`$_DESIGN_DIR/variant-<CHOSEN>.png`) inline and extract its design tokens yourself — the dominant colors as hex, the typographic feel (family, weights, scale), the spacing rhythm, the corner radii. Write them down; they populate DESIGN.md in Phase 6. This grounds the design system in what was actually approved visually, not just what was described in text. Where the image is ambiguous (an exact hex, a font family you can't name), say so and take the value from the Phase 3 proposal instead of guessing.
+- If the user wants to iterate further, run `$D variants` again with a brief that folds in their feedback — there is no refine-in-place verb.
 
 **Plan mode vs. implementation mode:**
 - **If in plan mode:** Add the approved mockup path (the full `$_DESIGN_DIR` path) and extracted tokens to the plan file under an "## Approved Design Direction" section. The design system gets written to DESIGN.md when the plan is implemented.
@@ -598,7 +549,7 @@ If the user says skip the preview, go directly to Phase 6.
 
 ## Phase 6: Write DESIGN.md & Confirm
 
-If `$D extract` was used in Phase 5 (Path A), use the extracted tokens as the primary source for DESIGN.md values — colors, typography, and spacing grounded in the approved mockup rather than text descriptions alone. Merge extracted tokens with the Phase 3 proposal (the proposal provides rationale and context; the extraction provides exact values).
+If a mockup was approved in Phase 5 (Path A), use the tokens you read off it as the primary source for DESIGN.md values — colors, typography, and spacing grounded in the approved mockup rather than text descriptions alone. Merge extracted tokens with the Phase 3 proposal (the proposal provides rationale and context; the extraction provides exact values).
 
 **If in plan mode:** Write the DESIGN.md content into the plan file as a "## Proposed DESIGN.md" section. Do NOT write the actual file — that happens at implementation time.
 
@@ -692,3 +643,5 @@ After shipping DESIGN.md, if the session produced screen-level mockups or page l
 6. **Conversational tone.** This isn't a rigid workflow. If the user wants to talk through a decision, engage as a thoughtful design partner.
 7. **Accept the user's final choice.** Nudge on coherence issues, but never block or refuse to write a DESIGN.md because you disagree with a choice.
 8. **No AI slop in your own output.** Your recommendations, your preview page, your DESIGN.md — all should demonstrate the taste you're asking the user to adopt.
+
+{{include lib/snippets/askuserquestion-split.md}}

@@ -273,6 +273,12 @@ If the deploy is healthy, offer to update the baseline:
 
 If the user chooses A, copy the latest screenshots to the baselines directory and update `baseline.json`.
 
+{{include lib/snippets/capture-learnings.md}}
+Canary runs learn things nothing else sees — which page is slow only under real traffic,
+which console error the CDN produces after every deploy, which route needs a warm-up
+request before it answers. Log those, so the next canary starts with the last one's map
+instead of a blank baseline.
+
 ## Important Rules
 
 - **Speed matters.** Start monitoring within 30 seconds of invocation. Don't over-analyze before monitoring.

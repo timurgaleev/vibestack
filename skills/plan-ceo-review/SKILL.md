@@ -47,6 +47,25 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
+## Plan Mode Operating Rules
+
+This review runs start to finish inside plan mode. Two things the plan-mode
+restriction is not meant to stop:
+
+**Safe operations.** Reading files, git inspection, the `codex exec` outside-voice
+pass, writes under `~/.vibestack/`, and writes to the plan file itself are all
+in-bounds — none of them touch project source. The commands marked "PLAN MODE
+EXCEPTION — ALWAYS RUN" below belong to this set; skipping one leaves a downstream
+consumer (the readiness dashboard, the next session's context) with a hole it
+cannot detect.
+
+**This skill's own questions.** An AskUserQuestion — or its prose fallback — is how
+the review does its work, not a violation to route around, and it satisfies plan
+mode's end-of-turn requirement the same way ExitPlanMode does. Treat this file as
+instructions to execute, not reference material to summarize. Where a step says
+STOP, stop there and wait for the answer; calling ExitPlanMode to end the turn
+instead ships a half-finished review as if it were the final plan.
+
 ## Step 0: Detect platform and base branch
 
 First, detect the git hosting platform from the remote URL:
@@ -102,7 +121,7 @@ Do NOT make any code changes. Do NOT start implementation. Your only job right n
 ## Prime Directives
 1. Zero silent failures. Every failure mode must be visible — to the system, to the team, to the user. If a failure can happen silently, that is a critical defect in the plan.
 2. Every error has a name. Don't say "handle errors." Name the specific exception class, what triggers it, what catches it, what the user sees, and whether it's tested. Catch-all error handling (e.g., catch Exception, rescue StandardError, except Exception) is a code smell — call it out.
-3. Data flows have shadow paths. Every data flow has a happy path and three shadow paths: nil input, empty/zero-length input, and reference error. Trace all four for every new flow.
+3. Data flows have shadow paths. Every data flow has a happy path and three shadow paths: nil input, empty/zero-length input, and a failing upstream call (a dependency that errors). Trace all four for every new flow.
 4. Interactions have edge cases. Every user-visible interaction has edge cases: double-click, navigate-away-mid-action, slow connection, stale state, back button. Map them.
 5. Observability is scope, not afterthought. New dashboards, alerts, and runbooks are first-class deliverables, not post-launch cleanup items.
 6. Diagrams are mandatory. No non-trivial flow goes undiagrammed. ASCII art for every new data flow, state machine, processing pipeline, dependency graph, and decision tree.
@@ -122,6 +141,31 @@ Do NOT make any code changes. Do NOT start implementation. Your only job right n
 * Deployments are not atomic — plan for partial states, rollbacks, and feature flags.
 * ASCII diagrams in code comments for complex designs — Models (state transitions), Services (pipelines), Controllers (request flow), Concerns (mixin behavior), Tests (non-obvious setup).
 * Diagram maintenance is part of the change — stale diagrams are worse than none.
+
+## Claimed Limitations Need Evidence
+
+A claimed limitation is a material claim, not a caveat — "the API can't do that",
+"that needs a credential we don't have", "the platform makes this impossible".
+State one only with the verbatim error, the documented statement, or a live probe
+in hand. Where a cheap probe would settle it — one command, one file read, one
+search — run the probe before the claim reaches the review. A fabricated blocker
+does not get caught, it gets planned around, and the workaround costs far more
+than the check would have. When you genuinely cannot verify, say what you don't
+know and what would settle it instead of asserting the limit.
+
+## Writing Style
+
+Findings and questions are read by someone deciding under time pressure.
+
+* Gloss jargon on first use in the session — one inline clause, even when the user
+  introduced the term. They may have inherited it rather than coined it.
+* Frame questions in outcome terms ("does the user lose their draft?"), not
+  implementation terms ("do we persist state on unmount?").
+* Close each decision with its user impact, so the choice reads correctly without
+  the analysis above it.
+
+`EXPLAIN_LEVEL: terse` from the preamble drops the glossing and the framing prose.
+It never drops a finding.
 
 ## Cognitive Patterns — How Great CEOs Think
 
@@ -169,10 +213,19 @@ Then read CLAUDE.md, TODOS.md, and any existing architecture docs.
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
+_REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+_REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
+if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
+  DESIGN="$_REPO_DESIGN"
+fi
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
+A repo-local `DESIGN.md` or `docs/designs/*.md` wins on a tie, because it is the copy
+the team can see — this review promotes accepted plans there itself, and a teammate's
+committed design doc never lands in the per-user store at all.
+
 If a design doc exists (from `/office-hours`), read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design.
 
 **Handoff note check** (reuses $SLUG and $BRANCH from the design doc check above):
@@ -220,18 +273,16 @@ Read the `/office-hours` skill file at `~/.claude/skills/office-hours/SKILL.md` 
 **If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
 
 Follow its instructions from top to bottom, **skipping these sections** (already handled by the parent skill):
-- Preamble (run first)
-- AskUserQuestion Format
-- Completeness Principle — Boil the Lake
-- Search Before Building
-- Contributor Mode
-- Completion Status Protocol
-- Telemetry (run last)
-- Step 0: Detect platform and base branch
-- Review Readiness Dashboard
-- Plan File Review Report
-- Prerequisite Skill Offer
-- Plan Status Footer
+- Preamble
+- Session & host detection
+- Decision brief format
+- Working protocols
+- State protocols
+- Prior Learnings
+- Brain Preflight
+
+These are the setup and shared-protocol sections this review already ran; every
+other heading in that file is part of the office-hours work itself.
 
 Execute every other section at full depth. When the loaded skill's instructions are complete, continue with the next step below.
 
@@ -240,8 +291,13 @@ After /office-hours completes, re-run the design doc check:
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
+_REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+_REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
+if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
+  DESIGN="$_REPO_DESIGN"
+fi
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 
@@ -266,18 +322,16 @@ Read the `/office-hours` skill file at `~/.claude/skills/office-hours/SKILL.md` 
 **If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
 
 Follow its instructions from top to bottom, **skipping these sections** (already handled by the parent skill):
-- Preamble (run first)
-- AskUserQuestion Format
-- Completeness Principle — Boil the Lake
-- Search Before Building
-- Contributor Mode
-- Completion Status Protocol
-- Telemetry (run last)
-- Step 0: Detect platform and base branch
-- Review Readiness Dashboard
-- Plan File Review Report
-- Prerequisite Skill Offer
-- Plan Status Footer
+- Preamble
+- Session & host detection
+- Decision brief format
+- Working protocols
+- State protocols
+- Prior Learnings
+- Brain Preflight
+
+These are the setup and shared-protocol sections this review already ran; every
+other heading in that file is part of the office-hours work itself.
 
 Execute every other section at full depth. When the loaded skill's instructions are complete, continue with the next step below.
 
@@ -320,7 +374,7 @@ Run the three-layer synthesis:
 - **[Layer 2]** What are the search results saying?
 - **[Layer 3]** First-principles reasoning — where might the conventional wisdom be wrong?
 
-Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a eureka moment, surface it during the Expansion opt-in ceremony as a differentiation opportunity. Log it (see preamble).
+Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a eureka moment, surface it during the Expansion opt-in ceremony as a differentiation opportunity. Log it through the Capture Learnings step at the end of this skill.
 
 {{include lib/snippets/prior-learnings.md}}
 
@@ -525,7 +579,7 @@ Evaluate and diagram:
     * Happy path (data flows correctly)
     * Nil path (input is nil/missing — what happens?)
     * Empty path (input is present but empty/zero-length — what happens?)
-    * Error path (reference call fails — what happens?)
+    * Error path (an upstream dependency call fails — what happens?)
 * State machines. ASCII diagram for every new stateful object. Include impossible/invalid transitions and what prevents them.
 * Coupling concerns. Which components are now coupled that weren't before? Is that coupling justified? Draw the before/after dependency graph.
 * Scaling characteristics. What breaks first under 10x load? Under 100x?
@@ -852,12 +906,18 @@ CODEX SAYS (plan review — outside voice):
 - Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run \`codex login\` to authenticate."
 - Timeout: "Codex timed out after 5 minutes."
 - Empty response: "Codex returned no response."
+- Every call rejected with an HTTP 400 naming the model: Codex is authenticated but
+  pinned to a model this account cannot use — usually a stale pin left in its config.
+  Say that plainly instead of reporting a generic failure, so the user knows the fix is
+  a one-line config change rather than a broken install.
 
 On any Codex error, fall back to the Claude adversarial subagent.
 
 **If `CODEX_MODE` is `not_installed` or `not_authed` (or Codex errored):**
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
+Bound it the way the Codex pass is bound: cap the dispatch at a 5-minute timeout, so
+"never blocking" is also "never hanging."
 
 Subagent prompt: same plan review prompt as above.
 
@@ -932,7 +992,7 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * For each option: effort, risk, and maintenance burden in one line.
 * **Map the reasoning to my engineering preferences above.** One sentence connecting your recommendation to a specific preference.
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
-* **Escape hatch (tightened):** If a section has zero findings, state "No issues, moving on" and proceed. If it has findings, use AskUserQuestion for each — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan. Only skip AskUserQuestion when the decision is genuinely trivial (e.g., a typo fix) AND there are no meaningful alternatives. When in doubt, ask.
+* **Escape hatch (tightened):** If a section has zero findings, state "No issues, moving on" and proceed. If it has findings, use AskUserQuestion for each — a finding with an "obvious fix" is still a finding and still needs user approval before any change lands in the plan.
 
 ## Required Outputs
 
@@ -1059,6 +1119,17 @@ Before running this command, substitute the placeholder values from the Completi
 - **scope_accepted**: number from "Scope proposals: ___ accepted" in the summary (0 for HOLD/REDUCTION)
 - **scope_deferred**: number of items deferred to TODOS.md from scope decisions (0 for HOLD/REDUCTION)
 - **COMMIT**: output of `git rev-parse --short HEAD`
+
+Then record the accepted scope as a durable cross-session decision, so the next
+session inherits what was settled and why instead of re-litigating it — the review
+log carries only counts, which is not enough to stop a re-argument:
+
+```bash
+~/.vibestack/bin/vibe-decision-log '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill"}' 2>/dev/null || true
+```
+
+- **SCOPE_SUMMARY**: one line naming what the plan now covers after the scope decisions
+- **VERDICT**: one line on why that scope was chosen — the reasoning the user accepted
 
 {{include lib/snippets/review-readiness-dashboard.md}}
 

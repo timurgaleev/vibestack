@@ -48,20 +48,29 @@ State persists between calls (cookies, tabs, login sessions).
 ## SETUP (run this check BEFORE any browse command)
 
 ```bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/vibestack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/vibestack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/vibestack/browse/dist/browse"
-if [ -x "$B" ]; then
+B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/browse}/bin/vibe-browse"
+[ -x "$B" ] || B="$(command -v vibe-browse || true)"
+if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
   echo "READY: $B"
 else
   echo "NEEDS_SETUP"
 fi
 ```
 
-If `NEEDS_SETUP`:
-1. Tell the user: "The browse daemon is required for this skill but is not installed. **vibestack does not bundle the browse daemon** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon) for current options. STOP."
-2. If the user has supplied their own browse daemon, ask them where the binary lives and re-run the SETUP check above. Otherwise, fall back to text-only QA (curl, structural HTTP checks) and report `BROWSE_NOT_AVAILABLE`.
+`vibe-browse` is a launcher, not the browser itself. With the checkout's
+dependencies installed it runs the full daemon this file documents; without
+them it falls back to a stateless shim that covers navigation, capture and
+`chain` but answers `NOT_SUPPORTED:<verb>` to the interaction and inspection
+verbs. Read that answer as a missing capability rather than a transient
+failure: name the verb that was unavailable instead of retrying it or
+describing output you never got.
+
+If `NEEDS_SETUP` — node is absent, or the first-run dependency install was
+declined — say which piece is missing, then fall back to text-only QA (curl
+plus structural HTTP checks) and report `BROWSE_NOT_AVAILABLE`. Do not trust a
+bare curl status code: dev servers happily serve error pages with HTTP 200, so
+grep the response body for the app's error markers before calling a page
+healthy, and tell the user screenshots were unavailable.
 
 ## Core QA Patterns
 
@@ -98,6 +107,18 @@ $B snapshot -i -a -o /tmp/annotated.png   # labeled screenshot
 $B screenshot /tmp/bug.png                # plain screenshot
 $B console                                # error log
 ```
+
+Two behaviors quietly invalidate a screenshot — both exit 0 and hand back a
+plausible-looking PNG, so nothing signals the mistake:
+
+- **`hover` scrolls its target into view.** Hovering an element below the fold
+  scrolls the page to reach it, so a "rest state" shot taken afterwards frames
+  the wrong part of the page. Capture the rest state before hovering, or
+  re-establish the position with `goto` (or `scroll`) before the shot.
+- **The daemon keeps whatever the last step left behind.** `reload` and a bare
+  `screenshot` act on the active tab's current URL and scroll position, which
+  after an earlier step may be a different page, a different tab, or the same
+  page mid-interaction. Start every verification pass with an explicit `goto`.
 
 ### 5. Find all clickable elements (including non-ARIA)
 ```bash
@@ -168,6 +189,32 @@ $B screenshot /tmp/out.png --selector .tweet-card
 # → /tmp/out.png is 2x the pixel dimensions of the element
 ```
 Scale must be 1-3. Changing `--scale` recreates the browser context; refs from `snapshot` are invalidated (rerun `snapshot`), but `load-html` content is replayed automatically. Not supported in headed mode.
+
+### 14. Offline render mode (rasterize your own HTML or JSON, zero network)
+
+Use browse as a local renderer when you have generated the thing yourself — a
+diagram, a social card, an OG image. Two shapes, both fully offline:
+
+```bash
+# A. The artifact is HTML on disk: load it, screenshot the element.
+$B load-html /tmp/card.html
+$B screenshot /tmp/card.png --selector .card
+
+# B. A page function returns the bytes: write them straight to disk.
+$B js "window.__render(SCENE_JSON)" --out /tmp/diagram.png
+```
+
+Shape A screenshots to a path — **not** `screenshot --base64`, which serializes
+megabytes of image back through the command channel for no gain. Shape B is for
+functions that produce their own bytes: `--out` writes the returned string to
+the path, and a `data:` URL result is decoded to real bytes first, so a
+`canvas.toDataURL()` return lands as a valid PNG. Pass `--raw` when you want the
+string written literally instead. `eval <file>` takes the same two flags for
+scripts too long to pass as an expression.
+
+`--out` is a WRITE, not a read: it needs the `write` scope, and it is never
+dispatchable over the tunnel surface — a paired remote agent can run `eval` but
+can never use it to put a file on your disk.
 
 ## Puppeteer → browse cheatsheet
 
@@ -392,14 +439,15 @@ $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero
 | Command | Description |
 |---------|-------------|
 | `attrs <sel\|@ref>` | Element attributes as JSON |
+| `cdp <Domain.method> [json-params]` | Raw Chrome DevTools Protocol dispatch — the escape hatch when a capability has no first-class verb. Deny-default: only the methods in `browse/src/cdp-allowlist.ts` are reachable, anything else 403s. Read that file to see what is allowed. Each entry declares scope (tab vs browser) and output trust; data-exfil-shaped methods (e.g. `Network.getResponseBody`) come back UNTRUSTED-wrapped. |
 | `console [--clear\|--errors]` | Console messages (--errors filters to error/warning) |
 | `cookies` | All cookies as JSON |
 | `css <sel> <prop>` | Computed CSS value |
 | `dialog [--clear]` | Dialog messages |
-| `eval <file>` | Run JavaScript from file and return result as string (path must be under /tmp or cwd) |
+| `eval <file> [--out <path>] [--raw]` | Run JavaScript from file and return result as string (path must be under /tmp or cwd). `--out` writes the result to disk instead (see Offline render mode) |
 | `inspect [selector] [--all] [--history]` | Deep CSS inspection via CDP — full rule cascade, box model, computed styles |
 | `is <prop> <sel>` | State check (visible/hidden/enabled/disabled/checked/editable/focused) |
-| `js <expr>` | Run JavaScript expression and return result as string |
+| `js <expr> [--out <path>] [--raw]` | Run JavaScript expression and return result as string. `--out` writes the result to disk instead (see Offline render mode) |
 | `network [--clear]` | Network requests |
 | `perf` | Page load timings |
 | `storage [set k v]` | Read all localStorage + sessionStorage as JSON, or set <key> <value> to write localStorage |
@@ -423,8 +471,10 @@ $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero
 | Command | Description |
 |---------|-------------|
 | `chain` | Run commands from JSON stdin. Format: [["cmd","arg1",...],...] |
+| `domain-skill save\|list\|show\|edit\|promote-to-global\|rollback\|rm <host?>` | Per-site notes the agent writes for itself; the host comes from the active tab. A new note is quarantined and auto-promotes to active after 3 uses the injection scan did not flag — the flag is set by that scan, never by hand. `promote-to-global` lifts a note machine-wide, `rollback` demotes, `rm` tombstones. |
 | `frame <sel\|@ref\|--name n\|--url pattern\|main>` | Switch to iframe context (or main to return) |
 | `inbox [--clear]` | List messages from sidebar scout inbox |
+| `skill list\|show\|run\|test\|rm <name?> [--arg k=v]... [--timeout=Ns]` | Run a browser-skill: a deterministic Playwright script that drives the daemon over loopback HTTP. Looked up project → global → bundled. Each spawn gets its own read+write scoped token, never the daemon's root token |
 | `watch [stop]` | Passive observation — periodic snapshots while user browses |
 
 ### Tabs
@@ -433,6 +483,7 @@ $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero
 | `closetab [id]` | Close tab |
 | `newtab [url] [--json]` | Open new tab. With --json, returns {"tabId":N,"url":...} for programmatic use. |
 | `tab <id>` | Switch to tab |
+| `tab-each <command> [args...]` | Run one command against every open tab. Returns JSON with per-tab results |
 | `tabs` | List open tabs |
 
 ### Server
@@ -442,6 +493,7 @@ $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero
 | `disconnect` | Disconnect headed browser, return to headless mode |
 | `focus [@ref]` | Bring headed browser window to foreground (macOS) |
 | `handoff [message]` | Open visible Chrome at current page for user takeover |
+| `memory [--json]` | Snapshot runtime heap, per-tab JS heap, the Chromium process tree, and buffer sizes — the first thing to check when a long session goes slow |
 | `restart` | Restart server |
 | `resume` | Re-snapshot after user takeover, return control to AI |
 | `state save\|load <name>` | Save/load browser state (cookies + URLs) |
