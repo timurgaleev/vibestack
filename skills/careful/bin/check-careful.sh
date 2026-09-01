@@ -345,7 +345,10 @@ _match_pattern_file() {
   [ -f "$_pf" ] || return 1
   while IFS= read -r _line || [ -n "$_line" ]; do
     case "$_line" in ''|'#'*) continue ;; esac
-    if printf '%s' "$CMD" | grep -qE "$_line" 2>/dev/null; then
+    # `--` first: a project pattern may legitimately start with a dash (say
+    # `--destroy`), and without the terminator grep reads it as an option,
+    # exits 2, and the discarded stderr makes the guard silently skip it.
+    if printf '%s' "$CMD" | grep -qE -- "$_line" 2>/dev/null; then
       printf '%s' "$_line"
       return 0
     fi

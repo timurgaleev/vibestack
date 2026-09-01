@@ -112,7 +112,10 @@ Do NOT proceed until all five are answered without hand-waving.
 read what comes back through the trust envelope:
 
 ```bash
-_DD=/tmp/vibestack-spec-dedupe          # fixed path: $$ differs in every Bash call
+# Namespaced per repo and branch, not per process: $$ differs in every Bash
+# call, but two /spec runs in different checkouts must not share one file.
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG=unknown
+_DD="${TMPDIR:-/tmp}/vibestack-spec-dedupe-${SLUG}-$(git branch --show-current 2>/dev/null | tr "/" "-")"
 gh issue list --search "<keywords>" --state open --limit 10 --json number,title,url \
   --jq '.[] | "#\(.number) \(.title) — \(.url)"' > "$_DD.out" 2> "$_DD.err"
 echo "GH_EXIT: $?"
@@ -403,9 +406,19 @@ reformatting needed." Then emit the title and the contents of `$BODY_FILE`.
 session (or the `/ship` run that closes the issue) would otherwise re-litigate
 from the issue link alone:
 
+**Only after the issue actually exists.** Run this when you have a real
+`$ISSUE_NUMBER` back from the create call — not on the manual-filing path, where
+the content was printed for the user to file themselves. A ledger entry naming an
+issue that was never created is worse than no entry: `/ship` reads it later and
+follows a dead reference.
+
 ```bash
 ~/.vibestack/bin/vibe-decision-log '{"decision":"Spec filed #<N>: <title>","rationale":"<the approach the spec settled on, one line>","scope":"repo","source":"user"}' 2>/dev/null || true
 ```
+
+If the issue could not be filed, record the decision without an issue reference
+instead — `"decision":"Spec drafted (not filed): <title>"` — so the approach is
+still on record and nothing points at an issue number that does not exist.
 
 **Capture `$ISSUE_NUMBER`** — it goes in the archive frontmatter (next step) and
 is consumed by `/ship` for auto-close.

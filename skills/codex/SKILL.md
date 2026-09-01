@@ -418,9 +418,11 @@ happened as far as the rest of the pack is concerned:
 ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
-Substitute: TIMESTAMP (ISO 8601), STATUS ("clean" if PASS, "issues_found" if the
-gate failed on findings, "unavailable" if it failed on checks 1, 2 or 4 — the
-dashboard must not show an unverifiable run as a completed review),
+Substitute: TIMESTAMP (ISO 8601), STATUS — "clean" when the gate passed on
+check 4 or 5, "issues_found" when it failed on check 3 (real findings), and
+"unavailable" when it failed on check 1, 2 or 6. Those three are the states
+where the review did not happen or did not produce a review, and the dashboard
+must not show any of them as a completed review),
 GATE ("pass" or "fail"), findings (count of [P0] + [P1] + [P2] markers, 0 when
 unavailable), findings_fixed (count of findings that were addressed/fixed before
 shipping).

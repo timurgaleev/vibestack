@@ -738,13 +738,20 @@ Record the start timestamp for timing data. Also record which merge path is take
 Try auto-merge first (it queues behind the repo's merge queue instead of racing it):
 
 ```bash
-gh pr merge --squash --auto --delete-branch
+# Name a method the repo actually permits. `gh` prompts when none is given, which
+# a non-interactive session cannot answer — but hard-coding one fails outright on
+# a repo that disables it. Ask the repo, then pick.
+_MM=$(gh repo view --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed \
+        -q 'if .squashMergeAllowed then "--squash" elif .mergeCommitAllowed then "--merge" elif .rebaseMergeAllowed then "--rebase" else "" end' 2>/dev/null)
+[ -z "$_MM" ] && _MM=--merge   # API unreachable: merge commits are the GitHub default
+echo "MERGE_METHOD: $_MM"
+gh pr merge $_MM --auto --delete-branch
 ```
 
-Name the merge method explicitly. Without `--merge`/`--squash`/`--rebase`, `gh` asks
-which one to use, and a non-interactive session gets an error instead of a merge when the
-repo enables more than one method. Naming it also keeps both paths below landing the same
-shape of commit.
+Squash first when it is allowed, because it keeps one commit per PR on the base
+branch; fall back to a merge commit, then rebase. Use the same `$_MM` in the
+direct-merge path below so both land the same shape of commit — recompute it
+there, since a shell variable does not survive between Bash calls.
 
 If `--auto` succeeds: record `MERGE_PATH=auto`. This means the repo has auto-merge enabled
 and may use merge queues.
@@ -765,7 +772,7 @@ that was never the problem.
 Either way, merge directly:
 
 ```bash
-gh pr merge --squash --delete-branch
+gh pr merge $_MM --delete-branch
 ```
 
 If direct merge succeeds: record `MERGE_PATH=direct`. Tell the user: "PR merged successfully. The branch has been cleaned up."

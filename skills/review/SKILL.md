@@ -986,7 +986,9 @@ Subagent prompt:
 "First list what changed: `git diff --name-status $(git merge-base origin/<base> HEAD)`.
 
 Read NON-fixture source code in full:
-`git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*test*' ':(exclude)*fixture*' ':(exclude)*.spec.*'`
+`git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*/test/*' ':(exclude)*/tests/*' ':(exclude)*/__tests__/*' ':(exclude)*/fixtures/*' ':(exclude)*_test.*' ':(exclude)*.test.*' ':(exclude)*.spec.*'`
+
+Match test directories and filename suffixes, never the bare substring `test`: `*test*` also excludes `latest.ts`, `contest.ts` and `attestation.ts`, and a production file dropped here is never read in full by the adversarial pass — the later stat-only pass cannot see its logic.
 
 Review fixture and test files in SUMMARY mode only:
 `git diff --stat $(git merge-base origin/<base> HEAD) -- '*test*' '*fixture*' '*.spec.*'`

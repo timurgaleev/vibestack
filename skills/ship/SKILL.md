@@ -32,9 +32,10 @@ if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    # Scoped to release work — an unfiltered pull returns the 5 most recent
-    # learnings of any kind, which on a busy project is pure noise here.
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 --query "release ship version changelog merge pr" 2>/dev/null || true
+    # One discriminating term, not a list: the search requires EVERY term to
+    # appear in the same entry, so a six-word query matches nothing at all.
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 --query "ship" 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 3 --query "release" 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
