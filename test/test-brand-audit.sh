@@ -48,6 +48,15 @@ flags "'upstream carries'"          "Adds the deny tier upstream carries."
 flags "'upstream fixed'"            "The bug upstream fixed in 1.70."
 flags "'the upstream repo'"         "See the upstream repo for context."
 flags "'parity audit against'"      "A parity audit against v1.77 found this."
+# `parity` as a PROCESS NOUN presupposes an external reference to be at parity
+# with, even when no "against"/"with" follows. An earlier pattern required one
+# of those words, and "upstream parity wave" shipped in a released commit
+# subject while the audit reported clean.
+flags "'upstream parity'"           "Ships the upstream parity work."
+flags "bare 'parity wave'"          "feat: parity wave — stealth and pre-push guard."
+flags "bare 'parity audit'"         "Closes the parity audit's remaining findings."
+flags "bare 'parity polish'"        "fix: parity polish — hook analytics."
+flags "bare 'parity sweep'"         "The parity sweep closed 239 findings."
 
 echo "accepts ordinary engineering English"
 # `upstream` is git vocabulary and appears constantly in legitimate prose.
@@ -57,6 +66,13 @@ allows "upstream in a pipeline"     "Something upstream broke before we got the 
 allows "'imported from'"            "escapeHtml is imported from ./render."
 allows "an identifier ending gStack" "isBackTrackingStack is reset per rule."
 allows "plain release prose"        "Adds a deny tier for recursive deletes of /."
+# `parity` as a PROPERTY of our own things is ordinary engineering English and
+# has to keep passing, or the check gets routed around instead of obeyed.
+allows "'behavioral parity'"        "Behavioral parity is partial, gated on Day 0 Track B."
+allows "'CLI/API parity gap'"       "Validation added to close a CLI/API parity gap."
+allows "'hard-tier parity'"         "Hard-tier parity becomes possible with a hook config."
+allows "'environment parity'"       "Environment parity. Tested in staging?"
+allows "'Parity with' a sibling"    "Parity with the sibling load-html path below."
 
 echo "scans commit messages"
 # A merged commit message cannot be fixed without rewriting published history,
