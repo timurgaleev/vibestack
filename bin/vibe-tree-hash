@@ -11,6 +11,15 @@
 # tree, committed or not. Content alone decides it, so a commit, an amend or a
 # rebase that leaves the bytes identical leaves the fingerprint identical.
 #
+# Known scope limits, both properties of using git's own index:
+#   - Submodule content is reduced to the recorded gitlink commit, so an
+#     uncommitted edit INSIDE a submodule does not move the parent's hash.
+#   - The identity is git's cleaned representation, so a `text`/`autocrlf`
+#     line-ending conversion, or an exec-bit change under core.filemode=false,
+#     is not visible.
+# Neither is a bug to fix here; both are what "the content git would record"
+# means. A caller needing submodule content must fingerprint it separately.
+#
 # Untracked files are deliberately EXCLUDED. Build output, editor scratch files
 # and downloaded fixtures appear and vanish without changing what a review
 # looked at, and including them would make the hash change constantly for
@@ -53,19 +62,29 @@ TOP=$(git rev-parse --show-toplevel)
 IDX=$(mktemp "${TMPDIR:-/tmp}/vibe-tree-hash.XXXXXX")
 trap 'rm -f "$IDX"' EXIT
 
-if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
-  GIT_INDEX_FILE="$IDX" git -C "$TOP" read-tree HEAD
+# Seed from the REAL index, not from HEAD. A file that has been `git add`-ed
+# but never committed lives in the index and not in HEAD, so seeding from HEAD
+# dropped it -- and `add -u` only refreshes paths already in the index, so it
+# never came back. Editing such a file left the fingerprint unmoved (a gate
+# would pass on stale evidence) and committing it moved the fingerprint though
+# no byte on disk had changed. Both cases are covered by tests now.
+_REAL_INDEX=$(git -C "$TOP" rev-parse --git-path index)
+if [ -f "$_REAL_INDEX" ]; then
+  cp "$_REAL_INDEX" "$IDX"
 else
-  # An unborn branch has no HEAD to read; start from an empty index so a fresh
-  # repo still fingerprints instead of erroring.
+  # No index yet (a freshly initialised repo): start empty rather than error.
   GIT_INDEX_FILE="$IDX" git -C "$TOP" read-tree --empty
 fi
 
-# -u stages modifications AND deletions of tracked files, and nothing else, so
-# untracked files stay out by construction rather than by a filter that has to
-# be kept correct.
+# -u refreshes modifications and deletions of paths already in the index, and
+# adds nothing new, so untracked files stay out by construction rather than by
+# a filter that has to be kept correct.
 GIT_INDEX_FILE="$IDX" git -C "$TOP" add -u
 
-HASH=$(GIT_INDEX_FILE="$IDX" git -C "$TOP" write-tree)
+# write-tree refuses an index with unmerged stages. Refusing to print is the
+# right answer there: a caller that got a hash would believe it had a subject,
+# and vibe-evidence treats a missing fingerprint as STALE.
+HASH=$(GIT_INDEX_FILE="$IDX" git -C "$TOP" write-tree) || {
+  echo "vibe-tree-hash: cannot fingerprint this tree (unmerged index?)" >&2; exit 2; }
 
 if [ "$LONG" -eq 1 ]; then printf '%s\n' "$HASH"; else printf '%s\n' "${HASH:0:12}"; fi

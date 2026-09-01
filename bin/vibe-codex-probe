@@ -38,11 +38,28 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# A verdict is only about the credentials and binary it was taken with. A
+# global cache let a `usable` recorded under one account satisfy a probe made
+# with that account's credentials removed -- the cached answer outlived the
+# thing it was an answer about. The key is a coarse fingerprint of what the
+# verdict depends on; it deliberately contains no secret material, only whether
+# each source is set and where the codex home points.
+_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+_ctx_key() {
+  printf '%s|%s|%s|%s' \
+    "$(command -v codex 2>/dev/null || echo none)" \
+    "$_CODEX_HOME" \
+    "${CODEX_API_KEY:+set}${CODEX_API_KEY:-unset}" \
+    "${OPENAI_API_KEY:+set}${OPENAI_API_KEY:-unset}" \
+    | { command -v shasum >/dev/null 2>&1 && shasum -a 256 || sha256sum; } | cut -c1-16
+}
+_KEY=$(_ctx_key)
+
 emit() { # emit VERDICT [skip-cache]
   printf 'CODEX: %s\n' "$1"
   if [ "${2:-}" != "nocache" ]; then
     mkdir -p "$VIBESTACK_HOME" 2>/dev/null || true
-    printf '%s %s\n' "$(date +%s)" "$1" > "$CACHE" 2>/dev/null || true
+    printf '%s %s %s\n' "$(date +%s)" "$1" "$_KEY" > "$CACHE" 2>/dev/null || true
   fi
   [ "$1" = usable ] && exit 0 || exit 1
 }
@@ -52,10 +69,13 @@ command -v codex >/dev/null 2>&1 || emit missing
 
 # --- rung 2: a fresh cached verdict answers without paying again -------------
 if [ "$REFRESH" -eq 0 ] && [ -f "$CACHE" ]; then
-  read -r _ts _verdict < "$CACHE" 2>/dev/null || { _ts=""; _verdict=""; }
+  read -r _ts _verdict _key < "$CACHE" 2>/dev/null || { _ts=""; _verdict=""; _key=""; }
   case "$_ts" in
     ''|*[!0-9]*) _ts="" ;;   # a corrupt cache is ignored, never trusted
   esac
+  # A cache written under a different credential context answers a different
+  # question, and one with no key at all predates this check.
+  [ "${_key:-}" = "$_KEY" ] || { _ts=""; _verdict=""; }
   if [ -n "$_ts" ] && [ -n "${_verdict:-}" ]; then
     _age=$(( $(date +%s) - _ts ))
     if [ "$_age" -ge 0 ] && [ "$_age" -lt "$TTL" ]; then
@@ -66,14 +86,16 @@ if [ "$REFRESH" -eq 0 ] && [ -f "$CACHE" ]; then
 fi
 
 # --- rung 3: no credentials anywhere is a free negative ----------------------
-_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 if [ -z "${CODEX_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ ! -f "$_CODEX_HOME/auth.json" ]; then
   emit unauthenticated
 fi
 
 # --- rung 4: the success branch — a real round trip ---------------------------
 # GNU coreutils `timeout` is absent on stock macOS, so the bound is enforced
-# here: run in the background, poll, and kill the process group if it overruns.
+# here: run in the background, poll, and signal the child if it overruns. The
+# signal reaches the codex process itself, not a process group -- this script
+# does not create one, and killing its own group would kill the script. A
+# grandchild codex leaves behind can therefore outlive the probe.
 _OUT=$(mktemp "${TMPDIR:-/tmp}/vibe-codex-probe.XXXXXX")
 trap 'rm -f "$_OUT"' EXIT
 
@@ -96,7 +118,14 @@ done
 wait "$_PID" 2>/dev/null
 _RC=$?
 
-[ "$_RC" -eq 0 ] && emit usable
+# Exit 0 alone is not proof of a round trip: a wrapper on PATH that exits
+# without contacting anything produces it. The reply has to actually come back.
+if [ "$_RC" -eq 0 ] && grep -qi 'OK' "$_OUT" 2>/dev/null; then
+  emit usable
+fi
+if [ "$_RC" -eq 0 ]; then
+  emit error
+fi
 
 # A non-zero exit still has to be classified. Auth failures are the common one
 # and are worth naming separately, because the fix ("run codex login") differs

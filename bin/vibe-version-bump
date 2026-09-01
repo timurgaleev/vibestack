@@ -15,10 +15,18 @@ Handles VERSION, package.json, package-lock.json and npm-shrinkwrap.json (both
 the top-level "version" and the packages[""] self-entry a lockfileVersion 2/3
 file carries). Files that are not present are skipped, not created.
 
-Atomic across the whole set: every file is parsed and staged first, and nothing
-is moved into place until all of them have been staged successfully. A malformed
-lockfile therefore aborts the bump with the tree untouched, rather than leaving
-VERSION ahead of a manifest that never got written.
+Every file is parsed and staged first, and nothing is moved into place until
+all of them have been staged successfully, so a malformed lockfile aborts with
+the tree untouched rather than leaving VERSION ahead of a manifest that never
+got written. If a rename still fails partway -- a full disk, a read-only file --
+the renames already done are undone.
+
+What that does NOT survive is the process being killed between two renames:
+there is no filesystem transaction across several files, and a SIGKILL leaves
+whatever had landed. Re-running the same bump is safe and converges.
+
+A target that is a symlink is resolved first, so the link keeps pointing where
+it did and its target is what changes.
 """
 import json
 import os
@@ -86,14 +94,20 @@ def main():
     staged = []   # (path, bytes)
     skipped = []
 
-    vf = os.path.join(root, "VERSION")
+    # Resolve each candidate through realpath. os.replace on a symlink
+    # replaces the LINK with a regular file and leaves the real target stale.
+    def target(name):
+        p = os.path.join(root, name)
+        return os.path.realpath(p) if os.path.exists(p) else p
+
+    vf = target("VERSION")
     if os.path.exists(vf):
         if open(vf).read().strip() != version:
             staged.append((vf, version + "\n"))
         else:
             skipped.append(("VERSION", "already at %s" % version))
 
-    pj = os.path.join(root, "package.json")
+    pj = target("package.json")
     if os.path.exists(pj):
         try:
             body = stage_json(pj, lambda o: o.__setitem__("version", version))
@@ -114,7 +128,7 @@ def main():
             pkgs[""]["version"] = version
 
     for name in LOCKS:
-        lp = os.path.join(root, name)
+        lp = target(name)
         if not os.path.exists(lp):
             continue
         try:
@@ -149,15 +163,21 @@ def main():
     # read-only file. So the original bytes are kept and the renames already
     # done are undone, rather than leaving VERSION bumped and a manifest behind.
     originals = {path: open(path, "rb").read() for path, _ in staged}
+    # Rewriting bytes through a temp file would otherwise hand the result the
+    # caller's umask instead of the file's own mode.
+    modes = {path: os.stat(path).st_mode for path, _ in staged}
     tmps = []
     done = []
     try:
         for path, body in staged:
-            tmp = path + ".vibe-bump.tmp"
+            # The pid keeps two concurrent bumps from renaming each other's
+            # staged bytes into place.
+            tmp = "%s.vibe-bump.%d.tmp" % (path, os.getpid())
             with open(tmp, "w") as fh:
                 fh.write(body)
             tmps.append((tmp, path))
         for tmp, path in tmps:
+            os.chmod(tmp, modes[path])
             os.replace(tmp, path)
             done.append(path)
     except OSError as e:

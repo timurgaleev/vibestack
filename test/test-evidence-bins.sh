@@ -52,6 +52,22 @@ H6=$(cd "$REPO" && "$BIN/vibe-tree-hash")
 chk "an untracked file does not move the hash" "$H6" "$H5"
 rm -f "$REPO/untracked.log"
 (cd "$TMP" && "$BIN/vibe-tree-hash" >/dev/null 2>&1); chk "exit 2 outside a work tree" "$?" "2"
+# A file that is `git add`-ed but never committed lives in the index, not in
+# HEAD. Seeding the scratch index from HEAD dropped it, and `add -u` only
+# refreshes paths already present -- so editing it moved nothing (a gate would
+# pass on stale evidence) and committing it moved the hash though no byte on
+# disk had changed.
+printf 'v1\n' > "$REPO/staged-new.txt"
+git -C "$REPO" add staged-new.txt
+SN1=$(cd "$REPO" && "$BIN/vibe-tree-hash")
+printf 'v2-changed\n' > "$REPO/staged-new.txt"
+SN2=$(cd "$REPO" && "$BIN/vibe-tree-hash")
+[ "$SN1" != "$SN2" ] && ok "editing a staged-but-uncommitted file moves the hash" \
+                     || no "editing a staged-but-uncommitted file left the hash unmoved"
+git -C "$REPO" add staged-new.txt
+git -C "$REPO" commit -q -m staged-new
+SN3=$(cd "$REPO" && "$BIN/vibe-tree-hash")
+chk "committing it leaves the hash alone" "$SN3" "$SN2"
 
 echo "vibe-evidence"
 E="$BIN/vibe-evidence"
@@ -72,6 +88,29 @@ BEFORE=$(wc -l < "$LEDGER" | tr -d ' ')
 RC=$?; AFTER=$(wc -l < "$LEDGER" | tr -d ' ')
 chk "a secret-bearing command is refused" "$RC" "2"
 chk "and nothing is appended for it" "$AFTER" "$BEFORE"
+# The most recent record decides. Taking any historical pass meant a label that
+# passed and then failed at the same tree still reported FRESH -- the newer
+# truth losing to the older one is the one direction a gate may never fail.
+(cd "$REPO" && "$E" run --skill t --label super -- true  >/dev/null 2>&1)
+(cd "$REPO" && "$E" check --label super >/dev/null 2>&1); chk "a fresh pass reads FRESH" "$?" "0"
+(cd "$REPO" && "$E" run --skill t --label super -- false >/dev/null 2>&1)
+(cd "$REPO" && "$E" check --label super >/dev/null 2>&1); chk "a newer failure supersedes the older pass" "$?" "1"
+# Corruption must fail closed: silently skipping an unreadable record lets a
+# stale pass outlive the failure that was meant to replace it.
+(cd "$REPO" && "$E" run --skill t --label torn -- true >/dev/null 2>&1)
+printf '{"not json\n' >> "$LEDGER"
+(cd "$REPO" && "$E" check --label torn >/dev/null 2>&1); chk "an unreadable ledger line fails closed" "$?" "1"
+# Trim the torn line back off so later cases still have a usable ledger.
+python3 - "$LEDGER" <<'PYTRIM'
+import sys
+p = sys.argv[1]
+keep = [l for l in open(p) if l.strip().startswith("{") and l.rstrip().endswith("}")]
+open(p, "w").writelines(keep)
+PYTRIM
+# The slug alone is not an identity -- two projects can share one, and their
+# ledgers then share a file.
+LAST_REPO=$(python3 -c 'import json,sys;print(json.loads(open(sys.argv[1]).read().strip().split(chr(10))[-1]).get("repo",""))' "$LEDGER")
+[ -n "$LAST_REPO" ] && ok "a record carries the repo it was taken in" || no "record has no repo field"
 
 echo "vibe-version-bump"
 V="$BIN/vibe-version-bump"
@@ -93,6 +132,21 @@ chk "a dependency version is left alone" "$(python3 -c 'import json,sys;print(js
 printf '{ this is not json' > "$PROJ/package-lock.json"
 "$V" 2.0.0 --root "$PROJ" >/dev/null 2>&1; chk "a malformed lockfile aborts the bump" "$?" "1"
 chk "and VERSION is untouched by the aborted bump" "$(cat "$PROJ/VERSION")" "1.2.3"
+# os.replace on a symlink replaces the LINK with a regular file and leaves the
+# real target stale. The link has to survive and its target has to change.
+LINKED="$TMP/linked"; mkdir -p "$LINKED/real"
+printf '1.0.0\n' > "$LINKED/real/VERSION"
+ln -s real/VERSION "$LINKED/VERSION"
+printf '{\n  "name": "y",\n  "version": "1.0.0"\n}\n' > "$LINKED/real/package.json"
+ln -s real/package.json "$LINKED/package.json"
+chmod 0640 "$LINKED/real/package.json"
+"$V" 3.1.0 --root "$LINKED" >/dev/null 2>&1
+[ -L "$LINKED/VERSION" ] && ok "a symlinked VERSION is still a symlink after the bump" || no "the symlink was replaced by a regular file"
+chk "and its target carries the new version" "$(cat "$LINKED/real/VERSION")" "3.1.0"
+chk "a symlinked package.json updates its target too" "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$LINKED/real/package.json")" "3.1.0"
+# Rewriting bytes through a temp file would hand the result the caller's umask.
+chk "the file keeps its own mode" "$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$LINKED/real/package.json")" "0o640"
+
 "$V" 1.2.3 --root "$TMP/nope" >/dev/null 2>&1; chk "a missing root is an error" "$?" "2"
 
 echo "vibe-detach"
@@ -138,6 +192,18 @@ done
 chk "and it finishes on its own" "$S4" "exit:0"
 "$D" log "$ID4" | grep -q alive && ok "its output survived too" || no "output lost"
 
+# printf %q leaves an assignment-shaped first word (X=Y) unquoted, and bash
+# reads it as a variable assignment followed by the rest of the line: the
+# intended program never runs, yet the job would report exit 0.
+ID5=$("$D" start --label assign -- "X=Y" /usr/bin/true)
+for _ in $(seq 1 20); do
+  S5=$("$D" status "$ID5" 2>/dev/null || true)
+  case "$S5" in exit:*|died) break ;; esac
+  sleep 1
+done
+[ "$S5" = "exit:0" ] && no "an assignment-shaped command name reported success" \
+                     || ok "an assignment-shaped command name is not reported as success"
+
 "$D" status nosuchjob >/dev/null 2>&1; chk "an unknown job id is an error" "$?" "2"
 "$D" status ../escape >/dev/null 2>&1; chk "a traversing job id is rejected" "$?" "2"
 
@@ -165,12 +231,30 @@ OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h2" 
       env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1); RC=$?
 chk "credentials absent reports unauthenticated" "$OUT" "CODEX: unauthenticated"
 chk "and exits nonzero" "$RC" "1"
-# A cached verdict is replayed without re-probing, and a corrupt cache is
-# ignored rather than trusted.
+# A cache line written before the credential key existed answers a question
+# this probe can no longer confirm it was asked, so it is ignored rather than
+# replayed.
 mkdir -p "$TMP/h3"; printf '%s usable\n' "$(date +%s)" > "$TMP/h3/codex-probe.txt"
-OUT=$(PATH="$FAKE:$PATH" VIBESTACK_HOME="$TMP/h3" "$P" 2>&1); RC=$?
-chk "a fresh cache is replayed" "$OUT" "CODEX: usable"
-chk "and a usable verdict exits 0" "$RC" "0"
+OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h3" \
+      env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
+chk "an unkeyed legacy cache is ignored" "$OUT" "CODEX: unauthenticated"
+
+# Replay is asserted against a cache the probe wrote itself: prime it with a
+# codex that answers, then swap in one that would fail. Still usable means the
+# verdict came from the cache and no second round trip happened.
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h3b" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1); RC=$?
+chk "the first probe writes a usable verdict" "$OUT" "CODEX: usable"
+chk "and exits 0" "$RC" "0"
+printf '#!/bin/sh\nexit 9\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h3b" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "the second probe replays the cache instead of re-probing" "$OUT" "CODEX: usable"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h3b" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" --refresh 2>&1)
+chk "--refresh bypasses the cache and sees the truth" "$OUT" "CODEX: error"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
 mkdir -p "$TMP/h4"; printf 'garbage usable\n' > "$TMP/h4/codex-probe.txt"
 OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h4" \
       env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
@@ -179,6 +263,23 @@ mkdir -p "$TMP/h5"; printf '%s usable\n' "$(( $(date +%s) - 99999 ))" > "$TMP/h5
 OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h5" \
       env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
 chk "an expired cache is re-probed" "$OUT" "CODEX: unauthenticated"
+
+
+# Exit 0 is not an answer. A wrapper that exits without contacting anything
+# would otherwise be reported as usable.
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h6" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "exit 0 with no reply is not usable" "$OUT" "CODEX: error"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h7" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "a real reply is usable" "$OUT" "CODEX: usable"
+# That verdict was about one set of credentials. Removing them must not leave
+# the cached answer standing.
+OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h7" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
+chk "a cached verdict does not cross credential contexts" "$OUT" "CODEX: unauthenticated"
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

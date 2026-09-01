@@ -69,6 +69,17 @@ def tree_hash():
     return _run([os.path.join(HERE, "vibe-tree-hash")])
 
 
+def repo_id():
+    """Absolute path of the repo root, or "" outside one.
+
+    The slug alone is not an identity: two checkouts of different projects can
+    produce the same slug, and their ledgers then live in the same file. Two
+    unrelated repos with an identical tree would satisfy each other's gates.
+    """
+    top = _run(["git", "rev-parse", "--show-toplevel"])
+    return os.path.realpath(top) if top else ""
+
+
 def ledger():
     d = os.path.join(HOME, "projects", slug())
     os.makedirs(d, exist_ok=True)
@@ -76,10 +87,18 @@ def ledger():
 
 
 def read_all():
+    """Return (rows, corrupt). `corrupt` counts lines that would not parse.
+
+    A torn line is skipped rather than fatal, but the COUNT is returned and
+    `check` fails on it. Silently dropping an unreadable record lets a stale
+    pass outlive the failure that was supposed to supersede it -- corruption
+    would fail open, which is the one direction a gate may never fail.
+    """
     p = ledger()
     if not os.path.exists(p):
-        return []
+        return [], 0
     out = []
+    corrupt = 0
     with open(p) as fh:
         for line in fh:
             line = line.strip()
@@ -88,8 +107,8 @@ def read_all():
             try:
                 out.append(json.loads(line))
             except ValueError:
-                continue  # a torn line is skipped, never fatal
-    return out
+                corrupt += 1
+    return out, corrupt
 
 
 def cmd_run(argv):
@@ -128,6 +147,7 @@ def cmd_run(argv):
         "command": command,
         "exit": proc.returncode,
         "tree": tree,
+        "repo": repo_id(),
         "branch": _run(["git", "branch", "--show-current"]) or "unknown",
     }
     with open(ledger(), "a") as fh:
@@ -147,7 +167,8 @@ def cmd_read(argv):
         else:
             print("vibe-evidence: unexpected argument: %s" % argv[i], file=sys.stderr)
             return 2
-    rows = [r for r in read_all()
+    rows, _ = read_all()
+    rows = [r for r in rows
             if all(f[k] is None or r.get(k) == f[k] for k in f)]
     for r in rows[-limit:]:
         print("%s  %-10s %-12s exit=%-3s tree=%s  %s"
@@ -180,13 +201,35 @@ def cmd_check(argv):
         # subject. Fail rather than match everything.
         print("STALE — cannot fingerprint the tree")
         return 1
-    for r in read_all():
-        if r.get("label") == label and r.get("tree") == want and r.get("exit") == 0:
-            if skill and r.get("skill") != skill:
-                continue
-            print("FRESH — %s passed at tree %s (%s)" % (label, want, r.get("ts", "?")))
-            return 0
-    print("STALE — no passing %s recorded at tree %s" % (label, want))
+
+    rows, corrupt = read_all()
+    if corrupt:
+        print("STALE — %d unreadable record(s) in the ledger; refusing to "
+              "answer from what is left" % corrupt)
+        return 1
+
+    here = repo_id()
+    matches = [r for r in rows
+               if r.get("label") == label
+               and r.get("tree") == want
+               and (skill is None or r.get("skill") == skill)
+               # A record with no repo predates the field; accept it only when
+               # this repo cannot be identified either, so an old ledger does
+               # not silently satisfy a different project.
+               and (r.get("repo", "") == here)]
+    if not matches:
+        print("STALE — no %s recorded at tree %s" % (label, want))
+        return 1
+
+    # The LAST matching record decides. Taking any historical pass meant a run
+    # that passed, then failed at the same tree, still reported FRESH -- the
+    # newer truth lost to the older one.
+    last = matches[-1]
+    if last.get("exit") == 0:
+        print("FRESH — %s passed at tree %s (%s)" % (label, want, last.get("ts", "?")))
+        return 0
+    print("STALE — the most recent %s at tree %s exited %s (%s)"
+          % (label, want, last.get("exit"), last.get("ts", "?")))
     return 1
 
 

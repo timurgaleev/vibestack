@@ -10,35 +10,53 @@ Nothing open.
 
 The four items that could not be written as skill text because the mechanism
 did not exist. Each is a binary now, with both directions asserted in
-`test/test-evidence-bins.sh` (43 cases).
+`test/test-evidence-bins.sh` (63 cases).
+
+A cross-model review of the first draft found eleven ways a gate could wrongly
+pass. Each confirmed one is fixed and carries a test; two claims were refuted by
+running them and left alone.
 
 - **`vibe-tree-hash`** answers "has the content changed?" where a commit count
-  cannot. It writes the tracked working tree into a throwaway index and returns
-  the resulting git tree id, so a rebase, an amend or a commit of already-written
-  content leaves the fingerprint identical, and an uncommitted edit moves it. An
-  earlier construction hashed the HEAD tree id together with `git diff HEAD` and
-  failed exactly the commit case; the test that caught it is kept.
-- **`vibe-evidence`** records the command, its exit status and the tree hash it
-  ran against, so a gate asks the ledger instead of trusting a summary. `check`
-  exits 0 only for a passing record at the current tree; a missing ledger fails.
-  Command output is never stored -- unbounded, and the likeliest place for a
-  token to appear -- and a command line carrying a high-confidence secret is
-  refused outright.
+  cannot. It copies the real index into a throwaway one, refreshes it against
+  the working tree, and returns the resulting git tree id, so a rebase, an
+  amend or a commit of already-written content leaves the fingerprint identical
+  while an uncommitted edit moves it. Two earlier constructions were wrong:
+  hashing the HEAD tree id together with `git diff HEAD` failed the commit
+  case, and seeding from HEAD made a staged-but-uncommitted file invisible, so
+  editing it moved nothing. Scope limits are documented in the header:
+  submodule content and git's own line-ending/exec-bit normalisation are not
+  visible, because the identity is what git would record.
+- **`vibe-evidence`** records the command, its exit status, the tree hash it ran
+  against, and the repo it ran in. `check` takes the MOST RECENT matching
+  record -- an older pass must not outlive the failure that supersedes it --
+  and fails on a missing ledger, an unfingerprintable tree, or any unreadable
+  line, since corruption is the one thing that may never fail open. Command
+  output is never stored: unbounded, and the likeliest place for a token to
+  appear. A command line carrying a high-confidence secret is refused outright.
 - **`vibe-version-bump`** moves VERSION, `package.json`, `package-lock.json` and
   `npm-shrinkwrap.json` (including the `packages[""]` self-entry) together, and
-  takes `--root` for a manifest in a subdirectory. Every file is parsed and
-  staged before any is written, so a malformed lockfile aborts with the tree
-  untouched rather than leaving VERSION ahead of a manifest that never landed.
+  takes `--root` for a manifest in a subdirectory. Symlinked targets are
+  resolved so the link survives and its target changes; each file keeps its own
+  mode; the temp name carries the pid so two concurrent bumps cannot rename
+  each other's bytes into place. Every file is parsed and staged before any is
+  written, and a rename failing partway is rolled back. A SIGKILL between two
+  renames is not survivable -- there is no transaction across files -- and the
+  header says so.
 - **`vibe-detach`** runs a command past the turn boundary and records its output
-  and exit status to disk. `status` distinguishes running (exit 2) from failed
-  (exit 1) -- conflating them reports a running job as a failure. The command is
-  written into a runner with `printf %q` rather than re-parsed from a string, so
-  an argument containing a space stays one argument.
+  and exit status. `status` distinguishes running (exit 2) from failed (exit 1);
+  conflating them reports a running job as a failure. The job records its own
+  pid, because `setsid` forks when the caller is already a process group leader
+  and the launcher's `$!` would then name a process that exits at once. The
+  command is written as a bash array, not a `printf %q` command line: an
+  assignment-shaped first word would otherwise be read as a variable assignment
+  and the intended program would never run while the job reported success.
 - **`vibe-codex-probe`** replaces `codex --version` as an availability check,
   which succeeds while logged out. Cheapest negatives first (no binary, then a
   cached verdict, then no credentials anywhere), and only then the paid round
-  trip that can return `usable`. The result is cached with a TTL; a corrupt
-  cache is ignored rather than trusted.
+  trip. `usable` requires an actual reply, not just exit 0 -- a wrapper that
+  exits without contacting anything is not usable. The cache is keyed to the
+  credential context it was taken in, so a verdict cannot outlive the
+  credentials it was about, and a corrupt or unkeyed cache is ignored.
 
 `install` picks all five up through its existing `bin/vibe-*` glob.
 

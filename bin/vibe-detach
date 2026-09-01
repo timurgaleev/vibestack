@@ -68,8 +68,15 @@ cmd_start() {
     # immediately and `status` would report a running job as dead.
     printf 'printf %%s "$$" > %q.tmp && mv %q.tmp %q\n' "$dir/pid" "$dir/pid" "$dir/pid"
     printf 'cd %q || exit 127\n' "$PWD"
+    # An array, not a bare command line. %q leaves an assignment-shaped
+    # first word (X=Y) unquoted, and bash reads that as a variable
+    # assignment followed by the REST of the line -- so the intended
+    # program never runs and the job still reports exit 0. Words coming
+    # from an array expansion are never parsed as assignments.
+    printf '_vibe_argv=('
     printf '%q ' "$@"
-    printf '\n'
+    printf ')\n'
+    printf '"${_vibe_argv[@]}"\n'
     # $? is captured on the very next line, before anything else can overwrite
     # it. The write is to a temp file and renamed, so a reader never sees a
     # half-written status and mistakes it for a result.
@@ -100,9 +107,19 @@ cmd_status() {
 
   local pid; pid=$(cat "$dir/pid" 2>/dev/null || echo "")
   if [ -z "$pid" ]; then
-    # The job writes its pid as its first action, so an absent pid file means
-    # it has not got there yet -- starting, not dead. Reporting "died" here
-    # would make `status` racy against a job that is about to run fine.
+    # The job writes its pid as its first action, so an absent pid file
+    # normally means it has not got there yet. But if the launch itself
+    # failed -- $VIBESTACK_HOME on a noexec mount, say -- nothing will ever
+    # write it, and reporting "running" forever is worse than being briefly
+    # wrong. The recorded start time bounds the wait.
+    local started_at now
+    started_at=$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$(cat "$dir/started" 2>/dev/null)" +%s 2>/dev/null \
+      || date -d "$(cat "$dir/started" 2>/dev/null)" +%s 2>/dev/null || echo "")
+    now=$(date +%s)
+    if [ -n "$started_at" ] && [ $(( now - started_at )) -gt 30 ]; then
+      echo "died"
+      return 1
+    fi
     echo "running"
     return 2
   fi
