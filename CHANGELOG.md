@@ -4,12 +4,13 @@
 
 ### Fixed
 
-This closes the parity audit's medium and low findings — 239 of them, worked
-through by re-checking each against the current code rather than trusting the
-finding. 21 turned out to be already fixed by the last three releases, 11 were
-not defects (a documented intentional difference, or the finding was wrong about
-the code), 151 were real and are fixed here, and 29 need a capability that does
-not exist yet and are recorded in `TODOS.md` with what blocks each one.
+This closes the medium and low findings from the skill-pack review sweep — 239
+of them, worked through by re-checking each against the current code rather than
+trusting the finding. 21 turned out to be already fixed by the last three
+releases, 11 were not defects (a deliberate design choice, or the finding was
+wrong about the code), 151 were real and are fixed here, and 29 need a
+capability that does not exist yet and are recorded in `TODOS.md` with what
+blocks each one.
 
 The changes are spread across 43 skills and 8 shared snippets, so rather than
 list all 151, here is what actually changes for you:

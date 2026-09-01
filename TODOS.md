@@ -2,9 +2,9 @@
 
 ## Open
 
-### Parity remainder — items that need a new capability, not new prose (2026-09-01)
+### Remaining gaps — items that need a new capability, not new prose (2026-09-01)
 
-The parity audit's medium/low findings are closed except for these, which every
+The review sweep's medium/low findings are closed except for these, which every
 attempt to write as skill text would only describe a mechanism that does not
 exist. Each names what has to be built first.
 
