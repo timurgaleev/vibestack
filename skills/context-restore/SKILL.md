@@ -137,6 +137,14 @@ If the current branch differs from the saved context's branch, note this:
 "This context was saved on branch `{branch}`. You are currently on
 `{current branch}`. You may want to switch branches before continuing."
 
+Then read the `branch:` frontmatter of the remaining candidates and, if any of
+them was saved on the current branch, name the newest one and offer it:
+"There is also a context saved on `{current branch}` — `{title}` from
+`{timestamp}`. Load that one instead?" Every worktree of a repo shares one
+checkpoints directory, so in a Conductor or `git worktree` setup the newest file
+overall is often a sibling workspace's — the cross-branch default stays, but the
+user gets told their own branch's context exists.
+
 ### Step 3: Offer next steps
 
 After presenting, ask via AskUserQuestion:

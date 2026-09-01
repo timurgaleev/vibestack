@@ -184,7 +184,11 @@ Before reviewing anything, answer these questions:
    - How will users download or install it (GitHub Releases, package manager, container registry)?
    If the plan defers distribution, flag it explicitly in the "NOT in scope" section — don't let it silently drop.
 
-If the complexity check triggers (8+ files or 2+ new classes/services), proactively recommend scope reduction via AskUserQuestion — explain what's overbuilt, propose a minimal version that achieves the core goal, and ask whether to reduce or proceed as-is. If the complexity check does not trigger, present your Step 0 findings and proceed directly to Section 1.
+If the complexity check triggers (8+ files or 2+ new classes/services), **STOP before any review-section work.** Recommend scope reduction via AskUserQuestion — explain what's overbuilt, propose a minimal version that achieves the core goal, and ask whether to reduce or proceed as-is. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
+
+**STOP.** Do NOT proceed to Section 1, write the proposed scope reduction into the plan file, or call ExitPlanMode until the user has answered. Naming the overbuild in chat and carrying on is exactly the failure this gate exists to prevent: a scope decision the user never made still ends up in the plan.
+
+If the complexity check does not trigger, present your Step 0 findings and proceed directly to Section 1.
 
 Always work through the full interactive review: one section at a time (Architecture → Code Quality → Tests → Performance) with at most 8 top issues per section.
 
@@ -208,7 +212,7 @@ Evaluate:
 * For each new codepath or integration point, describe one realistic production failure scenario and whether the plan accounts for it.
 * **Distribution architecture:** If this introduces a new artifact (binary, package, container), how does it get built, published, and updated? Is the CI/CD pipeline part of the plan or deferred?
 
-**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Only proceed to the next section after ALL issues in this section are resolved.
+**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. The AskUserQuestion call is a tool_use, not prose — call the tool directly. Do NOT edit the plan file with the proposed fix or call ExitPlanMode before the user answers; an issue whose fix looks obvious is still an issue. Only proceed to the next section after ALL issues in this section are resolved.
 
 ## Confidence Calibration
 
@@ -280,7 +284,7 @@ Evaluate:
 * Areas that are over-engineered or under-engineered relative to my preferences.
 * Existing ASCII diagrams in touched files — are they still accurate after this change?
 
-**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Only proceed to the next section after ALL issues in this section are resolved.
+**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. The AskUserQuestion call is a tool_use, not prose — call the tool directly. Do NOT edit the plan file with the proposed fix or call ExitPlanMode before the user answers; an issue whose fix looks obvious is still an issue. Only proceed to the next section after ALL issues in this section are resolved.
 
 ### 3. Test review
 
@@ -295,15 +299,20 @@ Before analyzing coverage, detect the project's test framework:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Detect project runtime
-[ -f Gemfile ] && echo "RUNTIME:ruby"
+# Detect project runtime. A project is often identified by its build file alone —
+# a Python repo with only tox.ini, or a Ruby repo with only a Rakefile, still has
+# a test suite worth reviewing.
+[ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django"
+{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
-[ -f requirements.txt ] || [ -f pyproject.toml ] && echo "RUNTIME:python"
+{ [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ]; } && echo "RUNTIME:python"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
+[ -f pom.xml ] && echo "RUNTIME:jvm BUILD:maven"
+{ [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "RUNTIME:jvm BUILD:gradle"
 # Check for existing test infrastructure
-ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pytest.ini phpunit.xml 2>/dev/null
-ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
+ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pytest.ini tox.ini phpunit.xml 2>/dev/null
+ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ src/test/ 2>/dev/null
 ```
 
 3. **If no framework detected:** still produce the coverage diagram, but skip test generation.
@@ -462,7 +471,7 @@ This file is consumed by `/qa` and `/qa-only` as primary test input. Include onl
 
 For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Then use AskUserQuestion to confirm the eval scope with the user.
 
-**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Only proceed to the next section after ALL issues in this section are resolved.
+**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. The AskUserQuestion call is a tool_use, not prose — call the tool directly. Do NOT edit the plan file with the proposed fix or call ExitPlanMode before the user answers; an issue whose fix looks obvious is still an issue. Only proceed to the next section after ALL issues in this section are resolved.
 
 ### 4. Performance review
 Evaluate:
@@ -471,7 +480,7 @@ Evaluate:
 * Caching opportunities.
 * Slow or high-complexity code paths.
 
-**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Only proceed to the next section after ALL issues in this section are resolved.
+**STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. The AskUserQuestion call is a tool_use, not prose — call the tool directly. Do NOT edit the plan file with the proposed fix or call ExitPlanMode before the user answers; an issue whose fix looks obvious is still an issue. Only proceed to the next section after ALL issues in this section are resolved.
 
 ## Outside Voice — Independent Plan Challenge (default-on)
 

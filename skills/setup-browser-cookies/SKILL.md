@@ -64,15 +64,23 @@ If `CDP_MODE=true`: tell the user "Not needed — you're connected to your real 
 ### 1. Find the browse binary
 
 ```bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-B=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/vibestack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/vibestack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/vibestack/browse/dist/browse"
-if [ -x "$B" ]; then echo "READY: $B"; else echo "NEEDS_SETUP"; fi
+B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/setup-browser-cookies}/../browse/bin/vibe-browse"
+[ -x "$B" ] || B="$(command -v vibe-browse || true)"
+if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
+  echo "READY: $B"
+else
+  echo "NEEDS_SETUP"
+fi
 ```
 
-If `NEEDS_SETUP`, stop and tell the user:
-"The browse daemon is required for this skill but is not installed. **vibestack does not bundle the browse daemon** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon) for current options."
+If `NEEDS_SETUP`, stop and tell the user the browse binary could not be found or
+could not start — node is missing, or first-run setup was declined.
+
+Cookie import needs the full browse daemon; the stateless fallback shim cannot
+decrypt a real browser's cookie store. If any command below answers
+`NOT_SUPPORTED:cookie-import-browser`, that is what happened: tell the user the
+full daemon is not running in this checkout and stop, rather than reporting a
+half-import that never occurred.
 
 ### 2. Open the cookie picker
 

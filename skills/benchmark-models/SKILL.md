@@ -167,7 +167,10 @@ If A: re-run with `--output json` and tee to the dated file. Print the path so t
 
 ## Capture Learnings
 
-If you discovered a non-obvious pattern, pitfall, or insight during this session, log it:
+Before finishing, review the session for durable learnings and log each one.
+This review always runs — it is not conditional on something having felt
+noteworthy. Phrased as a condition it reads as optional and gets skipped, which
+is why almost every recorded learning arrives via an explicit `/learn` instead.
 
 ```bash
 ~/.vibestack/bin/vibe-learnings-log '{"skill":"benchmark-models","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
@@ -175,4 +178,7 @@ If you discovered a non-obvious pattern, pitfall, or insight during this session
 
 **Types:** `pattern`, `pitfall`, `preference`, `architecture`, `operational`.
 
-**Only log genuine discoveries.**
+Log only genuine discoveries — provider auth quirks, cost surprises, a prompt
+shape that skews one model's numbers. If the review turns up nothing durable,
+say so explicitly rather than staying silent, so a skipped step and an empty one
+are distinguishable.

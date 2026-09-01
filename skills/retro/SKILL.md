@@ -193,13 +193,31 @@ Skip paths (`skip-no-remote`, `skip-detached`, `warn-fetch-failed`) all proceed 
 
 ### Step 1: Gather Raw Data
 
-First, fetch origin and identify the current user:
+First, fetch origin, resolve the ref every later query reads, and identify the
+current user:
 ```bash
-git fetch origin <default> --quiet
+git fetch origin <default> --quiet 2>/dev/null || true
+# Resolve the ref to analyze. Step 0.5 deliberately proceeds when there is no
+# origin remote or HEAD is detached — without a fallback those runs would query
+# a ref that does not resolve and report zero of everything.
+if git rev-parse --verify --quiet "origin/<default>" >/dev/null 2>&1; then
+  RETRO_REF="origin/<default>"
+elif git rev-parse --verify --quiet "<default>" >/dev/null 2>&1; then
+  RETRO_REF="<default>"
+else
+  RETRO_REF="HEAD"
+fi
+echo "RETRO_REF=$RETRO_REF"
 # Identify who is running the retro
 git config user.name
 git config user.email
 ```
+
+Substitute `$RETRO_REF` wherever a command below (and in Steps 11-13) is written
+against `origin/<default>`. If `RETRO_REF` is anything other than
+`origin/<default>`, the retro analyzed local history — say so on its own line in
+the narrative header ("analyzed `<ref>`: no `origin/<default>` in this
+worktree"), next to any Step 0.5 skip reason.
 
 The name returned by `git config user.name` is **"you"** — the person reading this retro. All other authors are teammates. Use this to orient the narrative: "your" commits vs teammate contributions.
 
@@ -246,6 +264,19 @@ cat ~/.vibestack/analytics/skill-usage.jsonl 2>/dev/null || true
 
 # 12. Test files changed in window
 git log origin/<default> --since="<window>" --format="" --name-only | grep -E '\.(test|spec)\.' | sort -u | wc -l
+
+# 13. Logical SLOC added: added lines minus blanks and comment-only lines.
+#     Leader matching is a heuristic, not a parser — good enough to keep the
+#     headline number from counting whitespace and license headers as shipping.
+git log origin/<default> --since="<window>" --no-merges -p --unified=0 --no-color \
+  | grep '^+' | grep -v '^+++' | cut -c2- \
+  | grep -vE '^[[:space:]]*$' \
+  | grep -vE '^[[:space:]]*(#|//|/\*|\*|--|<!--)' | wc -l
+
+# 14. VERSION file at both ends of the window (skip both lines if no VERSION file)
+_FIRST=$(git log origin/<default> --since="<window>" --format=%H | tail -1)
+git show "${_FIRST}^:VERSION" 2>/dev/null || git show "${_FIRST}:VERSION" 2>/dev/null
+git show origin/<default>:VERSION 2>/dev/null
 ```
 
 ### Step 2: Compute Metrics
@@ -277,6 +308,12 @@ and weighted commits reflect intent-to-ship. Logical SLOC added reflects real
 new functionality. Raw LOC is demoted to context because AI inflates it; ten
 lines of a good fix is not less shipping than ten thousand lines of scaffold.
 See docs/designs/PLAN_TUNING_V1.md §Workstream C.
+
+Logical SLOC comes from command 13, version range from command 14. **Every row
+traces to a Step 1 command.** If a row has no data source in this repo — no
+VERSION file, no CHANGELOG, no Greptile history — drop the row. Never fill a
+cell from your own estimate: an estimated number sitting in a table of measured
+ones is indistinguishable from a measurement.
 
 Then show a **per-author leaderboard** immediately below:
 
@@ -419,7 +456,6 @@ For each contributor (including the current user), compute:
 
 **If there are Co-Authored-By trailers:** Parse `Co-Authored-By:` lines in commit messages. Credit those authors for the commit alongside the primary author. Note AI co-authors (e.g., `noreply@anthropic.com`) but do not include them as team members — instead, track "AI-assisted commits" as a separate metric.
 
-{{include lib/snippets/capture-learnings.md}}
 ### Step 10: Week-over-Week Trends (if window >= 14d)
 
 If the time window is 14 days or more, split into weekly buckets and show trends:
@@ -431,7 +467,7 @@ If the time window is 14 days or more, split into weekly buckets and show trends
 
 ### Step 11: Streak Tracking
 
-Count consecutive days with at least 1 commit to origin/<default>, going back from today. Track both team streak and personal streak:
+Count consecutive days with at least 1 commit to origin/<default>. Track both team streak and personal streak:
 
 ```bash
 # Team streak: all unique commit dates (local time) — no hard cutoff
@@ -441,9 +477,17 @@ git log origin/<default> --format="%ad" --date=format:"%Y-%m-%d" | sort -u
 git log origin/<default> --author="<user_name>" --format="%ad" --date=format:"%Y-%m-%d" | sort -u
 ```
 
-Count backward from today — how many consecutive days have at least one commit? This queries the full history so streaks of any length are reported accurately. Display both:
-- "Team shipping streak: 47 consecutive days"
-- "Your shipping streak: 32 consecutive days"
+Each list is anchored at its own **newest commit date**, not at today — Step 0.5
+exists because the session's "today" can be wrong, and a streak counted down from
+a drifted clock is a fabricated number. Walk back from the newest date in the
+list: how many consecutive days have at least one commit? This queries the full
+history, so streaks of any length are reported accurately.
+
+Then judge whether the streak is still live:
+
+- Anchor is today or yesterday → the streak is live. "Team shipping streak: 47 consecutive days" / "Your shipping streak: 32 consecutive days"
+- Anchor is older → the streak is broken. Report 0 and name the last shipping day: "Team shipping streak: 0 days (last shipped 2026-03-02, 9 days ago)"
+- No commits at all in the list → skip the line rather than report 0.
 
 ### Step 12: Load History & Compare
 
@@ -565,7 +609,7 @@ Week of Mar 1: 47 commits (3 contributors), 3.2k LOC, 38% tests, 12 PRs, peak: 1
 (from Step 2)
 
 ### Trends vs Last Retro
-(from Step 11, loaded before save — skip if first retro)
+(from Step 12, loaded before save — skip if first retro)
 
 ### Time & Session Patterns
 (from Steps 3-4)
@@ -988,7 +1032,7 @@ When the user runs `/retro compare` (or `/retro compare 14d`):
 ## Important Rules
 
 - ALL narrative output goes directly to the user in the conversation. The ONLY file written is the `.context/retros/` JSON snapshot.
-- Use `origin/<default>` for all git queries (not local main which may be stale)
+- Use `origin/<default>` for all git queries (not local main which may be stale). When Step 1 could not resolve it, use the `RETRO_REF` fallback and disclose which ref was analyzed.
 - Display all timestamps in the user's local timezone (do not override `TZ`)
 - If the window has zero commits, say so and suggest a different window
 - Round LOC/hour to nearest 50

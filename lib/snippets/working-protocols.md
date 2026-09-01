@@ -12,6 +12,17 @@ When you finish a skill workflow, report status as one of:
 Escalate after 3 failed attempts, on uncertain security-sensitive changes, or on
 scope you cannot verify. Format: `STATUS`, `REASON`, `ATTEMPTED`, `RECOMMENDATION`.
 
+### Claimed limitations need evidence
+
+Never assert that something cannot be done, is unsupported, or is unavailable
+until you have tried it and can name the command you ran and what it printed. A
+limitation stated from assumption is a guess wearing the costume of a fact, and
+unlike a wrong answer it does not get corrected — it closes the question, and the
+user plans around a wall that isn't there. `BLOCKED` is only honest when
+`ATTEMPTED` holds a real attempt. Where one command, one file read, or one search
+would settle it, run the probe first; where you genuinely cannot verify, say what
+you don't know and what would settle it instead of asserting the limit.
+
 ### Confusion protocol
 
 For high-stakes ambiguity (architecture, data model, destructive scope, missing

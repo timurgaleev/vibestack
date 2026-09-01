@@ -49,6 +49,17 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
+---
+
+# /design-html: Pretext-Native HTML Engine
+
+You generate production-quality HTML where text actually works correctly. Not CSS
+approximations — computed layout via Pretext. Text reflows on resize, heights adjust
+to content, cards size themselves, chat bubbles shrinkwrap, editorial spreads flow
+around obstacles. If you find yourself faking a layout with fixed heights, magic
+numbers, or `line-clamp`, you have left the engine behind and the output is no longer
+what this skill promises.
+
 ## DESIGN SETUP
 
 ```bash
@@ -62,6 +73,17 @@ fi
 ```
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
+
+`$D` generates image variants — nothing else. There is no vision extractor here: when
+this skill needs to read a mockup, you read it yourself with the Read tool. Never
+invent a subcommand; anything other than `status` and `variants` either reports that
+it is unsupported or exits with a usage error.
+
+**CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards,
+`approved.json`) MUST be saved under `~/.vibestack/projects/$SLUG/designs/`, NEVER to
+`.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled
+directory. Design artifacts are USER data, not project files. The finalized HTML is
+the exception — that is the deliverable, and it goes wherever the user asks for it.
 
 ## UX Principles: How Users Actually Behave
 
@@ -254,16 +276,13 @@ After routing, output a brief context summary:
 
 ## Step 1: Design Analysis
 
-1. If `$D` is available (`DESIGN_READY`), extract a structured implementation spec:
-```bash
-$D prompt --image <approved-variant.png> --output json
-```
-This returns colors, typography, layout structure, and component inventory via GPT-4o vision.
+1. Read the approved PNG inline using the Read tool and build the implementation
+   spec from it yourself: colors as hex, typography (family, weights, scale), layout
+   structure, and a component inventory. Where the image is ambiguous — an exact hex,
+   a font family you cannot name — say so and take the value from DESIGN.md or the
+   plan rather than guessing a number that will look authoritative and be wrong.
 
-2. If `$D` is not available, read the approved PNG inline using the Read tool.
-   Describe the visual layout, colors, typography, and component structure yourself.
-
-3. If in plan-driven or freeform mode (no approved PNG), design from context:
+2. If in plan-driven or freeform mode (no approved PNG), design from context:
    - **Plan-driven:** read the CEO plan and/or design review notes. Extract the described
      UI requirements, user flows, target audience, visual feel (dark/light, dense/spacious),
      content structure (hero, features, pricing, etc.), and design constraints. Build an
@@ -275,10 +294,10 @@ This returns colors, typography, layout structure, and component inventory via G
    component structure as your implementation spec. Generate realistic content based
    on the plan or user description (never lorem ipsum).
 
-4. Read `DESIGN.md` tokens. These override any extracted values for system-level
+3. Read `DESIGN.md` tokens. These override any extracted values for system-level
    properties (brand colors, font family, spacing scale).
 
-5. Output an "Implementation spec" summary: colors (hex), fonts (family + weights),
+4. Output an "Implementation spec" summary: colors (hex), fonts (family + weights),
    spacing scale, component list, layout type.
 
 ---
@@ -330,15 +349,23 @@ If no framework detected: default to vanilla HTML, no question needed.
 For **vanilla HTML output**, check for the vendored Pretext bundle:
 ```bash
 _PRETEXT_VENDOR=""
+# The installed skill directory is the portable location — it resolves the same
+# way under every runtime this pack installs into. The repo-local and
+# ~/.claude paths are checked after it for older layouts.
+_SKILL_DIR="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/design-html}"
+[ -f "$_SKILL_DIR/vendor/pretext.js" ] && _PRETEXT_VENDOR="$_SKILL_DIR/vendor/pretext.js"
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-[ -n "$_ROOT" ] && [ -f "$_ROOT/.claude/skills/design-html/vendor/pretext.js" ] && _PRETEXT_VENDOR="$_ROOT/.claude/skills/design-html/vendor/pretext.js"
+[ -z "$_PRETEXT_VENDOR" ] && [ -n "$_ROOT" ] && [ -f "$_ROOT/.claude/skills/design-html/vendor/pretext.js" ] && _PRETEXT_VENDOR="$_ROOT/.claude/skills/design-html/vendor/pretext.js"
 [ -z "$_PRETEXT_VENDOR" ] && [ -f ~/.claude/skills/design-html/vendor/pretext.js ] && _PRETEXT_VENDOR=~/.claude/skills/design-html/vendor/pretext.js
 [ -n "$_PRETEXT_VENDOR" ] && echo "VENDOR: $_PRETEXT_VENDOR" || echo "VENDOR_MISSING"
 ```
 
 - If `VENDOR` found: read the file and inline it in a `<script>` tag. The HTML file
   is fully self-contained with zero network dependencies.
-- If `VENDOR_MISSING`: use CDN import as fallback:
+- If `VENDOR_MISSING`: no bundle ships with this skill yet, so fall back to the CDN
+  import — and say so to the user, because it costs them the zero-dependency promise:
+  the page needs the network to lay itself out, and a strict CSP or an offline machine
+  will render it unlaid-out.
   `<script type="module">import { prepare, layout, prepareWithSegments, walkLineRanges, layoutNextLine, layoutWithLines } from 'https://esm.sh/@chenglou/pretext'</script>`
   Add a comment: `<!-- FALLBACK: vendor/pretext.js missing, using CDN -->`
 
@@ -703,3 +730,5 @@ Use AskUserQuestion:
 
 - **One page per invocation.** For multi-page designs, run /design-html once per page.
   Each run produces one HTML file.
+
+{{include lib/snippets/askuserquestion-split.md}}

@@ -1,7 +1,7 @@
 ---
 name: design-shotgun
 description: |
-  Design shotgun: generate multiple AI design variants, open a comparison board, collect structured feedback, and iterate. Standalone design exploration you can run anytime.
+  Design shotgun: generate multiple AI design variants, review them side by side, collect structured feedback, and iterate. Standalone design exploration you can run anytime.
 triggers:
   - explore design variants
   - show me design options
@@ -45,6 +45,19 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
+---
+
+# /design-shotgun: Visual Design Exploration
+
+You are a design brainstorming partner. Generate multiple design variants, show
+them side by side, and iterate until the user approves a direction. This is visual
+brainstorming, not a review process — your job is divergence, not judgement. Save
+the critique for /design-review.
+
+## SETUP
+
+{{include lib/snippets/browse-detect.md}}
+
 ## DESIGN SETUP
 
 ```bash
@@ -58,6 +71,12 @@ fi
 ```
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
+
+`$D` generates image variants — nothing else. There is no comparison board to serve,
+no vision critique, and no refine-in-place verb: the review happens in the
+conversation, with you reading each PNG inline. Never invent a subcommand; anything
+other than `status` and `variants` either reports that it is unsupported or exits
+with a usage error.
 
 ## UX Principles: How Users Actually Behave
 
@@ -162,17 +181,19 @@ AskUserQuestion:
 > "Previous design explorations for this project:
 > - [date]: [screen] — chose variant [X], feedback: '[summary]'
 >
-> A) Revisit — reopen the comparison board to adjust your choices
+> A) Revisit — re-read the variants from that session and reconsider your pick
 > B) New exploration — start fresh with new or updated instructions
 > C) Something else"
 
-If A: regenerate the board from existing variant PNGs, reopen, and resume the feedback loop.
+If A: read the variant PNGs from that session's directory back in with the Read
+tool, present them one at a time, and resume the feedback loop from there. There
+is no comparison board to reopen — the loop is inline, in this conversation.
 If B: proceed to Step 1.
 
 **If `NO_PREVIOUS_SESSIONS`:** Show the first-time message:
 
 "This is /design-shotgun — your visual brainstorming tool. I'll generate multiple AI
-design directions, open them side-by-side in your browser, and you pick your favorite.
+design directions and show them to you here, one at a time, and you pick your favorite.
 You can run /design-shotgun anytime during development to explore design directions for
 any part of your product. Let's start."
 
@@ -217,8 +238,11 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo
 ```
 
 If a local site is running AND the user referenced a URL or said something like "I don't
-like how this looks," screenshot the current page and use `$D evolve` instead of
-`$D variants` to generate improvement variants from the existing design.
+like how this looks," screenshot the current page with `$B` and read the screenshot
+inline. Describe what is there — layout, palette, type, the specific things that make
+it feel wrong — and fold that description into every variant brief as the starting
+point to improve on. That description is the whole evolve mechanism: `$D` has no verb
+that takes a screenshot.
 
 **AskUserQuestion with pre-filled context:** Pre-fill what you inferred from the codebase,
 DESIGN.md, and office-hours output. Then ask for what's missing. Frame as ONE question
@@ -273,9 +297,14 @@ as a one-off?"
 10 approvals has less weight than one approved last week. The decay calculation
 happens at read time, not write time, so the file only grows on change.
 
-**Schema migration:** If the file has no `version` field or `version: 0`, it's
-the legacy approved.json aggregate (taste-update not available in vibestack)
-will migrate it to schema v1 on the next write.
+**Legacy files:** If the file has no `version` field or `version: 0`, it is the
+older per-session `approved.json` aggregate rather than a v1 profile. Nothing
+migrates it for you — read what it does carry (approved values, dates) and treat
+the confidence and count fields as absent instead of assuming they are there.
+
+The profile itself is maintained outside this skill, so it may simply not exist.
+When it doesn't, the project's learnings log is the cross-session taste signal —
+the preamble already loaded it.
 
 **Per-session approved.json files (legacy, still supported):**
 
@@ -291,10 +320,18 @@ approved.json files add the specific recent approval context.
 
 Limit to last 10 sessions. Try/catch JSON parse on each (skip corrupted files).
 
-**Updating taste profile after a design-shotgun session:** When the user picks a
-variant, log the approval via vibe-learnings-log. When they
-explicitly reject a variant, log the rejection via vibe-learnings-log.
-The CLI handles schema migration from approved.json, decay, and conflict flagging.
+**Recording taste after a design-shotgun session:** When the user picks a variant,
+log the approval as a learning; when they explicitly reject one, log the rejection
+the same way. Name the *quality* they responded to, not the variant letter — "picked
+the serif display over two sans variants", not "picked B" — because the letter means
+nothing in the next session and the quality is what should bias the next brief.
+
+```bash
+~/.vibestack/bin/vibe-learnings-log '{"skill":"design-shotgun","type":"taste","key":"<dimension: fonts|colors|layouts|aesthetics>","insight":"<approved|rejected: the quality, in one line>","confidence":<1-10>,"source":"design-shotgun"}'
+```
+
+The preamble reads these back on every future run, which is how taste accumulates
+here. Nothing in this skill writes `taste-profile.json`.
 
 ## Step 3: Generate Variants
 
@@ -354,19 +391,22 @@ If D: drop specified concepts, re-present, re-confirm.
 ### Step 3c: Parallel Generation
 
 **If evolving from a screenshot** (user said "I don't like THIS"), take ONE screenshot
-first:
+first and read it inline, so the brief can name what to move away from:
 
 ```bash
 $B screenshot "$_DESIGN_DIR/current.png"
 ```
 
+If `BROWSE_NOT_AVAILABLE`, ask the user for a screenshot instead of skipping the step
+— the current design is the whole premise of this path.
+
 **Launch N Agent subagents in a single message** (parallel execution). Use the Agent
 tool with `subagent_type: "general-purpose"` for each variant. Each agent is independent
-and handles its own generation, quality check, verification, and retry.
+and handles its own generation, verification, and retry.
 
 **Important: $D path propagation.** The `$D` variable from DESIGN SETUP is a shell
-variable that agents do NOT inherit. Substitute the resolved absolute path (from the
-`DESIGN_READY: /path/to/design` output in Step 0) into each agent prompt.
+variable that agents do NOT inherit. Substitute the resolved absolute path (the one
+DESIGN SETUP echoed) into each agent prompt.
 
 **Agent prompt template** (one per variant, substitute all `{...}` values):
 
@@ -375,32 +415,28 @@ Generate a design variant and save it.
 
 Design binary: {absolute path to $D binary}
 Brief: {the full variant-specific brief for this direction}
-Output: /tmp/variant-{letter}.png
+Staging dir: /tmp/variant-{letter}
 Final location: {_DESIGN_DIR absolute path}/variant-{letter}.png
 
 Steps:
-1. Run: {$D path} generate --brief "{brief}" --output /tmp/variant-{letter}.png
-2. If the command fails with a rate limit error (429 or "rate limit"), wait 5 seconds
+1. Run: {$D path} variants --brief "{brief}" --count 1 --output-dir /tmp/variant-{letter}
+   The image lands at /tmp/variant-{letter}/variant-A.png.
+2. If the command prints DESIGN_ERROR mentioning a rate limit (429), wait 5 seconds
    and retry. Up to 3 retries.
 3. If the output file is missing or empty after the command succeeds, retry once.
-4. Copy: cp /tmp/variant-{letter}.png {_DESIGN_DIR}/variant-{letter}.png
-5. Quality check: {$D path} check --image {_DESIGN_DIR}/variant-{letter}.png --brief "{brief}"
-   If quality check fails, retry generation once.
-6. Verify: ls -lh {_DESIGN_DIR}/variant-{letter}.png
-7. Report exactly one of:
+4. Copy: cp /tmp/variant-{letter}/variant-A.png {_DESIGN_DIR}/variant-{letter}.png
+5. Verify: ls -lh {_DESIGN_DIR}/variant-{letter}.png
+6. Report exactly one of:
    VARIANT_{letter}_DONE: {file size}
    VARIANT_{letter}_FAILED: {error description}
    VARIANT_{letter}_RATE_LIMITED: exhausted retries
 ```
 
-For the evolve path, replace step 1 with:
-```
-{$D path} evolve --screenshot {_DESIGN_DIR}/current.png --brief "{brief}" --output /tmp/variant-{letter}.png
-```
+The agents do not judge their own output — quality is gated once, by you, in Step 3d.
 
-**Why /tmp/ then cp?** In observed sessions, `$D generate --output ~/.vibestack/...`
-failed with "The operation was aborted" while `--output /tmp/...` succeeded. This is
-a sandbox restriction. Always generate to `/tmp/` first, then `cp`.
+**Why /tmp/ then cp?** In observed sessions, generating straight into
+`~/.vibestack/...` failed with "The operation was aborted" while `/tmp/...`
+succeeded. This is a sandbox restriction. Always generate to `/tmp/` first, then `cp`.
 
 ### Step 3d: Results
 
@@ -410,106 +446,59 @@ After all agents complete:
 2. Report status: "All {N} variants generated in ~{actual time}. {successes} succeeded,
    {failures} failed."
 3. For any failures: report explicitly with the error. Do NOT silently skip.
-4. If zero variants succeeded: fall back to sequential generation (one at a time with
-   `$D generate`, showing each as it lands). Tell the user: "Parallel generation failed
+4. If zero variants succeeded: fall back to sequential generation (one `$D variants`
+   call at a time, showing each as it lands). Tell the user: "Parallel generation failed
    (likely rate limiting). Falling back to sequential..."
-5. Proceed to Step 4 (comparison board).
+5. Proceed to Step 4.
 
-**Dynamic image list for comparison board:** When proceeding to Step 4, construct the
-image list from whatever variant files actually exist, not a hardcoded A/B/C list:
+**Quality gate — you are the only one.** Before showing a variant, ask yourself:
+*"Would a human designer be embarrassed to put their name on this?"* If yes, discard
+it and regenerate with a sharper brief. A mediocre mockup is worse than one fewer
+option. Embarrassment triggers: purple gradient hero, 3-column SaaS grid,
+centered-everything, generic stock-photo vibe, system-ui body text, gradient CTA
+button, bubble-radius everything.
+
+**Dynamic image list:** Build the list of what to show from the variant files that
+actually exist, not a hardcoded A/B/C list:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 _IMAGES=$(ls "$_DESIGN_DIR"/variant-*.png 2>/dev/null | tr '\n' ',' | sed 's/,$//')
 ```
 
-Use `$_IMAGES` in the `$D compare --images` command.
+## Step 4: Variant Review + Feedback Loop
 
-## Step 4: Comparison Board + Feedback Loop
+The review happens in the conversation: read every variant PNG inline so the user
+sees the whole set at once, in the order the concepts were presented, each one
+labelled with its direction name from Step 3a.
 
-### Comparison Board + Feedback Loop
+**Then use AskUserQuestion as the chooser:**
 
-Create the comparison board and serve it over HTTP:
+"Which direction should we take forward?"
 
-```bash
-$D compare --images "$_DESIGN_DIR/variant-A.png,$_DESIGN_DIR/variant-B.png,$_DESIGN_DIR/variant-C.png" --output "$_DESIGN_DIR/design-board.html" --serve
-```
+- A) Variant A — [its direction, one line]
+- B) Variant B — [its direction]
+- C) Variant C — [its direction]
+- D) None of these — regenerate with different directions
 
-This command generates the board HTML, starts an HTTP server on a random port,
-and opens it in the user's default browser. **Run it in the background** with `&`
-because the server needs to stay running while the user interacts with the board.
+Add: "Tell me what you'd change about your pick, or which elements you'd take from
+the others — I'll fold that into the next round."
 
-Parse the port from stderr output: `SERVE_STARTED: port=XXXXX`. You need this
-for the board URL and for reloading during regeneration cycles.
+With more than three variants this list exceeds the four-option cap. Batch or split
+per the 5+-option rule at the end of this skill — never drop a variant the user paid
+to generate just to make the call fit.
 
-**PRIMARY WAIT: AskUserQuestion with board URL**
+**If the user picks a variant with no changes:** that's the approval. Go to Step 5.
 
-After the board is serving, use AskUserQuestion to wait for the user. Include the
-board URL so they can click it if they lost the browser tab:
+**If the user asks for a remix, a regeneration, or "more like B":** rebuild the
+briefs from what they said — which variant's layout, which one's palette, what to
+drop — and run Step 3c again into a fresh subdirectory of `$_DESIGN_DIR` (e.g.
+`round-2/`) so the earlier round stays readable. Show the new set and ask again.
 
-"I've opened a comparison board with the design variants:
-http://127.0.0.1:<PORT>/ — Rate them, leave comments, remix
-elements you like, and click Submit when you're done. Let me know when you've
-submitted your feedback (or paste your preferences here). If you clicked
-Regenerate or Remix on the board, tell me and I'll generate new variants."
-
-**Do NOT use AskUserQuestion to ask which variant the user prefers.** The comparison
-board IS the chooser. AskUserQuestion is just the blocking wait mechanism.
-
-**After the user responds to AskUserQuestion:**
-
-Check for feedback files next to the board HTML:
-- `$_DESIGN_DIR/feedback.json` — written when user clicks Submit (final choice)
-- `$_DESIGN_DIR/feedback-pending.json` — written when user clicks Regenerate/Remix/More Like This
-
-```bash
-if [ -f "$_DESIGN_DIR/feedback.json" ]; then
-  echo "SUBMIT_RECEIVED"
-  cat "$_DESIGN_DIR/feedback.json"
-elif [ -f "$_DESIGN_DIR/feedback-pending.json" ]; then
-  echo "REGENERATE_RECEIVED"
-  cat "$_DESIGN_DIR/feedback-pending.json"
-  rm "$_DESIGN_DIR/feedback-pending.json"
-else
-  echo "NO_FEEDBACK_FILE"
-fi
-```
-
-The feedback JSON has this shape:
-```json
-{
-  "preferred": "A",
-  "ratings": { "A": 4, "B": 3, "C": 2 },
-  "comments": { "A": "Love the spacing" },
-  "overall": "Go with A, bigger CTA",
-  "regenerated": false
-}
-```
-
-**If `feedback.json` found:** The user clicked Submit on the board.
-Read `preferred`, `ratings`, `comments`, `overall` from the JSON. Proceed with
-the approved variant.
-
-**If `feedback-pending.json` found:** The user clicked Regenerate/Remix on the board.
-1. Read `regenerateAction` from the JSON (`"different"`, `"match"`, `"more_like_B"`,
-   `"remix"`, or custom text)
-2. If `regenerateAction` is `"remix"`, read `remixSpec` (e.g. `{"layout":"A","colors":"B"}`)
-3. Generate new variants with `$D iterate` or `$D variants` using updated brief
-4. Create new board: `$D compare --images "..." --output "$_DESIGN_DIR/design-board.html"`
-5. Reload the board in the user's browser (same tab):
-   `curl -s -X POST http://127.0.0.1:PORT/api/reload -H 'Content-Type: application/json' -d '{"html":"$_DESIGN_DIR/design-board.html"}'`
-6. The board auto-refreshes. **AskUserQuestion again** with the same board URL to
-   wait for the next round of feedback. Repeat until `feedback.json` appears.
-
-**If `NO_FEEDBACK_FILE`:** The user typed their preferences directly in the
-AskUserQuestion response instead of using the board. Use their text response
-as the feedback.
-
-**POLLING FALLBACK:** Only use polling if `$D serve` fails (no port available).
-In that case, show each variant inline using the Read tool (so the user can see them),
-then use AskUserQuestion:
-"The comparison board server failed to start. I've shown the variants above.
-Which do you prefer? Any feedback?"
+**Round cap: 3.** After the third round, ask whether to keep iterating or settle on
+the closest variant so far. Unbounded regeneration burns API credits and rarely
+converges — if three rounds haven't landed it, the brief is the problem, not the
+generation.
 
 **After receiving feedback (any path):** Output a clear summary confirming
 what was understood:
@@ -531,13 +520,12 @@ echo '{"approved_variant":"<V>","feedback":"<FB>","date":"'$(date -u +%Y-%m-%dT%
 
 ## Step 5: Feedback Confirmation
 
-After receiving feedback (via HTTP POST or AskUserQuestion fallback), output a clear
-summary confirming what was understood:
+After the user has chosen, output a clear summary confirming what was understood:
 
 "Here's what I understood from your feedback:
 
 PREFERRED: Variant [X]
-RATINGS: A: 4/5, B: 3/5, C: 2/5
+RATINGS: whatever they ranked, if they ranked anything
 YOUR NOTES: [full text of per-variant and overall comments]
 DIRECTION: [regenerate action if any]
 
@@ -555,7 +543,7 @@ The calling skill reads `approved.json` and the approved variant PNG.
 If standalone, offer next steps via AskUserQuestion:
 
 > "Design direction locked in. What's next?
-> A) Iterate more — refine the approved variant with specific feedback
+> A) Iterate more — regenerate from the approved direction with specific feedback
 > B) Finalize — generate production Pretext-native HTML/CSS with /design-html
 > C) Save to plan — add this as an approved mockup reference in the current plan
 > D) Done — I'll use this later"
@@ -564,9 +552,11 @@ If standalone, offer next steps via AskUserQuestion:
 
 1. **Never save to `.context/`, `docs/designs/`, or `/tmp/`.** All design artifacts go
    to `~/.vibestack/projects/$SLUG/designs/`. This is enforced. See DESIGN_SETUP above.
-2. **Show variants inline before opening the board.** The user should see designs
-   immediately in their terminal. The browser board is for detailed feedback.
+2. **Show variants inline, always.** Reading each PNG into the conversation is how
+   the user sees the designs — there is no board to open in their browser.
 3. **Confirm feedback before saving.** Always summarize what you understood and verify.
 4. **Taste memory is automatic.** Prior approved designs inform new generations by default.
 5. **Two rounds max on context gathering.** Don't over-interrogate. Proceed with assumptions.
 6. **DESIGN.md is the default constraint.** Unless the user says otherwise.
+
+{{include lib/snippets/askuserquestion-split.md}}

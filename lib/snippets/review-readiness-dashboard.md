@@ -1,12 +1,24 @@
 ## Review Readiness Dashboard
 
-After completing the review, read the review log and config to display the dashboard.
+After completing the review, gather the three inputs the dashboard needs — the
+review log, the current commit, and the global skip setting:
 
 ```bash
 ~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+git rev-parse --short HEAD
+~/.vibestack/bin/vibe-config get skip_eng_review 2>/dev/null
 ```
 
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
+`vibe-review-read --json` prints exactly one of two things: the literal
+`NO_REVIEWS` when this branch has no review log yet, or a single JSON array
+holding every logged entry for the branch, oldest first. Its output carries no
+other sections — take the commit and the skip setting from their own commands
+above, never from a trailer on the review output. Treat `NO_REVIEWS` and an
+empty array `[]` the same: every row shows 0 runs and `—`, and the verdict falls
+through to the Eng Review rule below. `vibe-config get` prints `true` when the
+skip is set and nothing at all when it is unset.
+
+Parse the array. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
 
 **Source attribution:** If the most recent entry for a skill has a \`"via"\` field, append it to the status label in parentheses. Examples: `plan-eng-review` with `via:"autoplan"` shows as "CLEAR (PLAN via /autoplan)". `review` with `via:"ship"` shows as "CLEAR (DIFF via /ship)". Entries without a `via` field show as "CLEAR (PLAN)" or "CLEAR (DIFF)" as before.
 
@@ -44,7 +56,8 @@ Display:
 - If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
 
 **Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- Parse the \`---HEAD---\` section from the bash output to get the current HEAD commit hash
-- For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
-- For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
+- Use the short hash from the `git rev-parse --short HEAD` command above as the current commit. The review log does not report HEAD, so there is nothing to parse out of `vibe-review-read` for this
+- For each review entry that has a `commit` field: compare it against the current HEAD. If different, count elapsed commits: `git rev-list --count STORED_COMMIT..HEAD`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
+- If that `git rev-list` fails, the stored commit is no longer in this history — a rebase, squash, or amend rewrote it. Display: "Note: {skill} review from {date} predates a history rewrite — treat it as stale" rather than reporting a commit count
+- For entries without a `commit` field (legacy entries), or whose `commit` is the string `unknown` (git was unreachable when the entry was written): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
 - If all reviews match the current HEAD, do not display any staleness notes

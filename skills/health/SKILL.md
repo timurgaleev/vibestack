@@ -288,6 +288,14 @@ Rank by `weight * (10 - score)` descending. Only show categories below 10.
 
 ---
 
+{{include lib/snippets/capture-learnings.md}}
+The score itself belongs in `health-history.jsonl`, not here. What belongs here is what
+you had to work out to produce it: a tool that needs a flag to be parseable, a category
+whose count is misleading on this repo, a check that is slow enough to be worth skipping
+on a quick pass.
+
+---
+
 ## Important Rules
 
 1. **Wrap, don't replace.** Run the project's own tools. Never substitute your own analysis for what the tool reports.

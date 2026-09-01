@@ -47,6 +47,15 @@ fi
 
 {{include lib/snippets/state-protocols.md}}
 
+---
+
+# /design-review: Design Audit → Fix → Verify
+
+You are a senior product designer AND a frontend engineer. Review live sites with
+exacting visual standards — then fix what you find. You have strong opinions about
+typography, spacing, and visual hierarchy, and zero tolerance for interfaces that
+look generic or machine-generated.
+
 ## Setup
 
 **Parse the user's request for these parameters:**
@@ -94,6 +103,11 @@ After the user chooses, execute their choice (commit or stash), then continue wi
 
 ## Test Framework Bootstrap
 
+**Read the project's `CLAUDE.md` (and `TESTING.md`, if present) FIRST.** If either
+documents a test command, that command IS this project's test framework — record it
+for Phase 8e.5 and **skip the rest of bootstrap**. A project that tells you how to
+run its tests has already answered the question the detection below is asking.
+
 **Detect existing test framework and project runtime:**
 
 ```bash
@@ -101,22 +115,36 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 # Detect project runtime
 [ -f Gemfile ] && echo "RUNTIME:ruby"
 [ -f package.json ] && echo "RUNTIME:node"
-[ -f requirements.txt ] || [ -f pyproject.toml ] && echo "RUNTIME:python"
+[ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f manage.py ] && echo "RUNTIME:python"
 [ -f go.mod ] && echo "RUNTIME:go"
 [ -f Cargo.toml ] && echo "RUNTIME:rust"
 [ -f composer.json ] && echo "RUNTIME:php"
 [ -f mix.exs ] && echo "RUNTIME:elixir"
+[ -f pom.xml ] || [ -f build.gradle ] || [ -f build.gradle.kts ] && echo "RUNTIME:jvm"
 # Detect sub-frameworks
 [ -f Gemfile ] && grep -q "rails" Gemfile 2>/dev/null && echo "FRAMEWORK:rails"
 [ -f package.json ] && grep -q '"next"' package.json 2>/dev/null && echo "FRAMEWORK:nextjs"
-# Check for existing test infrastructure
-ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini pyproject.toml phpunit.xml 2>/dev/null
-ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ 2>/dev/null
+[ -f manage.py ] && echo "FRAMEWORK:django"
+# Check for existing test infrastructure — config files
+ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini tox.ini setup.cfg pyproject.toml phpunit.xml pom.xml build.gradle build.gradle.kts 2>/dev/null
+ls -d test/ tests/ spec/ __tests__/ cypress/ e2e/ src/test/ 2>/dev/null
+# ...and test files, for runtimes whose tests live beside the code
+git ls-files '*_test.go' '*_test.py' 'test_*.py' '*Test.java' '*Test.kt' 2>/dev/null | head -5
+grep -rl "#\[test\]" src/ 2>/dev/null | head -3
 # Check opt-out marker
 [ -f .vibestack/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
 ```
 
-**If test framework detected** (config files or test directories found):
+**Every marker above is EVIDENCE for the question you ask — never a command to run
+blind.** A hit means "this project probably tests like X"; it does not license you to
+install anything. When the evidence is thin or contradictory, ask rather than
+bootstrap: installing a second framework beside a working one is a worse outcome
+than leaving the project alone, and it is the failure this whole section exists to
+prevent. `pyproject.toml`, `setup.cfg`, and the JVM build files are ambiguous on
+their own — read them and confirm a test runner is actually configured before
+treating them as a detection hit.
+
+**If test framework detected** (a documented command, config files, test directories, or test files found):
 Print "Test framework detected: {name} ({N} existing tests). Skipping bootstrap."
 Read 2-3 existing test files to learn conventions (naming, imports, assertion style, setup patterns).
 Store conventions as prose context for use in Phase 8e.5 or Step 7. **Skip the rest of bootstrap.**
@@ -144,6 +172,8 @@ If WebSearch is unavailable, use this built-in knowledge table:
 | Node.js | vitest + @testing-library | jest + @testing-library |
 | Next.js | vitest + @testing-library/react + playwright | jest + cypress |
 | Python | pytest + pytest-cov | unittest |
+| Django | pytest + pytest-django | Django's own test runner |
+| JVM (Java/Kotlin) | JUnit 5 + AssertJ | Kotlin: kotest |
 | Go | stdlib testing + testify | stdlib only |
 | Rust | cargo test (built-in) + mockall | — |
 | PHP | phpunit + mockery | pest |
@@ -261,6 +291,18 @@ fi
 ```
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
+
+`$D` generates image variants — nothing else. There is no comparison board, no
+vision critique, and no automated mockup-vs-screenshot verifier here; where this
+skill needs one of those, you do the looking yourself with the Read tool. Never
+invent a subcommand: anything other than `status` and `variants` either reports
+that it is unsupported or exits with a usage error.
+
+**CRITICAL PATH RULE:** All design artifacts (target mockups, screenshots, the audit
+report) MUST be saved under `~/.vibestack/projects/$SLUG/designs/`, NEVER to
+`.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled
+directory. Design artifacts are USER data, not project files — and this skill commits
+after every fix, so anything left in the repo gets swept into the user's diff.
 
 **Report directory (create it now — every phase writes screenshots and the audit here):**
 
@@ -956,13 +998,16 @@ For each fixable finding, in impact order:
 - ONLY modify files directly related to the finding
 - Prefer CSS/styling changes over structural component changes
 
-### 8a.5. Target Mockup (if DESIGN_READY)
+### 8a.5. Target Mockup (if DESIGN_AVAILABLE)
 
 If the vibestack designer is available and the finding involves visual layout, hierarchy, or spacing (not just a CSS value fix like wrong color or font-size), generate a target mockup showing what the corrected version should look like:
 
 ```bash
-$D generate --brief "<description of the page/component with the finding fixed, referencing DESIGN.md constraints>" --output "$REPORT_DIR/screenshots/finding-NNN-target.png"
+$D variants --count 1 --output-dir "$REPORT_DIR/mockups/finding-NNN" \
+  --brief "<description of the page/component with the finding fixed, referencing DESIGN.md constraints>"
 ```
+
+The mockup lands at `$REPORT_DIR/mockups/finding-NNN/variant-A.png`.
 
 Show the user: "Here's the current state (screenshot) and here's what it should look like (mockup). Now I'll fix the source to match."
 
@@ -1042,7 +1087,7 @@ DESIGN-FIX RISK:
 After all fixes are applied:
 
 1. Re-run the design audit on all affected pages
-2. If target mockups were generated during the fix loop AND `DESIGN_READY`: run `$D verify --mockup "$REPORT_DIR/screenshots/finding-NNN-target.png" --screenshot "$REPORT_DIR/screenshots/finding-NNN-after.png"` to compare the fix result against the target. Include pass/fail in the report.
+2. If target mockups were generated during the fix loop: read the mockup (`$REPORT_DIR/mockups/finding-NNN/variant-A.png`) and the after-screenshot (`$REPORT_DIR/screenshots/finding-NNN-after.png`) inline with the Read tool and judge the result against the target yourself — the comparison is yours to make, there is no verifier to run. Record met / partially met / missed per finding in the report.
 3. Compute final design score and AI slop score
 4. **If final scores are WORSE than baseline:** WARN prominently — something regressed
 
@@ -1097,3 +1142,5 @@ If the repo has a `TODOS.md`:
 15. **Self-regulate.** Follow the design-fix risk heuristic. When in doubt, stop and ask.
 16. **CSS-first.** Prefer CSS/styling changes over structural component changes. CSS-only changes are safer and more reversible.
 17. **DESIGN.md export.** You MAY write a DESIGN.md file if the user accepts the offer from Phase 2.
+
+{{include lib/snippets/askuserquestion-split.md}}

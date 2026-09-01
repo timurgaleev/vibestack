@@ -119,11 +119,12 @@ Show it. The only reason to skip mockups is when there is literally no UI to des
 Design reviews without visuals are just opinion. Mockups ARE the plan for design work.
 You need to see the design before you code it.
 
-Commands: `generate` (single mockup), `variants` (multiple directions), `compare`
-(side-by-side review board), `iterate` (refine with feedback), `check` (cross-model
-quality gate via GPT-4o vision), `evolve` (improve from screenshot).
+Commands: `variants` (generate mockup directions), `compare` (side-by-side review
+board), `check` (cross-model quality gate). Only `variants` is guaranteed — the
+other two report `DESIGN_<verb>_NOT_SUPPORTED` when the configured generator makes
+images but nothing else, and each call site below says what to do instead.
 
-Setup is handled by the DESIGN SETUP section below. If `DESIGN_READY` is printed,
+Setup is handled by the DESIGN SETUP section below. If `DESIGN_AVAILABLE` is printed,
 the designer is available and you should use it.
 
 ## Design Principles
@@ -292,6 +293,12 @@ fi
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
 
+**Where design artifacts go.** Every mockup, comparison board, and `approved.json`
+is written under `~/.vibestack/projects/$SLUG/designs/` — never to `.context/`,
+`docs/`, `/tmp/`, or anywhere inside the repo. They are the user's data, not the
+project's: they have to survive a reboot, outlive the branch they were made on, and
+never end up in a commit.
+
 ## Step 0: Design Scope Assessment
 
 ### 0A. Initial Design Rating
@@ -316,10 +323,10 @@ AskUserQuestion: "I've rated this plan {N}/10 on design completeness. The bigges
 
 **STOP.** Do NOT proceed until user responds.
 
-## Step 0.5: Visual Mockups (DEFAULT when DESIGN_READY)
+## Step 0.5: Visual Mockups (DEFAULT when DESIGN_AVAILABLE)
 
 If the plan involves any UI — screens, pages, components, visual changes — AND the
-vibestack designer is available (`DESIGN_READY` was printed during setup), **generate
+vibestack designer is available (`DESIGN_AVAILABLE` was printed during setup), **generate
 mockups immediately.** Do not ask permission. This is the default behavior.
 
 Tell the user: "Generating visual mockups with the vibestack designer. This is how we
@@ -339,8 +346,8 @@ planning phase. Generating mockups during planning is the whole point.
 
 Allowed commands under this exception:
 - `mkdir -p ~/.vibestack/projects/$SLUG/designs/...`
-- `$D generate`, `$D variants`, `$D compare`, `$D iterate`, `$D evolve`, `$D check`
-- `open` (fallback for viewing boards when `$B` is not available)
+- `$D variants`, `$D check`, `$D compare`
+- `open` (to view a board or a mockup when no browser is already showing it)
 
 First, set up the output directory. Name it after the screen/feature being designed and today's date:
 
@@ -372,7 +379,13 @@ $D check --image "$_DESIGN_DIR/variant-A.png" --brief "<the original brief>"
 
 Flag any variants that fail the quality check. Offer to regenerate failures.
 
-**Do NOT show variants inline via Read tool and ask for preferences.** Proceed
+If the command prints `DESIGN_check_NOT_SUPPORTED`, the configured generator makes
+images but does not critique them. Do the critique yourself: read each variant with
+the Read tool and judge it against the brief and the AI slop blacklist below, then
+flag failures the same way.
+
+**Do NOT show variants inline via Read tool and ask for preferences** — unless the
+board turns out to be unsupported and the inline fallback fires. Proceed
 directly to the Comparison Board + Feedback Loop section below. The comparison board
 IS the chooser — it has rating controls, comments, remix/regenerate, and structured
 feedback output. Showing mockups inline is a degraded experience.
@@ -388,6 +401,10 @@ $D compare --images "$_DESIGN_DIR/variant-A.png,$_DESIGN_DIR/variant-B.png,$_DES
 This command generates the board HTML, starts an HTTP server on a random port,
 and opens it in the user's default browser. **Run it in the background** with `&`
 because the server needs to stay running while the user interacts with the board.
+
+If it prints `DESIGN_compare_NOT_SUPPORTED`, the configured generator produces
+variants only and there is no board to serve. Skip to the inline fallback below —
+there is no feedback file to wait for, so nothing else in this section applies.
 
 Parse the port from stderr output: `SERVE_STARTED: port=XXXXX`. You need this
 for the board URL and for reloading during regeneration cycles.
@@ -444,7 +461,7 @@ the approved variant.
 1. Read `regenerateAction` from the JSON (`"different"`, `"match"`, `"more_like_B"`,
    `"remix"`, or custom text)
 2. If `regenerateAction` is `"remix"`, read `remixSpec` (e.g. `{"layout":"A","colors":"B"}`)
-3. Generate new variants with `$D iterate` or `$D variants` using updated brief
+3. Generate new variants with `$D variants`, folding the feedback into an updated brief
 4. Create new board: `$D compare --images "..." --output "$_DESIGN_DIR/design-board.html"`
 5. Reload the board in the user's browser (same tab):
    `curl -s -X POST http://127.0.0.1:PORT/api/reload -H 'Content-Type: application/json' -d '{"html":"$_DESIGN_DIR/design-board.html"}'`
@@ -455,11 +472,14 @@ the approved variant.
 AskUserQuestion response instead of using the board. Use their text response
 as the feedback.
 
-**POLLING FALLBACK:** Only use polling if `$D serve` fails (no port available).
-In that case, show each variant inline using the Read tool (so the user can see them),
+**INLINE FALLBACK:** Use this whenever no board is serving — either `$D compare`
+reported that boards are unsupported, or the server failed to start (no port
+available). Show each variant inline using the Read tool (so the user can see them),
 then use AskUserQuestion:
-"The comparison board server failed to start. I've shown the variants above.
+"No comparison board is available, so I've shown the variants above.
 Which do you prefer? Any feedback?"
+
+This is the one path where AskUserQuestion may carry the variant choice itself.
 
 **After receiving feedback (any path):** Output a clear summary confirming
 what was understood:
@@ -485,7 +505,7 @@ Note which direction was approved. This becomes the visual reference for all sub
 
 **Multiple variants/screens:** If the user asked for multiple variants (e.g., "5 versions of the homepage"), generate ALL as separate variant sets with their own comparison boards. Each screen/variant set gets its own subdirectory under `designs/`. Complete all mockup generation and user selection before starting review passes.
 
-**If `DESIGN_NOT_AVAILABLE`:** Tell the user: "The vibestack designer isn't set up yet. Run `$D setup` to enable visual mockups. Proceeding with text-only review, but you're missing the best part." Then proceed to review passes with text-based review.
+**If `DESIGN_NOT_AVAILABLE`:** Tell the user: "The vibestack designer isn't set up yet — it needs `OPENAI_API_KEY` in your environment and `curl` on PATH. Proceeding with text-only review, but you're missing the best part." Then proceed to review passes with text-based review.
 
 ## Design Outside Voices (parallel)
 
@@ -611,11 +631,13 @@ Re-run loop: invoke /plan-design-review again → re-rate → sections at 8+ get
 
 ### "Show me what 10/10 looks like" (requires design binary)
 
-If `DESIGN_READY` was printed during setup AND a dimension rates below 7/10,
+If `DESIGN_AVAILABLE` was printed during setup AND a dimension rates below 7/10,
 offer to generate a visual mockup showing what the improved version would look like:
 
 ```bash
-$D generate --brief "<description of what 10/10 looks like for this dimension>" --output /tmp/vibestack-ideal-<dimension>.png
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
+$D variants --brief "<description of what 10/10 looks like for this dimension>" --count 1 --output-dir "$_IDEAL_DIR"
 ```
 
 Show the mockup to the user via the Read tool. This makes the gap between
@@ -741,7 +763,7 @@ Source: [OpenAI "Designing Delightful Frontends with GPT-5.4"](https://developer
 - "Hero section" → what makes this hero feel like THIS product?
 - "Clean, modern UI" → meaningless. Replace with actual design decisions.
 - "Dashboard with widgets" → what makes this NOT every other dashboard?
-If visual mockups were generated in Step 0.5, evaluate them against the AI slop blacklist above. Read each mockup image using the Read tool. Does the mockup fall into generic patterns (3-column grid, centered hero, stock-photo feel)? If so, flag it and offer to regenerate with more specific direction via `$D iterate --feedback "..."`.
+If visual mockups were generated in Step 0.5, evaluate them against the AI slop blacklist above. Read each mockup image using the Read tool. Does the mockup fall into generic patterns (3-column grid, centered hero, stock-photo feel)? If so, flag it and offer to regenerate via `$D variants` with a brief that names what to do instead.
 **STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY.
 
 ### Pass 5: Design System Alignment
@@ -773,7 +795,7 @@ If mockups were generated in Step 0.5 and review passes changed significant desi
 
 AskUserQuestion: "The review passes changed [list major design changes]. Want me to regenerate mockups to reflect the updated plan? This ensures the visual reference matches what we're actually building."
 
-If yes, use `$D iterate` with feedback summarizing the changes, or `$D variants` with an updated brief. Save to the same `$_DESIGN_DIR` directory.
+If yes, use `$D variants` with a brief updated to carry the changes. Save to the same `$_DESIGN_DIR` directory.
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan design reviews:
@@ -783,7 +805,7 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * **Map to Design Principles above.** One sentence connecting your recommendation to a specific principle.
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
 * **Escape hatch (tightened):** If a section has zero findings, state "No issues, moving on" and proceed. If it has findings, use AskUserQuestion for each — a gap with an "obvious fix" is still a gap and still needs user approval before any change lands in the plan. Only skip AskUserQuestion when the fix is genuinely trivial AND there are no meaningful design alternatives. When in doubt, ask.
-* **NEVER use AskUserQuestion to ask which variant the user prefers.** Always create a comparison board first (`$D compare --serve`) and open it in the browser. The board has rating controls, comments, remix/regenerate buttons, and structured feedback output. Use AskUserQuestion ONLY to notify the user the board is open and wait for them to finish — not to present variants inline and ask "which do you prefer?" That is a degraded experience.
+* **NEVER use AskUserQuestion to ask which variant the user prefers — unless the inline fallback fired and there is no board at all.** Always create a comparison board first (`$D compare --serve`) and open it in the browser. The board has rating controls, comments, remix/regenerate buttons, and structured feedback output. Use AskUserQuestion ONLY to notify the user the board is open and wait for them to finish — not to present variants inline and ask "which do you prefer?" That is a degraded experience.
 
 {{include lib/snippets/tasks-section-emit.md}}
 

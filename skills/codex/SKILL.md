@@ -14,6 +14,7 @@ allowed-tools:
   - Bash
   - Read
   - Write
+  - Edit
   - Glob
   - Grep
   - AskUserQuestion
@@ -69,10 +70,28 @@ If `NOT_FOUND`: stop and tell the user:
 
 ---
 
-## Step 0.5: Auth probe + version check
+## Step 0.5: Nesting probe + auth probe + version check
 
-Before building expensive prompts, verify Codex has valid auth AND the installed
-CLI version isn't in the known-bad list.
+Before building expensive prompts, verify this session is not already running
+inside Codex, that Codex has valid auth, and that the installed CLI version
+isn't in the known-bad list.
+
+**Running-under-Codex probe.** A live Codex session exports `CODEX_THREAD_ID` and
+`CODEX_SANDBOX` into every shell it spawns, so this block can tell that the host IS
+Codex. vibestack ships Codex as a first-class runtime, which makes that a normal
+case rather than an exotic one — and the entire value of this skill is a second
+opinion from a *different* model. Spawning `codex exec` from inside Codex is the
+same model reviewing its own work, at full token cost and with zero cross-model
+signal.
+
+```bash
+if [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  echo "UNDER_CODEX"
+fi
+```
+
+If `UNDER_CODEX`, stop and tell the user:
+"Already running under Codex — /codex here would be the same model reviewing itself, at full token cost and with no cross-model signal. Use `/claude` for a second opinion from a different model, or re-run with `VIBE_FORCE_CODEX_REVIEW=1` to force the nested pass."
 
 **Multi-signal auth probe.** Accept any of: `$CODEX_API_KEY` set, `$OPENAI_API_KEY`
 set, or `${CODEX_HOME:-$HOME/.codex}/auth.json` exists. This avoids false-negatives
@@ -124,6 +143,47 @@ mkdir -p "$PLAN_ROOT" 2>/dev/null || true
 
 After this, every subsequent bash block in this skill uses `"$PLAN_ROOT"` and
 `"$TMP_ROOT"` rather than hardcoded paths.
+
+---
+
+## Step 0.7: Detect platform and base branch
+
+Every mode diffs against a base branch — Review passes it to `--base`, Challenge and
+Consult name it in the prompt — so resolve it once here rather than per mode.
+
+First, detect the git hosting platform from the remote URL:
+
+```bash
+git remote get-url origin 2>/dev/null
+```
+
+- If the URL contains "github.com" → platform is **GitHub**
+- If the URL contains "gitlab" → platform is **GitLab**
+- Otherwise, check CLI availability:
+  - `gh auth status 2>/dev/null` succeeds → platform is **GitHub** (covers GitHub Enterprise)
+  - `glab auth status 2>/dev/null` succeeds → platform is **GitLab** (covers self-hosted)
+  - Neither → **unknown** (use git-native commands only)
+
+Determine which branch this PR/MR targets, or the repo's default branch if no
+PR/MR exists. Use the result as "the base branch" in all subsequent steps.
+
+**If GitHub:**
+1. `gh pr view --json baseRefName -q .baseRefName` — if succeeds, use it
+2. `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` — if succeeds, use it
+
+**If GitLab:**
+1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
+2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
+
+**Git-native fallback (if unknown platform, or CLI commands fail):**
+1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
+2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
+3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
+
+If all fail, fall back to `main`.
+
+Export the detected name as `BASE` for the bash blocks below, and substitute it
+wherever the prompts in Step 2B and Step 2C say `<base>`.
 
 ---
 
@@ -179,9 +239,9 @@ Step 2A for details.
 
 Run Codex code review against the current branch diff.
 
-1. Detect base branch:
+1. Set `BASE` to the branch resolved in Step 0.7:
 ```bash
-BASE=$(gh pr view --json baseRefName -q '.baseRefName' 2>/dev/null || git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+BASE="<base branch detected in Step 0.7>"
 ```
 
 2. Create temp file for stderr capture:
@@ -215,12 +275,13 @@ cd "$_REPO_ROOT"
 # Portable timeout (gtimeout → timeout → unwrapped); bare `timeout` is absent on
 # stock macOS and would exit 127 before codex runs.
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
-# 330s (5.5min) is slightly longer than the Bash 300s so the shell wrapper
-# only fires if Bash's own timeout doesn't.
-${_CX_TO:+$_CX_TO 330} codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+# The 330s wrapper sits BELOW the 360s Bash gate so the wrapper fires FIRST and
+# a stall surfaces as a diagnosable exit 124 with an explicit message, never as
+# a silent harness kill that the gate in step 5 would read as "no findings".
+${_CX_TO:+$_CX_TO 330} codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR"
 _CODEX_EXIT=$?
 if [ "$_CODEX_EXIT" = "124" ]; then
-  true # vibe-review-log codex_timeout 330 (not yet implemented)
+  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","timeout_s":330}' >/dev/null 2>&1 || true
   echo "Codex stalled past 5.5 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
 elif [ "$_CODEX_EXIT" != "0" ]; then
   echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
@@ -229,6 +290,12 @@ fi
 ```
 
 If the user passed `--xhigh`, use `"xhigh"` instead of `"high"`.
+
+**A model override never reaches this call as `-m`.** `codex review` has no
+`-m` / `--model` option — its only override channel is `-c` — so forwarding the
+flag aborts on argument parsing before any API call is made. Translate the
+user's `-m <model>` into `-c model="<model>"` here. The `codex exec` paths (the
+custom-instructions path below, Challenge, Consult) take `-m` as-is.
 
 **Custom-instructions path (user typed `/codex review <focus>`):** `codex exec`
 with the diff written to a tempfile and inlined into the prompt. We preserve
@@ -251,11 +318,11 @@ _PROMPT_FILE=$(mktemp "$TMP_ROOT/codex-prompt-XXXXXX.txt")
   printf '\nDIFF_END\n'
 } > "$_PROMPT_FILE"
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
-${_CX_TO:+$_CX_TO 330} codex exec -s read-only "$(cat "$_PROMPT_FILE")" -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+${_CX_TO:+$_CX_TO 330} codex exec -s read-only "$(cat "$_PROMPT_FILE")" -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR"
 _CODEX_EXIT=$?
 rm -f "$_PROMPT_FILE"
 if [ "$_CODEX_EXIT" = "124" ]; then
-  true # vibe-review-log codex_timeout 330 (not yet implemented)
+  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","timeout_s":330}' >/dev/null 2>&1 || true
   echo "Codex stalled past 5.5 minutes."
 elif [ "$_CODEX_EXIT" != "0" ]; then
   echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
@@ -269,16 +336,32 @@ findings). The exec route loses that tuning but gains custom-instructions
 support; the prompt explicitly demands `[P1]` / `[P2]` markers so the gate logic
 in step 4 still works.
 
-Use `timeout: 300000` on the Bash call for either path.
+Use `timeout: 360000` on the Bash call for either path — above the 330s inner
+wrapper, so the wrapper is what fires on a stall.
 
 4. Capture the output. Then parse cost from stderr:
 ```bash
 grep "tokens used" "$TMPERR" 2>/dev/null || echo "tokens: unknown"
 ```
 
-5. Determine gate verdict by checking the review output for critical findings.
-   If the output contains `[P1]` — the gate is **FAIL**.
-   If no `[P1]` markers are found (only `[P2]` or no findings) — the gate is **PASS**.
+5. Determine the gate verdict. **The gate fails closed** — a run that cannot be
+verified is a FAIL, never a PASS. A review that never happened must not read as a
+clean bill of health, and every failure mode below (dead auth, a rejected flag, a
+model entitlement error, a stall) produces exactly the same thing a clean review
+produces: no `[P1]` markers.
+
+   Apply these checks in order and stop at the first that matches:
+
+   1. `$_CODEX_EXIT` is non-zero — including 124 — → **FAIL**, reported as "review unavailable".
+   2. The captured output is empty or whitespace only → **FAIL**, "review produced no output".
+   3. The output contains `[P0]` or `[P1]`, or codex's native `P0:` / `P1:` severity prefixes → **FAIL** with the finding count.
+   4. Only `[P2]` findings → **PASS**, with the advisory count.
+   5. The run exited clean and produced real prose, but no severity marker anywhere, AND it reads as a review that found nothing → **PASS**, reported as "clean — no findings". A review with nothing to report has nothing to tag, so demanding a marker here would fail every genuinely clean run.
+   6. Anything else — output that is not a review at all (a usage message, a stack trace, a prompt echo) → **FAIL**, "review output not in the expected form". The gate has nothing to grade, which is not the same as nothing to report.
+
+   Check 5 is a judgement, not a string match: read the output and decide whether
+   it is a review concluding "no issues" or something that merely failed to look
+   like one. When you cannot tell, take check 6 — the fail-closed side.
 
 6. Present the output:
 
@@ -294,6 +377,12 @@ or
 
 ```
 GATE: FAIL (N critical findings)
+```
+
+or, when the gate failed because the run could not be verified (checks 1, 2, 4):
+
+```
+GATE: FAIL (review unavailable — <exit code / no output / untagged output>)
 ```
 
 6a. **Synthesis recommendation (REQUIRED).** After presenting Codex's verbatim
@@ -322,14 +411,21 @@ CROSS-MODEL ANALYSIS:
   Agreement rate: X% (N/M total unique findings overlap)
 ```
 
-8. Persist the review result:
+8. Persist the review result. The Review Readiness Dashboard and the plan file
+report both read this log, so a review that is not logged is a review that never
+happened as far as the rest of the pack is concerned:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"commit":"'"$(git rev-parse --short HEAD)"'"}' (not yet implemented)
+~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
-Substitute: TIMESTAMP (ISO 8601), STATUS ("clean" if PASS, "issues_found" if FAIL),
-GATE ("pass" or "fail"), findings (count of [P1] + [P2] markers),
-findings_fixed (count of findings that were addressed/fixed before shipping).
+Substitute: TIMESTAMP (ISO 8601), STATUS — "clean" when the gate passed on
+check 4 or 5, "issues_found" when it failed on check 3 (real findings), and
+"unavailable" when it failed on check 1, 2 or 6. Those three are the states
+where the review did not happen or did not produce a review, and the dashboard
+must not show any of them as a completed review),
+GATE ("pass" or "fail"), findings (count of [P0] + [P1] + [P2] markers, 0 when
+unavailable), findings_fixed (count of findings that were addressed/fixed before
+shipping).
 
 9. Clean up temp files:
 ```bash
@@ -357,7 +453,10 @@ With focus (e.g., "security"):
 
 Review the changes on this branch against the base branch. Run `git diff origin/<base>` to see the diff. Focus specifically on SECURITY. Your job is to find every way an attacker could exploit this code. Think about injection vectors, auth bypasses, privilege escalation, data exposure, and timing attacks. Be adversarial."
 
-2. Run codex exec with **JSONL output** to capture reasoning traces and tool calls (10-minute timeout):
+2. Run codex exec with **JSONL output** to capture reasoning traces and tool calls.
+The inner wrapper is 540s and the Bash call gets `timeout: 600000`, so on a stall
+the wrapper fires first and the run ends with a diagnosable exit 124 rather than a
+silent harness kill:
 
 If the user passed `--xhigh`, use `"xhigh"` instead of `"high"`.
 
@@ -373,7 +472,7 @@ if [ -z "$PYTHON_CMD" ]; then
   exit 1
 fi
 TMPERR=${TMPERR:-$(mktemp "$TMP_ROOT/codex-err-XXXXXX.txt")}
-${_CX_TO:+$_CX_TO 600} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+${_CX_TO:+$_CX_TO 540} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 import sys, json
 turn_completed_count = 0
 for line in sys.stdin:
@@ -407,8 +506,15 @@ if turn_completed_count == 0:
 _CODEX_EXIT=${PIPESTATUS[0]}
 # Hang detection — log + surface actionable message
 if [ "$_CODEX_EXIT" = "124" ]; then
-  true # vibe-review-log codex_timeout 600 (not yet implemented)
-  echo "Codex stalled past 10 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
+  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-challenge","status":"timeout","timeout_s":540}' >/dev/null 2>&1 || true
+  echo "Codex stalled past 9 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
+# Surface non-zero exits so an empty stream is never read as "codex found nothing".
+# A rejected flag, a parse error, or a model-entitlement failure all look identical
+# to a clean adversarial pass unless the exit code is printed.
+elif [ "$_CODEX_EXIT" != "0" ]; then
+  echo "[codex exit $_CODEX_EXIT] $(head -1 "$TMPERR" 2>/dev/null)"
+  head -20 "$TMPERR" 2>/dev/null | sed 's/^/  /'
+  echo "Codex did not complete cleanly — report this challenge as UNAVAILABLE, never as 'no problems found'."
 fi
 # Surface auth errors from captured stderr instead of dropping them
 if grep -qiE "auth|login|unauthorized" "$TMPERR" 2>/dev/null; then
@@ -507,7 +613,9 @@ For non-plan consult prompts (user typed `/codex <question>`), still prepend the
 
 <user's question>"
 
-4. Run codex exec with **JSONL output** to capture reasoning traces (10-minute timeout):
+4. Run codex exec with **JSONL output** to capture reasoning traces. As in Challenge
+mode, the 540s inner wrapper sits below the 600s Bash gate so a stall is reported,
+not silently truncated:
 
 If the user passed `--xhigh`, use `"xhigh"` instead of `"medium"`.
 
@@ -523,7 +631,7 @@ if [ -z "$PYTHON_CMD" ]; then
   echo "ERROR: Python 3 is required to parse Codex JSON output. Install python3 or python and retry." >&2
   exit 1
 fi
-${_CX_TO:+$_CX_TO 600} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+${_CX_TO:+$_CX_TO 540} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 import sys, json
 for line in sys.stdin:
     line = line.strip()
@@ -555,8 +663,14 @@ for line in sys.stdin:
 # Hang detection for Consult new-session
 _CODEX_EXIT=${PIPESTATUS[0]}
 if [ "$_CODEX_EXIT" = "124" ]; then
-  true # vibe-review-log codex_timeout 600 (not yet implemented)
-  echo "Codex stalled past 10 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
+  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-consult","status":"timeout","timeout_s":540}' >/dev/null 2>&1 || true
+  echo "Codex stalled past 9 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
+# Surface non-zero exits — otherwise a rejected flag or entitlement failure
+# reaches the user as an empty answer with no reason attached.
+elif [ "$_CODEX_EXIT" != "0" ]; then
+  echo "[codex exit $_CODEX_EXIT] $(head -1 "$TMPERR" 2>/dev/null)"
+  head -20 "$TMPERR" 2>/dev/null | sed 's/^/  /'
+  echo "Codex did not complete cleanly — say so instead of presenting an empty consult as an answer."
 fi
 ```
 
@@ -574,14 +688,18 @@ if [ -z "$PYTHON_CMD" ]; then
 fi
 cd "$_REPO_ROOT" || exit 1
 SESSION_ID=$(cat .context/codex-session-id 2>/dev/null)
-${_CX_TO:+$_CX_TO 600} codex exec resume "$SESSION_ID" "<prompt>" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+${_CX_TO:+$_CX_TO 540} codex exec resume "$SESSION_ID" "<prompt>" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 # same python streaming parser as the new-session block above (with flush=True on all print() calls)
 "
-# Same hang detection pattern as new-session block
+# Same hang detection and non-zero surfacing as the new-session block
 _CODEX_EXIT=${PIPESTATUS[0]}
 if [ "$_CODEX_EXIT" = "124" ]; then
-  true # vibe-review-log codex_timeout 600 (not yet implemented)
-  echo "Codex stalled past 10 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
+  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-consult","status":"timeout","timeout_s":540}' >/dev/null 2>&1 || true
+  echo "Codex stalled past 9 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
+elif [ "$_CODEX_EXIT" != "0" ]; then
+  echo "[codex exit $_CODEX_EXIT] $(head -1 "$TMPERR" 2>/dev/null)"
+  head -20 "$TMPERR" 2>/dev/null | sed 's/^/  /'
+  echo "Codex did not complete cleanly — say so instead of presenting an empty consult as an answer. A resume that fails on a stale session id belongs here: delete .context/codex-session-id and start fresh."
 fi
 ```
 
@@ -592,6 +710,12 @@ mkdir -p .context
 ```
 Save the session ID printed by the parser (the line starting with `SESSION_ID:`)
 to `.context/codex-session-id`.
+
+**Session-cost reality.** Every `codex exec` call pays the full session prelude,
+resumed or fresh — resume replays the conversation rather than picking up a warm
+one, so it buys continuity, not token savings. Treat a follow-up as costing about
+what the first call cost: prefer one call per invocation and batch the user's
+questions into it rather than chaining several short resumes.
 
 6. Present the full streamed output:
 
@@ -623,33 +747,29 @@ Examples (the strongest reasons compare Codex's insight against an alternative �
 
 The reason must engage with a specific Codex insight and compare against an alternative (a different recommendation, status-quo, or another Codex point). Generic synthesis ("because Codex raised good points") fails the format. **Never silently auto-decide; always emit the line.**
 
----
+9. If this consult reviewed a plan, persist it as an outside-voice entry so the
+plan file report and the Outside Voice dashboard row can see it:
 
-## Plan File Review Report
-
-After displaying the review output, update the active **plan file** if one exists in this conversation.
-
-1. Check for a plan file path in conversation context. If none, skip silently.
-2. Read the review log output. Parse each JSONL entry for the review fields.
-3. Produce this markdown table:
-
-```markdown
-## VIBESTACK REVIEW REPORT
-
-| Review | Trigger | Why | Runs | Status | Findings |
-|--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | {runs} | {status} | {findings} |
-| Codex Review | `/codex review` | Independent 2nd opinion | {runs} | {status} | {findings} |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | {runs} | {status} | {findings} |
-| Design Review | `/plan-design-review` | UI/UX gaps | {runs} | {status} | {findings} |
-| DX Review | `/plan-devex-review` | Developer experience gaps | {runs} | {status} | {findings} |
+```bash
+~/.vibestack/bin/vibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"codex","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
-Below the table, add a **VERDICT:** line (which reviews are CLEAR).
+STATUS is "clean" when Codex raised no blocking gaps, "issues_found" otherwise.
 
-{{include lib/snippets/unresolved-decisions-status.md}}
+---
 
-4. Find `## VIBESTACK REVIEW REPORT` in the plan file and replace it, or append it at the end.
+## Review log
+
+Before writing the plan file report below, read the branch review log so the
+report covers every review that has run on this branch, not only this one:
+
+```bash
+~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+```
+
+Parse the JSONL entries it returns; ignore anything older than 7 days.
+
+{{include lib/snippets/plan-file-review-report.md}}
 
 ---
 
@@ -657,7 +777,7 @@ Below the table, add a **VERDICT:** line (which reviews are CLEAR).
 
 **Model:** No model is hardcoded — codex uses whatever its current default is (the frontier
 agentic coding model). This means as OpenAI ships newer models, /codex automatically
-uses them. If the user wants a specific model, pass `-m` through to codex.
+uses them.
 
 **Reasoning effort (per-mode defaults):**
 - **Review (2A):** `high` — bounded diff input, needs thoroughness but not max tokens
@@ -668,11 +788,20 @@ uses them. If the user wants a specific model, pass `-m` through to codex.
 tasks (OpenAI issues #8545, #8402, #6931). Users can override with `--xhigh` flag
 (e.g., `/codex review --xhigh`) when they want maximum reasoning and are willing to wait.
 
-**Web search:** All codex commands use `--enable web_search_cached` so Codex can look up
-docs and APIs during review. This is OpenAI's cached index — fast, no extra cost.
+**Web search:** All codex commands pass `-c 'web_search="cached"'` so Codex can look up
+docs and APIs during review. This is OpenAI's cached index — fast, no extra cost. Use
+the config form rather than the older `--enable web_search_cached` feature toggle: it
+names the mode explicitly and overrides whatever `web_search` value
+`~/.codex/config.toml` already sets, instead of stacking a feature flag on top of it.
 
-If the user specifies a model (e.g., `/codex review -m gpt-5.1-codex-max`
-or `/codex challenge -m gpt-5.2`), pass the `-m` flag through to codex.
+**Model override (per-command, not uniform).** If the user specifies a model (e.g.
+`/codex review -m gpt-5.1-codex-max` or `/codex challenge -m gpt-5.2`):
+
+- **Review mode's default path** runs `codex review`, which has no `-m` / `--model`
+  option — passing it aborts on argument parsing before any API call. Translate it to
+  the config form instead: `-c model="<model>"`.
+- **Every exec-based path** (Review's custom-instructions path, Challenge, Consult)
+  takes `-m` as-is.
 
 ---
 
@@ -691,9 +820,22 @@ If token count is not available, display: `Tokens: unknown`
 - **Binary not found:** Detected in Step 0.4. Stop with install instructions.
 - **Auth error:** Codex prints an auth error to stderr. Surface the error:
   "Codex authentication failed. Run `codex login` in your terminal to authenticate via ChatGPT, or set `$CODEX_API_KEY` / `$OPENAI_API_KEY`."
-- **Timeout (Bash outer gate):** If the Bash call times out (5 min for Review/Challenge, 10 min for Consult), tell the user:
-  "Codex timed out. The prompt may be too large or the API may be slow. Try again or use a smaller scope."
-- **Timeout (inner `timeout` wrapper, exit 124):** If the shell `timeout 600` wrapper fires first, the skill's hang-detection block prints: "Codex stalled past 10 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check `~/.codex/logs/`." No extra action needed.
+- **Model not supported (HTTP 400):** A stale `model =` pin in `~/.codex/config.toml`
+  makes every invocation fail identically, with `invalid_request_error` or "model not
+  supported" on stderr and no findings. Recovery: read the pinned name out of
+  `~/.codex/config.toml`, tell the user which model it names and that their account
+  cannot reach it, and give the one-line fix — remove the `model =` line to fall back
+  to the CLI default, or re-pin to a model they hold entitlement for. Never let this
+  reach the user as a passing review; it is a gate FAIL under check 1.
+- **Timeout (inner `timeout` wrapper, exit 124):** The inner wrapper is deliberately
+  shorter than the Bash gate (330s under 360000 for Review, 540s under 600000 for
+  Challenge and Consult) so it fires first and the stall is diagnosable. The
+  hang-detection block prints the "Codex stalled past …" message. No extra action
+  needed beyond reporting the run as unavailable.
+- **Timeout (Bash outer gate):** If the Bash call is killed before the inner wrapper
+  fires, there is no exit code to read. Tell the user: "Codex timed out. The prompt may
+  be too large or the API may be slow. Try again or use a smaller scope." — and treat
+  the run as unavailable, never as a clean pass.
 - **Empty response:** If `$TMPRESP` is empty or doesn't exist, tell the user:
   "Codex returned no response. Check stderr for errors."
 - **Session resume failure:** If resume fails, delete the session file and start fresh.
@@ -702,12 +844,16 @@ If token count is not available, display: `Tokens: unknown`
 
 ## Important Rules
 
-- **Never modify files.** This skill is read-only. Codex runs in read-only sandbox mode.
+- **Never modify repository files.** Codex runs in read-only sandbox mode, and the only
+  file this skill writes is the plan file's review report.
 - **Present output verbatim.** Do not truncate, summarize, or editorialize Codex's output
   before showing it. Show it in full inside the CODEX SAYS block.
 - **Add synthesis after, not instead of.** Any Claude commentary comes after the full output.
-- **5-minute timeout** on all Bash calls to codex (`timeout: 300000`) for Review/Challenge,
-  **10-minute timeout** (`timeout: 600000`) for Consult and the inner `timeout 600` calls.
+- **Bash gate always sits above the inner wrapper.** Review gets `timeout: 360000`
+  over a 330s wrapper; Challenge and Consult get `timeout: 600000` over a 540s
+  wrapper. The ordering is the point: the wrapper must fire first so a stall arrives
+  as exit 124 with an explicit message rather than as a silent kill that reads like
+  an empty, finding-free run.
 - **No double-reviewing.** If the user already ran `/review`, Codex provides a second
   independent opinion. Do not re-run Claude Code's own review.
 - **Detect skill-file rabbit holes.** After receiving Codex output, scan for signs

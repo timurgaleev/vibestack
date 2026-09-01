@@ -57,6 +57,20 @@ session.
 
 - `rm -rf node_modules` / `.next` / `dist` / `__pycache__` / `.cache` / `build` / `.turbo` / `coverage`
 
+## Project patterns (additive only)
+
+A project usually has its own destructive commands — a `make nuke-db`, a seed
+script, a teardown target. Add warn rules for them, one POSIX ERE per line
+(blank lines and `#` comments ignored), in either file:
+
+- `~/.vibestack/careful-patterns.txt` — every repo
+- `~/.vibestack/projects/<slug>/careful-patterns.txt` — this repo only
+
+Both are consulted **after** the built-in families, so a pattern file can only
+ADD a warning, never suppress a baseline one — a guard a project can silence is
+not a guard. A line whose regex the shell cannot compile is skipped, so a typo
+never takes the hook down with it.
+
 ## How it works
 
 The hook parses the tool payload with a real JSON parser, checks the command
@@ -76,5 +90,13 @@ Two edge rules, opposite by design:
 `/freeze`, the deny tier, fails closed on the same unreadable payload. Both
 hooks share one extractor (`careful/bin/hook-extract.sh`) so a parsing fix
 cannot land in one and miss the other.
+
+## Debug logging
+
+Off unless `VIBESTACK_DEBUG=1`. Switched on, it appends every decision — with
+the **full command text** — to `~/.vibestack/hook.log` (rotated at 1MB). Commands
+routinely carry API keys and tokens, so turn it on only where that file is an
+acceptable audit trail. The usage counter written alongside it records the
+decision and the pattern name, never the command.
 
 To deactivate: end the conversation or start a new one. Hooks are session-scoped.

@@ -19,6 +19,16 @@ is made, log it (`--supersede <id>` for a reversal):
 ~/.vibestack/bin/vibe-decision-log '{"decision":"...","rationale":"...","scope":"repo","source":"user"}' 2>/dev/null || true
 ```
 
+**Accepting a shortcut is itself a decision.** When a review, a plan, or a fix
+chooses to live with something rather than repair it — a skipped test, a
+narrowed scope, a workaround left in place — log that acceptance and put its
+*ceiling* in the rationale: the condition that would force revisiting it (a load
+level, a second caller, a version bump, a date). Then leave one line at the
+shortcut in the code naming the decision id `vibe-decision-log` printed. Both
+halves are needed: without the log the ceiling is lost, and without the marker
+the next reader finds an unexplained gap and either re-argues it or "fixes"
+something that was chosen deliberately.
+
 Reliable and local; memory (memex) is the broader semantic-recall layer, not the
 decision store.
 
@@ -31,6 +41,25 @@ tests or mid-edit state, and push only when `CHECKPOINT_PUSH: true`. Don't
 announce each WIP commit. When `CHECKPOINT_MODE: explicit` (the default), commit
 only when asked. `/ship` squashes `WIP:` commits into their logical commits before
 landing.
+
+A natural boundary is a test going green, a file finished, a phase of the skill
+completing, or the moment before something risky. Give each checkpoint a body,
+not just a subject — the subject says what changed, and a session picking the
+work back up needs to know where you were standing:
+
+```
+WIP: <short subject, what this checkpoint contains>
+
+[vibestack-context]
+Done: <what is finished and verified>
+Next: <the immediate next step>
+Uncertain: <the open question, or "none">
+```
+
+Keep the marker line and the three labels exactly as written. `/ship` harvests
+these blocks out of the commit bodies before it squashes them away, and a
+resuming session finds them with `git log --grep="^WIP:"` — free-form notes in
+their place survive the commit but not either reader.
 
 ### Skill routing
 

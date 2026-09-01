@@ -76,4 +76,6 @@ The freeze boundary persists for the session via `~/.vibestack/freeze-dir.txt`.
 - Applies to Edit and Write tools only — Read, Bash, Glob, Grep are unaffected
 - Bash commands like `sed -i` can still modify files outside the boundary
 - A symlink inside the boundary pointing outside it is resolved and blocked
+- A path with spaces in it works — only leading and trailing whitespace is
+  trimmed from the saved boundary, and a leading `~` is expanded
 - To deactivate: run `/unfreeze` or end the conversation

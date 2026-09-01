@@ -2,6 +2,7 @@
 name: investigate
 description: |
   Systematic debugging with root cause investigation. Four phases: investigate, analyze, hypothesize, implement. Iron Law: no fixes without root cause.
+  Proactively invoke this skill (do NOT debug directly) when the user reports errors, 500 errors, stack traces, unexpected behavior, "it was working yesterday", or is troubleshooting why something stopped working.
 allowed-tools:
   - Bash
   - Read
@@ -22,12 +23,12 @@ hooks:
     - matcher: "Edit"
       hooks:
         - type: command
-          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/check-freeze.sh"
           statusMessage: "Checking debug scope boundary..."
     - matcher: "Write"
       hooks:
         - type: command
-          command: "bash ${CLAUDE_SKILL_DIR}/../freeze/bin/check-freeze.sh"
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/check-freeze.sh"
           statusMessage: "Checking debug scope boundary..."
 ---
 
