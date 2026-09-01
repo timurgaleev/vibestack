@@ -125,6 +125,19 @@ chk "lockfile top-level updated" "$(python3 -c 'import json,sys;print(json.load(
 chk "lockfile self-entry updated" "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["packages"][""]["version"])' "$PROJ/package-lock.json")" "1.2.3"
 # A dependency's version is not the project's version.
 chk "a dependency version is left alone" "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["packages"]["node_modules/dep"]["version"])' "$PROJ/package-lock.json")" "9.9.9"
+# json.dumps escapes non-ASCII by default, which rewrites an em dash in a
+# description into \u2014 -- a diff nobody asked for, in a file the bump is
+# only supposed to touch one field of.
+printf '{\n  "name": "x",\n  "version": "1.2.3",\n  "description": "a \xe2\x80\x94 dash"\n}\n' > "$PROJ/package.json"
+"$V" 1.2.4 --root "$PROJ" >/dev/null 2>&1
+grep -q 'u2014' "$PROJ/package.json" && no "the bump escaped a non-ASCII character" \
+                                     || ok "non-ASCII in an untouched field survives the bump"
+chk "and the version still moved" "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$PROJ/package.json")" "1.2.4"
+# Put the whole fixture back -- VERSION moved too, and the abort case below
+# asserts against it.
+printf '1.2.3\n' > "$PROJ/VERSION"
+printf '{\n  "name": "x",\n  "version": "1.2.3"\n}\n' > "$PROJ/package.json"
+
 "$V" not-a-version --root "$PROJ" >/dev/null 2>&1; chk "a non-semver argument is rejected" "$?" "2"
 # The atomicity claim: a malformed lockfile must abort the whole set, leaving
 # VERSION where it was. Without this the bump half-lands and the build breaks

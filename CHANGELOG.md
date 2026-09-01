@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.37.0 — 2026-09-01
+
+### Added
+
+Five binaries, for gates that were described in skill text but could not be
+enforced because the mechanism did not exist.
+
+- **`vibe-tree-hash`** — a content fingerprint of the tracked working tree. It
+  answers "has the content changed?" where a commit count cannot: a rebase, a
+  revert, an amend and a formatting-only commit all move the count while
+  leaving the reviewed bytes identical. The identity is a git tree id built in
+  a throwaway index, so the real index is never touched. Submodule content and
+  git's own line-ending / exec-bit normalisation are out of scope by
+  construction, and the header says so.
+- **`vibe-evidence`** — records a command, its exit status, the tree hash it ran
+  against, and the repo it ran in, so a gate asks the ledger instead of
+  trusting a summary. `check` takes the most recent matching record, and fails
+  on a missing ledger, an unfingerprintable tree, or any unreadable line.
+  Command output is never stored, and a command line carrying a
+  high-confidence secret is refused.
+- **`vibe-version-bump`** — moves `VERSION`, `package.json`,
+  `package-lock.json` and `npm-shrinkwrap.json` together, resolving symlinked
+  targets and keeping each file's mode. `--root` points it at a manifest in a
+  subdirectory. Everything is parsed and staged before anything is written, and
+  a rename failing partway is rolled back.
+- **`vibe-detach`** — runs a command past the turn boundary and records its
+  output and exit status to disk, so a long eval no longer dies with the turn.
+  `status` separates running (exit 2) from failed (exit 1).
+- **`vibe-codex-probe`** — whether Codex is *usable*, not merely installed:
+  `codex --version` succeeds while logged out, so an unauthenticated Codex read
+  as available and failed mid-review. Cheap negatives first, one cached round
+  trip for the positive, and `usable` requires an actual reply.
+
+`install` picks all five up through its existing `bin/vibe-*` glob.
+`test/test-evidence-bins.sh` covers them in 65 cases, asserting both
+directions: each tool must also fail when it should, including on absent input.
+
+### Fixed
+
+- **The provenance check now splits by grammar rather than by word.** It had
+  required a following "against" or "with", so phrasings carrying neither
+  slipped through, including one that reached a released commit subject. It
+  also fired on ordinary sentences about copying a file, which is how a check
+  teaches people to phrase around it instead of obeying it. Both directions are
+  asserted in `test/test-brand-audit.sh` (33 cases).
+- **`package.json` had drifted three releases behind `VERSION`** (1.33.2 against
+  1.36.0). Found by the first real use of `vibe-version-bump`, which is the
+  class of problem it exists to prevent.
+
 ## 1.36.0 — 2026-09-01
 
 ### Fixed
