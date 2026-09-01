@@ -98,6 +98,72 @@ out="$(env -u CI -u VIBESTACK_HEADLESS "$BIN/vibestack" session-kind)"
 [ "$out" = "interactive" ] && ok "vibestack dispatches to vibe-session-kind" || no "vibestack dispatch got '$out'"
 "$BIN/vibestack" no-such-tool >/dev/null 2>&1 && no "vibestack accepted unknown command" || ok "vibestack rejects unknown command"
 
+# vibe-learnings-log — the payload must survive verbatim.
+#
+# It used to be pasted between triple quotes inside an unquoted heredoc, so
+# python's own string literal consumed the payload's escapes: an insight
+# containing a double quote, a backslash, a newline or a triple quote arrived
+# as broken JSON and the learning was silently lost. A separate validation step
+# read the same payload correctly from stdin, so the tool checked one thing and
+# then processed another.
+LL="$BIN/vibe-learnings-log"
+LLCASES="$TMP/llcases"; mkdir -p "$LLCASES"
+# Each case's exact bytes go in a file, and the file path is passed as an
+# argument. NOT a pipe: a piped function runs in a subshell, where ok/no update
+# a copy of the counters and the suite exits 0 no matter what they printed.
+cat > "$LLCASES/quote"     <<'C'
+the flag is "--long" here
+C
+cat > "$LLCASES/backslash" <<'C'
+use \s not \d
+C
+cat > "$LLCASES/newline"   <<'C'
+one line
+two lines
+C
+cat > "$LLCASES/triple"    <<'C'
+ends with ''' inside
+C
+cat > "$LLCASES/dollar"    <<'C'
+literal $(echo NOPE) stays literal
+C
+cat > "$LLCASES/plain"     <<'C'
+nothing special at all
+C
+
+ll_roundtrip() { # ll_roundtrip LABEL CASEFILE
+  local label="$1" case_file="$2"
+  local store="$TMP/ll-$RANDOM$RANDOM"
+  mkdir -p "$store"
+  if VIBESTACK_HOME="$store" LL="$LL" CASE_FILE="$case_file" python3 - <<'PYRT'
+import json, os, subprocess, sys
+text = open(os.environ["CASE_FILE"]).read()
+payload = json.dumps({"skill": "test", "type": "pitfall", "key": "rt",
+                      "confidence": 1, "insight": text})
+if subprocess.run([os.environ["LL"], payload], capture_output=True).returncode != 0:
+    sys.exit(1)
+found = None
+for root, _dirs, files in os.walk(os.environ["VIBESTACK_HOME"]):
+    if "learnings.jsonl" in files:
+        found = os.path.join(root, "learnings.jsonl")
+if not found:
+    sys.exit(1)
+stored = json.loads(open(found).read().strip().splitlines()[-1])["insight"]
+sys.exit(0 if stored == text else 1)
+PYRT
+  then ok "learnings-log round-trips $label"
+  else no "learnings-log mangled $label"
+  fi
+}
+ll_roundtrip "a double quote"       "$LLCASES/quote"
+ll_roundtrip "a backslash"          "$LLCASES/backslash"
+ll_roundtrip "a newline"            "$LLCASES/newline"
+ll_roundtrip "a triple quote"       "$LLCASES/triple"
+ll_roundtrip "a dollar substitution" "$LLCASES/dollar"
+ll_roundtrip "plain ascii"          "$LLCASES/plain"
+"$LL" 'not json' >/dev/null 2>&1 && no "learnings-log accepted invalid JSON" \
+                                 || ok "learnings-log rejects invalid JSON"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

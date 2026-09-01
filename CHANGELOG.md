@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.37.2 — 2026-09-01
+
+### Fixed
+
+- **`vibe-learnings-log` silently lost most learnings.** It pasted the JSON
+  payload into a python heredoc between triple quotes, so python's own string
+  literal consumed the payload's escapes — any insight containing a double
+  quote, a backslash, a newline or a triple quote arrived as broken JSON and
+  the entry was never written. Only plain unquoted ASCII survived. A separate
+  validation step read the same payload correctly from stdin, so the tool
+  checked one thing and then processed another, and the only symptom was a
+  traceback from inside the tool. The payload is now passed as an argument
+  under a quoted heredoc, matching every sibling logger. There was no command
+  substitution from payload text — bash does not re-scan a variable's value —
+  verified rather than assumed.
+
+### Testing
+
+Seven cases in `test/test-vibe-bins.sh` round-trip a payload through the tool
+and compare the stored text byte-for-byte: a double quote, a backslash, a
+newline, a triple quote, a dollar substitution, plain ASCII, and a rejected
+non-JSON argument. Confirmed to fail against the previous binary (6 failures,
+exit 1) and pass against the fixed one.
+
+The fixture data is passed by file path rather than through a pipe. A piped
+helper runs in a subshell, where the pass/fail counters it updates are a copy
+that dies with it: the FAIL line still prints, the totals never move, and the
+suite exits 0 — a check that cannot fail the build.
+
 ## 1.37.1 — 2026-09-01
 
 ### Fixed

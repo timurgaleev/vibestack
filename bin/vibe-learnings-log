@@ -11,12 +11,6 @@ fi
 
 JSON="$1"
 
-# Validate it parses as JSON
-if ! echo "$JSON" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
-  echo "Error: invalid JSON" >&2
-  exit 1
-fi
-
 # Derive SLUG
 eval "$(bash "$(dirname "$0")/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 
@@ -31,22 +25,40 @@ BRANCH=$(git branch --show-current 2>/dev/null || echo "")
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
 TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-ENTRY=$(python3 - <<PYEOF
-import json, sys
+# The payload arrives on argv and is passed to python as an ARGUMENT, never
+# interpolated into the program text. It used to be pasted between triple
+# quotes inside an unquoted heredoc, which meant python's string literal ate
+# the payload's own backslashes: an insight containing a double quote, a
+# backslash, a newline, or a triple quote arrived as broken JSON and the
+# learning was lost. A separate validation step read the same payload
+# correctly from stdin, so the tool checked one thing and then processed
+# another, and the failure surfaced only as a traceback.
+ENTRY=$(VIBE_TS="$TS" VIBE_BRANCH="$BRANCH" VIBE_COMMIT="$COMMIT" \
+  python3 - "$JSON" <<'PYEOF'
+import json, os, sys
 
-raw = '''$JSON'''
-entry = json.loads(raw)
+try:
+    entry = json.loads(sys.argv[1])
+except (ValueError, IndexError):
+    sys.stderr.write("Error: invalid JSON\n")
+    sys.exit(1)
 
-entry.setdefault("ts", "$TS")
-entry.setdefault("branch", "$BRANCH")
-entry.setdefault("commit", "$COMMIT")
+if not isinstance(entry, dict):
+    sys.stderr.write("Error: payload must be a JSON object\n")
+    sys.exit(1)
+
+entry.setdefault("ts", os.environ["VIBE_TS"])
+entry.setdefault("branch", os.environ["VIBE_BRANCH"])
+entry.setdefault("commit", os.environ["VIBE_COMMIT"])
 entry.setdefault("files", [])
 entry.setdefault("confidence", 5)
 entry.setdefault("source", "auto")
 
+# separators keep the entry on one line -- the store is JSONL, and a pretty
+# printed entry would break every reader that splits on newlines.
 print(json.dumps(entry, separators=(',', ':')))
 PYEOF
-)
+) || exit 1
 
 echo "$ENTRY" >> "$LEARN_FILE"
 echo "Logged: $(echo "$ENTRY" | python3 -c "import sys,json; e=json.load(sys.stdin); print(f\"{e.get('type','?')} / {e.get('key','?')} (confidence {e.get('confidence','?')}/10)\")")"
