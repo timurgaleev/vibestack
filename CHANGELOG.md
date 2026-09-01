@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.35.1 — 2026-09-01
+
+### Fixed
+
+- **`/pair-agent` understated what a paired agent can do.** The skill said a
+  remote agent gets read+write by default and admin only with `--admin`. The
+  daemon actually grants read + write + admin + meta by default — a default
+  agent can execute JavaScript and read cookies and storage — and `--control`
+  (aliased `--admin`) adds the browser-wide destructive commands: stop, restart,
+  disconnect. `--restrict` is what narrows access. Anyone approving a pairing was
+  granting more than the flag names suggested, so this is corrected in the skill
+  body, its description, and the skill catalog.
+- **Per-agent revoke does exist.** v1.35.0 documented the opposite. There is no
+  CLI wrapper — `$B tunnel revoke` really is absent — but the daemon serves a
+  root-only `DELETE /token/<clientId>` that invalidates one agent and leaves the
+  others alone. The docs now give the curl call, and keep "stop the daemon" as
+  the blunt all-agents equivalent.
+- **The external-tools page described the browse daemon as unbundled** and told
+  you to drop a binary at `browse/dist/browse`. The daemon has shipped in this
+  repo for some time, the installer prepares its dependencies, and the launcher
+  resolves `browse/bin/vibe-browse` — so following that page could only fail. It
+  now describes what actually happens, including the one thing that genuinely is
+  fetched on first use: Playwright and a browser.
+- **The skill catalog missed behavior that shipped.** `/careful` and `/guard`
+  still described warnings only, with no mention of the non-overridable tier;
+  `/diagram` listed two output artifacts instead of four and did not say it
+  renders offline; `/plan-tune` described none of the question-log review or
+  profile surface it actually has.
+
+### Added
+
+- `test/test-browse-shim.sh` now runs in CI — it existed and passed, but was in
+  neither the workflow matrix nor any documentation.
+- `docs/internals.md` gained the ten `bin/` tools that were missing from its
+  reference table, a section describing every shell test suite, and one
+  describing what CI actually checks.
+
+### Changed
+
+- `README.md` links `docs/internals.md` and `docs/external-tools.md`, which were
+  reachable from neither entry-point document.
+- The compatibility audit's counts were measured against the tree rather than
+  carried forward: 53 skills (was 47), 22 using `${CLAUDE_SKILL_DIR}` (was 19).
+  Its matrix had a duplicate row and was missing three skills entirely, so it
+  listed 51 of 53.
+
 ## 1.35.0 — 2026-08-31
 
 ### Added
