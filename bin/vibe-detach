@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# vibe-detach — run a long command past the end of the turn, and poll it later.
+#
+# A long eval suite or a slow build started in the foreground dies at the turn
+# boundary, and its result dies with it: the work is paid for and thrown away,
+# and the next turn cannot tell "it failed" from "it never finished". This
+# starts the command detached from the session, captures its output and its
+# exit status to disk, and hands back an id to ask about afterwards.
+#
+# Usage:
+#   vibe-detach start [--label L] -- <cmd...>   # prints the job id
+#   vibe-detach status <id>                     # running | exit:<n> | died
+#   vibe-detach log <id> [--tail N]
+#   vibe-detach list
+#
+# `status` exits 0 only when the job finished with exit 0, so a gate can be a
+# plain `if`. A job still running exits 2 (not 1) — "not done yet" and "failed"
+# are different answers and a caller that conflates them reports a running job
+# as a failure.
+#
+# State lives under $VIBESTACK_HOME/jobs/<id>/. Nothing is cleaned up
+# automatically: a result that vanishes on a timer is the problem this exists to
+# fix. Remove a job directory by hand when you are done with it.
+set -euo pipefail
+
+VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+JOBS="$VIBESTACK_HOME/jobs"
+
+usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
+
+job_dir() { # job_dir ID
+  case "$1" in
+    */*|.|..|"") echo "vibe-detach: invalid job id: $1" >&2; exit 2 ;;
+  esac
+  printf '%s/%s' "$JOBS" "$1"
+}
+
+cmd_start() {
+  local label=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --label) label="${2:-}"; shift 2 ;;
+      --) shift; break ;;
+      *) echo "vibe-detach: unexpected argument: $1" >&2; exit 2 ;;
+    esac
+  done
+  [ $# -gt 0 ] || { echo "vibe-detach start: nothing after --" >&2; exit 2; }
+
+  local id dir
+  id="j$(date -u +%Y%m%dT%H%M%S)$$"
+  dir="$JOBS/$id"
+  mkdir -p "$dir"
+
+  printf '%s\n' "${label:-$1}" > "$dir/label"
+  printf '%s\n' "$*"           > "$dir/cmd"
+  date -u +'%Y-%m-%dT%H:%M:%SZ' > "$dir/started"
+
+  # The command is written into a runner script with printf %q rather than
+  # re-parsed from a string. An argument containing a space, a quote or a
+  # semicolon would otherwise be re-split by the shell that runs it -- which
+  # turns a filename with a space into two arguments, and a semicolon into a
+  # second command.
+  {
+    printf '#!/usr/bin/env bash\n'
+    # The job records its own pid before doing anything else. A launcher is not
+    # a reliable source for it: setsid forks when the caller is already a
+    # process group leader, so the parent's $! would name a process that exits
+    # immediately and `status` would report a running job as dead.
+    printf 'printf %%s "$$" > %q.tmp && mv %q.tmp %q\n' "$dir/pid" "$dir/pid" "$dir/pid"
+    printf 'cd %q || exit 127\n' "$PWD"
+    # An array, not a bare command line. %q leaves an assignment-shaped
+    # first word (X=Y) unquoted, and bash reads that as a variable
+    # assignment followed by the REST of the line -- so the intended
+    # program never runs and the job still reports exit 0. Words coming
+    # from an array expansion are never parsed as assignments.
+    printf '_vibe_argv=('
+    printf '%q ' "$@"
+    printf ')\n'
+    printf '"${_vibe_argv[@]}"\n'
+    # $? is captured on the very next line, before anything else can overwrite
+    # it. The write is to a temp file and renamed, so a reader never sees a
+    # half-written status and mistakes it for a result.
+    printf 'printf %%s "$?" > %q.tmp && mv %q.tmp %q\n' \
+      "$dir/exit" "$dir/exit" "$dir/exit"
+  } > "$dir/run.sh"
+  chmod +x "$dir/run.sh"
+
+  # nohup alone, deliberately: it does not fork, so the process the shell
+  # backgrounds is the job itself. stdin comes from /dev/null so the job can
+  # never block waiting on a terminal that is gone, and disown drops it from
+  # the shell's job table so the shell exiting does not take it along.
+  nohup "$dir/run.sh" > "$dir/out" 2>&1 < /dev/null &
+  disown 2>/dev/null || true
+
+  printf '%s\n' "$id"
+}
+
+cmd_status() {
+  local dir; dir=$(job_dir "${1:?vibe-detach status: job id required}")
+  [ -d "$dir" ] || { echo "vibe-detach: no such job: $1" >&2; exit 2; }
+
+  if [ -f "$dir/exit" ]; then
+    local code; code=$(cat "$dir/exit")
+    printf 'exit:%s\n' "$code"
+    [ "$code" = 0 ] && return 0 || return 1
+  fi
+
+  local pid; pid=$(cat "$dir/pid" 2>/dev/null || echo "")
+  if [ -z "$pid" ]; then
+    # The job writes its pid as its first action, so an absent pid file
+    # normally means it has not got there yet. But if the launch itself
+    # failed -- $VIBESTACK_HOME on a noexec mount, say -- nothing will ever
+    # write it, and reporting "running" forever is worse than being briefly
+    # wrong. The recorded start time bounds the wait.
+    local started_at now
+    started_at=$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$(cat "$dir/started" 2>/dev/null)" +%s 2>/dev/null \
+      || date -d "$(cat "$dir/started" 2>/dev/null)" +%s 2>/dev/null || echo "")
+    now=$(date +%s)
+    if [ -n "$started_at" ] && [ $(( now - started_at )) -gt 30 ]; then
+      echo "died"
+      return 1
+    fi
+    echo "running"
+    return 2
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "running"
+    return 2
+  fi
+  # No status file and no live process: the job was killed before it could
+  # record anything. Reported distinctly -- calling it a failure would be a
+  # guess, and calling it success would be a lie.
+  echo "died"
+  return 1
+}
+
+cmd_log() {
+  local id="${1:?vibe-detach log: job id required}"; shift || true
+  local dir; dir=$(job_dir "$id")
+  [ -d "$dir" ] || { echo "vibe-detach: no such job: $id" >&2; exit 2; }
+  local n=0
+  [ "${1:-}" = "--tail" ] && n="${2:-50}"
+  if [ "$n" -gt 0 ] 2>/dev/null; then tail -n "$n" "$dir/out" 2>/dev/null || true
+  else cat "$dir/out" 2>/dev/null || true; fi
+}
+
+cmd_list() {
+  [ -d "$JOBS" ] || { echo "no jobs"; return 0; }
+  local found=0 dir id st
+  for dir in "$JOBS"/*/; do
+    [ -d "$dir" ] || continue
+    found=1
+    id=$(basename "$dir")
+    st=$(cmd_status "$id" || true)
+    printf '%-24s %-10s %s\n' "$id" "$st" "$(cat "$dir/label" 2>/dev/null || echo '?')"
+  done
+  [ "$found" = 1 ] || echo "no jobs"
+}
+
+case "${1:-}" in
+  start)  shift; cmd_start "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  log)    shift; cmd_log "$@" ;;
+  list)   shift; cmd_list "$@" ;;
+  -h|--help|"") usage; [ -n "${1:-}" ] && exit 0 || exit 1 ;;
+  *) echo "vibe-detach: unknown subcommand: $1" >&2; exit 2 ;;
+esac

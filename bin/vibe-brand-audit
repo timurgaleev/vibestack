@@ -45,6 +45,13 @@ NAMES='(^|[^A-Za-z])(gstack|garrytan|gbrain)'
 # people to route around the check. These are the shapes that only make sense
 # if another repository is the source.
 #
+# "copied from" and "vendored from" are narrowed the same way. Bare, they fire
+# on ordinary sentences about copying a FILE ("the index is copied from the
+# real one") -- a false positive on innocent prose is not a harmless one, it is
+# how a check trains people to route around it. They only assert provenance
+# when what follows names another party, and a literal project name is caught
+# by NAMES above regardless.
+#
 # "parity" splits by grammar, not by word. As a PROPERTY of our own things it is
 # ordinary engineering English and stays legal: "CLI/API parity", "hard-tier
 # parity", "environment parity", "Parity with the sibling helper". As a PROCESS
@@ -53,7 +60,7 @@ NAMES='(^|[^A-Za-z])(gstack|garrytan|gbrain)'
 # version required "against|with" after the process noun; "upstream parity wave"
 # carries neither word and shipped in a released commit subject while this check
 # reported clean.
-PHRASES='(upstream (carries|fixed|has|had|documents|added|removed|kept|calls|says|expects|does|already)|upstreams|the upstream (repo|project|version|skill|file)|upstream'"'"'s|upstream parity|parity (audit|wave|pass|sweep|remainder|polish)|our fork|this fork|forked from|(^|[^A-Za-z])ported from|copied from|vendored from|original repo)'
+PHRASES='(upstream (carries|fixed|has|had|documents|added|removed|kept|calls|says|expects|does|already)|upstreams|the upstream (repo|project|version|skill|file)|upstream'"'"'s|upstream parity|parity (audit|wave|pass|sweep|remainder|polish)|our fork|this fork|forked from|(^|[^A-Za-z])ported from|(copied|vendored) from (another|a different|the other|the original|their|its|upstream)|original repo)'
 
 # Vendored third-party files are excluded, and deliberately: their headers carry
 # licence text and author attribution that MUST stay (removing it is a licence

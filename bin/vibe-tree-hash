@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# vibe-tree-hash — a content fingerprint of the working tree.
+#
+# Answers "has the content actually changed?" where a commit count cannot. A
+# rebase, a revert, an amend and a formatting-only commit all move the commit
+# count while leaving the reviewed content identical or restoring it; a staleness
+# rule keyed on commit count reports stale work that is not stale, and misses
+# real edits that were never committed.
+#
+# The fingerprint is a git tree object id computed over the tracked working
+# tree, committed or not. Content alone decides it, so a commit, an amend or a
+# rebase that leaves the bytes identical leaves the fingerprint identical.
+#
+# Known scope limits, both properties of using git's own index:
+#   - Submodule content is reduced to the recorded gitlink commit, so an
+#     uncommitted edit INSIDE a submodule does not move the parent's hash.
+#   - The identity is git's cleaned representation, so a `text`/`autocrlf`
+#     line-ending conversion, or an exec-bit change under core.filemode=false,
+#     is not visible.
+# Neither is a bug to fix here; both are what "the content git would record"
+# means. A caller needing submodule content must fingerprint it separately.
+#
+# Untracked files are deliberately EXCLUDED. Build output, editor scratch files
+# and downloaded fixtures appear and vanish without changing what a review
+# looked at, and including them would make the hash change constantly for
+# reasons nobody can act on. A caller that needs untracked content covered
+# should commit it first.
+#
+# Usage:
+#   vibe-tree-hash            # 12-char short form
+#   vibe-tree-hash --long     # full sha256
+#
+# Exit 0 with the hash on stdout. Exit 2 when not in a git work tree, with the
+# reason on stderr and nothing on stdout — a caller must not mistake an error
+# string for a fingerprint.
+set -euo pipefail
+
+LONG=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --long) LONG=1; shift ;;
+    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "vibe-tree-hash: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+  echo "vibe-tree-hash: not inside a git work tree" >&2; exit 2; }
+
+TOP=$(git rev-parse --show-toplevel)
+
+# The fingerprint is a real git tree object id for the CONTENT of the tracked
+# working tree. It is built in a throwaway index so the user's staged state is
+# never touched.
+#
+# An earlier version hashed the HEAD tree id together with `git diff HEAD`.
+# That fails the one case the tool exists for: committing already-written
+# content leaves every byte on disk identical, but moves the change out of the
+# diff and into the tree id, so the fingerprint moved when nothing had. Writing
+# the tree makes the identity depend on content alone -- committing, amending
+# and rebasing the same content all produce the same id.
+IDX=$(mktemp "${TMPDIR:-/tmp}/vibe-tree-hash.XXXXXX")
+trap 'rm -f "$IDX"' EXIT
+
+# Seed from the REAL index, not from HEAD. A file that has been `git add`-ed
+# but never committed lives in the index and not in HEAD, so seeding from HEAD
+# dropped it -- and `add -u` only refreshes paths already in the index, so it
+# never came back. Editing such a file left the fingerprint unmoved (a gate
+# would pass on stale evidence) and committing it moved the fingerprint though
+# no byte on disk had changed. Both cases are covered by tests now.
+_REAL_INDEX=$(git -C "$TOP" rev-parse --git-path index)
+if [ -f "$_REAL_INDEX" ]; then
+  cp "$_REAL_INDEX" "$IDX"
+else
+  # No index yet (a freshly initialised repo): start empty rather than error.
+  GIT_INDEX_FILE="$IDX" git -C "$TOP" read-tree --empty
+fi
+
+# -u refreshes modifications and deletions of paths already in the index, and
+# adds nothing new, so untracked files stay out by construction rather than by
+# a filter that has to be kept correct.
+GIT_INDEX_FILE="$IDX" git -C "$TOP" add -u
+
+# write-tree refuses an index with unmerged stages. Refusing to print is the
+# right answer there: a caller that got a hash would believe it had a subject,
+# and vibe-evidence treats a missing fingerprint as STALE.
+HASH=$(GIT_INDEX_FILE="$IDX" git -C "$TOP" write-tree) || {
+  echo "vibe-tree-hash: cannot fingerprint this tree (unmerged index?)" >&2; exit 2; }
+
+if [ "$LONG" -eq 1 ]; then printf '%s\n' "$HASH"; else printf '%s\n' "${HASH:0:12}"; fi

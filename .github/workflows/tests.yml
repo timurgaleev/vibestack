@@ -37,6 +37,7 @@ jobs:
           - test-install-integration.sh
           - test-brand-audit.sh
           - test-browse-shim.sh
+          - test-evidence-bins.sh
     steps:
       - uses: actions/checkout@v4
 

@@ -26,3 +26,6 @@ dist/
 # Fail-on-match renderer stubs from test-install-integration.sh. The suite
 # sweeps its own, but a `git add -A` racing a run would otherwise commit one.
 bin/.vibe-render-skill.stub.*
+
+# py_compile output from local syntax checks
+__pycache__/
