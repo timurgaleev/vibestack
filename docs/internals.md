@@ -56,6 +56,16 @@ vibestack splits durable knowledge in two:
 | `vibestack` | Umbrella CLI — `status` / `doctor` / `skills` / `version`, and dispatch to any `vibe-<tool>` |
 | `vibe-lint-sources` | Static lint over skill sources + snippets (fence balance, duplicate headings, nested includes, size); runs inside `./install` before rendering |
 | `vibe-certify` | Cross-runtime conformance: fixture-install per target + per-skill verification matrix |
+| `vibe-brand-audit` | Fail if tracked files, commit messages, or PR/release text name a source other than this project; run by CI on every PR |
+| `vibe-question-log` | Append an AskUserQuestion event to the project log — the only writer of the log `/plan-tune` reads |
+| `vibe-question-check` | Classify a question one-way vs two-way, so a preference can never suppress a destructive confirmation |
+| `vibe-untrusted` | Wrap externally-authored text (PR/issue bodies) in a labelled envelope and flag instruction-shaped lines |
+| `vibe-review-log` / `vibe-review-read` | Append / read the per-branch review ledger the plan-* dashboards summarise |
+| `vibe-next-version` | Next free VERSION slot, skipping versions already claimed by open PRs (`--exclude-pr` drops your own) |
+| `vibe-diff-scope` | Classify a diff as frontend / backend / docs / config, so QA and canary depth match the change |
+| `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it |
+| `vibe-design` | Design-asset generation; reports `DESIGN_NOT_AVAILABLE` without an API key |
+| `vibe-specialist-stats` | Aggregate specialist-reviewer findings across runs |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
 bin (`~/.vibestack/bin`), and stamps the pack version at `~/.vibestack/version`.
@@ -105,6 +115,42 @@ The preamble echoes flags the skill body reads. All come from the environment or
 | `CHECKPOINT_MODE` / `CHECKPOINT_PUSH` | config | continuous WIP commits vs explicit |
 | `QUESTION_TUNING` | config | honor recorded question preferences (`/plan-tune`) |
 | `MODEL_OVERLAY` | env | model family for self-adjustment (default `claude`) |
+| `VIBE_FORCE_CODEX_REVIEW` | env | `1` → spawn the Codex outside voice even when the host IS Codex (a live session exports `CODEX_THREAD_ID` / `CODEX_SANDBOX`, and nesting means one model reviewing itself) |
+
+## Shell test suites (`test/`)
+
+Every suite is self-contained: it points `VIBESTACK_HOME` at a temp dir and never
+touches real state. Run one directly with `bash test/<name>`.
+
+| Suite | Covers |
+|-------|--------|
+| `test-hooks.sh` | The `/careful` and `/freeze` PreToolUse hooks — decision wire format, both fail-closed polarities, the escaped-quote extractor, boundary escapes, force-push tiers |
+| `test-brand-audit.sh` | `vibe-brand-audit` — what it must reject, and equally what it must NOT fire on |
+| `test-render-skill.sh` | `vibe-render-skill`: include expansion, nested-include rejection, infra-error handling |
+| `test-install-integration.sh` | `./install` / `./uninstall` across targets: byte-identical renders, atomic swap, recovery, PTY-driven prompts (`PTY_TIMEOUT` raises the 60s default for slow machines) |
+| `test-source-lint.sh` | `vibe-lint-sources` static checks over skill sources |
+| `test-vibe-bins.sh` | Smoke tests for the `vibe-*` binaries |
+| `test-certify.sh` | Cross-runtime conformance fixtures |
+| `test-first-task-detect.sh` | First-run repo classification |
+| `test-learn-sync.sh` | `/learn sync` planning and dedup |
+| `test-browse-shim.sh` | The `vibe-browse` launcher: verb routing, the cheap no-browser path, and `BROWSE_NOT_AVAILABLE` when dependencies are absent |
+
+## CI (`.github/workflows/tests.yml`)
+
+Every PR runs the suites above on Linux **and** macOS — the BSD/GNU split is
+where hook patterns break, and stock macOS ships bash 3.2, so the installer
+legs `brew install bash` first. Three jobs run beyond the matrix:
+
+- **nothing names another project** — `vibe-brand-audit` over tracked files, the
+  PR's commit range, and the PR title and body. Commit messages are checked
+  before the merge on purpose: afterwards they cannot be corrected without
+  rewriting published history.
+- **installed skills match sources** — installs into an isolated `HOME` and
+  proves every rendered `SKILL.md` still matches its source.
+- **hook scripts are runnable** — every skill hook and `bin/` script carries the
+  executable bit, and the shell ones are parsed with `bash -n`. Python binaries
+  are checked for the bit only; their syntax is covered by `test-vibe-bins.sh`
+  actually running them.
 
 ## E2E skill evals (`test/evals/`)
 

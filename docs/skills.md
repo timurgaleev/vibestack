@@ -65,7 +65,7 @@ Triggers: `autoplan`, `run all reviews`, `full plan review`
 ### `/plan-tune`
 Adjust skill behavior — reduce confirmations, set defaults, enable terse mode.
 
-Tells Claude how to handle repetitive confirmation prompts in the planning skills: skip them, remember a default, or use one-line responses. Useful when running many reviews in sequence.
+Reviews which questions the skills actually asked you — from a local question log — with counts and how often you took the recommendation. Set a per-question policy (never-ask, always-ask, ask-only-for-one-way), and inspect the dual-track profile: what you declared about your preferences versus what your choices suggest. A one-way door (anything destructive or irreversible) is always asked, whatever the policy says.
 
 Triggers: `tune plan`, `reduce confirmations`, `terse mode`
 
@@ -331,7 +331,7 @@ Triggers: `restore context`, `context restore`, `pick up where I left off`
 ### `/careful`
 Activate extra caution for risky operations.
 
-Registers a PreToolUse hook that intercepts Bash commands matching destructive patterns: `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout .`, `kubectl delete`, `docker rm -f`. Prompts before executing; safe build artifact deletions (`node_modules`, `.next`, `dist`, etc.) pass through silently.
+Registers a PreToolUse hook that intercepts Bash commands matching destructive patterns: `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout .`, `kubectl delete`, `docker rm -f`. Most matches prompt and are overridable. A small catastrophic set is blocked outright and cannot be overridden while the skill is active: recursive deletion of `/` or your home directory, and a force-push to the repo's default branch. Only simple commands qualify for that tier — anything with `;`, `&&`, a pipe or a newline falls back to a prompt, and `--force-with-lease` never hard-denies. Safe build artifact deletions (`node_modules`, `.next`, `dist`, etc.) pass through silently.
 
 Active for the session until you end it.
 
@@ -362,7 +362,7 @@ Triggers: `unfreeze edits`, `unlock all directories`, `remove edit restrictions`
 ### `/guard`
 Full safety mode: `/careful` + `/freeze` combined.
 
-Activates destructive command warnings and edit-scope restriction in one command. Use when touching production systems or debugging live issues.
+Activates the destructive-command guard (warnings, plus the non-overridable tier described under `/careful`) and edit-scope restriction in one command. Use when touching production systems or debugging live issues.
 
 To remove the edit boundary: `/unfreeze`. To deactivate everything: end the session.
 
@@ -425,7 +425,7 @@ Triggers: `benchmark models`, `compare models`, `test models`
 ### `/browse`
 Fast headless browser for QA testing and site dogfooding.
 
-Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires a browse daemon binary at `<vibestack checkout>/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
+Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires a browse daemon binary at `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `browse a page`, `headless browser`, `take page screenshot`
 
@@ -443,7 +443,7 @@ Triggers: `claude review`, `claude challenge`, `ask claude`
 ### `/open-browser`
 Launch vibestack Browser — AI-controlled Chromium with sidebar extension.
 
-Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires a browse daemon binary at `<vibestack checkout>/browse/dist/browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
+Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires a browse daemon binary at `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `open browser`, `launch chromium`, `show me the browser`
 
@@ -452,7 +452,11 @@ Triggers: `open browser`, `launch chromium`, `show me the browser`
 ### `/pair-agent`
 Pair a remote AI agent with your browser session.
 
-Generates a one-time setup key and instructions another agent can use to connect. Works with OpenClaw, Hermes, Codex, Cursor, or any agent that can make HTTP requests. Each paired agent gets its own tab with scoped access. Supports same-machine (direct credential write) and remote (ngrok tunnel) modes.
+Generates a one-time setup key and instructions another agent can use to connect. Works with OpenClaw, Hermes, Codex, Cursor, or any agent that can make HTTP requests. Each paired agent gets its own tab. Default access is read + write + admin + meta — a paired agent can execute JavaScript and read cookies and storage; `--control` additionally allows stop/restart/disconnect, and `--restrict` is what narrows access. Supports same-machine (direct credential write) and remote (ngrok tunnel) modes.
+
+Remote mode asks for consent once per machine before opening a tunnel — it exposes a browser that is already logged into your accounts, so the answer is recorded in `vibe-config` under `pair_agent` and stands until you set it back to `off`. Your ngrok authtoken never passes through the chat: you run `ngrok config add-authtoken` in your own terminal and the skill only verifies the result.
+
+To revoke one agent, the daemon serves a root-only `DELETE /token/<clientId>`; there is no CLI wrapper for it yet, and `$B tunnel revoke` does not exist. To revoke everything at once, stop the browse daemon (`$B stop`) — scoped tokens live in daemon memory, so every issued token and pending setup key dies with it.
 
 Triggers: `pair with agent`, `connect remote agent`, `share my browser`
 
@@ -484,7 +488,7 @@ Triggers: `skillify this`, `make this a skill`, `save this flow as a skill`
 ---
 
 ### `/diagram`
-Render a Mermaid diagram to a self-contained HTML file and a PNG, using the browse shim as the renderer (no heavy diagram toolchain).
+Render a Mermaid diagram offline — the renderer is vendored in the repo, so nothing is fetched at render time or afterwards. Emits four artifacts: `.mmd` (the source to edit), `.svg` (vector), `.html` (the SVG inlined, opens anywhere), and `.png` (for chat and READMEs).
 
 Triggers: `draw a diagram`, `make a mermaid diagram`, `render this flowchart`
 

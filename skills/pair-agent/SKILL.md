@@ -1,7 +1,7 @@
 ---
 name: pair-agent
 description: |
-  Pair a remote AI agent with your browser. One command generates a setup key and prints instructions the other agent can follow to connect. Works with OpenClaw, Hermes, Codex, Cursor, or any agent that can make HTTP requests. The remote agent gets its own tab with scoped access (read+write by default, admin on request).
+  Pair a remote AI agent with your browser. One command generates a setup key and prints instructions the other agent can follow to connect. Works with OpenClaw, Hermes, Codex, Cursor, or any agent that can make HTTP requests. The remote agent gets its own tab. Default access is read+write+admin+meta — the trust boundary is the pairing ceremony, not the scope; `--control` adds stop/restart/disconnect and `--restrict` narrows it.
 triggers:
   - pair with agent
   - connect remote agent
@@ -189,10 +189,18 @@ ngrok, start the tunnel, and print the instruction block with the tunnel URL:
 $B pair-agent --client TARGET_HOST
 ```
 
-If the user also needs admin access (JS execution, cookies, storage):
+**What a paired agent gets by default.** The daemon grants read + write +
+admin + meta — the trust boundary is the pairing ceremony, not the scope, so a
+default agent CAN execute JavaScript and read cookies and storage. `--control`
+(and its `--admin` alias) adds the browser-wide destructive commands: stop,
+restart, disconnect. `--restrict` is what narrows access. Say this plainly when
+you present the pairing: the person approving it is granting more than the flag
+names suggest.
+
+If the user also needs the control commands (stop, restart, disconnect):
 
 ```bash
-$B pair-agent --admin --client TARGET_HOST
+$B pair-agent --control --client TARGET_HOST
 ```
 
 **CRITICAL: You MUST output the full instruction block to the user.** The command
@@ -263,7 +271,7 @@ side panel if you have vibestack Browser open."
 
 ## What the remote agent can do
 
-With default (read+write) access:
+With default access (read + write + admin + meta):
 - Navigate to URLs, click elements, fill forms, take screenshots
 - Read page content (text, HTML, snapshot)
 - Create new tabs (each agent gets its own)
@@ -326,11 +334,19 @@ it goes down with the daemon and the public URL stops resolving. Do NOT reach
 for `pkill -f ngrok` — it would kill every unrelated ngrok the user is running
 and still not be the thing serving this tunnel.
 
-**There is no per-agent revoke in this build.** `$B tunnel revoke` and
-`$B tunnel rotate` are not implemented — the daemon exposes `/tunnel/start` and
-nothing else — so do not tell a user to run them; they would believe a shared
-browser session had been cut off when it had not. To drop one agent out of
-several, stop the daemon and re-pair the agents you still want.
+**Per-agent revoke exists, but only over HTTP.** The daemon serves a root-only
+`DELETE /token/<clientId>`, which invalidates that agent's tokens and leaves the
+others alone:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $ROOT_TOKEN" \
+  "http://127.0.0.1:<port>/token/<agent-name>"
+```
+
+There is no CLI wrapper for it — `$B tunnel revoke` and `$B tunnel rotate` do
+NOT exist, so never tell a user to run those; they would believe a shared
+browser session had been cut off when it had not. If the root token is not to
+hand, stopping the daemon is the blunt equivalent.
 
 Tokens expire on their own (24h by default), and a setup key expires in 5
 minutes if never exchanged.

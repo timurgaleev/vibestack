@@ -57,20 +57,20 @@ the full daemon.
 
 ### Full daemon (interaction + CDP)
 
-**What it is:** a persistent headless Chromium daemon that exposes a fast (~100ms) command interface for navigating, screenshotting, asserting, and interacting with web pages. Skills that depend on it expect a binary at:
+**What it is:** a persistent headless Chromium daemon that exposes a fast (~100ms) command interface for navigating, screenshotting, asserting, and interacting with web pages.
 
-```
-<vibestack checkout>/browse/dist/browse
-```
+**Status: bundled.** The daemon source ships in this repo under `browse/`, and
+`./install` prepares its dependencies. Skills locate the launcher relative to their
+own installed directory — `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse`, falling
+back to `vibe-browse` on `PATH` — which resolves in both user and project scope and
+does not depend on where the checkout lives. There is nothing to drop in by hand.
 
-Skills locate it relative to their own installed directory rather than to any fixed
-path — `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse`, falling back to `vibe-browse`
-on `PATH`. That resolves correctly in both user and project scope, and does not depend
-on where the checkout lives.
+The one thing that is not vendored is Chromium itself: the launcher fetches Playwright
+and a browser into a cache directory on first use. Without `npm` on `PATH` it cannot,
+and prints `BROWSE_NOT_AVAILABLE` — the browse-dependent skills then fall back to
+text-only checks (curl, basic HTTP) where possible.
 
-**Status:** vibestack does **not** include the browse daemon source or binary. There is currently no public, vibestack-bundled implementation. The four affected skills will detect the missing binary and emit `BROWSE_NOT_AVAILABLE` so the agent can fall back to text-only checks (curl, basic HTTP) where possible.
-
-**If you have your own browse daemon:** drop the binary at the path above (or build it from your own source under `<repo>/browse/dist/browse`) and the skills will pick it up.
+**Overriding it:** put your own `vibe-browse` earlier on `PATH` — the launcher falls back to `PATH` when the bundled one is not where it expects.
 
 **If you don't:** the affected skills will skip gracefully and tell you what they couldn't do. Other 42 skills work fully without the daemon.
 

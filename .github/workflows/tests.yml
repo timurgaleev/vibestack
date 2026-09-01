@@ -36,6 +36,7 @@ jobs:
           - test-learn-sync.sh
           - test-install-integration.sh
           - test-brand-audit.sh
+          - test-browse-shim.sh
     steps:
       - uses: actions/checkout@v4
 

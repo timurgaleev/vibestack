@@ -135,6 +135,8 @@ git pull && ./install       # Update
 - [`ETHOS.md`](ETHOS.md) — the five principles behind the design
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — add your own skill in minutes
 - [`docs/agent-skills-compatibility-audit.md`](docs/agent-skills-compatibility-audit.md) — per-agent behavior, incl. safety-hook tiers
+- [`docs/internals.md`](docs/internals.md) — binaries, shared snippets, preamble flags, test suites, CI
+- [`docs/external-tools.md`](docs/external-tools.md) — the few tools vibestack expects but does not bundle
 - [`CHANGELOG.md`](CHANGELOG.md) · [`LICENSE`](LICENSE) (MIT)
 
 > **Heads-up:** the safety skills (`/careful`, `/freeze`, `/guard`) enforce

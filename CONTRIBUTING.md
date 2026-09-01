@@ -175,7 +175,10 @@ git commit -m "feat: add /my-skill — <one sentence description>"
 
 - Read the full SKILL.md before editing. Context matters.
 - Touch only what the task requires. Don't "improve" adjacent instructions.
-- If you change hook logic, re-run the direct hook tests before committing.
+- If you change hook logic, run `bash test/test-hooks.sh` before committing — it asserts the
+  decision wire format and both fail-closed polarities, not just the verdict.
+- CI runs every suite in `test/` on Linux and macOS for each PR. Run the one you touched
+  locally first; `docs/internals.md` lists what each suite covers.
 - If you change the `name:` field, re-run `./install` — the directory name must match.
 
 ## Skill quality bar
