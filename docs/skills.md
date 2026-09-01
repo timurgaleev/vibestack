@@ -335,6 +335,22 @@ Registers a PreToolUse hook that intercepts Bash commands matching destructive p
 
 Active for the session until you end it.
 
+**Your own patterns.** Add one POSIX ERE per line to
+`~/.vibestack/careful-patterns.txt` (or, for one project only,
+`~/.vibestack/projects/<slug>/careful-patterns.txt`); blank lines and `#`
+comments are ignored. A match warns, naming the pattern that fired.
+
+These are **additive only** — they are consulted after every built-in family, so
+a file can add a warning but can never silence one. A guard a project can turn
+off is not a guard. A pattern that will not compile is skipped rather than
+taking the hook down with it, so a typo costs you that one rule, not the guard.
+
+```
+# ~/.vibestack/careful-patterns.txt
+terraform[[:space:]]+destroy
+flyctl[[:space:]]+apps[[:space:]]+destroy
+```
+
 Triggers: `careful mode`, `risky operation`, `be careful`, `extra caution`
 
 ---
