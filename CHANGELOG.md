@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.38.1 — 2026-09-02
+
+### Fixed
+
+- **A skill withdrawn from the pack stayed installed forever.** Nothing removed
+  it: the adopt-back step that protects a runtime's own bundled skills and
+  anything another tool installed cannot tell those apart from a skill vibestack
+  itself shipped last release and dropped since — by then the name is gone from
+  the pack, so it reads as someone else's and gets carried straight back into
+  the live root. Upgrading to the release that removed `/tdd` and
+  `/reroll-buddy` left both of them in all four runtimes, still listed, still
+  routable, and never updated again.
+
+  Install now writes a manifest of the skills it installed into each target
+  root, and removes on the next run any name that manifest claims which the pack
+  no longer ships. Only a name we recorded is ever removed, and only when the
+  directory still holds a `SKILL.md` — a foreign directory that happens to share
+  a name with a withdrawn skill keeps its contents. Uninstall removes the
+  manifest with everything else.
+
+  The manifest starts empty for an install that predates it, so skills withdrawn
+  before this release need one manual `rm -rf <target>/<skill>`; from here the
+  next install handles it.
+
+### Testing
+
+`test/test-install-integration.sh` gains a case that installs, plants both a
+withdrawn skill and an unrelated one, re-installs, and asserts the first is gone
+while the second is untouched — then uninstalls and asserts the manifest went
+with it. Confirmed to fail when the prune call is neutered (exactly one case
+flips) and to pass with it. Suite 33 → 34, 0 failures.
+
 ## 1.38.0 — 2026-09-02
 
 ### Added

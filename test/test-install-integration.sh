@@ -656,6 +656,44 @@ test_install_preserves_foreign_skills() {
   assert_file_exists "$root/office-hours/SKILL.md" || return 1
 }
 
+# --- a skill withdrawn from the pack is removed from the target on the next
+# install, while a foreign directory of the same shape survives. Both halves
+# matter: pruning nothing leaves a dead skill routable forever, and pruning by
+# "not one of ours" would delete every skill another tool installed.
+test_install_removes_withdrawn_skill() {
+  local root="$HOME/.cursor/skills"
+
+  "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
+  assert_file_exists "$root/office-hours/SKILL.md" || return 1
+  assert_file_exists "$root/.vibestack-manifest" || {
+    echo "    install wrote no manifest — a later run cannot tell ours from theirs" >&2; return 1; }
+
+  # Stand in for a skill the pack shipped last time and dropped since: it is in
+  # the manifest and in the target, but not in the source tree.
+  mkdir -p "$root/withdrawn-skill" "$root/someone-elses-skill"
+  echo "OLD"    > "$root/withdrawn-skill/SKILL.md"
+  echo "THEIRS" > "$root/someone-elses-skill/SKILL.md"
+  echo "withdrawn-skill" >> "$root/.vibestack-manifest"
+
+  "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
+
+  if [ -e "$root/withdrawn-skill" ]; then
+    echo "    a skill dropped from the pack survived the upgrade" >&2
+    return 1
+  fi
+  assert_file_exists "$root/someone-elses-skill/SKILL.md" || {
+    echo "    an unrelated skill was deleted by the prune" >&2; return 1; }
+  assert_eq "THEIRS" "$(cat "$root/someone-elses-skill/SKILL.md")" "foreign skill content" || return 1
+  assert_file_exists "$root/office-hours/SKILL.md" || return 1
+
+  # The manifest is install's own state; uninstall owns removing it.
+  "$UNINSTALL" --target=cursor < /dev/null >/dev/null 2>&1
+  if [ -e "$root/.vibestack-manifest" ]; then
+    echo "    uninstall left the manifest behind" >&2
+    return 1
+  fi
+}
+
 # --- #14: staging failure preserves existing production install
 test_install_staging_failure_preserves_prod() {
   trap teardown_full EXIT
@@ -776,6 +814,7 @@ run_test "v1.5: plan unknown input retries then exits"          test_install_pla
 run_test "v1.5: --dry-run prompt says preview"                  test_install_dry_run_prompt_says_preview
 run_test "v1.5: atomic swap on success"                         test_install_atomic_swap_on_success
 run_test "swap preserves foreign skills (.system, others)"      test_install_preserves_foreign_skills
+run_test "withdrawn skill removed, foreign kept"                 test_install_removes_withdrawn_skill
 run_test "codex installs to .agents/skills, prunes legacy root" test_install_codex_prunes_superseded_root
 run_test "codex project scope uses .agents/skills"              test_install_codex_project_scope_uses_agents_dir
 run_test "v1.5: staging failure preserves prod"                 test_install_staging_failure_preserves_prod

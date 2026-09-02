@@ -594,6 +594,48 @@ prune_legacy_root() {
   fi
 }
 
+# Remove skills this install used to write and no longer ships.
+#
+# adopt_foreign_entries cannot do this: a skill dropped from the pack is not in
+# vibestack_owned_names any more, so it looks exactly like a skill some other
+# tool installed and gets carried back into the live root. Without a record of
+# what we wrote last time, a removed skill lives on in every target — still
+# listed, still routable, never updated again.
+#
+# The manifest is that record. It sits inside the target root, so it survives
+# the swap through adopt_foreign_entries and works the same in project scope.
+# Only a name the manifest claims is ever removed, and only when the directory
+# still looks like a skill: a foreign directory that happens to share a name
+# with a skill we once shipped keeps its contents.
+SKILL_MANIFEST_NAME=".vibestack-manifest"
+
+prune_removed_skills() {
+  local root="$1"
+  local manifest="$root/$SKILL_MANIFEST_NAME"
+  local owned name pruned=0
+
+  owned=$'\n'"$(vibestack_owned_names)"$'\n'
+
+  if [ -f "$manifest" ]; then
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      case "$owned" in *$'\n'"$name"$'\n'*) continue ;; esac
+      [ -f "$root/$name/SKILL.md" ] || continue
+      if [ "$DRY_RUN" = "1" ]; then
+        echo "  would remove withdrawn skill: $root/$name"
+      else
+        rm -rf "$root/$name" 2>/dev/null && pruned=$((pruned + 1))
+      fi
+    done < "$manifest"
+  fi
+
+  [ "$pruned" -gt 0 ] && echo "  removed $pruned withdrawn skill(s) from $root"
+
+  if [ "$DRY_RUN" != "1" ]; then
+    vibestack_owned_names > "$manifest" 2>/dev/null || true
+  fi
+}
+
 # ───────────────────────────────────────────────────────────────────────────
 # Recovery pass for a target (v1.5.0).
 #
@@ -828,6 +870,9 @@ for target in "${TARGETS[@]}"; do
       # Our skills landed in the current root — drop any copy still sitting in a
       # superseded one (user scope only; project scope has no legacy path).
       [ "$SCOPE" = "user" ] && prune_legacy_root "$target"
+      # A skill we shipped last time and dropped since is still sitting here —
+      # adopt_foreign_entries just carried it back in. Remove it by name.
+      prune_removed_skills "$root"
     fi
     echo "  installing $total_skills skills... done ($installed/$total_skills)"
   fi
