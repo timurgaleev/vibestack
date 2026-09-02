@@ -1578,7 +1578,7 @@ Output a summary header: `Pre-Landing Review: N issues (X critical, Y informatio
 
 7. **After all fixes (auto + user-approved):**
    - If ANY fixes were applied: commit fixed files by name (`git add <fixed-files> && git commit -m "fix: pre-landing review fixes"`), then **STOP** and tell the user to run `/ship` again to re-test.
-   - If no fixes applied (all ASK items skipped, or no issues found): continue to Step 12.
+   - If no fixes applied (all ASK items skipped, or no issues found): continue to Step 10.
 
 8. Output summary: `Pre-Landing Review: N issues — M auto-fixed, K asked (J fixed, L skipped)`
 
@@ -1617,7 +1617,8 @@ Save the review output — it goes into the PR body in Step 19.
 
 Parse the LAST line as JSON.
 
-If `total` is 0, skip this step silently. Continue to Step 12.
+If `total` is 0, skip this step silently. Continue to Step 10b — a PR with no
+Greptile comments can still carry unresolved human threads or a red check.
 
 Otherwise, print: `+ {total} Greptile comments ({valid_actionable} valid, {already_fixed} already fixed, {false_positive} FP)`.
 
@@ -1644,19 +1645,36 @@ For each comment in `comments`:
 
 **SUPPRESSED:** Skip silently — these are known false positives from previous triage.
 
-**After all comments are resolved:** If any fixes were applied, the tests from Step 5 are now stale. **Re-run tests** (Step 5) before continuing to Step 12. If no fixes were applied, continue to Step 12.
+**After all comments are resolved:** If any fixes were applied, the tests from Step 5 are now stale. **Re-run tests** (Step 5) before continuing to Step 10b. If no fixes were applied, continue to Step 10b.
 
 ---
 
 ## Step 10b: Other unresolved review threads
 
 Greptile is not the only reviewer. If the PR also carries unresolved threads from
-people or from another review bot, or has failing checks, run the
+people or from another review bot, or has failing checks, hand off to the
 `address-pr-review` skill before continuing.
 
 It fetches the unresolved threads and the logs of every failing check, applies
 the fixes, runs the tests, commits and pushes, then replies on each thread and
-resolves the ones it addressed.
+resolves the ones it addressed. It pushes, so the hand-off only happens on a
+clean tree:
+
+```bash
+git status --porcelain
+```
+
+**If that prints anything, do not hand off.** Name the dirty files and say that
+the review threads are being left for after this ship: the user can run
+`/address-pr-review` on the branch once the tree is committed. The uncommitted
+work ship has been carrying since Step 1 belongs to Step 15's commit and Step
+17's guarded push — it must not leave the machine early inside a review commit.
+
+On a clean tree, hand off and hold it to the same rule ship uses in Steps 9 and
+10: only the files it edits to answer a thread or fix a failing check may be
+staged, staged by name rather than with `git add -A`, and it confirms with the
+user before pushing. Anything else that appears in the tree is reported, not
+committed.
 
 If there is no PR yet, or every thread is resolved and all checks are green,
 skip this step. Any fix applied here makes the Step 5 test run stale — re-run it

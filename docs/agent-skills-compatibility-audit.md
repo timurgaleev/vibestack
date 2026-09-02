@@ -37,7 +37,7 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Description ≤ 1024 chars (spec limit) | 60/60 PASS | — |
 | YAML frontmatter parseable | 60/60 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 23 skills | address-pr-review, benchmark, canary, careful, connect-chrome, design-consultation, design-html, design-review, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, qa, qa-only, scrape, ship, skillify, vibe. Ten carry the token in their own SKILL.md (`vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` its own `bin/` scripts); the other 13 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 26 skills | address-pr-review, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, qa, qa-only, scrape, setup-browser-cookies, ship, vibe. Fourteen carry the token in their own SKILL.md (`vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` its own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
 | Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
@@ -74,7 +74,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | bedrock-guardrails | — | — | — | full / full / full |
 | benchmark | — | yes | — | full / full / full |
 | benchmark-models | — | — | — | full / full / full |
-| browse | — | — | — | full / full / full |
+| browse | — | yes | — | full / full / full |
 | canary | — | yes | — | full / full / full |
 | careful | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | claude | — | — | — | full / full / full |
@@ -87,11 +87,11 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | design-consultation | — | yes | yes | full / instr-only / instr-only |
 | design-html | — | yes | yes | full / instr-only / instr-only |
 | design-review | — | yes | yes | full / instr-only / instr-only |
-| design-shotgun | — | — | yes | full / instr-only / instr-only |
+| design-shotgun | — | yes | yes | full / instr-only / instr-only |
 | devex-review | — | yes | — | full / full / full |
 | diagram | — | yes | — | full / full / full |
 | document-generate | — | — | — | full / full / full |
-| document-release | — | — | — | full / full / full |
+| document-release | — | — | yes | full / instr-only / instr-only |
 | freeze | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | guard | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | health | — | — | — | full / full / full |
@@ -105,7 +105,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | mcp-review | — | — | — | full / full / full |
 | office-hours | — | yes | yes | full / instr-only / instr-only |
 | open-browser | — | yes | — | full / full / full |
-| pair-agent | — | — | — | full / full / full |
+| pair-agent | — | yes | — | full / full / full |
 | plan-ceo-review | — | — | — | full / full / full |
 | plan-design-review | — | — | — | full / full / full |
 | plan-devex-review | — | — | — | full / full / full |
@@ -117,10 +117,10 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | retro | — | — | — | full / full / full |
 | review | — | — | — | full / full / full |
 | scrape | — | yes | — | full / full / full |
-| setup-browser-cookies | — | — | — | full / full / full |
+| setup-browser-cookies | — | yes | — | full / full / full |
 | setup-deploy | — | — | — | full / full / full |
 | ship | — | yes (in body, not hook) | — | full / full / full |
-| skillify | — | yes | — | full / full / full |
+| skillify | — | — | — | full / full / full |
 | spec | — | — | — | full / full / full |
 | unfreeze | — | — | — | full / full / full |
 | unslop | — | — | — | full / full / full |
@@ -159,17 +159,19 @@ sibling skill directory exists at runtime. Day 0 Track B must verify whether
 Cursor and Kiro keep skills in per-skill directories (where the relative path
 resolves) or in some other layout.
 
-### F3 — 22 skills use `${CLAUDE_SKILL_DIR}` env var substitution
+### F3 — 26 skills use `${CLAUDE_SKILL_DIR}` env var substitution
 
-`careful`, `freeze`, `guard` and `investigate` use it in `hooks:` commands;
-`make-pdf` and `ship` use it in their bodies to reach their own `bin/` and a
-sibling skill's sub-doc; `diagram` resolves its vendored offline renderer,
-`open-browser` its bundled extension, and `vibe` its skills index. The other 13
-— `benchmark`, `canary`,
-`connect-chrome`, `design-consultation`, `design-html`, `design-review`,
-`devex-review`, `diagram`, `land-and-deploy`, `office-hours`, `qa`, `qa-only`,
-`scrape` — never name the token themselves; it reaches them through the
-`browse-detect` / `browse-setup` snippets they `{{include}}`.
+Fourteen name the token in their own SKILL.md. `careful`, `freeze`, `guard` and
+`investigate` use it in `hooks:` commands; `address-pr-review`, `make-pdf` and
+`ship` use it in their bodies to reach their own `bin/` and a sibling skill's
+sub-doc; `browse`, `design-html`, `pair-agent` and `setup-browser-cookies` use
+it to reach the browse runtime directly; `diagram` resolves its vendored offline
+renderer, `open-browser` its bundled extension, and `vibe` its skills index. The
+other 12 — `benchmark`, `canary`, `connect-chrome`, `design-consultation`,
+`design-review`, `design-shotgun`, `devex-review`, `land-and-deploy`,
+`office-hours`, `qa`, `qa-only`, `scrape` — never name the token themselves; it
+reaches them through the `browse-detect` / `browse-setup` snippets they
+`{{include}}`.
 
 **Risk:** if Cursor and Kiro don't substitute `${CLAUDE_SKILL_DIR}` (or its
 target-specific equivalent), the hook commands and the body reference will
