@@ -207,6 +207,12 @@ for target in "${TARGETS[@]}"; do
     esac
   done
 
+  # The install manifest is a regular file at the root of the target, written
+  # so the next install can tell a withdrawn skill from someone else's. Nothing
+  # reads it once the pack is gone, and leaving it behind would leak across an
+  # uninstall the way the sidecars used to.
+  rm -f "$root/.vibestack-manifest"
+
   echo "  $target: $removed processed, $not_found already absent, $not_empty kept (had user files)"
   total_removed=$((total_removed + removed))
   total_not_found=$((total_not_found + not_found))
