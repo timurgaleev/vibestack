@@ -100,6 +100,15 @@ Triggers: `ship this`, `ship it`, `ready to ship`
 
 ---
 
+### `/address-pr-review`
+Work a pull request's open review threads and failing CI checks to a close.
+
+Reads every unresolved thread on the PR for the current branch, fixes what needs fixing or explains what does not, runs the tests, commits and pushes, then replies on each thread and resolves the ones that were addressed. Failing-check logs are pulled in the same pass, so review feedback and red CI are handled together. Use once a PR exists and reviewers or CI have come back with something.
+
+Triggers: `address pr review`, `address review comments`, `fix review comments`, `resolve review threads`, `ci is failing on the pr`, `iterate on pr`
+
+---
+
 ### `/investigate`
 Systematic debugging with root cause analysis.
 
@@ -114,9 +123,9 @@ Triggers: `debug this`, `fix this bug`, `why is this broken`, `root cause analys
 ### `/cso`
 Security audit — OWASP Top 10 + STRIDE threat model.
 
-Covers: injection, authentication, authorization, cryptography, data exposure, configuration, dependencies. Outputs findings ranked by severity with recommended remediations.
+Covers: injection, authentication, authorization, cryptography, data exposure, configuration, dependencies, and — when AWS is detected — the live account posture via read-only calls (IAM, CloudTrail, S3 exposure, security groups). Outputs findings ranked by severity with recommended remediations.
 
-Triggers: `security audit`, `cso`, `threat model`
+Triggers: `security audit`, `check for vulnerabilities`, `owasp review`, `audit my AWS account`, `cloud posture review`, `IAM review`
 
 ---
 
@@ -126,15 +135,6 @@ Analyze all PR changes and update the PR description with an accurate summary.
 Reads the full diff across all commits in the PR (not just the latest), categorizes changes, and writes an accurate PR body with summary, changes, and test plan. Preserves existing author notes.
 
 Triggers: `update pr description`, `pr summary`, `summarize pr`
-
----
-
-### `/tdd`
-Test-driven development with the red-green-refactor loop, vertical-slice tracer bullets.
-
-Tests verify behavior through public interfaces, not implementation details — so they survive refactors. Anti-pattern: horizontal slicing (write all tests then all code). Workflow: plan behaviors → tracer bullet test → incremental RED→GREEN cycles → refactor only when GREEN. Sub-docs: `deep-modules.md`, `interface-design.md`, `mocking.md`, `refactoring.md`, `tests.md`.
-
-Triggers: `tdd`, `red-green-refactor`, `test-first development`, `build with tdd`, `test-driven`
 
 ---
 
@@ -252,6 +252,15 @@ Triggers: `update docs after ship`, `document what changed`, `post-ship docs`
 
 ---
 
+### `/unslop`
+Rewrite machine-sounding prose in the author's own voice.
+
+Scans English prose — README, release notes, CHANGELOG, PR bodies, articles, posts, chat replies — for the patterns that mark text as machine-written, then rewrites it in a specific human voice while keeping every fact, number, name and claim intact. Use when a draft reads like a bot wrote it and it should read like the author did.
+
+Triggers: `unslop`, `humanize this text`, `de-ai this`, `remove ai writing patterns`, `make this sound human`, `clean up the prose`, `this reads like a bot`
+
+---
+
 ### `/document-generate`
 Generate complete documentation from scratch.
 
@@ -294,15 +303,6 @@ PR queue dashboard.
 Lists: PRs with CI status, which are merge-ready, which are blocked, and recent merges. Gives a snapshot of what's in flight without opening GitHub.
 
 Triggers: `landing report`, `pr queue`, `what's ready to merge`
-
----
-
-### `/reroll-buddy`
-Reset the Claude Code `/buddy` companion pet so a new one can be picked.
-
-Removes the `companion` key from `~/.claude.json` after user confirmation. After reset, run `/buddy` to pick a new pet. Modifies only the companion key — all other Claude Code config is preserved.
-
-Triggers: `reroll buddy`, `reset pet`, `reset companion`, `new buddy`
 
 ---
 
@@ -521,3 +521,68 @@ Triggers: `connect to chrome`, `use my chrome session`, `import chrome cookies`
 Update the installed vibestack pack to the latest release — pull the repo (ff-only, never forces), re-run install, and summarize the CHANGELOG delta.
 
 Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`
+
+---
+
+## AWS & AI systems
+
+### `/aws-cost`
+Read-only cost review of the AWS account at hand.
+
+Where the money went last month, what changed against the month before, and the three actions worth taking. Uses the AWS billing MCP tools when the session has them and falls back to the `aws` CLI (`ce`, `compute-optimizer`, `budgets`) otherwise. Covers waste, Savings Plans and RI coverage. Use when someone asks why the bill went up, wants a FinOps pass, or needs commitment coverage checked.
+
+Triggers: `aws cost`, `aws bill`, `why did aws cost go up`, `finops review`, `cost explorer`, `savings plans coverage`, `cloud spend review`
+
+---
+
+### `/ai-cost-guard`
+Put a written dollar ceiling on every paid-inference call.
+
+Finds the code paths that can run up a bill with no bound — loops, retries, fan-out, agent steps, queues — and requires a cap both in code and at the provider. Use before shipping anything that calls an LLM, speech, or image API, or after a bill came in larger than expected.
+
+Triggers: `ai cost guard`, `runaway api cost`, `cap llm spend`, `unbounded llm loop`, `token budget`, `bedrock spend limit`, `prevent surprise ai bill`
+
+---
+
+### `/bedrock-guardrails`
+Audit the guardrail layer around Amazon Bedrock usage.
+
+Covers region pinning and cross-region inference profiles, IAM scoping to model ARNs, Bedrock Guardrails configuration (PII, denied topics, content and word filters, grounding, versioning), invocation logging and KMS, per-tenant isolation, prompt-injection boundaries, quotas and cost controls. Read-only — produces a PASS/FAIL/N-A control table with Terraform remediation for every FAIL. Use before shipping an LLM feature on Bedrock, during a security or EU data residency review, or while designing the Terraform for a new workload.
+
+Triggers: `bedrock guardrails`, `bedrock security review`, `bedrock region lock`, `pii in prompts`, `bedrock iam policy`, `tenant isolation bedrock`, `eu data residency llm`
+
+---
+
+### `/kb-review`
+Read-only review of a retrieval-augmented setup.
+
+Amazon Bedrock Knowledge Bases first, hand-built RAG pipelines second: sources, chunking, metadata and tenant filtering, embedding model, vector store, sync, retrieval quality and cost per query. Builds a golden question set, measures recall@5 and MRR against the live knowledge base, and leaves the eval set behind as JSONL. Use when someone asks whether the knowledge base is set up right, why answers miss the right document, or what a RAG pipeline costs to run.
+
+Triggers: `knowledge base review`, `rag review`, `bedrock knowledge base`, `chunking strategy`, `retrieval quality`, `recall at k`, `vector store review`
+
+---
+
+### `/connect-review`
+Review an Amazon Connect contact-center solution.
+
+Contact flows, Lex bot design, Bedrock-backed conversational logic, Lambda integrations, prompts, latency budget, state handling, observability and cost per contact. Produces a severity-ranked findings report with a latency table, a cost estimate and three test calls to make next. Use when an IVR, voice bot or contact flow needs a review, or when a Connect solution feels slow, brittle or expensive.
+
+Triggers: `review contact flow`, `amazon connect review`, `lex bot review`, `voice bot review`, `connect latency`, `ivr review`, `review the phone assistant`
+
+---
+
+### `/agent-eval`
+Build an eval harness for an LLM agent, prompt template, or tool-using workflow — then run it.
+
+Produces a task set, deterministic and judge-based scoring, per-tag metrics, and a regression gate. Use when a prompt or model change needs to be measured instead of eyeballed, or when a project ships LLM behavior with no eval set at all.
+
+Triggers: `agent eval`, `evaluate the agent`, `llm as judge`, `build an eval set`, `prompt regression test`, `measure prompt quality`, `eval harness`
+
+---
+
+### `/mcp-review`
+Review an MCP server — Python FastMCP or the TypeScript SDK.
+
+Covers tool design, scope, auth, input validation, error shape, transport and prompt-injection exposure. Produces a findings table with severities and proposed tool schema changes; never modifies the server or its credentials. Use before publishing a server, before wiring one into an agent, or when someone asks whether an MCP server is safe to run.
+
+Triggers: `mcp review`, `review my mcp server`, `mcp tool schema`, `mcp auth`, `mcp security`, `is this mcp server safe`

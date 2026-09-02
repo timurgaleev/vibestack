@@ -1648,6 +1648,22 @@ For each comment in `comments`:
 
 ---
 
+## Step 10b: Other unresolved review threads
+
+Greptile is not the only reviewer. If the PR also carries unresolved threads from
+people or from another review bot, or has failing checks, run the
+`address-pr-review` skill before continuing.
+
+It fetches the unresolved threads and the logs of every failing check, applies
+the fixes, runs the tests, commits and pushes, then replies on each thread and
+resolves the ones it addressed.
+
+If there is no PR yet, or every thread is resolved and all checks are green,
+skip this step. Any fix applied here makes the Step 5 test run stale — re-run it
+before continuing.
+
+---
+
 ## Step 11: Adversarial review (always-on)
 
 Every diff gets adversarial review from both Claude and Codex. LOC is not a proxy for risk — a 5-line auth change can be critical.

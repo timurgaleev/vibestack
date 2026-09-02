@@ -1,12 +1,11 @@
 ---
 name: cso
 description: |
-  Chief Security Officer mode. Infrastructure-first security audit: secrets archaeology, dependency supply chain, CI/CD pipeline security, LLM/AI security, skill supply chain scanning, plus OWASP Top 10, STRIDE threat modeling, and active verification. Two modes: daily (zero-noise, 8/10 confidence gate) and comprehensive (monthly deep scan, 2/10 bar). Trend tracking across audit runs.
+  Chief Security Officer mode. Infrastructure-first security audit: secrets archaeology, dependency supply chain, CI/CD pipeline security, live AWS account posture (IAM, CloudTrail, S3 exposure, security groups), LLM/AI security, skill supply chain scanning, plus OWASP Top 10, STRIDE threat modeling, and active verification. Two modes: daily (zero-noise, 8/10 confidence gate) and comprehensive (monthly deep scan, 2/10 bar). Trend tracking across audit runs.
 allowed-tools:
   - Bash
   - Read
   - Grep
-  - Glob
   - Write
   - Agent
   - WebSearch
@@ -15,6 +14,9 @@ triggers:
   - security audit
   - check for vulnerabilities
   - owasp review
+  - audit my AWS account
+  - cloud posture review
+  - IAM review
 ---
 
 ## When to invoke
@@ -61,7 +63,7 @@ When the user types `/cso`, run this skill.
 ## Arguments
 - `/cso` — full daily audit (all phases, 8/10 confidence gate)
 - `/cso --comprehensive` — monthly deep scan (all phases, 2/10 bar — surfaces more)
-- `/cso --infra` — infrastructure-only (Phases 0-6, 12-14)
+- `/cso --infra` — infrastructure-only (Phases 0-5, 5b, 6, 12-14)
 - `/cso --code` — code-only (Phases 0-1, 7, 9-11, 12-14)
 - `/cso --skills` — skill supply chain only (Phases 0, 8, 12-14)
 - `/cso --diff` — branch changes only (combinable with any above)
@@ -71,8 +73,8 @@ When the user types `/cso`, run this skill.
 
 ## Mode Resolution
 
-1. If no flags → run ALL phases 0-14, daily mode (8/10 confidence gate).
-2. If `--comprehensive` → run ALL phases 0-14, comprehensive mode (2/10 confidence gate). Combinable with scope flags.
+1. If no flags → run ALL phases 0-14 including 5b, daily mode (8/10 confidence gate).
+2. If `--comprehensive` → run ALL phases 0-14 including 5b, comprehensive mode (2/10 confidence gate). Combinable with scope flags.
 3. Scope flags (`--infra`, `--code`, `--skills`, `--supply-chain`, `--owasp`, `--scope`) are **mutually exclusive**. If multiple scope flags are passed, **error immediately**: "Error: --infra and --code are mutually exclusive. Pick one scope flag, or run `/cso` with no flags for a full audit." Do NOT silently pick one — security tooling must never ignore user intent.
 4. `--diff` is combinable with ANY scope flag AND with `--comprehensive`.
 5. When `--diff` is active, each phase constrains scanning to files/configs changed on the current branch vs the base branch. For git history scanning (Phase 2), `--diff` limits to commits on the current branch only.
@@ -82,6 +84,8 @@ When the user types `/cso`, run this skill.
 ## Important: Use the Grep tool for all code searches
 
 The bash blocks throughout this skill show WHAT patterns to search for, not HOW to run them. Use Claude Code's Grep tool (which handles permissions and access correctly) rather than raw bash grep. The bash blocks are illustrative examples — do NOT copy-paste them into a terminal. Do NOT use `| head` to truncate results.
+
+**Exception — Phase 5b (AWS Account Posture).** That phase queries a live account, so there is nothing in the repository to grep. Its credential gate and every `aws` command in its Checks table are meant to be executed with Bash, as written. They are all read-only (`get`, `list`, `describe`), and the phase's own read-only contract is the limit on what may run. This exception covers Phase 5b only; every other phase stays on the Grep tool.
 
 ## Instructions
 
@@ -213,6 +217,8 @@ Goes beyond `npm audit`. Checks actual supply chain risk.
 
 **Standard vulnerability scan:** Run whichever package manager's audit tool is available. Each tool is optional — if not installed, note it in the report as "SKIPPED — tool not installed" with install instructions. This is informational, NOT a finding. The audit continues with whatever tools ARE available.
 
+**CVE lookup where no local advisory data exists:** A direct dependency whose ecosystem has no audit tool installed, or whose audit tool ran but carries no advisory data for that package, gets a WebSearch on the package name plus its pinned version and `CVE`. Cite the advisory ID in the finding. Such a finding is UNVERIFIED until the vulnerable function is shown to be called (Phase 12, active verification rule 5). Where WebSearch is unavailable, note the dependency as unchecked rather than assuming it is clean.
+
 **Install scripts in production deps (supply chain attack vector):** For Node.js projects with hydrated `node_modules`, check production dependencies for `preinstall`, `postinstall`, or `install` scripts.
 
 **Lockfile integrity:** Check that lockfiles exist AND are tracked by git.
@@ -249,6 +255,64 @@ Find shadow infrastructure with excessive access.
 **Severity:** CRITICAL for prod DB URLs with credentials in committed config / `"*"` IAM on sensitive resources / secrets baked into Docker images. HIGH for root containers in prod / staging with prod DB access / privileged K8s. MEDIUM for missing USER directive / exposed ports without documented purpose.
 
 **FP rules:** `docker-compose.yml` for local dev with localhost = not a finding (precedent #12). Terraform `"*"` in `data` sources (read-only) excluded. K8s manifests in `test/`/`dev/`/`local/` with localhost networking excluded.
+
+### Phase 5b: AWS Account Posture
+
+Phase 5 reads the IaC. This phase reads the live account, because what Terraform describes and what the account actually holds drift apart.
+
+**Gate:** Run only when AWS is detected: a Terraform `provider "aws"` block, a CDK app (`aws-cdk-lib` in package.json or `aws_cdk` in requirements), `boto3` or `@aws-sdk` imports, or `aws sts get-caller-identity` succeeding. If none match, skip silently. Never ask the user for keys and never read `~/.aws/credentials` yourself.
+
+Two failure modes are reported separately, because they need different fixes: the `aws` CLI is not installed, or it is installed and the identity call failed (no profile, expired session, wrong region, blocked network). The CLI's own error text names which. Report the skip line, then move on — an account nobody could reach is never reported as clean.
+
+```bash
+if ! command -v aws >/dev/null 2>&1; then
+  echo "AWS posture: skipped (aws CLI not found)"
+elif ! AWS_STS_ERR=$(aws sts get-caller-identity --output text 2>&1 >/dev/null); then
+  echo "AWS posture: skipped (credentials unusable) — $(printf '%s' "${AWS_STS_ERR:-no error text from aws}" | tr '\n' ' ')"
+fi
+```
+
+**Read-only contract:** Every call in this phase is a `get`, `list`, or `describe`. No `put`, `create`, `update`, `delete`, `attach`, or `enable` — the audit observes the account, it does not repair it. An `AccessDenied` on a single call is noted as `AWS posture: <check> not readable` and is not itself a finding.
+
+Scope is the caller's account. IAM, CloudTrail and the account-level S3 block are global — one invocation each. The rows marked `--region <r>` (security groups, EBS, GuardDuty, Security Hub, Secrets Manager) are run once per region, with `<r>` substituted from:
+
+```bash
+aws ec2 describe-regions --query 'Regions[].RegionName' --output text
+```
+
+**Checks:**
+
+| Check | Command | Finding |
+|---|---|---|
+| Root MFA and root access keys | `aws iam get-account-summary` | `AccountMFAEnabled` = 0 → HIGH. `AccountAccessKeysPresent` = 1 → CRITICAL |
+| Users without MFA | `aws iam list-users`, then per user `aws iam get-login-profile --user-name <u>` and `aws iam list-mfa-devices --user-name <u>` | `get-login-profile` returns a profile (console password set) and `MFADevices` is empty → HIGH. `NoSuchEntity` from `get-login-profile` means the user has no console password — not a finding here; its keys are covered by the stale-key row |
+| Stale access keys | `aws iam list-access-keys --user-name <u>`, `aws iam get-access-key-last-used --access-key-id <id>` | Active key with `CreateDate` older than 90 days, or `LastUsedDate` older than 90 days → MEDIUM |
+| Wildcard admin policies | Customer-managed: `aws iam list-policies --scope Local`, then `aws iam get-policy-version --policy-arn <arn> --version-id <DefaultVersionId>`. AWS-managed: `aws iam list-entities-for-policy --policy-arn arn:aws:iam::aws:policy/AdministratorAccess`. Inline: per user `aws iam list-user-policies --user-name <u>` + `aws iam get-user-policy --user-name <u> --policy-name <p>`, and the same pair for `group-policies` and `role-policies` | Allow statement with `"Action":"*"` and `"Resource":"*"`, from any of the three sources: attached to a user (`aws iam list-entities-for-policy --policy-arn <arn>` for managed, the user itself for inline) → CRITICAL; attached to a role or group only → HIGH |
+| CloudTrail | `aws cloudtrail describe-trails`, `aws cloudtrail get-trail-status --name <trail>` | No trail with `IsMultiRegionTrail: true`, `LogFileValidationEnabled: true` and `IsLogging: true` → HIGH |
+| S3 public access | `aws s3control get-public-access-block --account-id <id>`, then `aws s3api list-buckets` and per bucket `aws s3api get-public-access-block --bucket <b>` and `aws s3api get-bucket-policy-status --bucket <b>` | Account-level block missing or any of its four flags false → MEDIUM. Bucket with `IsPublic: true` that holds anything but static site assets → CRITICAL |
+| Open security groups | `aws ec2 describe-security-groups --region <r> --filters Name=ip-permission.cidr,Values=0.0.0.0/0` (repeat with `Name=ip-permission.ipv6-cidr,Values=::/0`) | Inbound rule for 22, 3389, or all ports (`IpProtocol: -1`) from the world → HIGH. Other ports → MEDIUM unless it is a documented public listener (80/443 on a load balancer) |
+| EBS default encryption | `aws ec2 get-ebs-encryption-by-default --region <r>` | `EbsEncryptionByDefault: false` in an active region → MEDIUM |
+| GuardDuty | `aws guardduty list-detectors --region <r>` | Empty `DetectorIds` in an active region → MEDIUM |
+| Security Hub | `aws securityhub describe-hub --region <r>` | `InvalidAccessException` (hub not enabled) in an active region → MEDIUM |
+| Secrets rotation | `aws secretsmanager list-secrets --region <r>` | Secret with `RotationEnabled: false` and `LastChangedDate` older than 90 days → MEDIUM |
+
+An "active region" is one where `aws ec2 describe-instances --region <r>` or `aws lambda list-functions --region <r>` returns at least one resource. Do not flag GuardDuty, Security Hub, or EBS encryption in regions with nothing in them.
+
+**Severity:** CRITICAL for root access keys present / `"*"`-on-`"*"` policy attached to an IAM user / public bucket holding data. HIGH for root or user without MFA / no logging multi-region trail with validation / 0.0.0.0/0 or ::/0 on 22, 3389, or all ports. MEDIUM for everything else in the table.
+
+**FP rules:** A bucket that serves a static site (`aws s3api get-bucket-website --bucket <b>` succeeds) and holds only public assets is MEDIUM, not CRITICAL — still report it so the owner confirms. A security group with no attached network interfaces (`aws ec2 describe-network-interfaces --filters Name=group-id,Values=<sg>` empty) drops one level. Access keys that an external system rotates (name or tag says so): state the rotation source in the finding instead of flagging age alone. Sandbox or personal accounts (caller ARN contains `sandbox`, `dev`, or `personal`) get the same checks, and the finding says which account it is.
+
+**Report:** Findings from this phase use Category `AWS Posture` and phase `"5b"` — the one phase identifier that is a string rather than an integer, both in the saved report's `phases_run` list and in each finding's `phase` field. `phase_name` is `AWS Account Posture`, and the console table's Phase column shows `P5b`, matching the `P`-prefix the other phases use there. In place of `File:Line`, cite the resource in the `file` field and leave `line` at `0`. Exactly one form applies per finding, and the choice is not a judgement call:
+
+- The check names a specific resource → its ARN (`arn:aws:s3:::acme-uploads`, `arn:aws:iam::123456789012:user/deploy`).
+- The check is region-scoped with no single resource → `<account-id>:<region>` (EBS default encryption, GuardDuty, Security Hub).
+- The check is account-wide with no single resource → `<account-id>:global` (root MFA, root access keys, the account-level public access block). Root findings use this form, **not** `arn:aws:iam::<account-id>:root`.
+
+The console table shows that same value in its File:Line column. Because the Phase 13 fingerprint is sha256 of category + file + normalized title, one form per check is what keeps it stable across runs — two runs that disagree on the form produce two fingerprints for one finding, and the run reports it as both resolved and new. With the form pinned, resolved / persistent / new tracking works for AWS findings exactly as it does for code.
+
+**Phase 12 verification for this phase.** The Phase 12 parallel verifier reads a file at a line, and an AWS finding has neither — sent through unchanged it scores below 8 and is discarded. Verify these findings instead by re-running the phase's own read-only `aws` call and comparing what comes back to the value the finding asserts. Give the verifier the command, the JSON field, and the asserted value — not the reasoning. Observed value still matches → VERIFIED, score 10. Value differs, or the call now errors → discard; the account changed under the audit, or the first read was wrong. Everything else in Phase 12's Parallel Finding Verification is unchanged: the verifiers still run in parallel, and a discarded finding stays out of the report.
+
+These findings go through the Phase 12 filter and the same confidence gate as every other phase; nothing here bypasses it. Phase 12 carries carve-outs for this phase in hard exclusions 6 and 16 — a live account's observed configuration is not an "absent best practice", and the CloudTrail check is about tamper-evident coverage rather than application logging.
 
 ### Phase 6: Webhook & Integration Audit
 
@@ -428,7 +492,7 @@ Before producing findings, run every candidate through this filter.
 3. Memory consumption, CPU exhaustion, or file descriptor leaks
 4. Input validation concerns on non-security-critical fields without proven impact
 5. GitHub Action workflow issues unless clearly triggerable via untrusted input — **EXCEPTION:** Never auto-discard CI/CD pipeline findings from Phase 4 (unpinned actions, `pull_request_target`, script injection, secrets exposure) when `--infra` is active or when Phase 4 produced findings. Phase 4 exists specifically to surface these.
-6. Missing hardening measures — flag concrete vulnerabilities, not absent best practices. **EXCEPTION:** Unpinned third-party actions and missing CODEOWNERS on workflow files ARE concrete risks, not merely "missing hardening" — do not discard Phase 4 findings under this rule.
+6. Missing hardening measures — flag concrete vulnerabilities, not absent best practices. **EXCEPTION:** Unpinned third-party actions and missing CODEOWNERS on workflow files ARE concrete risks, not merely "missing hardening" — do not discard Phase 4 findings under this rule. **EXCEPTION:** Phase 5b reports the observed state of a live account, not a checklist gap. A region running workloads with no GuardDuty detector, Security Hub off, EBS default encryption off, no account-level public access block, or a static secret unchanged for 90 days is a measured configuration of real assets — do not discard Phase 5b findings under this rule.
 7. Race conditions or timing attacks unless concretely exploitable with a specific path
 8. Vulnerabilities in outdated third-party libraries (handled by Phase 3, not individual findings)
 9. Memory safety issues in memory-safe languages (Rust, Go, Java, C#)
@@ -438,7 +502,7 @@ Before producing findings, run every candidate through this filter.
 13. User content in the user-message position of an AI conversation (NOT prompt injection)
 14. Regex complexity in code that does not process untrusted input (ReDoS on user strings IS real)
 15. Security concerns in documentation files (*.md) — **EXCEPTION:** SKILL.md files are NOT documentation. They are executable prompt code (skill definitions) that control AI agent behavior. Findings from Phase 8 (Skill Supply Chain) in SKILL.md files must NEVER be excluded under this rule.
-16. Missing audit logs — absence of logging is not a vulnerability
+16. Missing audit logs — absence of logging is not a vulnerability — **EXCEPTION:** the Phase 5b CloudTrail check asks whether a live account has tamper-evident coverage of its own control plane (multi-region, log file validation on, actually logging), which is the account's forensic record of an intrusion, not application logging. Do not discard it under this rule.
 17. Insecure randomness in non-security contexts (e.g., UI element IDs)
 18. Git history secrets committed AND removed in the same initial-setup PR
 19. Dependency CVEs with CVSS < 4.0 and no known exploit
@@ -495,6 +559,8 @@ Prompt each verifier with:
 
 Launch all verifiers in parallel. Discard findings where the verifier scores below 8 (daily mode) or below 2 (comprehensive mode).
 
+Phase 5b findings have no file and no line. Verify each by re-running its own read-only `aws` call and confirming the observed value, per "Phase 12 verification for this phase" in Phase 5b. The parallel launch and the discard threshold are the same.
+
 If the Agent tool is unavailable, self-verify by re-reading code with a skeptic's eye. Note: "Self-verified — independent sub-task unavailable."
 
 ### Phase 13: Findings Report + Trend Tracking + Remediation
@@ -511,6 +577,7 @@ SECURITY FINDINGS
 2   CRIT   9/10   VERIFIED    CI/CD            pull_request_target + checkout   P4      .github/ci.yml:12
 3   HIGH   8/10   VERIFIED    Supply Chain     postinstall in prod dep          P3      node_modules/foo
 4   HIGH   9/10   UNVERIFIED  Integrations     Webhook w/o signature verify     P6      api/webhooks.ts:24
+5   HIGH   9/10   VERIFIED    AWS Posture      Root account has no MFA          P5b     123456789012:global
 ```
 
 ## Confidence Calibration
@@ -573,7 +640,7 @@ For each finding:
 * **Confidence:** N/10
 * **Status:** VERIFIED | UNVERIFIED | TENTATIVE
 * **Phase:** N — [Phase Name]
-* **Category:** [Secrets | Supply Chain | CI/CD | Infrastructure | Integrations | LLM Security | Skill Supply Chain | OWASP A01-A10]
+* **Category:** [Secrets | Supply Chain | CI/CD | Infrastructure | AWS Posture | Integrations | LLM Security | Skill Supply Chain | OWASP A01-A10]
 * **Description:** [What's wrong]
 * **Exploit scenario:** [Step-by-step attack path]
 * **Impact:** [What an attacker gains]
@@ -631,7 +698,7 @@ Write findings to `.vibestack/security-reports/{date}-{HHMMSS}.json` using this 
   "mode": "daily | comprehensive",
   "scope": "full | infra | code | skills | supply-chain | owasp",
   "diff_mode": false,
-  "phases_run": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  "phases_run": [0, 1, 2, 3, 4, 5, "5b", 6, 7, 8, 9, 10, 11, 12, 13, 14],
   "attack_surface": {
     "code": { "public_endpoints": 0, "authenticated": 0, "admin": 0, "api": 0, "uploads": 0, "integrations": 0, "background_jobs": 0, "websockets": 0 },
     "infrastructure": { "ci_workflows": 0, "webhook_receivers": 0, "container_configs": 0, "iac_configs": 0, "deploy_targets": 0, "secret_management": "unknown" }
@@ -675,6 +742,8 @@ Write findings to `.vibestack/security-reports/{date}-{HHMMSS}.json` using this 
 }
 ```
 
+Phase identifiers are integers except `"5b"`, which is a string in both `phases_run` and a finding's `phase` field. Include `"5b"` in `phases_run` only when Phase 5b actually ran (AWS detected and credentials available); omit it when the gate skipped the phase. An AWS Posture finding fills `file` with the resource ARN, `<account-id>:<region>`, or `<account-id>:global`, per the three forms in Phase 5b, and leaves `line` at `0`; `commit` is `null` for these.
+
 If `.vibestack/` is not in `.gitignore`, note it in findings — security reports should stay local.
 
 {{include lib/snippets/capture-learnings.md}}
@@ -685,7 +754,7 @@ If `.vibestack/` is not in `.gitignore`, note it in findings — security report
 - **No security theater.** Don't flag theoretical risks with no realistic exploit path.
 - **Severity calibration matters.** CRITICAL needs a realistic exploitation scenario.
 - **Confidence gate is absolute.** Daily mode: below 8/10 = do not report. Period.
-- **Read-only.** Never modify code. Produce findings and recommendations only.
+- **Read-only.** Never modify code or cloud resources. Phase 5b only calls `get`/`list`/`describe`. Produce findings and recommendations only.
 - **Assume competent attackers.** Security through obscurity doesn't work.
 - **Check the obvious first.** Hardcoded credentials, missing auth, SQL injection are still the top real-world vectors.
 - **Framework-aware.** Know your framework's built-in protections. Rails has CSRF tokens by default. React escapes by default.

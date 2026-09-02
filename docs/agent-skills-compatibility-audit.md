@@ -2,10 +2,10 @@
 
 **Generated:** 2026-05-09 (Day 0 Track A of v1.4.0 multi-target install)
 **Track B verified:** 2026-05-09 (Cursor 2026.05.07-42ddaca, Kiro CLI 2.2.2)
-**Skills audited:** 53. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent.
+**Skills audited:** 60. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent.
 **Spec reference:** [agentskills.io/specification](https://agentskills.io/specification)
 
-This audit verifies vibestack's 53 skills against the Agent Skills open standard,
+This audit verifies vibestack's 60 skills against the Agent Skills open standard,
 which Claude Code, Cursor (`~/.cursor/skills/`), and Kiro (`~/.kiro/skills/`) all
 implement. The spec standardizes the SKILL.md **file shape** — frontmatter +
 markdown body. It does **not** standardize runtime behavior (hooks, env vars,
@@ -21,7 +21,7 @@ Codex-specific unknowns: invocation is `$name` inside a message, or implicit fro
 the `description`, rather than `/name`,
 and Codex caps its initial skill list at 2% of the context window (or 8,000
 chars), shortening descriptions and possibly omitting skills beyond that — with
-53 skills, some may not surface in the initial list.
+60 skills, some may not surface in the initial list.
 
 **Track A (file-shape spec compliance)** is below. **Track B (per-target runtime
 verification)** has been completed empirically against installed Cursor and Kiro;
@@ -31,17 +31,17 @@ results are in the new "Track B — Empirical Verification" section near the end
 
 | Audit dimension | Pass/Fail | Skills affected |
 |---|---|---|
-| Required `name` field present | 53/53 PASS | — |
-| `name` matches directory basename | 53/53 PASS | — |
-| Required `description` field present | 53/53 PASS | — |
-| Description ≤ 1024 chars (spec limit) | 53/53 PASS | — |
-| YAML frontmatter parseable | 53/53 PASS | — |
+| Required `name` field present | 60/60 PASS | — |
+| `name` matches directory basename | 60/60 PASS | — |
+| Required `description` field present | 60/60 PASS | — |
+| Description ≤ 1024 chars (spec limit) | 60/60 PASS | — |
+| YAML frontmatter parseable | 60/60 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 22 skills | benchmark, canary, careful, connect-chrome, design-consultation, design-html, design-review, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, qa, qa-only, scrape, ship, skillify, vibe. Nine carry the token in their own SKILL.md (`vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer); the other 13 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 23 skills | address-pr-review, benchmark, canary, careful, connect-chrome, design-consultation, design-html, design-review, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, qa, qa-only, scrape, ship, skillify, vibe. Ten carry the token in their own SKILL.md (`vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` its own `bin/` scripts); the other 13 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
 | Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
-| Skills using `AskUserQuestion` (Claude-specific) | ~53 skills | most of the pack |
+| Skills using `AskUserQuestion` (Claude-specific) | ~60 skills | most of the pack |
 
 The `${CLAUDE_SKILL_DIR}` row above and the matrix column below are derived
 mechanically rather than hand-maintained — the token often arrives through an
@@ -58,7 +58,7 @@ done
 rm -rf "$tmp"
 ```
 
-**Verdict:** All 53 skills are **spec-compliant for file shape**. Cross-target
+**Verdict:** All 60 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
 runtime verification (manual, requires Cursor/Kiro running on the user's machine).
 
@@ -66,7 +66,12 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 
 | Skill | Hooks | `${CLAUDE_SKILL_DIR}` | `Agent` tool | Tier (claude / cursor / kiro) |
 |---|---|---|---|---|
+| address-pr-review | — | yes | — | full / full / full |
+| agent-eval | — | — | — | full / full / full |
+| ai-cost-guard | — | — | — | full / full / full |
 | autoplan | — | — | yes | full / instr-only / instr-only |
+| aws-cost | — | — | — | full / full / full |
+| bedrock-guardrails | — | — | — | full / full / full |
 | benchmark | — | yes | — | full / full / full |
 | benchmark-models | — | — | — | full / full / full |
 | browse | — | — | — | full / full / full |
@@ -75,6 +80,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | claude | — | — | — | full / full / full |
 | codex | — | — | — | full / full / full |
 | connect-chrome | — | yes | — | full / full / full |
+| connect-review | — | — | — | full / full / full |
 | context-restore | — | — | — | full / full / full |
 | context-save | — | — | — | full / full / full |
 | cso | — | — | yes | full / instr-only / instr-only |
@@ -91,10 +97,12 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | health | — | — | — | full / full / full |
 | improve-arch | — | — | — | full / full / full |
 | investigate | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
+| kb-review | — | — | — | full / full / full |
 | land-and-deploy | — | yes | — | full / full / full |
 | landing-report | — | — | — | full / full / full |
 | learn | — | — | — | full / full / full (`sync` needs memex MCP; degrades to "not connected" without it) |
 | make-pdf | — | yes | — | full / full / full |
+| mcp-review | — | — | — | full / full / full |
 | office-hours | — | yes | yes | full / instr-only / instr-only |
 | open-browser | — | yes | — | full / full / full |
 | pair-agent | — | — | — | full / full / full |
@@ -106,7 +114,6 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | pr-summary | — | — | — | full / full / full |
 | qa | — | yes | — | full / full / full |
 | qa-only | — | yes | — | full / full / full |
-| reroll-buddy | — | — | — | full / full / full |
 | retro | — | — | — | full / full / full |
 | review | — | — | — | full / full / full |
 | scrape | — | yes | — | full / full / full |
@@ -114,9 +121,9 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | setup-deploy | — | — | — | full / full / full |
 | ship | — | yes (in body, not hook) | — | full / full / full |
 | skillify | — | yes | — | full / full / full |
-| tdd | — | — | — | full / full / full |
 | spec | — | — | — | full / full / full |
 | unfreeze | — | — | — | full / full / full |
+| unslop | — | — | — | full / full / full |
 | vibe-upgrade | — | — | — | full / full / full |
 | vibe | — | yes | — | full / full / full |
 
@@ -131,7 +138,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 
 ## Findings
 
-### F1 — All 53 skills are spec-compliant on file shape (PASS)
+### F1 — All 60 skills are spec-compliant on file shape (PASS)
 
 Every skill has a parseable YAML frontmatter block, a required `name` matching
 its directory basename, a required `description` under the spec's 1024-char
