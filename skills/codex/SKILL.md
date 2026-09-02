@@ -275,10 +275,14 @@ cd "$_REPO_ROOT"
 # Portable timeout (gtimeout → timeout → unwrapped); bare `timeout` is absent on
 # stock macOS and would exit 127 before codex runs.
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# zsh does not word-split an unquoted ${VAR:+...} expansion, so the prefix has to
+# be a function rather than an inline expansion — otherwise "gtimeout 330" reaches
+# execve as one argument and the call dies with exit 127 before codex runs.
+_cx() { if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; else shift; "$@"; fi; }
 # The 330s wrapper sits BELOW the 360s Bash gate so the wrapper fires FIRST and
 # a stall surfaces as a diagnosable exit 124 with an explicit message, never as
 # a silent harness kill that the gate in step 5 would read as "no findings".
-${_CX_TO:+$_CX_TO 330} codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR"
+_cx 330 codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR"
 _CODEX_EXIT=$?
 if [ "$_CODEX_EXIT" = "124" ]; then
   ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","timeout_s":330}' >/dev/null 2>&1 || true
@@ -318,7 +322,11 @@ _PROMPT_FILE=$(mktemp "$TMP_ROOT/codex-prompt-XXXXXX.txt")
   printf '\nDIFF_END\n'
 } > "$_PROMPT_FILE"
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
-${_CX_TO:+$_CX_TO 330} codex exec -s read-only "$(cat "$_PROMPT_FILE")" -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR"
+# zsh does not word-split an unquoted ${VAR:+...} expansion, so the prefix has to
+# be a function rather than an inline expansion — otherwise "gtimeout 330" reaches
+# execve as one argument and the call dies with exit 127 before codex runs.
+_cx() { if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; else shift; "$@"; fi; }
+_cx 330 codex exec -s read-only "$(cat "$_PROMPT_FILE")" -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null 2>"$TMPERR"
 _CODEX_EXIT=$?
 rm -f "$_PROMPT_FILE"
 if [ "$_CODEX_EXIT" = "124" ]; then
@@ -465,14 +473,18 @@ _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo"
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 # Portable timeout: gtimeout → timeout → unwrapped. Stock macOS has neither
 # unless coreutils is installed, so a bare `timeout` exits 127 and codex never
-# runs. Empty _CX_TO makes ${_CX_TO:+…} expand to nothing → codex runs unwrapped.
+# runs. An empty _CX_TO makes _cx drop the seconds and run codex unwrapped.
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# zsh does not word-split an unquoted ${VAR:+...} expansion, so the prefix has to
+# be a function rather than an inline expansion — otherwise "gtimeout 330" reaches
+# execve as one argument and the call dies with exit 127 before codex runs.
+_cx() { if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; else shift; "$@"; fi; }
 if [ -z "$PYTHON_CMD" ]; then
   echo "ERROR: Python 3 is required to parse Codex JSON output. Install python3 or python and retry." >&2
   exit 1
 fi
 TMPERR=${TMPERR:-$(mktemp "$TMP_ROOT/codex-err-XXXXXX.txt")}
-${_CX_TO:+$_CX_TO 540} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+_cx 540 codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 import sys, json
 turn_completed_count = 0
 for line in sys.stdin:
@@ -625,13 +637,17 @@ _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo"
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 # Portable timeout: gtimeout → timeout → unwrapped. Stock macOS has neither
 # unless coreutils is installed, so a bare `timeout` exits 127 and codex never
-# runs. Empty _CX_TO makes ${_CX_TO:+…} expand to nothing → codex runs unwrapped.
+# runs. An empty _CX_TO makes _cx drop the seconds and run codex unwrapped.
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# zsh does not word-split an unquoted ${VAR:+...} expansion, so the prefix has to
+# be a function rather than an inline expansion — otherwise "gtimeout 330" reaches
+# execve as one argument and the call dies with exit 127 before codex runs.
+_cx() { if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; else shift; "$@"; fi; }
 if [ -z "$PYTHON_CMD" ]; then
   echo "ERROR: Python 3 is required to parse Codex JSON output. Install python3 or python and retry." >&2
   exit 1
 fi
-${_CX_TO:+$_CX_TO 540} codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+_cx 540 codex exec "<prompt>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 import sys, json
 for line in sys.stdin:
     line = line.strip()
@@ -680,15 +696,19 @@ _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo"
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 # Portable timeout: gtimeout → timeout → unwrapped. Stock macOS has neither
 # unless coreutils is installed, so a bare `timeout` exits 127 and codex never
-# runs. Empty _CX_TO makes ${_CX_TO:+…} expand to nothing → codex runs unwrapped.
+# runs. An empty _CX_TO makes _cx drop the seconds and run codex unwrapped.
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# zsh does not word-split an unquoted ${VAR:+...} expansion, so the prefix has to
+# be a function rather than an inline expansion — otherwise "gtimeout 330" reaches
+# execve as one argument and the call dies with exit 127 before codex runs.
+_cx() { if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; else shift; "$@"; fi; }
 if [ -z "$PYTHON_CMD" ]; then
   echo "ERROR: Python 3 is required to parse Codex JSON output. Install python3 or python and retry." >&2
   exit 1
 fi
 cd "$_REPO_ROOT" || exit 1
 SESSION_ID=$(cat .context/codex-session-id 2>/dev/null)
-${_CX_TO:+$_CX_TO 540} codex exec resume "$SESSION_ID" "<prompt>" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+_cx 540 codex exec resume "$SESSION_ID" "<prompt>" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 # same python streaming parser as the new-session block above (with flush=True on all print() calls)
 "
 # Same hang detection and non-zero surfacing as the new-session block

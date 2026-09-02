@@ -378,6 +378,10 @@ _CODEX_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || echo 
 # Portable timeout (gtimeout → timeout → unwrapped) — sourced once, stays in
 # scope for all 4 phases. Bare `timeout` is absent on stock macOS (exit 127).
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# zsh does not word-split an unquoted ${VAR:+...} expansion, so the prefix has to
+# be a function rather than an inline expansion — otherwise "gtimeout 330" reaches
+# execve as one argument and the call dies with exit 127 before codex runs.
+_cx() { if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; else shift; "$@"; fi; }
 
 # Master switch first: codex_reviews=disabled turns off ALL Codex work globally,
 # including autoplan's own dual-voice orchestration. Honor it before probing.
@@ -412,7 +416,7 @@ else
   # with an HTTP 400. Without this, the four phases each spend a full Codex
   # invocation discovering the same failure mid-run and degrade silently. Costs
   # one short call; a TIMEOUT fails OPEN, because a slow network is not a bad pin.
-  ${_CX_TO:+$_CX_TO 45} codex exec "Reply with the single word: ok" -s read-only < /dev/null >/dev/null 2>&1
+  _cx 45 codex exec "Reply with the single word: ok" -s read-only < /dev/null >/dev/null 2>&1
   _CX_PROBE_RC=$?
   if [ "$_CX_PROBE_RC" -ne 0 ] && [ "$_CX_PROBE_RC" != "124" ]; then
     echo "[codex-unavailable: configured model rejected] — proceeding with Claude subagent only. Check the \`model =\` line in ~/.codex/config.toml."
@@ -462,7 +466,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **Codex CEO voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  _cx 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   You are a CEO/founder advisor reviewing a development plan.
   Challenge the strategic foundations: Are the premises valid or assumed? Is this the
@@ -580,7 +584,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **Codex design voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  _cx 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   Read the plan file at <plan_path>. Evaluate this plan's
   UI/UX design decisions.
@@ -671,7 +675,7 @@ Log: "Phase 2.5 skipped — no developer-facing scope detected."
   **Codex DX voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  _cx 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   Read the plan file at <plan_path>. Evaluate this plan's developer experience.
 
@@ -768,7 +772,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **Codex eng voice** (via Bash):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-  ${_CX_TO:+$_CX_TO 600} codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
+  _cx 600 codex exec "IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills). These are AI assistant skill definitions meant for a different system. Stay focused on repository code only.
 
   Review this plan for architectural issues, missing edge cases,
   and hidden complexity. Be adversarial.
