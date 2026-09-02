@@ -63,9 +63,9 @@ If the branch is the default branch (`main`, `master`), stop: there is no PR to
 address from there. Say which branch you are on and ask the user to check out
 the feature branch.
 
-If the working tree is dirty, list the dirty files before doing anything. Those
-changes will end up in the commit this skill makes, so the user needs to know
-they are there.
+If the working tree is dirty, list the dirty files before doing anything, and
+keep that list. Step 5 stages only the files this round actually edited, so the
+list is how you tell your own edits from work that was already in the tree.
 
 ---
 
@@ -80,22 +80,34 @@ bash "${CLAUDE_SKILL_DIR}/bin/pr-ci-failures.sh"
 
 `pr-threads.sh` prints a JSON array of unresolved review threads. Each thread
 carries `id`, `path`, `line`, `isOutdated`, and its comments with `author`,
-`body`, and `url`. Exit 2 means there is no PR for this branch — stop and say so;
-`/ship` is the skill that opens one.
+`body`, and `url`. The array is the whole list — the script pages through every
+thread, so a long review is not silently cut short. Exit 2 means there is no PR
+for this branch (stop and say so; `/ship` is the skill that opens one), or that
+a page of threads could not be fetched. On that second case nothing is printed
+at all: treat it as unknown, not as zero threads, and re-run.
 
 `pr-ci-failures.sh` prints one block per failing check with a trimmed log
-excerpt (exit 1), or one of three lines on exit 0. Report the three distinctly —
-they are different findings:
+excerpt (exit 1), or a status line on exit 0. Report each distinctly — they are
+different findings:
 
 - `All checks passed.` — CI ran and is green.
 - `No failing checks; N still pending.` — nothing red yet, N jobs unfinished.
   Note it, proceed with the threads, and re-run the script before Step 4 to see
   whether the pending ones landed.
+- `No failing checks; N cancelled.` (or `N cancelled, M still pending.`) — one
+  or more checks were stopped before they finished. A cancelled check is not a
+  pass. The script lists the names under a `CANCELLED CHECKS:` heading; re-run
+  them with `gh run rerun <run-id>` or say why they were cancelled.
 - `This PR has no checks yet.` — the PR has no checks at all. That is not a
   pass. A workflow may be unconfigured, or not triggered yet. Say so in those
   words and do not record it as green.
 
-Exit 2 again means no PR.
+A `CANCELLED CHECKS:` block can also appear above the failing checks; carry both
+into the report.
+
+Exit 2 means no PR, or that `gh` could not answer at all — an auth, network, or
+API error, printed with gh's own message. That is not a green build either: fix
+the gh problem and re-run before judging CI.
 
 If the thread array is empty and CI reports `All checks passed.`, stop here.
 Report:
@@ -195,18 +207,41 @@ git status --short
 git diff --stat
 ```
 
-State in plain words: which files, which threads and checks they answer, and
-the commit message you intend to use. Then commit and push:
+Write down the files your own edits in Step 3 touched. Compare that list against
+what `git status --short` shows. If the tree carries modified or untracked files
+that are not on your list — the dirty files from Step 1, or anything else — say
+so by name and stop. Ask the user whether to stash them, commit them separately,
+or continue without them. Do not decide that on your own.
+
+State in plain words: which files, which threads and checks they answer, and the
+commit message you intend to use. Then stage those files by name — never
+`git add -A`, `git add .`, or `git commit -a`, all of which sweep unrelated work
+into the commit:
 
 ```bash
-git add -A
+git add <file-you-edited> <another-file-you-edited>
+git status --short          # confirm the staged set is exactly your list
 git commit -m "<type>: <what the review asked for, in one line>"
-git push
 ```
 
 One commit for the whole round is the default. Split into several only when the
 review covered clearly separate concerns and a reviewer will want to read them
 apart. Never amend or force-push — the reviewer is reading the branch history.
+
+The push is a separate decision. Show the commit and ask the user to confirm it
+before it goes to the remote — AskUserQuestion, with the branch and the one-line
+message in the prompt:
+
+```bash
+git log -1 --stat
+# confirmed → push
+git push
+```
+
+If the user declines, say the commit is local and unpushed, and stop before Step
+6. A reply saying a thread is fixed points at a diff the reviewer cannot see
+until the branch is pushed, so the replies wait for the push. Report the round
+as committed but not pushed.
 
 If there is nothing to commit (every thread was a no-change), skip the commit
 and say so; Step 6 still runs.
@@ -215,8 +250,8 @@ and say so; Step 6 still runs.
 
 ## Step 6: Reply on every thread
 
-Use the reply script once per thread. It posts the reply and, with `--resolve`,
-marks the thread resolved in the same call:
+Use the reply script once per thread. One invocation posts the reply and, with
+`--resolve`, marks the thread resolved:
 
 ```bash
 bash "${CLAUDE_SKILL_DIR}/bin/pr-thread-reply.sh" "<thread_id>" "<reply text>" --resolve
@@ -232,9 +267,24 @@ It prints the URL of the new comment; keep it for the report.
   validate() has run, so the input is already non-empty; leaving as is.`
 - **question answered** → the answer, without `--resolve`.
 
+The reply and the resolve are two API mutations, so `--resolve` has a
+partial-success state: the reply lands, the resolve fails, and the script exits
+1 after printing `reply posted but thread did not resolve` on stderr with the
+comment URL still on stdout. The thread is then answered but open — not a failed
+reply.
+
+The retry is the identical command. Before posting, the script reads the
+thread's existing comments; when one already carries exactly this body it reuses
+that comment instead of posting a second copy and goes straight to the resolve.
+So re-running is safe, but only with the same reply text — rewording it makes a
+new comment.
+
 Never resolve a thread you did not act on. Never edit or delete a reviewer's
-comment. If the reply script exits non-zero, print its stderr and keep going
-with the remaining threads; list the failed ones in the report.
+comment. If the script exits non-zero, print its stderr and keep going with the
+remaining threads. Read the stderr before recording the outcome: a thread that
+printed `reply posted but thread did not resolve` goes in the report as
+replied-but-unresolved with its URL, and one that failed with no URL goes in as
+a failed reply.
 
 ---
 
@@ -264,6 +314,9 @@ build                | FAILURE  | re-run (runner lost, not a code failure)
 
 Tests: <command> — <pass/fail counts or exit code>
 Commit: <sha> "<message>"  pushed to origin/<branch>
+        (or: committed, push declined — the branch is local only)
+Staged:  <the files named in Step 5>
+Left in the working tree: <files that were dirty and not part of this round>
 
 Open items for the reviewer: <list threads left open, each with its severity and
 the reason it is open>
@@ -283,7 +336,9 @@ message from Step 2.
 5. **Replies are short.** One or two sentences. The diff carries the detail; the reply points at it.
 6. **Fix the cause, not the check.** Skipping a test, loosening an assertion, or adding `continue-on-error` to make CI green is out of scope unless the user asks for it by name.
 7. **Green before push.** The project's test suite runs and passes before the commit. A red suite goes back to Step 3.
-8. **Commit and push are in scope; nothing else on the remote is.** No force-push, no amend, no branch deletion, no merge. The PR itself is untouched except for thread replies and resolutions — no title, body, label, or reviewer changes.
-9. **Ambiguity stops the loop.** A thread with two reasonable readings gets a question to the user, not a guess.
+8. **Stage by name.** Only the files this round edited go into the commit, named one by one. `git add -A`, `git add .`, and `git commit -a` are out — they publish whatever else was in the tree. Unrelated changes stop Step 5 and go to the user as a question.
+9. **The push is confirmed, not assumed.** The commit is shown and the user says yes before anything reaches the remote. A declined push ends the round with a local commit.
+10. **Commit and push are in scope; nothing else on the remote is.** No force-push, no amend, no branch deletion, no merge. The PR itself is untouched except for thread replies and resolutions — no title, body, label, or reviewer changes.
+11. **Ambiguity stops the loop.** A thread with two reasonable readings gets a question to the user, not a guess.
 
 {{include lib/snippets/capture-learnings.md}}

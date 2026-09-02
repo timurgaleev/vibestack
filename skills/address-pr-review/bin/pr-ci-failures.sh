@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # pr-ci-failures.sh — show why CI is red on the current branch's PR.
 #
-# Exit 0 and print "All checks passed." when nothing failed.
+# Exit 0 and print one status line when nothing failed.
 # Exit 1 and print a trimmed log excerpt per failing check otherwise.
-# Exit 2 when the branch has no PR.
+# Exit 2 when the branch has no PR, or when gh could not answer at all.
 #
 # The excerpt starts at the first line matching FAIL|ERROR|error: and stops
 # at the job's summary line ("Process completed with exit code" or "##[error]"),
@@ -26,31 +26,59 @@ if ! gh pr view --json number --jq '.number' >/dev/null 2>&1; then
   exit 2
 fi
 
-# gh pr checks exits 1 when a check failed and 8 while checks are pending; both
-# still print the JSON, so keep the output and ignore the exit code with `|| true`.
-# Never use `|| echo <default>` here: gh prints on the failing exits too, so the
-# default lands in the variable alongside gh's own output.
+# One request for the whole check list; everything below is derived from it.
+#
+# The exit code alone cannot tell a red build from a broken request: gh exits 1
+# when a check failed and 8 while checks are pending, but also 1 for an auth,
+# network, or API error. So keep stdout and stderr apart and decide on the pair.
+# Rows on stdout mean the request worked, whatever the exit code. No rows plus a
+# non-zero exit means gh could not answer, and the only such case that is not an
+# error is a PR that has no checks at all — gh says so in words. Anything else
+# is reported as a failure rather than silently read as "green".
 #
 # Match on `bucket`, not `state`. gh sets state to the run's status while a check
 # is incomplete (WAITING, REQUESTED, QUEUED) and to its conclusion only once it
 # completes, so a state allowlist misses cases in both directions —
 # ACTION_REQUIRED is a failure, WAITING is pending. bucket collapses all of them
 # into pass/fail/pending/skipping/cancel.
-FAILED_FILTER='.[] | select(.bucket == "fail")'
-PENDING_FILTER='.[] | select(.bucket == "pending")'
+CHECKS_ERR=$(mktemp "${TMPDIR:-/tmp}/pr-ci-failures.XXXXXX")
+trap 'rm -f "$CHECKS_ERR"' EXIT
 
-TOTAL=$(gh pr checks --json name --jq 'length' 2>/dev/null || true)
-if [ -z "$TOTAL" ] || [ "$TOTAL" = "0" ]; then
-  echo "This PR has no checks yet."
-  exit 0
+CHECKS_STATUS=0
+CHECKS=$(gh pr checks --json name,bucket,link \
+  --jq '.[] | [.bucket, .name, .link] | @tsv' 2>"$CHECKS_ERR") || CHECKS_STATUS=$?
+
+if [ -z "$CHECKS" ]; then
+  if [ "$CHECKS_STATUS" -eq 0 ] || grep -qi 'no checks reported' "$CHECKS_ERR"; then
+    echo "This PR has no checks yet."
+    exit 0
+  fi
+  echo "pr-ci-failures: 'gh pr checks' failed (exit $CHECKS_STATUS) and returned no check list" >&2
+  sed 's/^/  /' "$CHECKS_ERR" >&2
+  exit 2
 fi
 
-FAILING=$(gh pr checks --json name,bucket,link --jq "[$FAILED_FILTER] | .[] | [.name, .link] | @tsv" 2>/dev/null || true)
-PENDING=$(gh pr checks --json bucket --jq "[$PENDING_FILTER] | length" 2>/dev/null || true)
-case "$PENDING" in ''|*[!0-9]*) PENDING=0 ;; esac
+count_bucket() {
+  printf '%s\n' "$CHECKS" | awk -F'\t' -v want="$1" '$1 == want { n++ } END { print n + 0 }'
+}
+
+FAILING=$(printf '%s\n' "$CHECKS" | awk -F'\t' '$1 == "fail" { print $2 "\t" $3 }')
+PENDING=$(count_bucket pending)
+CANCELLED=$(count_bucket cancel)
+
+# A cancelled check ran and was stopped. It is neither a pass nor a code
+# failure, so it gets its own line and never rolls into "All checks passed."
+if [ "$CANCELLED" -gt 0 ]; then
+  echo "CANCELLED CHECKS: $CANCELLED (a cancelled check is not a pass)"
+  printf '%s\n' "$CHECKS" | awk -F'\t' '$1 == "cancel" { print "    " $2 }'
+fi
 
 if [ -z "$FAILING" ]; then
-  if [ "$PENDING" -gt 0 ]; then
+  if [ "$CANCELLED" -gt 0 ] && [ "$PENDING" -gt 0 ]; then
+    echo "No failing checks; $CANCELLED cancelled, $PENDING still pending."
+  elif [ "$CANCELLED" -gt 0 ]; then
+    echo "No failing checks; $CANCELLED cancelled."
+  elif [ "$PENDING" -gt 0 ]; then
     echo "No failing checks; $PENDING still pending."
   else
     echo "All checks passed."
