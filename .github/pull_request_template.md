@@ -20,10 +20,10 @@ Thanks for opening a PR. Run through the checklist below before requesting revie
 
 - [ ] **`./install` runs without error** on a clean shell.
 - [ ] **`./uninstall` followed by `./install` is idempotent** (no leftover state, no duplicate symlinks).
-- [ ] **Naming audit clean** — no third-party product or author names appear in any tracked file (skills, docs, README, lib, bin, code, comments, tests). Run the **case-insensitive** whole-repo `git grep -i` audit (the term list is kept in local notes, out of the repo) and confirm it is empty.
-- [ ] **Skill count consistency** — if I added/removed a skill, the count is updated in `README.md` line 3 and matches `ls skills/ | wc -l` and `docs/skills.md` headings.
+- [ ] **Naming audit clean** — `bin/vibe-brand-audit` and `bin/vibe-brand-audit --commits main..HEAD` both exit 0. CI runs these on every PR; a merged commit message cannot be corrected without rewriting published history.
+- [ ] **Skill count consistency** — if I added/removed a skill, every count in `README.md` matches `ls skills/ | wc -l`, and `docs/skills.md` has a heading for each one.
 - [ ] **CHANGELOG.md** entry added under `## Unreleased` (or a new version section).
-- [ ] **For new skills**: SKILL.md has the standard 4-key frontmatter (`name`, `description`, `allowed-tools`, `triggers`), the directory name matches `name:` exactly, and the skill is documented in both `README.md` skills table and `docs/skills.md`.
+- [ ] **For new skills**: SKILL.md has the standard 4-key frontmatter (`name`, `description`, `allowed-tools`, `triggers`), the directory name matches `name:` exactly, and the skill is documented in the `README.md` skills table, `docs/skills.md`, and the `/vibe` router.
 - [ ] **For hook script changes**: tested manually with `echo '{"tool_input":{...}}' | bash skills/<name>/bin/check-*.sh` per `CLAUDE.md` testing pattern.
 
 ## Notes for reviewer

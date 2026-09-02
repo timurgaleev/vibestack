@@ -1,6 +1,6 @@
 # External tools
 
-vibestack ships 6 binaries (`vibe-config`, `vibe-slug`, `vibe-learnings-log`, `vibe-learnings-search`, `vibe-render-skill`, `vibe-skill-track`). A handful of skills depend on **external tools that vibestack does not bundle**. Those skills detect availability at runtime and degrade to text-only operation when the dependency is missing.
+vibestack ships its own `vibe-*` binaries (`docs/internals.md` lists them). A handful of skills depend on **external tools that vibestack does not bundle**. Those skills detect availability at runtime and degrade to text-only operation when the dependency is missing.
 
 This page documents the gap honestly so you can decide whether to install the dependency or skip the affected skills.
 
@@ -72,7 +72,67 @@ text-only checks (curl, basic HTTP) where possible.
 
 **Overriding it:** put your own `vibe-browse` earlier on `PATH` — the launcher falls back to `PATH` when the bundled one is not where it expects.
 
-**If you don't:** the affected skills will skip gracefully and tell you what they couldn't do. Other 42 skills work fully without the daemon.
+**If you don't:** the affected skills will skip gracefully and tell you what they couldn't do. Every skill outside this page works fully without the daemon.
+
+---
+
+## aws CLI
+
+**Required by:** `/aws-cost`, `/bedrock-guardrails`, `/kb-review`, `/connect-review`,
+`/ai-cost-guard`, and Phase 5b of `/cso`
+
+**What it is:** the `aws` command-line client with credentials that already work on
+the machine — a configured profile, an SSO session, or an instance role. These skills
+read an account they are pointed at; none of them reads `~/.aws/credentials` itself,
+and `/cso` and `/aws-cost` say in as many words that they will never ask you for keys.
+
+**Status:** vibestack does **not** bundle it, and does not install or configure it.
+Install it the way your team already does.
+
+**Nothing is written to your account.** No call creates, updates, deletes, attaches,
+enables, or purchases. The calls are not all `get`/`list`/`describe`, though:
+`/connect-review` reads Lambda logs with `logs filter-log-events`, and `/kb-review`
+lists and downloads source documents with `s3 ls` and `s3 cp`, reads collections with
+`opensearchserverless batch-get-collection`, and queries the knowledge base itself
+with `retrieve` and `retrieve-and-generate`. Two consequences before you scope a
+profile: `/kb-review` needs Bedrock retrieve permissions beyond a plain read-only
+policy, and its `retrieve-and-generate` pass is billed for model inference like any
+other query, so the evaluation costs whatever its question set costs to answer.
+`s3 cp` writes to local disk only, never back to the bucket.
+
+**If you don't have it:** nothing hangs or crashes. `/cso` skips its AWS phase
+silently when the repository shows no sign of AWS at all; when it does find AWS it
+prints `AWS posture: skipped (aws CLI not found)`, or `AWS posture: skipped
+(credentials unusable)` with the error text when the CLI is present but
+unauthenticated, and finishes its other phases either way.
+`/bedrock-guardrails` marks every control that needs live account state as
+`N-A (no CLI)` and audits your Terraform and application code instead.
+`/aws-cost` prefers the AWS billing MCP tools when the session has them and only
+falls back to the CLI; on that path it may ask which profile to use, and stops with a
+setup note naming the one it tried rather than guessing.
+`/ai-cost-guard` marks every budget and quota line `unknown` and says what to run.
+`/connect-review` greps the repository first and asks you for the flow export path or
+resource id it still cannot resolve. `/kb-review` falls back to the Terraform and
+ingestion code in the repo, asking where the knowledge base lives only if it finds
+neither.
+
+---
+
+## MCP inspector (`npx` + `@modelcontextprotocol/inspector`)
+
+**Required by:** `/mcp-review`, for its optional live tool-listing check only
+
+**What it is:** `npx` (from Node) fetching `@modelcontextprotocol/inspector` from npm
+on first use, to start the server under review and list the tools it advertises.
+`/mcp-review` runs it under `env -i` with a scratch `HOME`, so an exported token cannot
+reach the child process — that is credential hygiene, not a sandbox.
+
+**Status:** not bundled, and deliberately not vendored — it is fetched at run time.
+
+**If you don't have it:** the live check is skipped and the rest of the review, which
+is static, runs unchanged; the report records the reason on its `Live check:` line.
+That check is skipped by design in other cases too, most importantly when the server's
+code is untrusted — listing its tools means executing it.
 
 ---
 
@@ -96,9 +156,9 @@ text-only checks (curl, basic HTTP) where possible.
 
 ## Why aren't these bundled?
 
-vibestack is a curated personal Claude Code skills pack. The browse daemon and the model-benchmark CLI are non-trivial standalone projects (a Chromium controller and a multi-provider LLM benchmark tool). Building and shipping them would expand the project scope well beyond "skills pack." The honest path is to document the gap and let skills fail gracefully when the dependency is absent.
+vibestack is a curated skills pack. The browse daemon and the model-benchmark CLI are non-trivial standalone projects (a Chromium controller and a multi-provider LLM benchmark tool). Building and shipping them would expand the project scope well beyond "skills pack." The aws CLI and the MCP inspector are a different case: other people's tools, with their own release cadence, install story and credential handling — vendoring either would mean shipping a stale copy. The honest path in every case is to document the gap and let skills fail gracefully when the dependency is absent.
 
-The 4 affected skills are kept in the pack because (a) they're useful when the daemon **is** available, (b) they fall back when it isn't, and (c) deleting them would lose the integration scaffolding for anyone who supplies their own daemon.
+The affected skills are kept in the pack because (a) they're useful when the daemon **is** available, (b) they fall back when it isn't, and (c) deleting them would lose the integration scaffolding for anyone who supplies their own daemon.
 
 ---
 
