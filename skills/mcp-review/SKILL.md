@@ -83,7 +83,7 @@ Go through the tool list from Step 1 and check each item below. A tool that fail
 - **Enums instead of free strings** wherever the handler branches on the value (`format`, `mode`, `status`). Grep the handler for `if x == "..."` chains over a field typed as `str`. Severity: LOW.
 - **Bounded output.** List and search tools take `limit` plus a cursor or page token and cap the result size; anything that can return an unbounded body needs a `token_budget` or `max_bytes` argument. Severity: MEDIUM. Unbounded and fed by a database query: HIGH.
 - **Reads separated from writes.** One tool must not both read and mutate based on a flag. Write tools carry an annotation (`readOnlyHint: false`, `destructiveHint: true` in the TypeScript SDK; the equivalent `annotations=` argument in FastMCP). Severity: MEDIUM.
-- **Destructive tools require an explicit `confirm: true` parameter** and refuse without it. Look for delete, drop, purge, revoke, overwrite, send, pay. Severity: HIGH.
+- **Destructive tools are gated outside the model's own arguments.** A `confirm: true` field in the schema is not a gate. The model fills that field itself and can set it on the first call, so its presence proves only that the model asserted approval, never that a human gave it. What holds is one of two things. Either a preview-then-execute pair: a `plan_delete` tool returns what would change plus a short-lived token bound to those exact arguments, and `delete` refuses any token that is expired, already spent, or issued for a different operation — the server, not the model, decides whether the token matches. Or host-level confirmation: the tool carries `destructiveHint: true` (`readOnlyHint: false`) so the host prompts the human before the call, and the server documents that it depends on that prompt. Look for delete, drop, purge, revoke, overwrite, send, pay. Neither gate present: HIGH. A `confirm` flag standing in for one: HIGH, and say in the finding why a self-asserted flag does not hold.
 
 ```bash
 # Quick sweep for destructive verbs and for missing limits
@@ -91,7 +91,7 @@ grep -rnEi 'def (delete|drop|purge|remove|revoke|send|pay|overwrite)_|(delete|dr
 grep -rnE 'def (list|search|find|query)_|(list|search|find|query)[A-Za-z]*[[:space:]]*[:=(]' --include='*.py' --include='*.ts' . 2>/dev/null | grep -v node_modules
 ```
 
-For each list/search hit, confirm the schema has a `limit` (with a maximum) and a cursor. For each destructive hit, confirm the schema has `confirm` and the handler checks it before doing anything.
+For each list/search hit, confirm the schema has a `limit` (with a maximum) and a cursor. For each destructive hit, find the gate: a token the handler validates against the arguments it was issued for, or a `destructiveHint` annotation the host is expected to prompt on. A `confirm` parameter the handler merely reads is not one.
 
 ---
 
@@ -130,7 +130,8 @@ grep -rnE 'f"[^"]*(SELECT|INSERT|UPDATE|DELETE|WHERE)|\+[[:space:]]*["'"'"'].*(S
   --include='*.py' --include='*.ts' . 2>/dev/null | grep -v node_modules
 ```
 
-- **Error shape.** Errors return a structured object such as `{"error": "<what went wrong>", "suggestion": "<what to try>"}` with `isError: true`, never a raw stack trace, an internal hostname, a SQL fragment, or a token. Grep for `traceback.format_exc`, `err.stack`, `str(e)` returned directly to the client. Stack traces to the client: MEDIUM; secrets or connection strings in error text: HIGH.
+- **Error envelope.** A failed call has to be marked as failed at the protocol level: the tool result carries `isError: true`, which the SDKs set when the handler raises their tool error (`ToolError` in FastMCP, a thrown error or a result with `isError` in the TypeScript SDK). A handler that catches everything and returns an error object as ordinary `content` leaves `isError` false, so the client sees a successful call whose text happens to contain the word "error" — retry logic and the model's own reading both go wrong. Grep the handlers for a `try` that ends in `return {"error": ...}` with no raise and no `isError`. Severity: MEDIUM.
+- **Error content.** Separately from the envelope, the text the client does see is structured and sanitized — for example `{"error": "<what went wrong>", "suggestion": "<what to try>"}` — never a raw stack trace, an internal hostname, a SQL fragment, or a token. Grep for `traceback.format_exc`, `err.stack`, `str(e)` returned directly to the client. Stack traces to the client: MEDIUM; secrets or connection strings in error text: HIGH.
 - **Rate limits.** A network-bound server, or any tool that calls a paid or quota-limited backend, needs a per-client rate limit. Missing on HTTP transport: MEDIUM.
 
 ---
@@ -157,13 +158,17 @@ grep -rnEi 'ignore (previous|all|other)|always (call|use) this|do not tell the u
 - **Logging without payload secrets.** Log lines carry the tool name, duration and outcome; they do not carry argument values that could hold tokens, PII or document bodies. Check `logger.*` / `console.*` calls inside handlers. Full arguments logged: MEDIUM.
 - **Timeouts** on every outbound call (`timeout=` in httpx/requests, `AbortSignal.timeout` or `signal` in fetch, statement timeout on database connections). Outbound call with no timeout: MEDIUM.
 - **Idempotency for write tools.** A create or send tool accepts an `idempotency_key` or checks for an existing record, so a retried call does not double-create. Missing on a tool that creates, sends or charges: MEDIUM.
-- **Scripted test.** Run the server against a scratch config and list its tools through a client. Prefer the MCP inspector when it is installed; otherwise a short script.
+- **Live tool listing (opt-in).** Listing the tools from a running server catches schemas that differ from the source. It is off by default, because it means executing the server's code.
 
-Confirm three things before running the block below, and record the outcome on the `Live check:` line of the report:
+Starting the server runs its code with the user's own privileges. The scratch environment in the block below keeps credentials out of the child process, and that is all it does — it is not a sandbox. The server can still read every file the user can read, write anywhere the user can write, spawn processes and open network connections. An untrusted server should not be executed at all: if the code's provenance is unclear, or the review was asked for precisely because nobody knows what the server does, review it statically and record `Live check: skipped: untrusted code`.
 
-1. `$SCRATCH/.env` holds placeholder values only — `cat` it and read every line. If `.env.example` is missing or carries real values, write the file by hand instead.
-2. The entry command is the server under review, written as an absolute path, and takes no side-effecting action at startup (no migration, no outbound post). The block changes directory, so a relative path will not resolve.
-3. Nothing in the command invokes a tool. `tools/list` is the whole live check.
+Run the live check only when all five hold, and record the outcome on the `Live check:` line of the report:
+
+1. The user asked for it, or answered yes when you asked with AskUserQuestion. Name the entry command in the question.
+2. Either the code is trusted (the user's own server, a dependency they already run), or the whole run is confined by a real OS-level sandbox that you set up first: a disposable container with only the scratch directory and the server source mounted and networking off, a throwaway VM, or `sandbox-exec` on macOS with a profile denying writes outside `$SCRATCH` and denying network. The commands below go inside that confinement; they do not create it.
+3. `$SCRATCH/.env` holds placeholder values only — `cat` it and read every line. If `.env.example` is missing or carries real values, write the file by hand instead.
+4. The entry command is the server under review, written as an absolute path, and takes no side-effecting action at startup (no migration, no outbound post). The block changes directory, so a relative path will not resolve.
+5. Nothing in the command invokes a tool. `tools/list` is the whole live check.
 
 ```bash
 # Scratch env: placeholder values only, never the real credentials
@@ -184,17 +189,29 @@ done < "$SCRATCH/env.list"
 # Inspector, if available, in CLI mode. env -i drops the inherited environment, so
 # an exported GITHUB_TOKEN or DATABASE_URL cannot reach the server; HOME and the
 # working directory point at the scratch dir, so a dotenv server loads
-# "$SCRATCH/.env" rather than the repository's .env.
-command -v npx >/dev/null 2>&1 && \
+# "$SCRATCH/.env" rather than the repository's .env. That is credential hygiene,
+# not containment — confinement is condition 2 above and lives outside this block.
+# The output goes to a file so the inspector's own exit status survives.
+if command -v npx >/dev/null 2>&1; then
   ( cd "$SCRATCH" && env -i \
       HOME="$SCRATCH" TMPDIR="$SCRATCH" PATH="$PATH" \
       "${SCRATCH_ENV[@]}" \
-      npx --yes @modelcontextprotocol/inspector --cli <absolute entry command> --method tools/list 2>&1 | head -80 )
+      npx --yes @modelcontextprotocol/inspector --cli <absolute entry command> \
+        --method tools/list ) > "$SCRATCH/tools-list.out" 2>&1
+  _status=$?
+  echo "inspector exit status: $_status"
+  head -80 "$SCRATCH/tools-list.out"
+  if [ "$_status" -ne 0 ]; then
+    echo "live check FAILED — the text above is diagnostic output, not a tool list"
+  fi
+fi
 ```
 
-`PATH` is carried over so `node` and `npx` are still found; it holds no credentials. `HOME` points at the scratch dir, which also hides `~/.aws`, `~/.config/gh` and the rest from the server — the first run therefore re-fetches the inspector into a fresh npm cache.
+Read the exit status before the output. A non-zero status means the inspector or the server failed to start, and whatever it printed is not a tool listing — record `Live check: skipped: server failed to start (exit <n>)` and quote the error, never `Live check: inspector`.
 
-If the inspector is not available, use Write to create a small client script under `$SCRATCH` (Python `mcp.client.stdio` or the TypeScript `Client` with `StdioClientTransport`) that connects, calls `tools/list`, and prints each tool's name and schema. Launch it through the same `cd "$SCRATCH" && env -i ... "${SCRATCH_ENV[@]}"` wrapper; a client that inherits the environment hands the server the real credentials through the transport it spawns. Compare the live schema with what you read in Step 1: a tool that exists in code but not in the listing, or a listed schema that differs from the source, is a finding. Severity: MEDIUM.
+`PATH` is carried over so `node` and `npx` are still found; it holds no credentials. `HOME` points at the scratch dir, so a server that resolves `~/.aws` or `~/.config/gh` finds nothing there — one that hard-codes the real absolute path still reads them, which is why condition 2 exists. The redirected `HOME` also means the first run re-fetches the inspector into a fresh npm cache.
+
+If the inspector is not available, use Write to create a small client script under `$SCRATCH` (Python `mcp.client.stdio` or the TypeScript `Client` with `StdioClientTransport`) that connects, calls `tools/list`, and prints each tool's name and schema. Launch it through the same `cd "$SCRATCH" && env -i ... "${SCRATCH_ENV[@]}"` wrapper, under the same confinement, and capture its output and exit status the same way; a client that inherits the environment hands the server the real credentials through the transport it spawns. Compare the live schema with what you read in Step 1: a tool that exists in code but not in the listing, or a listed schema that differs from the source, is a finding. Severity: MEDIUM.
 
 Only run the server with the scratch environment. If it refuses to start without real credentials, report that and skip the live check; do not supply real values.
 
@@ -221,7 +238,7 @@ FINDINGS
 #  | Severity | Tool            | Issue                                        | Fix
 ---|----------|-----------------|----------------------------------------------|------------------------------------------
 1  | CRITICAL | run_query       | SQL built with f-string from `where` arg     | Parameterize; accept structured filters
-2  | HIGH     | delete_record   | No `confirm` parameter                       | Add `confirm: bool`, refuse when false
+2  | HIGH     | delete_record   | Gated only by a model-set `confirm` flag     | Issue a token from `plan_delete`, bound to the args
 3  | HIGH     | fetch_page      | Fetches any URL, no allowlist, no timeout    | Host allowlist, https only, 10s timeout
 4  | MEDIUM   | list_items      | No `limit` maximum                           | `limit: int = Field(20, ge=1, le=200)`
 5  | LOW      | (server)        | No version/health tool                       | Add `server_info` returning version
@@ -252,7 +269,7 @@ Every finding names the tool (or `(server)`), the file and line, and a fix that 
 ## Important Rules
 
 1. **Read-only.** This skill reviews. It never edits the server, its config, or any cloud resource, and never writes to a customer account. Proposed schema changes go in the report, not in the code.
-2. **Never start the server against production credentials.** The live check uses a scratch environment with placeholder values. If the server cannot start that way, skip the live check and say so.
+2. **Starting the server is opt-in, and the scratch environment is not a sandbox.** Ask before running anything; run untrusted code only inside a container, VM or `sandbox-exec` profile you set up first, and not at all if you cannot. The scratch environment keeps real credentials out of the child process — it does not stop the server reading files, writing outside `$SCRATCH`, or reaching the network. If the server cannot start on placeholder values, skip the live check and say so.
 3. **Never purchase, provision, or send.** If a tool would send email, post a message, or spend money, do not call it during the live check; `tools/list` is enough.
 4. **Read every tool schema.** Sampling three of twenty tools is not a review. If the server is too large for one pass, say which tools were covered.
 5. **Report only what you verified.** A grep hit is a lead, not a finding. Open the file, read the handler, then decide.
