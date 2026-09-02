@@ -1,5 +1,76 @@
 # Changelog
 
+## 1.38.0 — 2026-09-02
+
+### Added
+
+- **`/address-pr-review`** — works a pull request to a close: fetches the
+  unresolved review threads and the failing-check logs, applies the fixes,
+  then replies on each thread and resolves the ones it fixed. Three `gh`
+  GraphQL helpers do the fetching and the replying; the skill decides what to
+  change. `/ship` hands off to it in a new step 10b when a PR carries threads
+  from people or from review bots other than the one it already handles.
+- **`/unslop`** — strips machine-sounding patterns from English prose and
+  rewrites it with a voice, without touching a single fact, number, name or
+  code block. Thirty numbered patterns across content, language, style,
+  filler and jargon, plus the list of things that must survive the pass:
+  data tables, domain terms, structural bold, short sentences.
+- **`/aws-cost`** — read-only cost review for one account and period. Reads
+  through the billing MCP tools when the session has them and falls back to
+  the `aws` CLI. Month-over-month by service, anomalies with a daily
+  drill-down when an onset date is actually needed, waste with the evidence
+  each claim rests on, commitment coverage, and three ranked actions.
+- **`/connect-review`** — reviews an Amazon Connect solution end to end:
+  contact flows, Lex bots, the Bedrock turn, the latency budget against the
+  synchronous Lambda limit, session state, observability, and a per-contact
+  cost formula.
+- **`/bedrock-guardrails`** — audits the guardrail layer around Bedrock:
+  region and inference-profile scoping, IAM bound to the profile rather than
+  to a bare region condition, guardrail configuration and version pinning,
+  invocation logging that does not carry payloads, tenant isolation, and the
+  prompt-injection boundary. Each control comes back PASS, FAIL or N-A with
+  a Terraform snippet for the failures.
+- **`/agent-eval`** — builds and runs an evaluation harness for a prompt, an
+  agent loop or a tool router: golden and adversarial task sets, deterministic
+  scoring before any judge, a judge that is not the model under test, cost and
+  latency per task, and a regression gate with a committed baseline.
+- **`/ai-cost-guard`** — finds every paid-inference call site that can run
+  without a ceiling and fixes it. Requires a written dollar cap in the code
+  and at the provider, reserves the worst case before dispatch rather than
+  charging afterwards, and covers providers that bill per image or per second
+  as well as per token.
+- **`/mcp-review`** — reviews an MCP server for tool design, scope, auth,
+  input validation, error shape, transport, and the rule that a tool result
+  carrying third-party text is data rather than instruction.
+- **`/kb-review`** — reviews a knowledge base or RAG pipeline: chunking
+  against document shape, tenant isolation through native ACLs or metadata
+  filters, embedding and sync, and a retrieval evaluation set it writes out
+  as JSONL with recall and reciprocal rank.
+- **`/cso` now audits the live AWS account** when one is reachable — root
+  credentials, IAM policy shape, CloudTrail, S3 exposure, security groups,
+  encryption defaults, threat detection and secret rotation. Every call is
+  read-only, the phase skips cleanly without credentials, and it stays out of
+  the way under `--diff` unless the diff touches AWS configuration.
+
+### Changed
+
+- **`/document-release` verifies what the docs claim.** Every identifier a doc
+  names has to exist before the doc counts as updated, external tools and
+  runtime endpoints get their own verification path rather than a grep, and a
+  changed behavior owes a change on every surface that describes it. CHANGELOG
+  entries now go through the prose-pattern check before the sell test.
+- **`/tdd` and `/reroll-buddy` removed.** Neither had been used, and the pack
+  is easier to route through without them. Sixty skills now.
+
+### Fixed
+
+- **The Codex timeout wrapper never ran under zsh.** Both `/codex` and
+  `/autoplan` built the command prefix as a conditional expansion, which bash
+  splits into two words and zsh does not: the shell tried to execute
+  `gtimeout 330` as one filename and every wrapped call died with exit 127
+  before Codex started. A small function replaces the expansion in all ten
+  call sites.
+
 ## 1.37.2 — 2026-09-01
 
 ### Fixed

@@ -6,6 +6,17 @@ Nothing open.
 
 ## Completed
 
+### Nine new skills, two removed (2026-09-02)
+
+Shipped in v1.38.0. Added `/address-pr-review`, `/unslop`, `/aws-cost`,
+`/connect-review`, `/bedrock-guardrails`, `/agent-eval`, `/ai-cost-guard`,
+`/mcp-review`, `/kb-review`. Removed `/tdd` and `/reroll-buddy` — neither had
+been used. `/cso` gained a read-only AWS account posture phase and
+`/document-release` gained accuracy rules for the identifiers docs name.
+Sixty skills, all four runtimes.
+
+**Completed:** v1.38.0 (2026-09-02)
+
 ### Evidence, version, detach and probe helpers (2026-09-01)
 
 The four items that could not be written as skill text because the mechanism

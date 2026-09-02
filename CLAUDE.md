@@ -277,6 +277,8 @@ double-bump.
 - [ ] If using shared snippets: directive matches the grammar above; no nested includes
 - [ ] New session confirms slash command works
 - [ ] README skills table updated
+- [ ] `docs/skills.md` entry added (the full per-skill reference)
+- [ ] `skills/vibe/SKILL.md` router updated so the skill is reachable by name
 - [ ] `./install` runs without errors
 - [ ] `bash test/test-render-skill.sh` passes if the renderer or any snippet was touched
 - [ ] `bash test/test-install-integration.sh` passes if install/uninstall was touched

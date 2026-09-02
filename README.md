@@ -27,8 +27,8 @@ Code, Cursor and Kiro, `$` in Codex. Instead of "write me some code," you get
 clean pull request — each one a structured, opinionated process, not a vague
 prompt.
 
-**For engineers:** 50+ portable `SKILL.md` workflows — planning, TDD, security
-audit, cross-model review, debugging, release. Same source installs into Claude
+**For engineers:** 60 portable `SKILL.md` workflows — planning, security audit,
+cross-model review, debugging, AWS and agent reviews, release. Same source installs into Claude
 Code, Cursor, Kiro, and Codex CLI. No lock-in, no telemetry, state stays in
 `~/.vibestack/`.
 
@@ -71,7 +71,7 @@ guided, structured, no filler. If `/office-hours` clicks, the rest will too.
 
 ## Why people use it
 
-- 🚀 **Idea → shipped, guided the whole way.** `/office-hours` → `/plan-eng-review` → `/tdd` → `/review` → `/ship`. The chain is built for you.
+- 🚀 **Idea → shipped, guided the whole way.** `/office-hours` → `/plan-eng-review` → `/review` → `/ship`. The chain is built for you.
 - 🧠 **A real second opinion.** Reviews run a cross-model check (a different AI) automatically, so two models have to agree before you ship.
 - 🔒 **Yours, private.** No telemetry, no accounts, no cloud. Everything lives on your machine in `~/.vibestack/`.
 - 🔁 **No lock-in.** One source installs into Claude Code, Cursor, Kiro, and Codex CLI alike. Switch tools, keep your workflow.
@@ -105,18 +105,26 @@ Each skill is a plain `SKILL.md` file your agent discovers and exposes as a
 
 ## A taste of the skills
 
-53 skills across planning, shipping, QA, design, and security.
+60 skills across planning, shipping, QA, design, and security.
 A few highlights:
 
 | Command | What it does |
 |---|---|
 | `/office-hours` | Brainstorm an idea into a concrete design doc |
 | `/plan-eng-review` | Pressure-test a plan — architecture, data, risk |
-| `/tdd` | Test-driven development, red-green-refactor |
 | `/review` | Pre-merge review — correctness, security, tests |
 | `/ship` | Merge base, run tests, review, version bump, open the PR |
+| `/address-pr-review` | Work a PR's open review threads and failing CI checks to a close |
 | `/investigate` | Systematic debugging — no fix without a confirmed root cause |
 | `/cso` | Security audit — OWASP Top 10 + threat model |
+| `/unslop` | Find AI writing tells and rewrite the text in the author's voice |
+| `/aws-cost` | Read-only AWS bill review: month-over-month deltas, waste, commitments, three actions |
+| `/ai-cost-guard` | Cap runaway AI spend — bound every paid-model call in code and at the provider |
+| `/bedrock-guardrails` | Audit Bedrock region pinning, IAM scoping, guardrails, logging, and tenant isolation |
+| `/kb-review` | Read-only RAG and Bedrock Knowledge Base review: chunking, tenant filters, recall@5, cost |
+| `/connect-review` | Review an Amazon Connect IVR — flows, Lex, Bedrock, latency, cost |
+| `/agent-eval` | Build and run an eval harness for an LLM agent or prompt, with a regression gate |
+| `/mcp-review` | Audit an MCP server's tools, auth, validation and injection surface |
 
 👉 **Full list of every skill: [`docs/skills.md`](docs/skills.md)**
 

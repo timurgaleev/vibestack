@@ -24,7 +24,7 @@ cd vibestack
 
 No other dependencies. vibestack requires only Bash and at least one
 [Agent Skills standard](https://agentskills.io/specification) host —
-Claude Code, Cursor, or Kiro. The install asks per target.
+Claude Code, Cursor, Kiro, or Codex CLI. The install asks per target.
 
 ## Adding a skill
 
@@ -152,8 +152,8 @@ echo '{"tool_input":{"command":"dangerous command"}}' | bash skills/my-skill/bin
 echo 'not json' | bash skills/my-skill/bin/check-my-skill.sh
 # Expected: a decision, never {} — an unreadable payload must not be an allow
 
-# Test the full skill in your agent (Claude Code, Cursor, or Kiro):
-# Start a new session and invoke /my-skill
+# Test the full skill in your agent (Claude Code, Cursor, Kiro, or Codex CLI):
+# Start a new session and invoke /my-skill — in Codex, write $my-skill in a message
 # For hook-bearing skills, see docs/hook-verification.md to confirm
 # the hook actually fires in non-Claude targets.
 ```
@@ -162,6 +162,7 @@ echo 'not json' | bash skills/my-skill/bin/check-my-skill.sh
 
 - Add a row to the README.md skills table in the appropriate section
 - Add an entry to `docs/skills.md` with the full description
+- Add the skill to the `/vibe` router in `skills/vibe/SKILL.md` so it is reachable by name
 
 ### 6. Commit
 
@@ -189,6 +190,6 @@ Before submitting:
 - [ ] `allowed-tools:` contains only tools the skill actually uses
 - [ ] Body is prose instructions, not bash
 - [ ] If hooks: scripts are POSIX-portable and tested directly
-- [ ] Invoked at least once in a real agent session (Claude Code, Cursor, or Kiro)
+- [ ] Invoked at least once in a real agent session (Claude Code, Cursor, Kiro, or Codex CLI)
 - [ ] If hook-bearing: hook tier documented in `docs/agent-skills-compatibility-audit.md`
-- [ ] README and docs/skills.md updated
+- [ ] README, docs/skills.md, and the `/vibe` router updated

@@ -39,7 +39,6 @@ implementing, investigate before fixing, review before shipping.
 | Weigh product scope or the bigger problem | `plan-ceo-review` |
 | Plan a UI change, or review a design before it is built | `plan-design-review` |
 | Pressure-test the developer experience of a plan | `plan-devex-review` |
-| Implement with tests, red-green-refactor | `tdd` |
 | Debug an error, test failure, or odd behavior | `investigate` |
 | Review a diff before merge | `review` |
 | Get a second opinion from a different model | `codex`, `claude` |
@@ -48,9 +47,18 @@ implementing, investigate before fixing, review before shipping.
 | Drive a browser, scrape a page, pair a remote agent | `browse`, `scrape`, `open-browser`, `pair-agent` |
 | Review a shipped UI, or explore design directions | `design-review`, `design-shotgun`, `design-consultation` |
 | Ship: tests, version, changelog, PR | `ship` |
+| Address PR review threads and failing CI | `address-pr-review` |
 | Merge, deploy, and confirm production health | `land-and-deploy`, `canary` |
 | Update docs after shipping | `document-release`, `document-generate` |
+| Strip machine-sounding prose | `unslop` |
 | Check code-quality health or find refactors | `health`, `improve-arch` |
+| Review AWS spend | `aws-cost` |
+| Cap paid-inference spend | `ai-cost-guard` |
+| Audit Bedrock guardrails, region and tenant isolation | `bedrock-guardrails` |
+| Review a knowledge base or RAG pipeline | `kb-review` |
+| Review an Amazon Connect, Lex or voice solution | `connect-review` |
+| Evaluate an agent or prompt | `agent-eval` |
+| Review an MCP server | `mcp-review` |
 | Save or restore working context across sessions | `context-save`, `context-restore` |
 | Guard a risky session | `careful`, `freeze`, `guard` (and `unfreeze` to release) |
 | Update the pack itself | `vibe-upgrade` |
