@@ -6,6 +6,16 @@ Nothing open.
 
 ## Completed
 
+### Install removes skills the pack no longer ships (2026-09-02)
+
+Shipped in v1.38.1. Upgrading past a removal used to leave the withdrawn skill
+in every target: the adopt-back step that protects foreign entries cannot tell a
+dropped skill from someone else's. Install now records what it wrote into each
+target root and prunes only those names on the next run; uninstall removes the
+record. Mutation-checked, suite 33 → 34.
+
+**Completed:** v1.38.1 (2026-09-02)
+
 ### Nine new skills, two removed (2026-09-02)
 
 Shipped in v1.38.0. Added `/address-pr-review`, `/unslop`, `/aws-cost`,
