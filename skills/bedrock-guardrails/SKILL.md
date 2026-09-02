@@ -54,20 +54,42 @@ When the user types `/bedrock-guardrails`, run this skill.
 
 Find every place the repo talks to Bedrock. Search infrastructure code and application code separately, because the controls live in different files.
 
+The inventory has to be complete: a call site missed here is skipped by every region, IAM, guardrail, logging and cost check downstream, and shows up in the report as nothing at all. So neither search is truncated, and both cover the whole current invocation surface — `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, `ConverseStream`, `StartAsyncInvoke`, `ApplyGuardrail`, `InvokeGuardrailChecks`, `RetrieveAndGenerate`, `RetrieveAndGenerateStream`, `InvokeAgent`, `InvokeInlineAgent`, `InvokeFlow`, and the OpenAI-compatible `chat/completions` and `responses` paths on the `bedrock-runtime` endpoint.
+
 ```bash
-grep -rnE 'aws_bedrock|bedrock:|AWS::Bedrock|aws_bedrockagent|bedrock_guardrail|InvokeModel' \
-  --include='*.tf' --include='*.ts' --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' . 2>/dev/null \
-  | grep -vE 'node_modules|\.terraform/|dist/|build/' | head -80
-grep -rnE 'bedrock-runtime|BedrockRuntime|bedrock_runtime|boto3\.client\(["'"'"']bedrock|@aws-sdk/client-bedrock|invoke_model|InvokeModel|converse\(|Converse(Stream)?Command|retrieve_and_generate|RetrieveAndGenerate' \
-  --include='*.py' --include='*.ts' --include='*.js' --include='*.go' --include='*.java' --include='*.kt' --include='*.rb' . 2>/dev/null \
-  | grep -vE 'node_modules|\.terraform/|dist/|build/|_test\.|\.test\.|spec\.' | head -80
+grep -rnE 'aws_bedrock|bedrock:|AWS::Bedrock|aws_bedrockagent|bedrock_guardrail' \
+  --include='*.tf' --include='*.tf.json' --include='*.hcl' --include='*.yaml' --include='*.yml' --include='*.json' --include='*.ts' --include='*.py' . 2>/dev/null \
+  | grep -vE 'node_modules|\.terraform/|dist/|build/|vendor/'
+
+grep -rnE 'bedrock-(agent-)?runtime|Bedrock(Agent)?Runtime|bedrock_(agent_)?runtime|client\(["'"'"']bedrock|@aws-sdk/client-bedrock|[Ii]nvoke[_]?[Mm]odel([Ww]ith[Rr]esponse[Ss]tream|_with_response_stream)?|[Cc]onverse([_]?[Ss]tream)?[[:space:]]*[(A-Za-z]|[Rr]etrieve[_]?[Aa]nd[_]?[Gg]enerate([_]?[Ss]tream)?|[Ii]nvoke[_]?([Ii]nline[_]?)?[Aa]gent|[Ii]nvoke[_]?[Ff]low|[Ss]tart[_]?[Aa]sync[_]?[Ii]nvoke|[Aa]pply[_]?[Gg]uardrail|[Ii]nvoke[_]?[Gg]uardrail[_]?[Cc]hecks|chat/completions|/v1/responses' \
+  --include='*.py' --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' --include='*.mjs' --include='*.go' --include='*.java' --include='*.kt' --include='*.rb' --include='*.cs' --include='*.rs' --include='*.php' . 2>/dev/null \
+  | grep -vE 'node_modules|\.terraform/|dist/|build/|vendor/|_test\.|\.test\.|spec\.'
 ```
 
-Record each hit as a call site: file, line, model or profile id, and whether a guardrail is passed. This list is the row source for the rest of the audit.
+Record each hit as a call site: file, line, model or profile id, and whether a guardrail is passed. This list is the row source for the rest of the audit. If a repo is large enough that you cap the output to read it, say so in the report and mark the downstream controls `N-A (call-site inventory partial)` naming what was cut — a partial inventory cannot carry a PASS. If the repo wraps Bedrock in a library the greps do not reach, widen the pattern to that wrapper's own function names before moving on.
 
-Then decide the residency regime. Look for the deploying account's region in `provider "aws"` blocks, `AWS_REGION`/`AWS_DEFAULT_REGION` in env files and CI, and `aws configure get region` when the CLI is present. If the account region is `eu-central-1`, `eu-west-1`, or any other `eu-*`, or the repo's docs mention GDPR, EU customers, or data residency, set `RESIDENCY=EU`. Under `RESIDENCY=EU`, any call that resolves to a `us-*` region or a `us.` / `global.` inference profile is a HIGH finding, no exceptions.
+Then decide the residency regime, and take it from a commitment, not from an inferred one. An `eu-*` provider block is where the account happens to deploy today, and accounts routinely span regions; a GDPR mention in a README is about processing personal data, not about where inference runs. `RESIDENCY=EU` needs an explicit written commitment — a DPA or contract clause, a documented residency statement in the product docs, an ADR that names EU-only inference, or a compliance control the repo references. Record which one, with its `file:line`. If nothing states it, use AskUserQuestion to ask whether the workload has an EU residency commitment; if the answer is no or unavailable, leave `RESIDENCY=none` and score cross-region routing under R3 as an undocumented cross-region decision (MEDIUM), not as a residency breach. Under `RESIDENCY=EU`, any call that resolves to a `us-*` region or a `us.` / `global.` inference profile is a HIGH finding, no exceptions.
 
 Check whether the CLI is usable for read-only evidence with `aws sts get-caller-identity --output text 2>/dev/null || echo "NO_AWS_CLI_SESSION"`. If there is no session, mark every control that needs live account state as `N-A (no CLI)` with a note on what to run, and audit from code alone. Do not ask for credentials.
+
+Every live check below runs through one probe helper, so that a call which fails cannot be read as a call which found nothing. An `AccessDenied`, an unknown region, a missing endpoint and an expired token all exit non-zero and produce `N-A`; only a zero exit with an empty result means "none configured". Write the helper once and source it in each later block, because shell state does not survive between tool calls.
+
+```bash
+cat > "${TMPDIR:-/tmp}/bg-probe.sh" <<'PROBE'
+# bg_probe <control-label> <read-only aws command...>
+bg_probe() {
+  bg_label="$1"; shift
+  if bg_out=$("$@" 2>&1); then
+    printf '%s: OK\n%s\n' "$bg_label" "$bg_out"
+  else
+    bg_rc=$?
+    printf '%s: N-A (exit %s) %s\n' "$bg_label" "$bg_rc" "$bg_out"
+  fi
+}
+PROBE
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+bg_probe "identity" aws sts get-caller-identity --output json
+```
 
 ---
 
@@ -79,7 +101,7 @@ What to check:
 
 - The client is built with an explicit region (`region_name=`, `region:`, `AWS_REGION` read at startup), not the SDK default chain. A client with no region is a FAIL (MEDIUM; HIGH under EU).
 - The model id is either a plain foundation model in the pinned region, or an inference profile whose prefix matches the residency regime: `eu.` stays inside EU regions, `us.` inside US regions, `global.` can route anywhere. Under `RESIDENCY=EU`, a `us.` or `global.` prefix is HIGH.
-- Cross-region inference is a written decision. Grep for an ADR, a README section, or a comment near the invoke, then Read that file and confirm it names the destination regions and why. A `global.` or cross-region profile with no written decision is MEDIUM.
+- Cross-region inference is a written decision. Search `docs/`, `docs/adr/`, the README, and the lines around each invoke with grep, then Read the file a hit points at and confirm it names the destination regions and why. A `global.` or cross-region profile with no written decision is MEDIUM.
 - IAM region conditions account for inference profiles. This is the trap: `aws:RequestedRegion` checks the endpoint the caller hit, not where the profile routes, and on a `global.` profile Bedrock sets it to `unspecified` for the routed leg, so no region name ever matches there. A policy that relies only on `aws:RequestedRegion` to lock a `global.` or cross-region profile is a FAIL (HIGH). The documented shape is:
   - Geographic profile (`eu.`, `us.`, `apac.`), two statements: the regional inference-profile ARN `arn:aws:bedrock:<source-region>:<account>:inference-profile/<prefix>.<model>`, then the foundation-model ARN in the source region and in every destination region the profile lists, with `StringEquals` on `bedrock:InferenceProfileArn` set to that profile ARN.
   - `global.` profile, three statements: the regional inference-profile ARN gated on `aws:RequestedRegion` equal to the source region; the regional foundation-model ARN gated on the same region plus `bedrock:InferenceProfileArn`; and the region-less foundation-model ARN `arn:aws:bedrock:::foundation-model/<model>` gated on `aws:RequestedRegion` equal to `unspecified` plus `bedrock:InferenceProfileArn`. The destination set of a global profile is not enumerable, which is what the region-less ARN is for.
@@ -89,6 +111,11 @@ What to check:
 grep -rnE 'region_name|region:|AWS_REGION|AWS_DEFAULT_REGION' --include='*.py' --include='*.ts' --include='*.js' --include='*.go' . 2>/dev/null | grep -vE 'node_modules|dist/' | head -40
 grep -rnoE '(eu|us|apac|global)\.[a-z0-9-]+\.[a-z0-9.:-]+' --include='*.py' --include='*.ts' --include='*.tf' --include='*.yaml' --include='*.json' . 2>/dev/null | grep -vE 'node_modules|dist/' | sort -u | head -40
 grep -rnE 'aws:RequestedRegion' --include='*.tf' --include='*.json' --include='*.yaml' . 2>/dev/null | head -20
+
+# the destination model ARNs a geographic profile can route to. Remediation B is
+# generated from this list; it is not guessable from the prefix.
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+bg_probe "R4-profile" aws bedrock get-inference-profile --inference-profile-identifier "$PROFILE_ID" --region "$SOURCE_REGION" --query 'models[].modelArn' --output json
 ```
 
 Finding shape: `FAIL HIGH: src/llm/client.ts:41 invokes global.anthropic.claude-... from an eu-central-1 account; IAM locks only aws:RequestedRegion, so routing to us-east-1 is not blocked.`
@@ -99,10 +126,10 @@ Finding shape: `FAIL HIGH: src/llm/client.ts:41 invokes global.anthropic.claude-
 
 What to check on every role or policy that grants `bedrock:*` actions:
 
-- `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream`, `bedrock:Converse`, `bedrock:ConverseStream` list model and inference-profile ARNs in `Resource`. `Resource: "*"` or `arn:aws:bedrock:*::foundation-model/*` is a FAIL (HIGH).
+- `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` list model and inference-profile ARNs in `Resource`. `Resource: "*"` or `arn:aws:bedrock:*::foundation-model/*` is a FAIL (HIGH). These two actions are the whole invocation grant: `bedrock:InvokeModel` authorizes both `InvokeModel` and `Converse`, and `bedrock:InvokeModelWithResponseStream` authorizes both `InvokeModelWithResponseStream` and `ConverseStream`. There is no `bedrock:Converse` or `bedrock:ConverseStream` IAM action, so a policy that omits those names is correctly scoped, not a finding — and a policy that lists them has granted nothing by them, which is worth a LOW note when the role's only invoke grant is a name that does not exist.
 - One role per workload and, in multi-tenant systems, per tenant or per tenant tier. A single shared role used by the API, the batch job, and the admin tool is MEDIUM.
 - No long-lived access keys in app config. Search `.env*`, `config/`, Helm values, docker-compose, and CI variables for `AKIA` and `aws_secret_access_key`. A hit is HIGH regardless of whether the key is live; the repo should use roles (IRSA, task roles, instance profiles, OIDC).
-- `bedrock:ApplyGuardrail` is granted only where the app applies guardrails outside of invoke, and `bedrock:CreateGuardrail` / `DeleteGuardrail` / `PutModelInvocationLoggingConfiguration` sit in an ops role, not the runtime role.
+- `bedrock:ApplyGuardrail` is granted only where the app applies guardrails outside of invoke, and `bedrock:CreateGuardrail` / `bedrock:DeleteGuardrail` / `bedrock:PutModelInvocationLoggingConfiguration` sit in an ops role, not the runtime role. A runtime role that carries the guardrail or logging management actions is MEDIUM: whoever reaches the application can delete the guardrail in front of it and turn off the log it would be caught in. Score this from policy documents you read in full — if any part of the set below came back `N-A`, so does this row.
 
 ```bash
 grep -rnE '"bedrock:[A-Za-z*]+"|bedrock:(InvokeModel|Converse|ApplyGuardrail|\*)' --include='*.tf' --include='*.json' --include='*.yaml' --include='*.yml' --include='*.ts' . 2>/dev/null | grep -vE 'node_modules|\.terraform/' | head -40
@@ -110,11 +137,35 @@ grep -rnE '"Resource"[[:space:]]*:[[:space:]]*"\*"|resources[[:space:]]*=[[:spac
 grep -rnE 'AKIA[0-9A-Z]{16}|aws_secret_access_key|AWS_SECRET_ACCESS_KEY[[:space:]]*[:=]' . 2>/dev/null | grep -vE 'node_modules|\.git/|example|sample|\.md:' | head -10
 ```
 
-When the CLI works, pull the live policy for each role you found in code and compare, because drift between Terraform and the account is common:
+When the CLI works, pull the live policy set for each role you found in code and compare, because drift between Terraform and the account is common. One customer-managed policy is not the policy set: a role's effective Bedrock permissions are the union of its attached managed policies, its inline policies, and whatever its permissions boundary and the SCPs and RCPs above the account cut back. Enumerate first, then read each document.
 
 ```bash
-aws iam get-policy-version --policy-arn "$POLICY_ARN" --version-id "$(aws iam get-policy --policy-arn "$POLICY_ARN" --query Policy.DefaultVersionId --output text)" --query PolicyVersion.Document
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+ROLE_NAME="<role from Terraform or the running task definition>"
+
+bg_probe "I-attached:${ROLE_NAME}" aws iam list-attached-role-policies --role-name "$ROLE_NAME" --output json
+bg_probe "I-inline:${ROLE_NAME}"   aws iam list-role-policies --role-name "$ROLE_NAME" --output json
+bg_probe "I-boundary:${ROLE_NAME}" aws iam get-role --role-name "$ROLE_NAME" --query 'Role.PermissionsBoundary' --output json
+
+# one per attached managed policy ARN
+POLICY_ARN="<arn from the attached list>"
+DEFAULT_VER=$(aws iam get-policy --policy-arn "$POLICY_ARN" --query Policy.DefaultVersionId --output text 2>&1) || DEFAULT_VER=""
+if [ -z "$DEFAULT_VER" ]; then
+  printf 'I-policy:%s: N-A (default version not readable)\n' "$POLICY_ARN"
+else
+  bg_probe "I-policy:${POLICY_ARN}" aws iam get-policy-version --policy-arn "$POLICY_ARN" --version-id "$DEFAULT_VER" --query PolicyVersion.Document --output json
+fi
+
+# one per inline policy name
+bg_probe "I-inline-doc:${ROLE_NAME}" aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name "<inline policy name>" --query PolicyDocument --output json
+
+# authorization policies above the account; usually AccessDenied from a member account
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>&1) || ACCOUNT_ID=""
+bg_probe "I-scp" aws organizations list-policies-for-target --target-id "$ACCOUNT_ID" --filter SERVICE_CONTROL_POLICY --output json
+bg_probe "I-rcp" aws organizations list-policies-for-target --target-id "$ACCOUNT_ID" --filter RESOURCE_CONTROL_POLICY --output json
 ```
+
+A PASS on I1, I2, I4 or R4 needs that whole set to have been read. If any part of it came back `N-A` — a policy version you could not read, a boundary you could not fetch, SCPs denied from a member account — mark the affected control `N-A (IAM coverage incomplete)` and name what was missing. A policy that looks tightly scoped in Terraform can still be widened by a second attachment you never saw, so partial coverage is not evidence of a scoped role. Nothing here changes the FAILs: a wildcard you did read stays a FAIL whatever else was unreadable.
 
 Finding shape: `FAIL HIGH: infra/iam.tf:58 bedrock:InvokeModel on Resource "*"; any model in any region is callable from the API role.`
 
@@ -125,19 +176,29 @@ Finding shape: `FAIL HIGH: infra/iam.tf:58 bedrock:InvokeModel on Resource "*"; 
 What to check:
 
 - A guardrail exists in code (`aws_bedrock_guardrail`, `CfnGuardrail`, `bedrock.Guardrail`) or in the account (`aws bedrock list-guardrails`). None at all is a FAIL (HIGH) for any workload that takes user input.
-- Every invoke passes it. `guardrailIdentifier` and `guardrailVersion` (or `guardrailConfig` in Converse) appear at each call site from Step 1. A call site without them is HIGH; if some call sites have it and others do not, list each missing one.
+- Every invoke passes it. The spelling depends on the API: `guardrailConfig` with `guardrailIdentifier` and `guardrailVersion` for Converse and ConverseStream, the `amazon-bedrock-guardrailConfig` block or the guardrail request headers for Invoke, and a nested `generationConfiguration.guardrailConfiguration` with `guardrailId` and `guardrailVersion` for Knowledge Bases (`RetrieveAndGenerate`, `RetrieveAndGenerateStream`) — a grep that looks only for `guardrailIdentifier` reads real protection on a knowledge base as missing. Check all of them at each call site from Step 1. If some call sites have it and others do not, list each missing one.
+- A call site that names no guardrail is not automatically unprotected: an enforced guardrail applies to every model invocation in the account or organization without the request configuring anything. Before emitting a HIGH for a bare call site, look for one in each region a call site resolves to. Account-level enforcement is regional, so `list-enforced-guardrails-configuration` has to run once per region; organization-level enforcement is read with `describe-effective-policy --policy-type BEDROCK_POLICY`, callable from any account in the organization. Then read what the config actually covers before scoring: `modelEnforcement.includedModels` / `excludedModels` decide whether the model this call site uses is in scope, and `selectiveContentGuarding` (`messages`, `system`) decides which parts of the request get evaluated. An enforced guardrail whose inclusions cover the call site's model and content is a PASS, cited by config id with the coverage terms named. One that covers it only partly — the model excluded, the system prompt not guarded — is MEDIUM. Only a bare call site with no enforced guardrail covering it is HIGH. If neither lookup is readable, the row is `N-A (enforcement not readable)`, because the HIGH rests on having confirmed the absence.
 - Version is a number, not `DRAFT`, in anything deployed to production. A `DRAFT` reference in prod config is MEDIUM; the guardrail can change under the app without a deploy.
 - PII policy names each entity and the action is deliberate: `ANONYMIZE` for entities the app legitimately needs to pass through in masked form (names, emails in support tickets), `BLOCK` for entities that should never reach the model (credit card numbers, national IDs, credentials). A PII policy with no entities, or `ANONYMIZE` on card numbers, is MEDIUM. No PII policy at all where users can type free text is HIGH.
 - Denied topics exist when the product has a scope (a banking assistant that should not give legal advice), and word filters cover the managed profanity list plus the product's own list when relevant. Either missing where it clearly applies is LOW.
 - Content filters set explicit strengths for `HATE`, `INSULTS`, `SEXUAL`, `VIOLENCE`, `MISCONDUCT`, `PROMPT_ATTACK` on both input and output. `PROMPT_ATTACK` missing or `NONE` on input is MEDIUM.
-- Contextual grounding check is enabled when the app does RAG (`retrieve_and_generate`, a knowledge base, or a retrieval step before the invoke). A RAG answer path with no `GROUNDING` and `RELEVANCE` filter is MEDIUM.
+- Contextual grounding check is enabled when the app does RAG (`retrieve_and_generate`, a knowledge base, or a retrieval step before the invoke) — and it is a runtime contract, not just a resource setting, so do not score this row from `contextual_grounding_policy_config` alone. The check needs three things per request: the grounding source, the query, and the content to guard, which is the model response, so it runs on output only and does nothing at all when the request supplies no source and no query. Converse marks them with the `qualifiers` field on each `guardContent` text block — `["grounding_source"]` and `["query"]`; Invoke wraps them in `amazon-bedrock-guardrails-groundingSource_<suffix>` and `amazon-bedrock-guardrails-query_<suffix>` tags with a matching `tagSuffix`. Read the RAG call sites, or a runtime trace, for those. Filters plus a correctly qualified request is a PASS citing both. Filters configured but no grounding source and query in the request is MEDIUM — the policy exists and never fires. No filters at all on a RAG answer path is MEDIUM. If the request is assembled behind a wrapper you cannot read, the row is `N-A (runtime request shape not visible)` with the guardrail `trace` field named as what to check; a resource-only reading does not carry a PASS.
 
 ```bash
-grep -rnE 'aws_bedrock_guardrail|aws_bedrock_guardrail_version|CfnGuardrail|guardrailIdentifier|guardrail_identifier|guardrailVersion|guardrail_version|guardrailConfig' . 2>/dev/null | grep -vE 'node_modules|\.terraform/' | head -40
+grep -rnE 'aws_bedrock_guardrail|aws_bedrock_guardrail_version|CfnGuardrail|guardrailIdentifier|guardrail_identifier|guardrailVersion|guardrail_version|guardrailConfig|guardrailConfiguration|guardrail_configuration|guardrailId|guardrail_id|amazon-bedrock-guardrailConfig' . 2>/dev/null | grep -vE 'node_modules|\.terraform/' | head -40
 grep -rnE 'pii_entities_config|piiEntitiesConfig|topics_config|topicsConfig|filters_config|filtersConfig|PROMPT_ATTACK|contextual_grounding|contextualGrounding|words_config|managed_word_lists' . 2>/dev/null | grep -vE 'node_modules|\.terraform/' | head -40
+grep -rnE 'grounding_source|groundingSource|guardContent|qualifiers|tagSuffix|amazon-bedrock-guardrails-' . 2>/dev/null | grep -vE 'node_modules|\.terraform/' | head -30
 
-aws bedrock list-guardrails --output table 2>/dev/null
-aws bedrock get-guardrail --guardrail-identifier "$GUARDRAIL_ID" --guardrail-version "$GUARDRAIL_VERSION" 2>/dev/null
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+bg_probe "G1" aws bedrock list-guardrails --output json
+bg_probe "G-detail" aws bedrock get-guardrail --guardrail-identifier "$GUARDRAIL_ID" --guardrail-version "$GUARDRAIL_VERSION" --output json
+
+# enforced guardrails: once per region a Step 1 call site resolves to, then the org policy
+CALL_SITE_REGIONS=(eu-central-1)
+for _rgn in "${CALL_SITE_REGIONS[@]}"; do
+  bg_probe "G2-enforced:${_rgn}" aws bedrock list-enforced-guardrails-configuration --region "$_rgn" --output json
+done
+bg_probe "G2-org" aws organizations describe-effective-policy --policy-type BEDROCK_POLICY --output json
 ```
 
 Finding shape: `FAIL MEDIUM: infra/guardrail.tf:22 pii_entities_config has CREDIT_DEBIT_CARD_NUMBER with action ANONYMIZE; card numbers should be BLOCK.`
@@ -150,16 +211,19 @@ What to check:
 
 - Model invocation logging is on. `aws bedrock get-model-invocation-logging-configuration` returns a config, or `aws_bedrock_model_invocation_logging_configuration` exists in Terraform. Off is MEDIUM (you cannot investigate an incident without it).
 - The destination has retention. A CloudWatch log group with no `retention_in_days`, or an S3 bucket with no lifecycle rule, is LOW. Logs of prompts grow fast and hold user text.
-- The logs do not carry raw PII. Either the guardrail anonymizes before the model sees the text (so the logged input is already masked), or every data-delivery flag is off so only metadata is kept, or there is a documented redaction step. All four flags — `text_data_delivery_enabled`, `image_data_delivery_enabled`, `embedding_data_delivery_enabled`, `video_data_delivery_enabled` — default to true, so a config that sets only the text one to false still ships image, video and embedding payloads and does not clear this control. Full prompt logging with no PII policy in front of it is HIGH under EU, MEDIUM otherwise.
-- KMS customer-managed keys on the log group, the log bucket, the knowledge base vector store, and the S3 data sources. AWS-managed keys where the product promises customer-controlled encryption is MEDIUM; no encryption setting at all on a data source bucket is HIGH.
-- VPC endpoints for `bedrock-runtime` (and `bedrock-agent-runtime` when knowledge bases are used) exist when the workload runs in private subnets. Private workload with no endpoint means traffic leaves through a NAT to the public API; MEDIUM.
+- The logs do not carry raw PII. A guardrail does not clear this control, whatever its PII policy says: masking applies to what is sent to the model and what comes back from it, and the `input` field in the invocation log always holds the original, unmodified request regardless of guardrail intervention. So an `ANONYMIZE` policy is never the evidence here. What does clear it: every data delivery flag off, so only metadata is kept; or a CloudWatch Logs data protection policy on the destination log group; or a documented redaction step on the S3 destination. There are five delivery flags, not four — `text_`, `image_`, `embedding_`, `video_` and `audio_data_delivery_enabled` — and each defaults to true, so a config that turns off text alone still ships image, audio, video and embedding payloads. Full payload delivery with none of the three controls in front of it is HIGH under EU, MEDIUM otherwise.
+- KMS customer-managed keys on the log group, the log bucket, the knowledge base vector store, and the S3 data sources. AWS-managed keys where the product promises customer-controlled encryption is MEDIUM. A data source bucket with no explicit encryption block is not unencrypted — S3 applies SSE-S3 to every new object as the base level of encryption — so that is a customer-managed-key gap, LOW on its own and MEDIUM where a CMK is a stated requirement, and never an unencrypted-data finding.
+- VPC endpoints for `bedrock-runtime` (and `bedrock-agent-runtime` when knowledge bases are used) exist when the workload runs in private subnets. Private workload with no endpoint means traffic leaves through a NAT to the public API; MEDIUM. The MEDIUM rests on the workload actually being private, so establish that first — a task or function attached to subnets the repo marks private, or a route table with no internet gateway. If nothing in the repo places it there, the row is `N-A (subnet placement not established)` naming what to check, not a FAIL.
 
 ```bash
 grep -rnE 'aws_bedrock_model_invocation_logging_configuration|ModelInvocationLogging|_data_delivery_enabled|retention_in_days|lifecycle_rule|kms_key_id|kms_key_arn|sse_kms|server_side_encryption' --include='*.tf' --include='*.ts' --include='*.yaml' . 2>/dev/null | grep -vE 'node_modules|\.terraform/' | head -40
 grep -rnE 'com\.amazonaws\.[a-z0-9-]+\.bedrock(-runtime|-agent-runtime)?|aws_vpc_endpoint' --include='*.tf' --include='*.ts' . 2>/dev/null | head -20
 
-aws bedrock get-model-invocation-logging-configuration 2>/dev/null || echo "LOGGING: not readable"
-aws ec2 describe-vpc-endpoints --filters "Name=service-name,Values=com.amazonaws.${AWS_REGION:-eu-central-1}.bedrock-runtime" --query 'VpcEndpoints[].VpcEndpointId' --output text 2>/dev/null
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+bg_probe "D1" aws bedrock get-model-invocation-logging-configuration --output json
+bg_probe "D3-account-dp" aws logs describe-account-policies --policy-type DATA_PROTECTION_POLICY --output json
+bg_probe "D3-group-dp" aws logs get-data-protection-policy --log-group-identifier "$LOG_GROUP_NAME" --output json
+bg_probe "D5-vpce" aws ec2 describe-vpc-endpoints --filters "Name=service-name,Values=com.amazonaws.${AWS_REGION:-eu-central-1}.bedrock-runtime" --query 'VpcEndpoints[].VpcEndpointId' --output json
 ```
 
 Finding shape: `FAIL MEDIUM: infra/logging.tf:14 invocation logs go to a log group with no retention_in_days and the default AWS-managed key.`
@@ -213,8 +277,9 @@ What to check:
 grep -rnE 'maxTokens|max_tokens|inferenceConfig|inference_config' --include='*.py' --include='*.ts' --include='*.js' . 2>/dev/null | grep -vE 'node_modules|dist/' | head -20
 grep -rniE 'service.?quota|tokens per minute|TPM|provisioned.?throughput|ThrottlingException|backoff' --include='*.md' --include='*.py' --include='*.ts' --include='*.tf' . 2>/dev/null | grep -vE 'node_modules|dist/' | head -20
 
-aws service-quotas list-service-quotas --service-code bedrock --query 'Quotas[?contains(QuotaName, `Claude`) || contains(QuotaName, `tokens per minute`)].[QuotaName,Value]' --output table 2>/dev/null | head -40
-aws bedrock list-provisioned-model-throughputs --output table 2>/dev/null
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+bg_probe "Q1" aws service-quotas list-service-quotas --service-code bedrock --query 'Quotas[?contains(QuotaName, `tokens per minute`) || contains(QuotaName, `requests per minute`)].[QuotaName,Value]' --output json
+bg_probe "Q3-provisioned" aws bedrock list-provisioned-model-throughputs --output json
 ```
 
 Finding shape: `FAIL MEDIUM: api/chat.ts:52 user message is forwarded with no length cap and no maxTokens; one caller can burn the monthly budget.`
@@ -232,8 +297,8 @@ BEDROCK GUARDRAILS AUDIT
 Project:   <name>
 Account:   <account id or "no CLI session">
 Region:    <effective region(s)>
-Residency: EU | none
-Call sites: <n> (see list below)
+Residency: EU (commitment at <file:line> or "user confirmed") | none (nothing states one)
+Call sites: <n>, complete | <n>, partial — <what was cut> (see list below)
 
 Control                                   Status   Severity  Evidence                          Fix
 ----------------------------------------  -------  --------  --------------------------------  ----------------------
@@ -243,27 +308,32 @@ R3 Cross-region decision documented       FAIL     MEDIUM    no ADR found       
 R4 IAM locks profile + model ARNs         FAIL     HIGH      infra/iam.tf:58 Resource "*"      Remediation B
 I1 InvokeModel scoped to model ARNs       FAIL     HIGH      infra/iam.tf:58                   Remediation B
 I2 Role per workload / tenant             PASS     -         infra/iam.tf:20,44
+I3 No long-lived access keys              PASS     -         no AKIA in .env*/CI; task role
+I4 Ops actions out of runtime role        FAIL     MEDIUM    infra/iam.tf:70 DeleteGuardrail   Remediation B
 G1 Guardrail exists                       PASS     -         aws bedrock list-guardrails
-G2 Guardrail attached at every invoke     FAIL     HIGH      src/batch/summarise.py:77         Remediation C
+G2 Guardrail attached at every invoke     FAIL     HIGH      summarise.py:77, none enforced    Remediation C
 G3 Numbered version in prod               FAIL     MEDIUM    config/prod.yaml:9 DRAFT          Remediation C
 G4 PII entities + action per entity       FAIL     MEDIUM    infra/guardrail.tf:22             Remediation C
 G5 Denied topics                          N-A      -         open-domain assistant
 G6 Content filters with strengths         PASS     -         infra/guardrail.tf:30-48
 G7 Word filters (managed + custom)        PASS     -         infra/guardrail.tf:50-56
-G8 Contextual grounding for RAG           FAIL     MEDIUM    api/rag.py:60 no grounding        Remediation C
+G8 Contextual grounding for RAG           FAIL     MEDIUM    api/rag.py:60 no source/query     Remediation C + call site
 D1 Invocation logging on                  PASS     -         get-model-invocation-logging-configuration
 D2 Log retention set                      FAIL     LOW       infra/logging.tf:14               Remediation D
-D3 No raw PII in logs                     FAIL     HIGH      full text logging, no PII policy  Remediation C + D
-D4 KMS CMK on logs / KB / sources         FAIL     MEDIUM    infra/s3.tf:31 AES256             Remediation D
+D3 No raw PII in logs                     FAIL     HIGH      all 5 delivery flags on, no CW DP Remediation D
+D4 KMS CMK on logs / KB / sources         FAIL     MEDIUM    infra/s3.tf:31 AES256, CMK req'd  Remediation D
+D5 VPC endpoint for bedrock-runtime       N-A      -         subnet placement not established
 T1 KB per tenant or server-side filter    N-A      -         single tenant
 T2 Session / memory keyed by tenant       N-A      -         single tenant
+T3 Cache prefix holds no tenant data      N-A      -         single tenant
 P1 System prompt separated                PASS     -         src/llm/prompt.ts:5
 P2 Tool / retrieved text marked as data   FAIL     MEDIUM    api/rag.py:71                     wrap in <document> block
 P3 Output validated before action         PASS     -         agent/tools.py:40 zod schema
 Q1 Quotas known vs load                   FAIL     LOW       no capacity note                  record TPM in README
 Q2 Token budget per request               FAIL     MEDIUM    api/chat.ts:52                    set maxTokens + input cap
+Q3 Provisioned throughput decision        FAIL     LOW       Q3 probe: 1 bought, no note       record the decision
 
-Totals: PASS 8  FAIL 14  N-A 3    HIGH 5  MEDIUM 7  LOW 2
+Totals: PASS 9  FAIL 16  N-A 5    HIGH 5  MEDIUM 8  LOW 3
 
 CALL SITES
   src/llm/client.ts:41        global.anthropic.claude-...          guardrail: yes (v3)
@@ -306,13 +376,20 @@ data "aws_iam_policy_document" "bedrock_invoke" {
   # the foundation model in the source region and in every destination region the
   # profile routes to, reachable only through that profile. Without the condition
   # this is a direct grant on the model outside the profile — control I1.
+  #
+  # This resource list is the exact models[].modelArn set from
+  #   aws bedrock get-inference-profile --inference-profile-identifier <id> \
+  #     --region <source> --query 'models[].modelArn'
+  # Do not hand-write it and do not carry the ARNs below over from this template:
+  # a profile's destinations are not derivable from its prefix, and a list that
+  # misses one region produces intermittent AccessDenied only when routing lands
+  # there. If that call came back N-A, leave the resources block as a named
+  # placeholder with the command beside it rather than a guessed region set.
   statement {
     sid     = "InvokeModelThroughProfileOnly"
     actions = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
     resources = [
-      "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
-      "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
-      "arn:aws:bedrock:eu-west-3::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
+      # <models[].modelArn from get-inference-profile, one entry per routed region>
     ]
 
     condition {
@@ -409,14 +486,22 @@ resource "aws_cloudwatch_log_group" "bedrock" {
 
 resource "aws_bedrock_model_invocation_logging_configuration" "main" {
   logging_config {
-    # metadata only. Every delivery flag defaults to true, so all four have to be
-    # written out: turning off text alone still delivers image, video and
-    # embedding payloads. Turn them back on once the guardrail from C is attached
-    # at every call site and anonymizing the entities that would land here.
+    # metadata only. Every delivery flag defaults to true, so all five have to be
+    # written out: turning off text alone still delivers image, audio, video and
+    # embedding payloads. The guardrail from C does not substitute for this — the
+    # log's input field holds the original request whatever the guardrail masked.
+    # To turn payload delivery back on, put a CloudWatch Logs data protection
+    # policy on the destination group first.
+    #
+    # audio_data_delivery_enabled is in the API; confirm the pinned AWS provider
+    # version exposes the argument before emitting this line, since an unknown
+    # argument fails terraform plan. If it does not, drop the line and say in the
+    # Fix cell that the audio flag has to be set through the API or console.
     text_data_delivery_enabled      = false
     image_data_delivery_enabled     = false
     embedding_data_delivery_enabled = false
     video_data_delivery_enabled     = false
+    audio_data_delivery_enabled     = false
     cloudwatch_config {
       log_group_name = aws_cloudwatch_log_group.bedrock.name
       role_arn       = aws_iam_role.bedrock_logging.arn
@@ -435,9 +520,10 @@ Some FAILs are not infrastructure. A Fix cell that names a prose action — writ
 
 1. **Read-only.** Every `aws` call is a `list-*`, `get-*`, or `describe-*`. This skill never creates, updates, or deletes a policy, logging configuration, endpoint, or any other resource, never purchases provisioned throughput, and never writes to the customer account. The only write is the local report file, and only when asked.
 2. **Never create or delete guardrails.** Not even a scratch one "to test". Remediation is Terraform text for the user to review and apply.
-3. **EU residency is strict.** When the account is in `eu-central-1`, `eu-west-1`, or another `eu-*` region, or the product promises EU data residency, every `us-*` model call, `us.` profile, or `global.` profile is HIGH. Do not downgrade it because "the data is not sensitive".
+3. **EU residency is strict, once it is established.** Establishing it takes a written commitment — a DPA or contract clause, a residency statement in the product docs, an ADR naming EU-only inference — or the user's answer, not an `eu-*` provider block and not a GDPR mention. Once established, every `us-*` model call, `us.` profile, or `global.` profile is HIGH, and you do not downgrade it because "the data is not sensitive". Without it, `RESIDENCY=none`: cross-region routing is scored under R3 as an undocumented decision, and R2 is `N-A (no residency commitment)`.
 4. **Inference profiles beat region conditions.** Never mark R4 as PASS on the strength of `aws:RequestedRegion` alone. A geographic profile is locked by the regional inference-profile ARN plus the foundation-model ARNs in the source and destination regions, gated on `bedrock:InferenceProfileArn`. A `global.` profile is locked by the regional profile ARN gated on the requesting region, the regional model ARN, and the region-less model ARN `arn:aws:bedrock:::foundation-model/<model>` under `aws:RequestedRegion` equal to `unspecified` — its destination regions cannot be listed, so the condition key is the only binding, and a model ARN granted without it is control I1.
-5. **Evidence or N-A.** Every PASS cites a file and line or a CLI command output. A control you could not check is `N-A` with the reason, not a PASS by default. If the CLI has no session, say so and audit from code; never ask the user to paste keys.
+5. **Evidence or N-A.** Every PASS cites a file and line or a CLI command output. A control you could not check is `N-A` with the reason, not a PASS by default. If the CLI has no session, say so and audit from code; never ask the user to paste keys. An empty result is only evidence when the command succeeded, so every live check runs through `bg_probe` and every `N-A (exit …)` it prints stays `N-A` in the table — an `AccessDenied`, a region with no endpoint, or an expired token is never a FAIL and never a PASS.
 6. **Severity is per finding, not per control.** Two call sites missing the guardrail are two HIGH findings under G2. Controls that do not apply get N-A, not padding.
+7. **A severity has to be carried by the evidence the step gathered.** Where the higher severity depends on a fact the step did not establish — no enforced guardrail covers this call site, the residency commitment exists, the whole IAM policy set was readable, the request supplies a grounding source — either gather that evidence first or record the lower severity, with the gap named in the Evidence cell.
 
 {{include lib/snippets/capture-learnings.md}}

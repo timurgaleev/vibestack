@@ -77,6 +77,32 @@ profile first, then prove it authenticates. In this order:
 The successful call returns `Account` and `Arn`. Keep the account id in `ACCOUNT` for
 the budgets query in Step 1. On the MCP path the tool response carries the account.
 
+**Is this the payer account?** The linked-account table in Step 1 only means anything for
+an Organizations management account, and nothing else in this skill establishes whether
+this is one. Ask Organizations and keep the exit status, because "no organization" and
+"not allowed to look" are different answers:
+
+```bash
+MASTER=$(aws organizations describe-organization \
+  --query 'Organization.MasterAccountId' --output text 2>&1); ORG_RC=$?
+if [ "$ORG_RC" -eq 0 ] && [ "$MASTER" = "$ACCOUNT" ]; then
+  ORG_ROLE="payer"
+elif [ "$ORG_RC" -eq 0 ]; then
+  ORG_ROLE="member"
+elif printf '%s\n' "$MASTER" | grep -q 'AWSOrganizationsNotInUse'; then
+  ORG_ROLE="standalone"
+else
+  ORG_ROLE="unknown"
+fi
+echo "ORG_ROLE: $ORG_ROLE"
+```
+
+- `payer` — this is the management account. Run the linked-account table in Step 1.
+- `member` or `standalone` — there is nothing to break out. Skip that table and say which
+  of the two it was.
+- `unknown` — the call was denied or failed. Report the linked-account table as N-A with
+  the error text. Never print "no linked accounts" on the strength of a denied call.
+
 **Period.** Default: the last full calendar month, compared with the month before it.
 Compute both ranges (Cost Explorer end dates are exclusive):
 
@@ -94,9 +120,11 @@ Only ask about the period when the user named one that is ambiguous ("this quart
 **Conventions for every query in this skill:**
 
 - Metric: `UnblendedCost`.
-- Filter out `RecordType` values `Credit` and `Refund` so a one-off credit does not hide a real rise.
-- Group by `SERVICE` first. Group by `LINKED_ACCOUNT` when the account is a payer, and by a cost-allocation tag (`team`, `env`, `project`) when one is active.
+- Filter out `RecordType` values `Credit` and `Refund` so a one-off credit does not hide a real rise. This holds for the Cost Explorer `get-cost-and-usage` queries in Steps 1-3 only. Budgets carries its own cost basis and the commitment APIs report on an amortized basis; those steps say so where it matters.
+- Group by `SERVICE` first. Group by `LINKED_ACCOUNT` only when `ORG_ROLE` is `payer`, and by the cost-allocation tag the user names in Step 3 when one is active.
+- `REGION` is not a valid `GroupBy` dimension for `GetCostAndUsage` — the documented `DIMENSION` values are `AZ`, `INSTANCE_TYPE`, `LEGAL_ENTITY_NAME`, `INVOICING_ENTITY`, `LINKED_ACCOUNT`, `OPERATION`, `PLATFORM`, `PURCHASE_TYPE`, `SERVICE`, `TENANCY`, `RECORD_TYPE`, `USAGE_TYPE`. To get per-region numbers, filter on the `REGION` dimension one region at a time.
 - Round to whole dollars in tables; keep cents only in the header total.
+- Every `aws` call in this skill is a describe, get, or list. Capture the exit status of any call whose empty result would otherwise be read as a clean bill of health, and report N-A with the error text when it failed. An access-denied response is not a pass and not a finding.
 
 ---
 
@@ -126,22 +154,41 @@ What a finding looks like:
 - **MEDIUM** — a service that was under $50 last month is now in the top 10.
 - **LOW** — a service down more than 30% (worth a line: was something turned off on purpose?).
 
-If the account is a payer, run the same query grouped by `LINKED_ACCOUNT` and add a
-second table when any linked account moved more than 15%.
+When `ORG_ROLE` is `payer`, run the same query grouped by `LINKED_ACCOUNT` and fill the
+`BY LINKED ACCOUNT` section of the report with the accounts that moved more than 15%. For
+`member` and `standalone`, say on the `Org role:` line which of the two it is and drop that
+section; for `unknown`, keep the section and print it as N-A with the error text.
 
-**Budgets.** Compare the month against what the account said it would spend.
-MCP path: `budgets`. CLI path:
+**Budgets.** Compare each budget against its own definition — not against the Step 1
+total. MCP path: `budgets`. CLI path:
 
 ```bash
 aws budgets describe-budgets --account-id "$ACCOUNT" --max-results 100 --output json
 ```
 
-For each `COST` budget compare `CalculatedSpend.ActualSpend` and
-`CalculatedSpend.ForecastedSpend` with `BudgetLimit`:
+A budget's `CalculatedSpend` is the spend for *that budget's* current period on *that
+budget's* cost basis. Before comparing anything, read the four fields that define it:
 
-- **HIGH** — actual spend is over the limit.
-- **MEDIUM** — forecasted spend is over the limit, or actual is above 90% of it.
-- **LOW** — no budget exists at all; nothing will alert when the bill jumps.
+- `TimeUnit` — `DAILY`, `MONTHLY`, `QUARTERLY`, `ANNUALLY` or `CUSTOM`. Only a `MONTHLY`
+  budget's period lines up with the report month, and even then `CalculatedSpend` covers
+  the month in progress, not the last full month in the header.
+- `TimePeriod` — where that period actually starts and ends.
+- `FilterExpression` (or the deprecated `CostFilters`) — a budget scoped to one service,
+  region, tag or linked account is not measuring the account total.
+- `CostTypes` and `Metrics` — the metric may be `BlendedCost`, `AmortizedCost`,
+  `NetUnblendedCost` or another value, and `CostTypes` decides whether credits and
+  refunds are included. This is the account's choice, not the skill's convention.
+
+Compare like with like or not at all:
+
+- **HIGH** — `CalculatedSpend.ActualSpend` is over `BudgetLimit`, for any `COST` budget.
+  The budget's own numbers settle this, whatever its period or filters.
+- **MEDIUM** — `CalculatedSpend.ForecastedSpend` is over `BudgetLimit`, or actual is
+  above 90% of it.
+- **LOW** — no `COST` budget exists at all; nothing will alert when the bill jumps.
+- Report a budget whose `TimeUnit`, `TimePeriod`, filters or metric differ from the report
+  header alongside its scope in one clause ("quarterly, EC2 only, amortized"), so nobody
+  reads it as a verdict on the header total.
 
 ---
 
@@ -181,6 +228,26 @@ aws ce get-cost-and-usage \
 
 The largest usage-type delta names the line item that moved.
 
+A monthly figure says a line item moved, not when it moved, so no onset date exists
+yet. When you need one — to match the change against a deploy or a launch — run the
+same query once more for that usage type at daily granularity, and read the onset off
+the first day that steps up:
+
+```bash
+aws ce get-cost-and-usage \
+  --time-period Start="$PREV_START",End="$THIS_END" \
+  --granularity DAILY \
+  --metrics UnblendedCost \
+  --filter '{"And":[
+    {"Dimensions":{"Key":"USAGE_TYPE","Values":["<usage type>"]}},
+    {"Not":{"Dimensions":{"Key":"RECORD_TYPE","Values":["Credit","Refund"]}}}
+  ]}' \
+  --output json
+```
+
+Without that drill-down, write the finding as a month-over-month change and give no
+date. A date that no query returned is the failure this whole step exists to avoid.
+
 Severity: **HIGH** when the impact is over $500 or the anomaly is still open; **MEDIUM**
 otherwise. An anomaly that Cost Anomaly Detection already closed and that matches a
 known change (the user tells you, or a tag says so) is **INFO**.
@@ -189,49 +256,139 @@ known change (the user tells you, or a tag says so) is **INFO**.
 
 ## Step 3: Waste
 
-Four checks. Each is read-only. Sum the monthly figure for each and carry it to Step 5.
+Four checks. Each is read-only. Sum the monthly figure for each check that produces one
+and carry it to Step 5; a check that only produces candidates carries the candidate list.
 
-**Over-provisioned compute.** MCP path: `compute-optimizer` for EC2, ASG, EBS, Lambda,
-RDS. CLI path:
+**The region list.** Three of the four checks call regional APIs, so settle the region
+list first, from the account rather than from spend. Spend-derived region lists miss
+regions that hold only unattached volumes, snapshots, load balancers or NAT gateways —
+exactly what this step is looking for.
 
 ```bash
-aws compute-optimizer get-enrollment-status --output json
-aws compute-optimizer get-ec2-instance-recommendations --max-results 100 --output json
-aws compute-optimizer get-ebs-volume-recommendations --max-results 100 --output json
+REGIONS=$(aws account list-regions \
+  --region-opt-status-contains ENABLED ENABLED_BY_DEFAULT \
+  --query 'Regions[].RegionName' --output text 2>&1); REG_RC=$?
+if [ "$REG_RC" -ne 0 ]; then
+  REGIONS=$(aws ec2 describe-regions \
+    --query 'Regions[].RegionName' --output text 2>&1); REG_RC=$?
+fi
+if [ "$REG_RC" -ne 0 ]; then
+  echo "REGIONS: N-A — $REGIONS"
+else
+  echo "REGIONS: $REGIONS"
+fi
+```
+
+If both calls fail, the regional checks below are N-A, not clean. Say so with the error
+text and carry no dollar figure from them. `aws ec2 describe-regions` lists regions the
+account can reach; `aws account list-regions` is the one that reports opt-in status, so
+prefer it and treat the EC2 call as the fallback.
+
+**Over-provisioned compute.** MCP path: `compute-optimizer`, which covers the resource
+types Compute Optimizer supports (EC2 instances, Auto Scaling groups, EBS volumes, Lambda
+functions, ECS services on Fargate, RDS DB instances). CLI path, per region in
+`$REGIONS`:
+
+```bash
+aws compute-optimizer get-enrollment-status --region "$R" --output json
+aws compute-optimizer get-ec2-instance-recommendations --region "$R" --max-results 100 --output json
+aws compute-optimizer get-ebs-volume-recommendations --region "$R" --max-results 100 --output json
 ```
 
 If enrollment is `Inactive`, record it (LOW: "Compute Optimizer not enrolled — no
-rightsizing data") and skip. Otherwise count findings with `finding: Overprovisioned`
-and add up `estimatedMonthlySavings`. **HIGH** when the sum is over $200/month.
+rightsizing data") and skip that region.
 
-**Idle resources.** MCP path: `cost-optimization` (Cost Optimization Hub) returns
-these directly with estimated savings. CLI path: first find the regions in use by
-re-running the Step 1 query for this month grouped by region and service together
-(`--group-by Type=DIMENSION,Key=REGION Type=DIMENSION,Key=SERVICE --time-period Start="$THIS_START",End="$THIS_END"`).
-Every region whose EC2 rows sum above $1 is in use; `global` and `NoRegion` are not
-regions and are skipped. Then run each command below once per region with
-`--region <name>`:
+The two CLI calls cover EC2 instances and EBS volumes only. Say that in the report —
+"EC2 instances and EBS volumes, <n> regions" — rather than implying the whole Compute
+Optimizer surface was checked. Add `get-auto-scaling-group-recommendations`,
+`get-lambda-function-recommendations` or `get-rds-database-recommendations` if you want
+those, and widen the wording to match.
+
+The `finding` values differ by resource type, so match each one against its own set:
+
+- EC2 instances: `Underprovisioned | Overprovisioned | Optimized | NotOptimized`. Count
+  `Overprovisioned` (the API may render it `OVER_PROVISIONED`).
+- EBS volumes: `Optimized | NotOptimized` only. There is no `Overprovisioned` for a
+  volume — count `NotOptimized`, and note that it also covers under-provisioned volumes,
+  so it is a rightsizing candidate rather than proven waste on its own.
+
+Savings live on the recommendation *options*, not on the recommendation:
+`<type>RecommendationOptions[].savingsOpportunity.estimatedMonthlySavings.value`. Take
+the option with `rank: 1` — the top-ranked one — and sum those. Summing every option
+counts the same resource several times over.
+
+`savingsOpportunity` is only populated when the account has opted into Cost Explorer and
+enabled EC2 resource recommendations there. When it is absent, report the count of
+over-provisioned resources with no dollar figure and no severity above **LOW**; the
+severity below needs the dollars.
+
+**HIGH** when the summed rank-1 savings exceed $200/month.
+
+**Idle resources.** MCP path: `cost-optimization` (Cost Optimization Hub) returns these
+directly with estimated savings. CLI path: run each command below once per region in
+`$REGIONS`, with `--region <name>`:
 
 ```bash
 aws ec2 describe-volumes --filters Name=status,Values=available \
   --query 'Volumes[].{id:VolumeId,gb:Size,type:VolumeType}' --output json
 aws ec2 describe-snapshots --owner-ids self \
-  --query "Snapshots[?StartTime<'$(date -v-1y +%Y-%m-%d 2>/dev/null || date -d '1 year ago' +%Y-%m-%d)'].[SnapshotId,VolumeSize]" --output json
+  --query "Snapshots[?StartTime<'$(date -v-1y +%Y-%m-%d 2>/dev/null || date -d '1 year ago' +%Y-%m-%d)'].{id:SnapshotId,started:StartTime,volume:VolumeId,gb:VolumeSize}" --output json
 aws elbv2 describe-load-balancers --query 'LoadBalancers[].[LoadBalancerArn,State.Code]' --output json
-aws ec2 describe-nat-gateways --filter Name=state,Values=available --query 'NatGateways[].[NatGatewayId,VpcId]' --output json
+aws ec2 describe-nat-gateways --filter Name=state,Values=available \
+  --query 'NatGateways[].{id:NatGatewayId,vpc:VpcId,mode:AvailabilityMode}' --output json
 ```
 
-Unattached EBS volumes and snapshots older than a year are waste at list price (gp3
-about $0.08/GB-month, snapshots about $0.05/GB-month). For each load balancer, check
-target health; one with zero healthy targets across all its target groups is idle at
-roughly $16-22/month:
+**Unattached EBS volumes** are billed on provisioned size whether or not anything reads
+them, so size times list price is a fair estimate (gp3 about $0.08/GB-month). Confidence:
+`medium` — it is list price, not the account's negotiated rate.
+
+**Old snapshots** are a different case. EBS snapshots are incremental: a snapshot stores
+only the blocks that changed since the previous one, and deleting it removes only the
+blocks no other snapshot references. The EBS user guide is explicit — "Deleting a
+snapshot might not reduce your organization's data storage costs. Other snapshots might
+reference that snapshot's data, and referenced data is always preserved." `VolumeSize` is
+the size of the source volume, not the bytes this snapshot holds, so `VolumeSize` times a
+flat rate is not a saving and must not be printed as one. Age alone is not waste either:
+a year-old snapshot may be a retained backup, and snapshots backing a registered AMI or
+managed by AWS Backup cannot be deleted at all.
+
+Report them as **candidates for review** with the evidence actually in hand — the count,
+the oldest `started` value, and the `volume` ids — and no dollar figure. Those three come
+from the projection above; the age filter alone does not select them, so a query that
+projects only `SnapshotId` cannot report a date. Name a `volume` id only for a snapshot
+taken from a volume in this account — the API reference is explicit that "snapshots created
+by a copy snapshot operation have an arbitrary volume ID that you should not use for any
+purpose". Severity **LOW**. To turn a
+candidate into a number, the account needs per-snapshot stored bytes, which comes from
+the Cost and Usage Report (`EBS:SnapshotUsage` line items) or S3 Storage Lens-style
+reporting, not from `describe-snapshots`; say that is the next step rather than guessing.
+
+**Load balancers.** Zero healthy targets right now does not make a load balancer idle —
+it also looks like an outage, a failover, or something provisioned ahead of its targets.
+Take the instantaneous health as a prompt, then confirm with traffic history over the
+report period before assigning any saving:
 
 ```bash
 aws elbv2 describe-target-groups --load-balancer-arn <arn> \
   --query 'TargetGroups[].TargetGroupArn' --output json
 aws elbv2 describe-target-health --target-group-arn <target group arn> \
   --query 'TargetHealthDescriptions[].TargetHealth.State' --output json
+aws cloudwatch get-metric-statistics --region "$R" \
+  --namespace AWS/ApplicationELB --metric-name RequestCount \
+  --dimensions Name=LoadBalancer,Value=<lb dimension value> \
+  --start-time "$THIS_START"T00:00:00Z --end-time "$THIS_END"T00:00:00Z \
+  --period 86400 --statistics Sum --output json
 ```
+
+Use `AWS/NetworkELB` with `ProcessedBytes` and `ActiveFlowCount` for a network load
+balancer. Elastic Load Balancing only publishes these metrics while traffic is flowing —
+"If there are no requests flowing through the load balancer or no data for a metric, the
+metric is not reported" — so an empty datapoint list across the whole period, from a call
+that exited 0, is real evidence of no traffic. A call that failed is N-A.
+
+A load balancer with zero healthy targets *and* no traffic datapoints for the period is
+idle at roughly $16-22/month, confidence `medium`. With one of the two, it is a candidate
+at **LOW** and no dollar figure.
 
 For NAT gateways, price them with their own usage-type query — NAT charges land under
 the `EC2 - Other` service, which Step 1 only ever shows as a single service row:
@@ -249,19 +406,114 @@ aws ce get-cost-and-usage \
   --output json
 ```
 
-Keep the `NatGateway-Hours` and `NatGateway-Bytes` rows; a NAT gateway in a VPC with
-no running instances is $32/month of nothing.
-**MEDIUM** when idle spend is over $50/month, **HIGH** over $300/month.
+Keep the `NatGateway-Hours` and `NatGateway-Bytes` rows. That is the account's total NAT
+spend for the month: the query aggregates every gateway into one usage-type row, so it
+cannot say what any single gateway cost. Divide by the gateway count only to state an
+average, and label it as one.
 
-**Untagged spend share.** Query the month grouped by the account's primary
-cost-allocation tag (`aws ce list-cost-allocation-tags --status Active` names them).
-The row with an empty tag value is untagged spend. Report its share of the total.
-**MEDIUM** when more than 30% of spend carries no owner tag; it blocks chargeback and
-usually hides the idle resources above.
+A VPC with no running EC2 instances is not an idle NAT gateway. Lambda in a VPC, ECS and
+Fargate tasks, EKS nodes, RDS, and anything reaching the VPC over peering, Transit
+Gateway or a VPN all send traffic through it without a running instance in
+`describe-instances`. The gateway's own CloudWatch metrics in namespace `AWS/NATGateway`
+are what settle it — but only under the dimensions that gateway actually publishes. The
+VPC user guide splits them by availability mode: "NatGatewayId — Zonal NAT gateways use
+only this dimension. Regional NAT gateways use this dimension together with
+`AvailabilityZone`." `GetMetricStatistics` matches the whole set — "CloudWatch treats each
+unique combination of dimensions as a separate metric. If a specific combination of
+dimensions was not published, you can't retrieve statistics for it" — so a
+`NatGatewayId`-only query against a regional gateway exits 0 with an empty `Datapoints`
+array however busy the gateway is.
 
-**Free tier.** MCP path only (`free-tier-usage`): **LOW** for any usage above 80% of
-its free-tier limit — nothing is being paid for yet, but the next month will bill.
-Skip silently on the CLI path.
+The `mode` field from the discovery call says which kind it is, `zonal` or `regional`. Ask
+CloudWatch which dimension sets it holds rather than inferring them, once per gateway:
+
+```bash
+aws cloudwatch list-metrics --region "$R" \
+  --namespace AWS/NATGateway --metric-name BytesOutToDestination \
+  --dimensions Name=NatGatewayId,Value=<nat gateway id> \
+  --query 'Metrics[].Dimensions' --output json
+```
+
+`ListMetrics` filters on dimension name rather than on the whole set — "if you specify one
+dimension name and a metric has that dimension and also other dimensions, it will be
+returned" — so this comes back with one entry for a zonal gateway and one entry per
+Availability Zone for a regional one. It is also the fallback when `mode` is null because
+the installed CLI predates the field.
+
+Run the three metrics below once for each dimension set returned, adding
+`Name=AvailabilityZone,Value=<az>` next to the gateway id for a regional gateway:
+
+```bash
+for M in BytesInFromSource BytesOutToDestination; do
+  aws cloudwatch get-metric-statistics --region "$R" \
+    --namespace AWS/NATGateway --metric-name "$M" \
+    --dimensions Name=NatGatewayId,Value=<nat gateway id> \
+    --start-time "$THIS_START"T00:00:00Z --end-time "$THIS_END"T00:00:00Z \
+    --period 86400 --statistics Sum --output json || echo "N-A $M"
+done
+aws cloudwatch get-metric-statistics --region "$R" \
+  --namespace AWS/NATGateway --metric-name ActiveConnectionCount \
+  --dimensions Name=NatGatewayId,Value=<nat gateway id> \
+  --start-time "$THIS_START"T00:00:00Z --end-time "$THIS_END"T00:00:00Z \
+  --period 86400 --statistics Maximum --output json
+```
+
+`ActiveConnectionCount` is documented as "the total number of concurrent active TCP
+connections through the NAT gateway. A value of zero indicates that there are no active
+connections."
+
+An empty `Datapoints` array does not mean zero here, and this is the opposite of the load
+balancer case above. CloudWatch "delivers this metric data at 1-minute intervals" for a NAT
+gateway, so a gateway that is up and idle reports zeros. No datapoints at all means the
+dimension set was wrong or the metric was never published, which is **N-A**.
+
+Call a gateway idle only when every dimension set it publishes under returns datapoints
+from calls that exited 0, and all three metrics are zero across the period. A failed call,
+an empty datapoint list, or a `list-metrics` call that returned no dimension sets each
+make the gateway N-A. A gateway that is quiet but not silent is a candidate at **LOW**,
+not a saving.
+
+**MEDIUM** when idle spend is over $50/month, **HIGH** over $300/month. Both thresholds
+apply to resources that cleared the evidence bar above — instantaneous state alone never
+reaches MEDIUM.
+
+**Untagged spend share.** List the active user-defined cost-allocation tags:
+
+```bash
+aws ce list-cost-allocation-tags --status Active --type UserDefined --output json
+```
+
+The API returns a flat list with no notion of a primary or ownership tag — `team`,
+`env`, `project`, `cost-center` and `Name` all come back the same way. Picking one
+arbitrarily classifies spend tagged under a different key as untagged and fires a finding
+that is not true.
+
+- No active tag at all: **LOW**, "no cost-allocation tags active", no percentage.
+- Exactly one active tag: use it, and name it in the finding.
+- More than one: ask which key carries ownership (AskUserQuestion, one option per key,
+  plus "report all of them"). If the user does not pick, report coverage per candidate
+  tag as separate rows and draw no single conclusion.
+
+For the chosen key, query the month grouped by `Type=TAG,Key=<key>`. Grouping by `TAG`
+returns all tag values including empty strings, and the empty-value row is the untagged
+spend. Report its share of the total.
+
+**MEDIUM** when more than 30% of spend carries no owner tag under a key the user
+confirmed is the ownership tag; it blocks chargeback and usually hides the idle resources
+above. Without that confirmation the same number is **LOW** and reported per key.
+
+**Free tier.** MCP path only (`free-tier-usage`). Two things to get right in the wording:
+
+- An account on the **paid** plan is charged standard pay-as-you-go rates as soon as
+  usage passes a free allowance or the credit balance runs out — in the same month, not
+  the next one. An account on the **free** plan incurs no charges, and that plan ends
+  after six months or when its credits are used up, whichever comes first.
+- Usage above a limit is therefore not "not yet paid for". Say which plan the account is
+  on, and whether credits are still covering the overage, before saying anything about
+  when it starts to bill.
+
+**LOW** for any usage above 80% of its free-tier allowance, phrased as above. Skip
+silently on the CLI path.
 
 ---
 
@@ -282,8 +534,30 @@ aws ce get-reservation-utilization --time-period Start="$THIS_START",End="$THIS_
 Findings:
 
 - **HIGH** — utilization under 70%. Money was paid for commitment that went unused; note the unused dollar amount for the month.
-- **MEDIUM** — coverage under 60% while on-demand EC2, Fargate, or Lambda spend is steady (within 15% month over month). Pull the purchase recommendation for the size: `aws ce get-savings-plans-purchase-recommendation --savings-plans-type COMPUTE_SP --term-in-years ONE_YEAR --payment-option NO_UPFRONT --lookback-period-in-days THIRTY_DAYS --output json`. Report the recommended hourly commitment and the estimated monthly savings. Never purchase.
-- **INFO** — a plan or reservation expiring within 60 days (`aws savingsplans describe-savings-plans`, `aws ec2 describe-reserved-instances --filters Name=state,Values=active`).
+- **MEDIUM** — coverage under 60% while on-demand EC2, Fargate, or Lambda spend is steady (within 15% month over month). Take that steadiness reading from the on-demand usage-type rows of the Step 2 query (`BoxUsage:*`, Fargate vCPU and GB hours, Lambda duration), not from the service total, which does not separate on-demand from covered usage. If the on-demand line moved more than 15%, the precondition fails: report the coverage figure at **LOW**, say what the on-demand line did, and rank no commitment purchase until the new level has held for a full month. Pull the purchase recommendation for the size: `aws ce get-savings-plans-purchase-recommendation --savings-plans-type COMPUTE_SP --term-in-years ONE_YEAR --payment-option NO_UPFRONT --lookback-period-in-days THIRTY_DAYS --output json`. Report the recommended hourly commitment and the estimated monthly savings. Never purchase.
+- **INFO** — a plan or reservation expiring within 60 days. Savings Plans come from `aws savingsplans describe-savings-plans`. Reserved Instances are per-service and per-region: `aws ec2 describe-reserved-instances --filters Name=state,Values=active --region <name>` returns EC2 reservations in one region only. Loop it over `$REGIONS` from Step 3, and use `aws rds describe-reserved-db-instances`, `aws elasticache describe-reserved-cache-nodes` or `aws redshift describe-reserved-nodes` for the other services, per region, if you report on them.
+
+**Scope the coverage numbers, or the report will not reconcile.** `GetReservationCoverage`
+spans EC2, ElastiCache, RDS and Redshift, and with no `SERVICE` filter Cost Explorer
+defaults to EC2. The expiry check above is per region and per service. Pick one and be
+explicit:
+
+- Filter the coverage and utilization calls to the EC2 compute service value
+  (`SERVICE = "Amazon Elastic Compute Cloud - Compute"`) and to the one region the expiry
+  check covers (`REGION = "us-east-1"`, say). Both APIs take an `Expression` with `And`
+  over those two dimensions, and both list `REGION` and `SERVICE` as filterable. Label the
+  row "EC2, <region> only" — the cheap option, and the one that matches an
+  EC2-in-one-region expiry check. Without a `REGION` filter the calls return EC2 across
+  every region the account uses, and the row has to say "EC2, all regions" instead.
+- Or query each service you care about, loop the expiry check over `$REGIONS` and every
+  matching reservation API, and label the row with the services covered.
+
+Never print an unlabelled coverage percentage next to a partial expiry list.
+
+Note the cost basis: `GetSavingsPlansUtilization` reports `AmortizedCommitment` and
+`Savings.NetSavings` against an `OnDemandCostEquivalent`. That is an amortized basis, not
+the unblended credit-excluded basis in the header. Say "amortized" wherever these numbers
+appear.
 
 If there is no compute spend to speak of (under $100/month), say so and skip this step.
 
@@ -291,15 +565,32 @@ If there is no compute spend to speak of (under $100/month), say so and skip thi
 
 ## Step 5: Three recommendations
 
-Exactly three. Rank by estimated monthly dollar impact, largest first. Candidates come
-from Steps 2-4; pick the top three by dollars, not by how easy they are. For each one
-write:
+Exactly three. Candidates come from Steps 2-4; pick by dollars, not by how easy they are.
+Verified savings come first, ranked by monthly dollars; investigation candidates follow,
+also ranked by dollars. A larger at-risk figure never outranks a smaller confirmed one.
+
+**An anomaly is not a saving.** Step 2 measures what spend *changed*. It says nothing
+about whether the new spend is avoidable — a legitimate launch, a migration and a
+forgotten test fleet all look identical in Cost Explorer. Anomaly impact may only be
+ranked against verified waste once resource-level evidence says the spend is avoidable:
+utilization for the resources behind it, plus an owner or the absence of one. Until then
+an anomaly belongs in the list as an **investigation candidate** — the action is "find
+out what launched", the dollar figure is labelled "at risk, not yet a saving", and
+confidence is `low`.
+
+For each of the three write:
 
 - the action in one sentence
-- estimated monthly saving in dollars, with the period the estimate is based on
-- confidence: `high` (saving figure comes straight from the AWS tool), `medium` (list price times observed usage), `low` (assumes the workload is steady)
+- estimated monthly saving in dollars, with the period the estimate is based on, or
+  "at risk" for an investigation candidate
+- confidence: `high` (saving figure comes straight from the AWS tool), `medium` (list price times observed usage), `low` (assumes the workload is steady, or the spend has not been shown to be avoidable)
 - the exact command or console path that does it, so the user can act after reading
 - the risk: what breaks if the assumption is wrong (a "stopped" instance someone needed, a commitment that outlives the workload)
+
+Every claim in a recommendation must trace to a step that collected it. Instance counts,
+instance ids, tag status and launch dates come from `describe-instances`, not from a
+Cost Explorer usage-type row — if the run did not make that call, the recommendation
+names the usage type and says the ids are still to be established.
 
 If fewer than three candidates clear $20/month, fill the remaining slots with the
 hygiene findings (no anomaly monitor, untagged spend, Compute Optimizer not enrolled)
@@ -329,10 +620,13 @@ AWS COST REVIEW
 ===============
 
 Account:   <alias or last 4 digits of the account id> (profile: <name>)
+Org role:  payer (4 linked accounts)
 Period:    2026-07-01..2026-07-31 vs 2026-06-01..2026-06-30
 Total:     $12,418.37  (+$1,904.12, +18.1% month over month)
 Data path: MCP | CLI
-Excludes:  credits, refunds
+Basis:     UnblendedCost, credits and refunds excluded (Cost Explorer queries;
+           budgets and commitments carry their own basis, labelled inline)
+Regions:   3 enabled (us-east-1, eu-west-1, ap-southeast-2)
 
 BY SERVICE (top 10, UnblendedCost)
 Service                    This month   Last month     Delta
@@ -343,41 +637,74 @@ Amazon S3                      $1,120       $1,090       +$30   +3%
 ...
 Other (14 services)              $610         $590       +$20   +3%
 
+BY LINKED ACCOUNT (payer only; accounts that moved more than 15%)
+Account                    This month   Last month     Delta
+-------------------------  ----------  -----------  --------
+prod (...4471)                 $7,980       $6,240    +$1,740  +28%
+sandbox (...9902)                $410         $250      +$160  +64%
+
 BUDGETS
-[MEDIUM] "monthly-total" limit $12,000 — actual $12,418 (103%), forecast $12,900
+[MEDIUM] "monthly-total" (monthly, unfiltered, unblended) limit $12,000 — forecast
+         $12,900 for 2026-08-01..2026-08-31, actual so far $402 (1 day elapsed).
+         Its period is the month in progress, so it is not a verdict on July's
+         $12,418.37 header total.
 
 ANOMALIES
-[HIGH]   EC2 BoxUsage:m5.4xlarge +$980 from 2026-07-12 — 4 new instances, untagged, us-east-1
-[MEDIUM] No anomaly monitor configured — Cost Anomaly Detection is off for this account
+[HIGH]   EC2 BoxUsage:m5.4xlarge +$980 month over month — largest usage-type delta
+         in EC2; no daily drill-down run, so no onset date; owning resources not
+         yet identified
+[LOW]    No anomaly monitor configured — Cost Anomaly Detection is off for this account
 
 WASTE
-[HIGH]   Compute Optimizer: 7 over-provisioned EC2 instances, $310/month
-[MEDIUM] 12 unattached EBS volumes (1.4 TB), 31 snapshots older than 1 year — $140/month
-[MEDIUM] 38% of spend carries no owner tag
+[HIGH]   Compute Optimizer (EC2 instances + EBS volumes, 3 regions):
+         7 over-provisioned EC2 instances, $310/month (rank-1 options)
+[MEDIUM] 12 unattached EBS volumes (1.4 TB) — $115/month at gp3 list price
+[LOW]    31 snapshots older than 1 year (oldest 2023-11-04) — candidates for review;
+         stored bytes unknown, so no saving figure (see CUR EBS:SnapshotUsage)
+[LOW]    38% of spend carries no owner tag under key "team"
+[LOW]    9% of spend carries no owner tag under key "project"
+         Both keys are candidates: 2 active tags, neither confirmed as the ownership
+         tag, so coverage is reported per key and no single figure is drawn from it.
 
 COMMITMENTS
-Savings Plans: coverage 41%, utilization 96%   RI: coverage 0%, utilization n/a
-[MEDIUM] Steady on-demand compute of $2,600/month with 41% coverage
+Savings Plans (EC2 only, amortized): coverage 41%, utilization 96%
+RI (EC2, us-east-1 only): coverage 0%, utilization N-A
+[LOW]    Coverage 41% is under 60%, but on-demand is not steady: BoxUsage:m5.4xlarge
+         rose +$980 in July (+60% on the on-demand line). No commitment size ranked
+         until that level holds for a full month.
 
-RECOMMENDATIONS (ranked by monthly $)
-1. $980/month  confidence: medium
-   Stop or right-size the 4 m5.4xlarge instances launched 2026-07-12 in us-east-1.
-   Run:  aws ec2 describe-instances --instance-ids <ids> --query 'Reservations[].Instances[].[InstanceId,Tags]'
-   Risk: they may be a deliberate scale-up nobody tagged; confirm the owner first.
-2. $620/month  confidence: high
-   Buy a 1-year no-upfront Compute Savings Plan at $1.10/hour (Cost Explorer recommendation, 30-day lookback).
-   Path: Billing console > Savings Plans > Recommendations
-   Risk: commitment outlives the workload if the EC2 fleet shrinks in the next year.
-3. $310/month  confidence: high
+RECOMMENDATIONS (verified savings first, each ranked by monthly $)
+1. $310/month  confidence: high
    Apply the 7 Compute Optimizer downsizes (list in report body).
-   Run:  aws compute-optimizer get-ec2-instance-recommendations --instance-arns <arns>
+   Run:  aws compute-optimizer get-ec2-instance-recommendations --region us-east-1 --instance-arns <arns>
    Risk: CPU headroom during monthly batch; check the 14-day p99 before resizing.
+2. $115/month  confidence: medium
+   Delete the 12 unattached EBS volumes (1.4 TB, ids in report body) after confirming no owner claims them.
+   Run:  aws ec2 describe-volumes --region us-east-1 --filters Name=status,Values=available
+   Risk: gp3 list price, not the account's rate; a volume kept as a cold copy of data still holds it.
+3. $980/month at risk, not yet a saving  confidence: low
+   Find out what scaled up behind EC2 BoxUsage:m5.4xlarge in July, then decide.
+   Run:  aws ce get-cost-and-usage --time-period Start=2026-07-01,End=2026-08-01 \
+           --granularity DAILY --metrics UnblendedCost \
+           --filter '{"Dimensions":{"Key":"USAGE_TYPE","Values":["BoxUsage:m5.4xlarge"]}}'
+         aws ec2 describe-instances --region us-east-1 \
+           --filters Name=instance-type,Values=m5.4xlarge \
+           --query 'Reservations[].Instances[].[InstanceId,LaunchTime,State.Name,Tags]'
+   Risk: this is a spend change, not proven waste — it may be a deliberate scale-up.
 
 Report written to: ~/.vibestack/projects/<slug>/aws-cost-2026-08-01.md
 ```
 
-Severity labels: `HIGH`, `MEDIUM`, `LOW`, `INFO`. Every dollar figure names the period
-it covers, either in the header or inline ("$310/month", "+$980 in July").
+The header and the linked-account section carry whichever of the four `ORG_ROLE` outcomes
+Step 0 produced. The example above is a payer. For `member` or `standalone` the `Org role:`
+line names which of the two it is and the `BY LINKED ACCOUNT` section is dropped entirely.
+For `unknown` keep the section heading and print `N-A — <error text>` under it: a denied
+`describe-organization` call is never reported as no linked accounts.
+
+Severity labels: `HIGH`, `MEDIUM`, `LOW`, `INFO`. A check that could not run is printed
+as `N-A` with the error text — it is not a severity, and it is never a pass. Every dollar
+figure names the period it covers, either in the header or inline ("$310/month",
+"+$980 in July"), and a figure that is exposure rather than saving says so.
 
 ---
 
@@ -387,7 +714,7 @@ it covers, either in the header or inline ("$310/month", "+$980 in July").
 2. **No account IDs in learnings.** Anything logged with `vibe-learnings-log` refers to the account by alias or by the project slug, never by the 12-digit id, an ARN, or a profile that contains one.
 3. **Dollars carry a period.** Never print a bare figure. "$4,210" means nothing; "$4,210 in July 2026" or "$310/month" does.
 4. **One data path, stated up front.** Do not mix MCP and CLI numbers in one table; the two round and filter slightly differently.
-5. **Credits and refunds are excluded** from every figure unless the user asks for the invoice view. Say so in the header.
+5. **Credits and refunds are excluded from the Cost Explorer figures** — the service, usage-type and tag queries in Steps 1-3 — unless the user asks for the invoice view. Say so in the header. Two places do not follow that basis and must be labelled where they appear: a budget uses its own `CostTypes` and `Metrics`, which the account chose; the Savings Plans and Reserved Instance numbers in Step 4 are amortized.
 6. **Exactly three recommendations.** Ranked by dollars. If the account is lean, say so rather than inventing savings.
 7. **Missing data is a finding, not a failure.** No anomaly monitor, no Compute Optimizer enrollment, no cost-allocation tags: report each one and move on.
 8. **Never guess at credentials.** If `sts get-caller-identity` fails, stop with the setup note. Do not read credential files or try other profiles unasked.
