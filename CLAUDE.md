@@ -192,6 +192,17 @@ own skill names** from them (never the root — Codex's bundled `.system/` lives
 there). Adding a runtime is one row per map. The `agents/openai.yaml` manifest
 registers the pack with Codex.
 
+**Withdrawing a skill needs the install manifest.** `prune_removed_skills`
+writes `.vibestack-manifest` — the names `vibestack_owned_names` emitted, one per
+line — into each target root, and on the next run removes any name that file
+claims which the pack no longer ships. Without it a withdrawn skill is
+indistinguishable from a skill another tool installed, so `adopt_foreign_entries`
+carries it back into the live root and it lives on forever. Remove a name only
+when the manifest claims it *and* `$root/$name/SKILL.md` still exists; `uninstall`
+deletes the manifest with the skills. Deleting `skills/<name>/` is therefore the
+whole of a removal — the pruning follows from the name leaving
+`vibestack_owned_names`.
+
 Invocation differs per runtime. Claude Code, Cursor and Kiro expose skills as
 `/name`. **Codex does not** — `/` there is reserved for its own commands, so `/office-hours`
 completes to nothing. A Codex skill is referenced as `$name` inside an ordinary message
@@ -221,7 +232,10 @@ Kiro, and Codex CLI by default. Three implications:
 
 3. **Run `bash test/test-install-integration.sh` after touching install/
    uninstall.** Covers regression (claude byte-identical), multi-target
-   install, idempotency, dry-run, hook warnings, uninstall round-trip.
+   install, idempotency, dry-run, hook warnings, uninstall round-trip, and the
+   withdrawn-skill prune — that a re-install removes a skill the manifest claims
+   and the pack dropped, leaves an unrelated directory alone, and takes the
+   manifest with it on uninstall.
 
 ## Naming and attribution
 
