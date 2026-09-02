@@ -15,7 +15,7 @@ Write like you're briefing a smart colleague, not programming a machine.
 Before creating a new skill, check what already exists. Ask: could an existing skill handle this with a different invocation? Could it be a trigger alias rather than a new file? Three layers to check:
 
 1. Existing skills in this repo
-2. Built-in behaviors of your agent (Claude Code, Cursor, or Kiro all ship native commands)
+2. Built-in behaviors of your agent (Claude Code, Cursor, Kiro, and Codex CLI all ship native commands)
 3. Whether it's actually a problem worth solving
 
 Skills multiply complexity. Add one only when you'd reach for it repeatedly.
@@ -35,7 +35,7 @@ A hook intercepts every matching tool call for the duration of a session. That i
 - Does the script fail safe? A crash should return `{}` (allow), not block the session.
 - Is it POSIX-portable? The scripts run on macOS and Linux without modification.
 
-**Cross-agent caveat:** hooks are the most agent-specific runtime feature in vibestack. Claude Code intercepts deterministically; Cursor and Kiro have hook frameworks but use different env-var conventions, so vibestack's hook commands degrade to soft-tier (LLM-instruction-only) in those targets. See `docs/agent-skills-compatibility-audit.md`. If a skill must be deterministic across all agents, design it without hooks.
+**Cross-agent caveat:** hooks are the most agent-specific runtime feature in vibestack. Claude Code intercepts deterministically; Cursor and Kiro have hook frameworks but use different env-var conventions, so vibestack's hook commands degrade to soft-tier (LLM-instruction-only) in those targets. Codex CLI has never been tested for this, so treat a hook there as unverified rather than as either tier. See `docs/agent-skills-compatibility-audit.md`. If a skill must be deterministic across all agents, design it without hooks.
 
 Add hooks sparingly. Write them defensively.
 

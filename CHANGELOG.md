@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.38.2 — 2026-09-02
+
+### Added
+
+- **First-run guides for the two new skill families.**
+  `docs/aws-reviews-first-run.md` covers `/aws-cost`, `/bedrock-guardrails`,
+  `/kb-review` and `/connect-review`: what each needs before it can run, whether
+  it does anything useful with no AWS session, what it asks you, how to tell it
+  worked, and where the report lands. `docs/llm-checks-first-run.md` covers
+  `/ai-cost-guard`, `/agent-eval` and `/mcp-review` in the order they are worth
+  running — cap the spend, measure the behaviour, review the server. Both were
+  the missing how-to quadrant: those nine skills had reference coverage and no
+  path from nothing to a first result.
+- **`docs/assets/skill-map.svg`** — the sixty skills in six families, on the
+  README. The table lists highlights and the full catalog lives in
+  `docs/skills.md`; neither shows the shape of the pack at a glance.
+- **`docs/external-tools.md` documents the gh CLI.** Twenty skills call it. Two
+  cannot work without it — `/address-pr-review`, whose helper scripts speak
+  GitHub's GraphQL API, and `/pr-summary` — while fourteen fall through to the
+  GitLab CLI or to plain git, and four lose one path each.
+
+### Changed
+
+- **`docs/internals.md` records the state files that were missing from it**: the
+  six per-project artifacts `/kb-review` writes, and `.vibestack-manifest`,
+  which install keeps in each target's skills root. It also now carries the
+  `/cso` saved-report schema note — Phase 5b uses a string phase id where every
+  other phase uses an integer, and its findings carry an ARN in the file field.
+- **The compatibility audit's two 46-skill verdicts are date-stamped** rather
+  than rewritten. That test ran against 46 skills on 2026-05-09; changing the
+  number to today's would claim coverage that never happened.
+- **`ETHOS.md` and the README safety note name Codex CLI** alongside the other
+  three runtimes, and say plainly that hook behavior there is unverified.
+
 ## 1.38.1 — 2026-09-02
 
 ### Fixed

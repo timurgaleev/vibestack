@@ -33,6 +33,63 @@ only blocker is one row per map in the target registry in `./install`.
 
 ---
 
+## gh CLI
+
+**Required by:** `/address-pr-review` and `/pr-summary` outright. Fourteen more
+skills call it when the remote is GitHub and fall through to `glab` or plain git
+when it is not: `/autoplan`, `/canary`, `/codex`, `/devex-review`,
+`/document-generate`, `/document-release`, `/land-and-deploy`,
+`/plan-ceo-review`, `/plan-design-review`, `/plan-devex-review`, `/qa`,
+`/retro`, `/review`, `/ship`. Four more — `/benchmark`, `/landing-report`,
+`/spec`, `/unslop` — reach for it on one path each and carry on without it.
+
+**What it is:** GitHub's own command-line client, authenticated once with `gh
+auth login`. Skills read pull requests, review threads, issues and workflow-run
+logs through it, and write PR bodies, titles, thread replies and issues back.
+Nothing here calls the REST or GraphQL API with a token of its own: the
+credential is whatever `gh` already holds, and no skill reads it.
+
+**Status:** vibestack does **not** bundle it, and does not install or
+authenticate it. Fourteen of the twenty skills above preflight with `gh auth
+status` — not the same fourteen as the platform-detecting group, since
+`/document-generate` skips the check and `/spec` makes it. `/ship` and `/review`
+read it to pick a platform and fall through when it fails, `/spec` to decide
+whether to run its duplicate-issue search, `/land-and-deploy` to stop before it
+tries to merge. The two skills that require `gh` do not preflight at all — the
+three helper scripts under `skills/address-pr-review/bin/` gate on
+`command -v gh` and bail out when the binary is missing, and `/pr-summary` goes
+straight to `gh pr view`.
+
+**If you don't have it:**
+
+- `/address-pr-review` stops. Its three helper scripts under
+  `skills/address-pr-review/bin/` all print `gh CLI not found — install it and
+  run 'gh auth login'` and exit non-zero — 2 from `pr-threads.sh` and
+  `pr-ci-failures.sh`, 1 from `pr-thread-reply.sh`. Every thread they fetch,
+  reply to or resolve is a `gh api graphql` call. That is also why the skill is
+  GitHub-only — review threads resolve through GraphQL, and `glab` has no
+  equivalent.
+- `/pr-summary` stops too. Reading the PR, its commits and its diff, then
+  writing the description and title back, is `gh pr view` / `gh pr diff` /
+  `gh pr edit` end to end, with no GitLab path.
+- The fourteen platform-detecting skills fall through their Step 0 chain —
+  `glab` when the remote is GitLab, then `git symbolic-ref`, then `origin/main`
+  or `origin/master` — and keep working against that base branch. `/ship`,
+  `/document-release`, `/land-and-deploy` and `/review` go further and read or
+  write the PR itself; those parts are what a missing `gh` costs on a GitHub
+  remote.
+- `/landing-report` reports `OFFLINE — queue-awareness unavailable`: without a
+  view of open PRs it cannot say which VERSION slots are claimed, and
+  `vibe-next-version` behind it falls back to local arithmetic.
+- `/spec` skips its duplicate-issue search, says so, and at the end prints the
+  issue title and body for you to paste into the new-issue form rather than
+  filing it.
+- `/unslop` loses its PR-number input and its write-back, and still works on
+  pasted text or a file path. `/benchmark` falls back to `main` as its diff
+  base.
+
+---
+
 ## browse daemon
 
 **Required by:** `/browse`, `/open-browser`, `/pair-agent`, `/setup-browser-cookies`
@@ -156,7 +213,7 @@ code is untrusted — listing its tools means executing it.
 
 ## Why aren't these bundled?
 
-vibestack is a curated skills pack. The browse daemon and the model-benchmark CLI are non-trivial standalone projects (a Chromium controller and a multi-provider LLM benchmark tool). Building and shipping them would expand the project scope well beyond "skills pack." The aws CLI and the MCP inspector are a different case: other people's tools, with their own release cadence, install story and credential handling — vendoring either would mean shipping a stale copy. The honest path in every case is to document the gap and let skills fail gracefully when the dependency is absent.
+vibestack is a curated skills pack. The browse daemon and the model-benchmark CLI are non-trivial standalone projects (a Chromium controller and a multi-provider LLM benchmark tool). Building and shipping them would expand the project scope well beyond "skills pack." The gh CLI, the aws CLI and the MCP inspector are a different case: other people's tools, with their own release cadence, install story and credential handling — vendoring any of them would mean shipping a stale copy, and in gh's case a second copy of a credential store the machine already has. The honest path in every case is to document the gap and let skills fail gracefully when the dependency is absent.
 
 The affected skills are kept in the pack because (a) they're useful when the daemon **is** available, (b) they fall back when it isn't, and (c) deleting them would lose the integration scaffolding for anyone who supplies their own daemon.
 

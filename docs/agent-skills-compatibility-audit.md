@@ -226,8 +226,10 @@ Direct quotes:
 - **Kiro:** _"YES — I found it listed in the context entry describing your
   installed Kiro skills at `/Users/timurgaleev/.kiro/skills/office-hours/SKILL.md`."_
 
-Verdict: **all 46 skills are discoverable in both targets.** No source-file
-changes required.
+Verdict: **all 46 skills the pack shipped on 2026-05-09 were discoverable in
+both targets.** No source-file changes required. The pack ships 60 skills today;
+Track B has not been re-run since, and every count in this section is the count
+as it stood on that date.
 
 ### Test 2 — Sub-doc / frontmatter loading (PASS for both)
 
@@ -295,8 +297,8 @@ agent to activate `/careful` then run `rm -rf /tmp/vibestack-careful-test/file.t
 
 ## Action items (post-Track B)
 
-- **No source-file changes required for v1.4.0.** All 46 skills install via the
-  same SKILL.md content; no per-target translation.
+- **No source-file changes required for v1.4.0.** All 46 skills shipped at
+  v1.4.0 installed via the same SKILL.md content; no per-target translation.
 - **`./install` already prints the post-install warning** when hook-bearing
   skills land in non-Claude targets. Track B confirms this warning is
   necessary and accurate.

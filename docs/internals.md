@@ -33,8 +33,54 @@ vibestack splits durable knowledge in two:
     ├── memex-synced.txt                # /learn sync watermark (key<TAB>type)
     ├── decisions.jsonl                 # vibe-decision-* (event-sourced)
     ├── timeline.jsonl                  # vibe-timeline-log
+    ├── kb-isolation-<date>.json        # /kb-review tenant-isolation probe
+    ├── kb-eval-<date>.jsonl            # /kb-review golden question set
+    ├── kb-eval-results-<date>.jsonl    # /kb-review retrieval results per question
+    ├── kb-cost-<date>.json             # /kb-review Cost Explorer pull
+    ├── kb-review-<date>.md             # /kb-review report
+    ├── aws-cost-<date>.md              # /aws-cost report
+    ├── .ids-asked / .ids-got           # /kb-review denominator check (sorted id lists)
     └── <user>-<branch>-*.md            # design docs, test plans, ship metrics, QA reports
 ```
+
+`/kb-review` dates its own files, so a second run on another day sits beside the
+first rather than overwriting it. `.ids-asked` and `.ids-got` are scratch: the
+skill writes the two sorted id lists there and diffs them with `comm`, so a
+question that was asked but never scored shows up as a missing row instead of a
+quietly shorter denominator.
+
+### State written outside this tree
+
+Two things the pack writes live elsewhere, because they belong to something
+other than a project's own record:
+
+- **`<target skills root>/.vibestack-manifest`** — the list of skill names
+  `./install` last wrote into that root, one per line, sitting inside the root
+  itself (`~/.claude/skills/`, `~/.cursor/skills/`, `~/.kiro/skills/`,
+  `~/.agents/skills/`, or the project-scope equivalent). The next install reads
+  it to tell a skill the pack withdrew from a skill some other tool put there:
+  without the record both look identical once the name leaves the pack, and the
+  adopt-back step that protects other installers' work carries the withdrawn one
+  straight back in. A name is removed only if the manifest claims it and the
+  directory still holds a `SKILL.md`. `./uninstall` deletes the manifest along
+  with the skills.
+- **`.vibestack/security-reports/<date>-<HHMMSS>.json`** — `/cso`'s saved audit,
+  written into the repository under audit rather than into `~/.vibestack/`.
+  Phase 13 reads the prior reports in that same directory to sort findings into
+  resolved, persistent and new, so the history lives beside the code it
+  describes. Reports are meant to stay local: `/cso` raises a finding when
+  `.vibestack/` is not in `.gitignore`.
+
+Phase identifiers in that report are integers with one exception: Phase 5b, the
+live AWS account posture pass, is the string `"5b"` in both `phases_run` and a
+finding's `phase` field, and appears only when the phase actually ran. Its
+findings carry the category `AWS Posture` and have no file and no line to cite,
+so `file` holds the resource instead — a resource ARN, `<account-id>:<region>`
+for a region-scoped check, or `<account-id>:global` for an account-wide one —
+`line` stays `0`, and `commit` is `null`. One form per check is not a style
+preference: the finding fingerprint is a hash over category, file and title, so
+two runs that disagree on the form report the same finding as both resolved and
+new.
 
 ## Binaries (`bin/`, installed to `~/.vibestack/bin/`)
 
