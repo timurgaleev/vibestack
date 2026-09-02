@@ -106,6 +106,11 @@ Each skill is a plain `SKILL.md` file your agent discovers and exposes as a
 ## A taste of the skills
 
 60 skills across planning, shipping, QA, design, and security.
+
+<p align="center">
+  <img src="./docs/assets/skill-map.svg" alt="The sixty skills in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive — each showing the commands you reach for most." width="100%">
+</p>
+
 A few highlights:
 
 | Command | What it does |
@@ -145,11 +150,13 @@ git pull && ./install       # Update
 - [`docs/agent-skills-compatibility-audit.md`](docs/agent-skills-compatibility-audit.md) — per-agent behavior, incl. safety-hook tiers
 - [`docs/internals.md`](docs/internals.md) — binaries, shared snippets, preamble flags, test suites, CI
 - [`docs/external-tools.md`](docs/external-tools.md) — the few tools vibestack expects but does not bundle
+- [`docs/aws-reviews-first-run.md`](docs/aws-reviews-first-run.md) · [`docs/llm-checks-first-run.md`](docs/llm-checks-first-run.md) — first run of the AWS and LLM skills: what to have in place, what you type, what comes back
 - [`CHANGELOG.md`](CHANGELOG.md) · [`LICENSE`](LICENSE) (MIT)
 
 > **Heads-up:** the safety skills (`/careful`, `/freeze`, `/guard`) enforce
 > hard blocks on Claude Code. On Cursor/Kiro they fall back to a soft LLM
-> nudge — details in the compatibility audit above.
+> nudge, and on Codex CLI the hooks have never been tested — details in the
+> compatibility audit above.
 
 ---
 
