@@ -282,6 +282,29 @@ for fix in "$FIXTURES"/*/; do
   esac
 done
 
+# The outside-voice preflight decides whether a paid cross-model pass runs at
+# all. It was copy-pasted per skill and the copies drifted. These three skills
+# now share one snippet; a skill that re-inlines its own copy is that drift
+# starting over, so fail on the copy instead of noticing the divergence later.
+echo ""
+echo "== shared outside-voice preflight =="
+SNIPPET="$REPO_ROOT/lib/snippets/outside-voice-preflight.md"
+if [ -r "$SNIPPET" ] && grep -q 'CODEX_MODE="under_codex"' "$SNIPPET"; then
+  pass "snippet resolves CODEX_MODE"
+else
+  fail "snippet resolves CODEX_MODE" "lib/snippets/outside-voice-preflight.md missing or does not set CODEX_MODE"
+fi
+for sk in plan-eng-review plan-ceo-review plan-devex-review; do
+  src="$REPO_ROOT/skills/$sk/SKILL.md"
+  if ! grep -qx '{{include lib/snippets/outside-voice-preflight.md}}' "$src"; then
+    fail "$sk includes the snippet" "no include directive in skills/$sk/SKILL.md"
+  elif grep -q '^_CODEX_CFG=' "$src"; then
+    fail "$sk includes the snippet" "skills/$sk/SKILL.md re-inlines its own preflight"
+  else
+    pass "$sk includes the snippet"
+  fi
+done
+
 echo ""
 echo "== summary =="
 echo "  passed: $PASS"
