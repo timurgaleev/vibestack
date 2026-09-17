@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.38.3 — 2026-09-17
+
+### Changed
+
+- **The outside-voice preflight is one snippet instead of three copies.**
+  `/plan-eng-review`, `/plan-ceo-review` and `/plan-devex-review` carried a
+  byte-identical 31-line block that resolves `CODEX_MODE` — the config switch,
+  the running-under-Codex probe, the install and auth checks, and the five
+  branch bullets. It now lives in `lib/snippets/outside-voice-preflight.md` and
+  is pulled in with `{{include}}`. Behaviour is unchanged: each of the three
+  renders byte-for-byte what it rendered before.
+
+  That block decides whether a paid cross-model pass runs at all, and three
+  copies is three places to fix when the answer changes. `/document-release`
+  keeps its own copy for now — its branch bullets say different things — and the
+  variants in `/review`, `/autoplan`, `/ship` and `/codex` differ in behaviour,
+  not only in wording, so none of them was folded in.
+
+- `test/test-render-skill.sh` now fails when one of the three re-inlines its own
+  preflight, so the copies cannot quietly come back.
+
 ## 1.38.2 — 2026-09-02
 
 ### Added
