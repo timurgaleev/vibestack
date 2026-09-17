@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.38.4 — 2026-09-17
+
+### Changed
+
+- `docs/internals.md` lists `outside-voice-preflight` among the shared snippets.
+  1.38.3 added the snippet and left the list that documents them untouched.
+
 ## 1.38.3 — 2026-09-17
 
 ### Changed
