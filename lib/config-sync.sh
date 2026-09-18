@@ -325,7 +325,11 @@ toml_fill_missing() {
   if ! filled=$(python3 - "$src" "$dst" <<'PYEOF'
 import re, sys
 
-TABLE = re.compile(r"^\[[^]]*\]$")
+# A table header can carry a trailing comment, and an array-of-tables header
+# doubles the brackets. Missing either made the destination's own section
+# invisible, so the merge appended a second [table] and produced a file TOML
+# parsers reject.
+TABLE = re.compile(r"^\[\[?[^]]*\]\]?\s*(?:#.*)?$")
 ENTRY = re.compile(r"^\s*([^#\s][^=]*?)\s*=")
 ROOT = "__root__"
 
@@ -336,7 +340,7 @@ def parse(lines):
     for line in lines:
         stripped = line.strip()
         if TABLE.match(stripped):
-            current = stripped
+            current = stripped.split("#", 1)[0].strip()
             sections.setdefault(current, {})
             continue
         match = ENTRY.match(line)
@@ -368,12 +372,38 @@ for table, entries in src.items():
     if not missing:
         continue
     if table in dst:
-        insert_at = out.index(table) + 1
+        insert_at = next(
+            i for i, l in enumerate(out)
+            if TABLE.match(l.strip()) and l.strip().split("#", 1)[0].strip() == table
+        ) + 1
         out[insert_at:insert_at] = missing
     else:
         out.extend(["", table] + missing)
 
-print("\n".join(out))
+result = "\n".join(out)
+
+# The merge is line-based, so it can produce something no TOML parser accepts —
+# a duplicated table being the obvious one. Where the standard library can
+# check (3.11+), a result that does not parse is not worth writing. A
+# destination that was already invalid is left as it was rather than blamed on
+# the merge.
+try:
+    import tomllib
+except ImportError:
+    pass
+else:
+    try:
+        tomllib.loads("\n".join(dst_lines))
+    except tomllib.TOMLDecodeError:
+        pass
+    else:
+        try:
+            tomllib.loads(result)
+        except tomllib.TOMLDecodeError as exc:
+            sys.stderr.write("merge would produce invalid TOML: %s\n" % exc)
+            sys.exit(1)
+
+print(result)
 PYEOF
   ); then
     msg_warn "Failed to merge $dst — leaving it untouched"
