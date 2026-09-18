@@ -364,17 +364,29 @@ trap on_terminate TERM
 # run_config_phase — source the config library and hand it the resolved flags.
 # Returns the library's status; the caller decides what a failure means for the
 # run as a whole.
+# The library is sourced here, before the skills phase, and only called later.
+# A checkout that lives inside a target's skills root is moved aside by that
+# target's atomic swap, so by the time the configuration phase runs the file
+# may no longer be at the path we started from. Sourcing writes nothing, so
+# doing it early costs nothing and removes the dependency.
+CONFIG_LIB_LOADED=0
+if [ "$WITH_CONFIG" = "1" ] || [ "$RUN_SKILLS" = "0" ]; then
+  if [ -f "$REPO_DIR/lib/config-install.sh" ]; then
+    CFG_REPO_DIR="$REPO_DIR"
+    PAYLOAD_DIR="$REPO_DIR/config"
+    # shellcheck source=lib/config-install.sh
+    . "$REPO_DIR/lib/config-install.sh"
+    CONFIG_LIB_LOADED=1
+  else
+    echo "ERROR: $REPO_DIR/lib/config-install.sh is missing — cannot run the configuration phase" >&2
+  fi
+fi
+
 run_config_phase() {
-  local lib="$REPO_DIR/lib/config-install.sh"
-  if [ ! -f "$lib" ]; then
-    echo "ERROR: $lib is missing — cannot run the configuration phase" >&2
+  if [ "$CONFIG_LIB_LOADED" != "1" ]; then
+    echo "ERROR: the configuration library did not load — skipping that phase" >&2
     return 1
   fi
-
-  CFG_REPO_DIR="$REPO_DIR"
-  PAYLOAD_DIR="$REPO_DIR/config"
-  # shellcheck source=lib/config-install.sh
-  . "$lib"
 
   # Without this the library falls back to its own four-target list, so
   # `--target=codex` would rewrite Claude, Cursor and Kiro configuration too.

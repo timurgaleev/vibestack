@@ -22,13 +22,24 @@
 # Temp files staged next to their destination. Recorded so an interrupted run
 # does not leave a CLAUDE.md.vibekit.a1b2c3 sitting in a directory the agent
 # reads. Entries that were already renamed away are a no-op to remove.
-CFG_TMP_FILES=()
+# Declared only if the caller has not already got one, so sourcing this file
+# never empties an array the caller was using.
+if [[ "$(declare -p CFG_TMP_FILES 2>/dev/null)" != "declare -a"* ]]; then
+  CFG_TMP_FILES=()
+fi
 
-GREEN="${GREEN:-\033[0;32m}"
-YELLOW="${YELLOW:-\033[0;33m}"
-BLUE="${BLUE:-\033[0;34m}"
-CYAN="${CYAN:-\033[0;36m}"
-NC="${NC:-\033[0m}"
+# Escape sequences only where something can render them. Piped into a file or a
+# CI log they are noise, and this library is now part of a command whose other
+# half prints none.
+if [[ -t 1 ]]; then
+  GREEN="${GREEN:-\033[0;32m}"
+  YELLOW="${YELLOW:-\033[0;33m}"
+  BLUE="${BLUE:-\033[0;34m}"
+  CYAN="${CYAN:-\033[0;36m}"
+  NC="${NC:-\033[0m}"
+else
+  GREEN="" YELLOW="" BLUE="" CYAN="" NC=""
+fi
 
 if ! declare -F msg_info >/dev/null 2>&1; then
   msg_info()  { echo -e "${BLUE}  > $*${NC}"; }

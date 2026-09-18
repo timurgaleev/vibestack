@@ -4,7 +4,8 @@
 # lib/config-install.sh — deploys the AI-tool configuration payload.
 #
 # Sourced by ./install, which owns argument parsing and calls
-# config_phase_run(). Nothing here runs at source time.
+# config_phase_run(). Sourcing resolves this file's own repo root and loads the
+# sync helpers beside it; it writes nothing and touches no destination.
 #
 # Targets (payload subdir -> destination):
 #   config/claude/ -> ~/.claude/
@@ -60,7 +61,7 @@
 ################################################################################
 
 # Sourced by ./install — this file writes nothing at source time; every effect
-# lives in config_phase_run().
+# on a destination lives in config_phase_run().
 #
 # Deliberately no `set -e`. The caller runs under `set -uo pipefail` with
 # errexit off, and its rollback paths depend on that: a failing `rm -rf` or a
@@ -154,12 +155,18 @@ SKIPPED=0
 PRUNED=0
 FAILED=0
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# Colors — only when a terminal is there to render them. ./install prints no
+# escape sequences, so an unconditional block here put raw ANSI into every
+# redirected log of a --with-config run.
+if [[ -t 1 ]]; then
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  BLUE='\033[0;34m'
+  CYAN='\033[0;36m'
+  NC='\033[0m'
+else
+  GREEN="" YELLOW="" BLUE="" CYAN="" NC=""
+fi
 
 msg_info()  { echo -e "${BLUE}  > $*${NC}"; }
 msg_done()  { echo -e "${GREEN}  + $*${NC}"; }
