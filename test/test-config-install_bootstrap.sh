@@ -1,27 +1,34 @@
 #!/bin/bash
-# Guards the curl | bash bootstrap path of install.sh.
+# Guards how the configuration library finds its own files.
 #
-# Regression: install.sh used to `source "$SCRIPT_DIR/lib/<file>"` where
-# SCRIPT_DIR derived from ${BASH_SOURCE[0]}. Under `bash -c "$(curl ...)"`
-# BASH_SOURCE is empty, so it resolved to $HOME/lib/<file> and failed — and
-# lib/ isn't even on disk before the repo is cloned. The fix sources from
-# $REPO_DIR (the just-cloned repo), after the clone/pull step.
-#
-# The bug was first found through a lib/ file that no longer exists. lib/config-sync.sh
-# is sourced the same way and carries the same regression, so the guards moved
-# onto it rather than being deleted alongside the file that exposed it.
+# Regression: the standalone installer used to `source "$SCRIPT_DIR/lib/<file>"`
+# with SCRIPT_DIR derived from ${BASH_SOURCE[0]}. Under `bash -c "$(curl ...)"`
+# BASH_SOURCE is empty, so it resolved to $HOME/lib/<file> and failed. The
+# library now derives its repo root from its own ${BASH_SOURCE[0]} and sources
+# the sync helpers from there, so the same class of bug would show up as a
+# resolution that depends on the caller's working directory. These tests run
+# the resolution rather than reading it.
 
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/config-helpers.sh"
 INSTALL="$HERE/../lib/config-install.sh"
 
-# I1: sources the lib from the cloned repo, not the script's own dir.
+# I1: the repo root resolves from the library's own location, not the caller's
+# working directory, and the sync helpers load from there.
 test_sources_from_repo_dir() {
-  if grep -q 'source "$REPO_DIR/lib/config-sync.sh"' "$INSTALL"; then
-    _pass "I1: sources lib/config-sync.sh from \$REPO_DIR"
+  local out
+  out=$(cd / && bash -c '
+    set -uo pipefail
+    source "'"$HERE"'/../lib/config-install.sh"
+    printf "%s|%s" "$CFG_REPO_DIR" "$(type -t sync_append_managed)"
+  ' 2>&1)
+  local want
+  want="$(cd "$HERE/.." && pwd)|function"
+  if [[ "$out" == "$want" ]]; then
+    _pass "I1: repo root and sync helpers resolve from the library's own path"
   else
-    _fail "I1: install.sh does not source lib/config-sync.sh from \$REPO_DIR"
+    _fail "I1: resolution depends on the caller (got '$out', want '$want')"
   fi
 }
 
@@ -34,15 +41,15 @@ test_no_script_dir_source() {
   fi
 }
 
-# I3: the source happens AFTER the repo is cloned/pulled (file exists by then).
+# I3: ./install hands the library an explicit repo root rather than letting it
+# guess, so a checkout in an unusual place still deploys from itself.
 test_source_after_clone() {
-  local clone_line src_line
-  clone_line=$(grep -n 'git clone "$REPO_URL"' "$INSTALL" | head -1 | cut -d: -f1)
-  src_line=$(grep -n 'source "$REPO_DIR/lib/config-sync.sh"' "$INSTALL" | head -1 | cut -d: -f1)
-  if [[ -n "$clone_line" && -n "$src_line" && "$src_line" -gt "$clone_line" ]]; then
-    _pass "I3: source ($src_line) comes after clone ($clone_line)"
+  local main="$HERE/../install"
+  if grep -q 'CFG_REPO_DIR="\$REPO_DIR"' "$main" \
+     && grep -q 'PAYLOAD_DIR="\$REPO_DIR/config"' "$main"; then
+    _pass "I3: ./install passes CFG_REPO_DIR and PAYLOAD_DIR explicitly"
   else
-    _fail "I3: source must come after the clone step (clone=$clone_line src=$src_line)"
+    _fail "I3: ./install does not hand the library its repo root"
   fi
 }
 

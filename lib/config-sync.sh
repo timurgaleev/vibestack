@@ -15,6 +15,9 @@
 #   sync_append_managed - repo-owned body + marker; foreign trailing lines kept
 #
 # Reads the global PREVIEW_ONLY (true => dry-run, print intent, change nothing).
+# Read through a default so the library is usable under `set -u` even when the
+# caller has not declared it — an unset flag means "write", the safe reading
+# only because every write path here is otherwise guarded.
 
 GREEN="${GREEN:-\033[0;32m}"
 YELLOW="${YELLOW:-\033[0;33m}"
@@ -110,7 +113,7 @@ fi
 # merge into. Returns 2 on success (created), 0 if it could not be written.
 create_from() {
   local src="$1" dst="$2"
-  [[ "$PREVIEW_ONLY" == true ]] && return 2
+  [[ "${PREVIEW_ONLY:-false}" == true ]] && return 2
   mkdir -p "$(dirname "$dst")" || { msg_warn "Could not create $(dirname "$dst")"; return 0; }
   if ! write_atomic "$dst" < "$src"; then
     msg_warn "Failed to write $dst — not created"
@@ -178,7 +181,7 @@ prune_target() {
 
     msg_warn "PRUNE: $rel (removed from repo)"
     PRUNE_COUNT=$((PRUNE_COUNT + 1))
-    [[ "$PREVIEW_ONLY" == true ]] && continue
+    [[ "${PREVIEW_ONLY:-false}" == true ]] && continue
 
     rm -f "$stale"
     # rmdir only removes empty directories, so this cannot delete user content.
@@ -195,7 +198,7 @@ commit_manifest() {
   local dest
   dest="$(manifest_path "$target_key")"
 
-  if [[ "$PREVIEW_ONLY" == true ]]; then
+  if [[ "${PREVIEW_ONLY:-false}" == true ]]; then
     rm -f "$current"
     return 0
   fi
@@ -281,7 +284,7 @@ commit_merge() {
     return 0
   fi
 
-  if [[ "$PREVIEW_ONLY" == true ]]; then
+  if [[ "${PREVIEW_ONLY:-false}" == true ]]; then
     rm -f "$tmp"
     return 1
   fi
@@ -510,7 +513,7 @@ sync_append_managed() {
   fi
 
   if [[ "$created" == true ]]; then
-    [[ "$PREVIEW_ONLY" == true ]] && return 2
+    [[ "${PREVIEW_ONLY:-false}" == true ]] && return 2
     mkdir -p "$(dirname "$dst")" || { msg_warn "Could not create $(dirname "$dst")"; return 0; }
     if ! printf '%s\n' "$merged" | write_atomic "$dst"; then
       msg_warn "Failed to write $dst — not created"

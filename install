@@ -49,8 +49,24 @@ Options:
                     version per repo. Runtime bin/state stay in ~/.vibestack.
   --project-root=<d>  Project root for --scope=project (default: $PWD, or
                     $VIBESTACK_PROJECT_ROOT).
-  --dry-run         Preview every output, write nothing.
+  --dry-run, -n     Preview every output, write nothing.
   -h, --help        Show this help and exit.
+
+Configuration phase:
+  The pack also ships the always-on configuration — CLAUDE.md, the behaviour
+  rules, the sub-agents and the statusline — under config/. It deploys into
+  ~/.claude, ~/.cursor, ~/.kiro and ~/.codex, alongside the skills.
+
+  --with-config     Deploy the configuration as well as the skills.
+  --no-config       Skills only (the current default).
+  --only=<phase>    Run one phase: skills or config.
+  --caveman, -C     Also install the Caveman output-compression skill.
+  --ponytail, -Y    Also install the Ponytail minimal-code plugin.
+  --deliberation, -D  Also install the deliberation second-opinion plugin.
+  --no-rtk, -R      Skip RTK, which the configuration phase installs by default.
+
+  The configuration phase is user scope only: --scope=project is about pinning
+  skills per repo, and there is no project-local ~/.claude/CLAUDE.md to pin.
 
 Default behavior:
   Interactive (TTY):     shows write plan + Enter installs detected
@@ -166,10 +182,45 @@ YES_FLAG=0
 SCOPE="user"
 PROJECT_ROOT=""
 
+# The configuration phase is opt-in for now. It writes into files the user may
+# already own — ~/.claude/CLAUDE.md and settings.json among them — so it stays
+# off until the first-run adoption gate exists to ask.
+WITH_CONFIG=0
+ONLY_PHASE=""
+CFG_CAVEMAN=false
+CFG_PONYTAIL=false
+CFG_DELIBERATION=false
+CFG_RTK=true
+
 for arg in "$@"; do
   case "$arg" in
     --target=*)
       TARGETS_RAW="${arg#*=}"
+      ;;
+    --with-config)
+      WITH_CONFIG=1
+      ;;
+    --no-config)
+      WITH_CONFIG=0
+      ;;
+    --only=*)
+      ONLY_PHASE="${arg#*=}"
+      case "$ONLY_PHASE" in
+        skills|config) ;;
+        *) echo "ERROR: invalid --only '$ONLY_PHASE' (skills|config)" >&2; exit 2 ;;
+      esac
+      ;;
+    --caveman|-C)
+      CFG_CAVEMAN=true
+      ;;
+    --ponytail|-Y)
+      CFG_PONYTAIL=true
+      ;;
+    --deliberation|-D)
+      CFG_DELIBERATION=true
+      ;;
+    --no-rtk|-R)
+      CFG_RTK=false
       ;;
     --scope=*)
       SCOPE="${arg#*=}"
@@ -180,7 +231,7 @@ for arg in "$@"; do
     --yes|-y)
       YES_FLAG=1
       ;;
-    --dry-run)
+    --dry-run|-n)
       DRY_RUN=1
       ;;
     -h|--help)
@@ -194,6 +245,19 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# --only= names the single phase to run, so it overrides --with-config/--no-config.
+RUN_SKILLS=1
+case "$ONLY_PHASE" in
+  skills) WITH_CONFIG=0 ;;
+  config) WITH_CONFIG=1; RUN_SKILLS=0 ;;
+esac
+
+# Asking for one of the optional tools is asking for the phase that installs
+# them. --no-rtk is not: it turns something off, and must not turn the phase on.
+if [ "$CFG_CAVEMAN" = "true" ] || [ "$CFG_PONYTAIL" = "true" ] || [ "$CFG_DELIBERATION" = "true" ]; then
+  WITH_CONFIG=1
+fi
 
 # Project scope: install skills into a project-local tree instead of $HOME, so
 # a team can pin the pack's version per repo. Runtime bin/state stay global
@@ -230,6 +294,43 @@ case "$SCOPE" in
     exit 2
     ;;
 esac
+
+# The configuration phase deploys into ~/.claude, ~/.cursor, ~/.kiro and
+# ~/.codex. Project scope pins skills per repo; those files have no per-repo
+# counterpart, so the combination is refused rather than silently ignored.
+if [ "$WITH_CONFIG" = "1" ] && [ "$SCOPE" = "project" ]; then
+  echo "ERROR: the configuration phase is user scope only (--scope=project installs skills)" >&2
+  exit 2
+fi
+
+# run_config_phase — source the config library and hand it the resolved flags.
+# Returns the library's status; the caller decides what a failure means for the
+# run as a whole.
+run_config_phase() {
+  local lib="$REPO_DIR/lib/config-install.sh"
+  if [ ! -f "$lib" ]; then
+    echo "ERROR: $lib is missing — cannot run the configuration phase" >&2
+    return 1
+  fi
+
+  CFG_REPO_DIR="$REPO_DIR"
+  PAYLOAD_DIR="$REPO_DIR/config"
+  # shellcheck source=lib/config-install.sh
+  . "$lib"
+
+  PREVIEW_ONLY=$([ "$DRY_RUN" = "1" ] && echo true || echo false)
+  CAVEMAN="$CFG_CAVEMAN"
+  PONYTAIL="$CFG_PONYTAIL"
+  DELIBERATION="$CFG_DELIBERATION"
+  RTK="$CFG_RTK"
+
+  config_phase_run
+}
+
+if [ "$RUN_SKILLS" = "0" ]; then
+  run_config_phase
+  exit $?
+fi
 
 # ───────────────────────────────────────────────────────────────────────────
 # Signal handlers (placed AFTER arg parsing per eng-review R2).
@@ -959,6 +1060,14 @@ if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo "    Verify per: docs/hook-verification.md"
 fi
 
+# Configuration phase, after the skills are in place: `rtk init` writes a
+# PreToolUse hook into ~/.claude/settings.json and the settings merge is
+# authoritative for that map, so the merge has to happen first.
+CONFIG_RC=0
+if [ "$WITH_CONFIG" = "1" ]; then
+  run_config_phase || CONFIG_RC=$?
+fi
+
 # Version stamp — written only after every target installed successfully, so
 # `vibestack version` never claims a release that failed to land.
 if [ "$DRY_RUN" != "1" ] && [ -f "$REPO_DIR/VERSION" ]; then
@@ -976,4 +1085,6 @@ if [ "$DRY_RUN" != "1" ]; then
   echo "Uninstall: $REPO_DIR/uninstall"
 fi
 
-exit 0
+# A failed configuration phase does not undo the skills that landed, but the
+# run did not do everything it was asked to, and the exit status says so.
+exit "$CONFIG_RC"

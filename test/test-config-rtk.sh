@@ -1,7 +1,8 @@
 #!/bin/bash
-# Guards the RTK integration in install.sh.
+# Guards the RTK integration in the configuration phase.
 #
-# RTK installs by default (skip with -R). Two regressions this locks down:
+# RTK installs by default (skip with --no-rtk / -R, parsed by ./install and
+# handed to the library). Two regressions this locks down:
 #  - `rtk init -g` must run AFTER the settings.json merge, or the merge (which is
 #    repo-authoritative for the hooks map) clobbers the RTK PreToolUse hook every
 #    sync.
@@ -13,13 +14,17 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/config-helpers.sh"
 INSTALL="$HERE/../lib/config-install.sh"
+INSTALL_MAIN="$HERE/../install"
 
-# R1: -R flag is parsed and disables RTK.
+# R1: the skip flag is parsed by ./install and reaches the library. Both halves
+# matter — a parsed flag that is never handed over is the same as no flag.
 test_skip_flag() {
-  if grep -q 'R) RTK=false' "$INSTALL"; then
-    _pass "R1: -R flag sets RTK=false"
+  if grep -q -- '--no-rtk|-R)' "$INSTALL_MAIN" \
+     && grep -q 'CFG_RTK=false' "$INSTALL_MAIN" \
+     && grep -q 'RTK="$CFG_RTK"' "$INSTALL_MAIN"; then
+    _pass "R1: --no-rtk/-R sets CFG_RTK=false and is passed to the library"
   else
-    _fail "R1: -R flag does not disable RTK"
+    _fail "R1: --no-rtk/-R does not reach the library as RTK=false"
   fi
 }
 

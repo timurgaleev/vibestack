@@ -1,13 +1,16 @@
 #!/bin/bash
 
 ################################################################################
-# install.sh - Deploy vibekit settings to local tools
+# lib/config-install.sh — deploys the AI-tool configuration payload.
 #
-# Targets:
-#   claude/ -> ~/.claude/
-#   kiro/   -> ~/.kiro/
-#   cursor/ -> ~/.cursor/
-#   codex/  -> ~/.codex/
+# Sourced by ./install, which owns argument parsing and calls
+# config_phase_run(). Nothing here runs at source time.
+#
+# Targets (payload subdir -> destination):
+#   config/claude/ -> ~/.claude/
+#   config/kiro/   -> ~/.kiro/
+#   config/cursor/ -> ~/.cursor/
+#   config/codex/  -> ~/.codex/
 #
 # Each sync records the files it manages in ~/.local/state/vibekit/manifest_<target>
 # and prunes deployed files the repo has since dropped. Files absent from that
@@ -15,68 +18,59 @@
 # target app rewrites at runtime (codex/config.toml, codex/rules/default.rules,
 # codex/hooks.json, kiro/agents/default.json) — and claude/CLAUDE.md, which
 # third-party tools append to — is merged rather than overwritten; see
-# lib/sync.sh.
+# lib/config-sync.sh.
 #
-# Usage:
-#   ./install.sh          # Deploy all changes (default)
-#   ./install.sh -n       # Preview mode (show changes, no writes)
-#   ./install.sh -C       # Install the Caveman token-compression skill
-#   ./install.sh -Y       # Install the Ponytail minimal-code plugin
-#   ./install.sh -D       # Install the deliberation multi-model plugin
-#   ./install.sh -R       # Skip RTK (Rust Token Killer; installed by default)
-#   ./install.sh -h       # Show help
+# The manifest directory and the in-file markers still carry the name the
+# config project shipped under. They are frozen on purpose: they identify
+# state already written to every installed machine, and renaming them would
+# orphan that state and duplicate managed blocks on the next sync.
 #
-# Environment variables:
-#   CAVEMAN=true ./install.sh      # Same as -C flag
-#   CAVEMAN_INSTALL_URL=<url> ./install.sh   # Override Caveman installer source
-#   PONYTAIL=true ./install.sh     # Same as -Y flag
-#   PONYTAIL_REPO=<owner/repo> ./install.sh  # Override Ponytail marketplace source
-#   DELIBERATION=true ./install.sh # Same as -D flag
-#   DELIBERATION_REPO=<owner/repo> ./install.sh  # Override deliberation marketplace source
-#   RTK=false ./install.sh         # Same as -R flag (skip RTK)
-#   RTK_VERSION=v0.43.0 ./install.sh         # Pin a specific RTK release (default: latest)
-#   RTK_INSTALL_URL=<url> ./install.sh       # Override RTK installer source
-#   RTK_INSTALL_DIR=<dir> ./install.sh       # Install dir (passed to RTK; default ~/.local/bin)
+# Behaviour is driven by the module globals below, which ./install sets before
+# calling: PREVIEW_ONLY, CAVEMAN, PONYTAIL, DELIBERATION, RTK, PAYLOAD_DIR,
+# CFG_REPO_DIR.
 #
-# Caveman (https://github.com/JuliusBrussee/caveman) is an optional Claude Code
-# skill that compresses agent output. It is disabled by default and self-updates
-# via its own installer; pass -C (or CAVEMAN=true) to run that installer. It
-# requires Node >= 18 and auto-detects which agents to install into.
+# Environment variables (read here, documented for ./install --help):
+#   CAVEMAN_INSTALL_URL=<url>   Override the Caveman installer source
+#   PONYTAIL_REPO=<owner/repo>  Override the Ponytail marketplace source
+#   DELIBERATION_REPO=<o/r>     Override the deliberation marketplace source
+#   RTK_VERSION=vX.Y.Z          Pin an RTK release (default: latest)
+#   RTK_INSTALL_URL=<url>       Override the RTK installer source
+#   RTK_INSTALL_DIR=<dir>       Install dir passed to RTK (default ~/.local/bin)
 #
-# Ponytail (https://github.com/DietrichGebert/ponytail) is an optional Claude
-# Code plugin that steers the agent toward minimal, stdlib-first code. It is
-# disabled by default; pass -Y (or PONYTAIL=true) to install it via the official
-# `claude plugin` CLI. Unlike Caveman, the plugin CLI tracks the marketplace
-# repo's default branch — there is no commit-SHA pin.
+# Caveman (https://github.com/JuliusBrussee/caveman) compresses agent output.
+# Off by default; it self-updates via its own installer, which is pinned to a
+# commit SHA here so enabling it never silently runs whatever landed upstream.
 #
-# deliberation (https://github.com/antonbabenko/deliberation) is an optional
-# Claude Code plugin that delegates a second opinion to GPT, Gemini, Grok or an
-# OpenRouter model over MCP. It is disabled by default; pass -D (or
-# DELIBERATION=true) to install it via the `claude plugin` CLI. The installer
-# only installs the plugin: the plugin's own `/deliberation:setup` writes its
-# rules into ~/.claude/rules/deliberation/ and its config into
-# ~/.config/deliberation/config.json, and vibekit never runs it, never touches
-# that config, and never stores a provider key. Those rules load in every
-# session and cost roughly 12k tokens, so setup stays a deliberate, manual step.
+# Ponytail (https://github.com/DietrichGebert/ponytail) steers the agent toward
+# minimal, stdlib-first code. Off by default, installed via the `claude plugin`
+# CLI, which tracks the marketplace repo's default branch — no SHA pin.
 #
-# RTK (https://github.com/rtk-ai/rtk), "Rust Token Killer", is a standalone CLI
-# that compresses shell-command output before it reaches the model. It installs
-# by default; pass -R (or RTK=false) to skip. Install is idempotent: if `rtk` is
-# already on PATH the binary download is skipped and only the Claude Code hook is
-# refreshed. The installer (curl | sh) tracks the latest release unless RTK_VERSION
-# is set, and verifies SHA-256 checksums. `rtk init -g` writes a PreToolUse hook
-# into ~/.claude/settings.json; it runs after the settings merge so the hook
-# survives every sync. See SECURITY.md for the trust model.
+# deliberation (https://github.com/antonbabenko/deliberation) delegates a second
+# opinion to another model over MCP. Off by default. Only the plugin is
+# installed: its own `/deliberation:setup` writes the rules and config, and this
+# installer never runs it, never touches that config, and never stores a
+# provider key. Those rules load in every session and cost roughly 12k tokens,
+# so setup stays a deliberate, manual step.
+#
+# RTK (https://github.com/rtk-ai/rtk) compresses shell-command output before it
+# reaches the model. On by default; idempotent — if `rtk` is already on PATH the
+# download is skipped and only the Claude Code hook is refreshed. `rtk init -g`
+# writes a PreToolUse hook into ~/.claude/settings.json, so it runs after the
+# settings merge and survives every sync. See SECURITY.md for the trust model.
 ################################################################################
 
-set -e
+# Sourced by ./install — this file writes nothing at source time; every effect
+# lives in config_phase_run().
+#
+# Deliberately no `set -e`. The caller runs under `set -uo pipefail` with
+# errexit off, and its rollback paths depend on that: a failing `rm -rf` or a
+# `mv` of an absent backup must not abort the run. Commands whose failure
+# matters are checked here instead.
+CFG_REPO_DIR="${CFG_REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-REPO_URL="https://github.com/timurgaleev/vibestack.git"
-REPO_DIR="${HOME}/.vibekit"
-
-# The deployable payload lives under config/ in the repo; REPO_DIR stays the
-# checkout root because the git freshness checks below operate on it.
-PAYLOAD_DIR="${PAYLOAD_DIR:-$REPO_DIR/config}"
+# The deployable payload; the repo root stays separate because the sync library
+# is resolved from it.
+PAYLOAD_DIR="${PAYLOAD_DIR:-$CFG_REPO_DIR/config}"
 
 DEPLOY_TARGETS=(
   "claude:${HOME}/.claude"
@@ -144,6 +138,7 @@ ADDED=0
 CHANGED=0
 SKIPPED=0
 PRUNED=0
+FAILED=0
 
 # Colors
 GREEN='\033[0;32m'
@@ -169,31 +164,20 @@ is_bin() {
   file "$1" | grep -qv "text"
 }
 
-# Defined here rather than taken from lib/sync.sh because the first thing it
-# guards is the clone that makes that lib available. sync.sh keeps this copy.
-retry() {
-  local description="$1"
-  shift
-  local max_retries=3 attempt=0 wait_time=5
 
-  while [[ $attempt -lt $max_retries ]]; do
-    if "$@"; then
-      return 0
-    fi
-    attempt=$((attempt + 1))
-    if [[ $attempt -eq $max_retries ]]; then
-      return 1
-    fi
-    msg_warn "$description failed — retrying in ${wait_time}s (attempt $attempt/$max_retries)"
-    sleep "$wait_time"
-    wait_time=$((wait_time * 2))
-  done
-}
-
+# Returns non-zero on failure and says so. Without errexit a silent `cp`
+# failure would be reported as a successful UPDATE and then recorded in the
+# manifest, which is how a file the sync never wrote becomes prunable.
 deploy_file() {
   local src="$1" dst="$2"
-  mkdir -p "$(dirname "$dst")"
-  cp "$src" "$dst"
+  if ! mkdir -p "$(dirname "$dst")" 2>/dev/null; then
+    msg_warn "could not create $(dirname "$dst")"
+    return 1
+  fi
+  if ! cp "$src" "$dst" 2>/dev/null; then
+    msg_warn "could not write $dst"
+    return 1
+  fi
 }
 
 diff_preview() {
@@ -213,35 +197,26 @@ diff_preview() {
 }
 
 
-# Parse arguments
-while getopts "nCYDRh" opt; do
-  case $opt in
-    n) PREVIEW_ONLY=true ;;
-    C) CAVEMAN=true ;;
-    Y) PONYTAIL=true ;;
-    D) DELIBERATION=true ;;
-    R) RTK=false ;;
-    h)
-      echo "Usage: $0 [-n] [-C] [-Y] [-D] [-R] [-h]"
-      echo "  -n  Preview mode (no changes written)"
-      echo "  -C  Install the Caveman token-compression skill (off by default)"
-      echo "  -Y  Install the Ponytail minimal-code plugin (off by default)"
-      echo "  -D  Install the deliberation multi-model plugin (off by default)"
-      echo "  -R  Skip RTK install (Rust Token Killer; installed by default)"
-      echo "  -h  Show this help"
-      echo ""
-      echo "  CAVEMAN=true $0       # Same as -C via env var"
-      echo "  PONYTAIL=true $0      # Same as -Y via env var"
-      echo "  DELIBERATION=true $0  # Same as -D via env var"
-      echo "  RTK=false $0          # Same as -R via env var"
-      exit 0
-      ;;
-    *)
-      echo "Usage: $0 [-n] [-C] [-Y] [-D] [-R] [-h]"
-      exit 1
-      ;;
-  esac
-done
+
+# Sync helpers: manifest-based prune plus the fill-missing merges used for files
+# the target app rewrites at runtime. Without this lib the deploy still works,
+# it just stops pruning files the repo has dropped.
+SYNC_LIB_LOADED=false
+if [[ -f "$CFG_REPO_DIR/lib/config-sync.sh" ]]; then
+  source "$CFG_REPO_DIR/lib/config-sync.sh"
+  SYNC_LIB_LOADED=true
+else
+  msg_warn "lib/config-sync.sh missing in $CFG_REPO_DIR — prune and fill-missing merges unavailable"
+fi
+
+# config_phase_run — deploy the payload into every target present on this
+# machine. Returns 0 when every target applied, 1 when any target was refused
+# or failed; the caller reports both without aborting the other phase.
+#
+# The body below is deliberately not re-indented. Keeping it flush left leaves
+# the diff against the standalone installer it came from reviewable.
+config_phase_run() {
+ADDED=0; CHANGED=0; SKIPPED=0; PRUNED=0; FAILED=0
 
 echo -e "\n${CYAN}---------------------------------------------------------------${NC}"
 echo -e "${CYAN}                     AI-CONFIG DEPLOY                         ${NC}"
@@ -275,74 +250,6 @@ else
   msg_info "RTK: skipped (-R)"
 fi
 
-# Clone or pull repository
-echo -e "\n${CYAN}> Fetching repository...${NC}"
-
-if [[ ! -d "$REPO_DIR" ]]; then
-  msg_info "Cloning: $REPO_URL"
-  if ! retry "Clone" git clone "$REPO_URL" "$REPO_DIR"; then
-    msg_warn "Failed to clone $REPO_URL after 3 attempts"
-    exit 1
-  fi
-  msg_done "Cloned successfully"
-else
-  msg_info "Updating: $REPO_DIR"
-  # A failed pull is not fatal — the existing checkout is still deployable, and
-  # aborting would leave the machine stuck on whatever blocked the pull.
-  if retry "Pull" git -C "$REPO_DIR" pull; then
-    msg_done "Up to date"
-  else
-    # Falling back to the existing checkout is only safe if it is a clean
-    # snapshot. A conflicted merge leaves half-updated files, and deploying that
-    # would also drive prune from an incomplete file list.
-    # rev-parse --git-path resolves correctly for linked worktrees, where .git
-    # is a file rather than a directory. rebase-apply matters too: with the apply
-    # backend a resolved-but-uncontinued rebase leaves no unmerged index entries.
-    _in_progress=false
-    for _marker in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
-      _p=$(git -C "$REPO_DIR" rev-parse --git-path "$_marker" 2>/dev/null) || continue
-      [[ -e "$REPO_DIR/$_p" || -e "$_p" ]] && _in_progress=true
-    done
-    # Compare against the literal "true": in a bare repository rev-parse prints
-    # "false" and still exits 0, so testing the exit status alone passes there.
-    if [[ "$(git -C "$REPO_DIR" rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]]; then
-      msg_warn "Pull failed and $REPO_DIR is not a valid git worktree — refusing to deploy it"
-      exit 1
-    fi
-    # Local modifications mean the checkout no longer matches any released
-    # commit. Deploying it would also drive prune from an edited file list.
-    # Capture status and exit code separately: a failing `git status` yields an
-    # empty string, which an emptiness test would read as "clean".
-    _status_out=$(git -C "$REPO_DIR" status --porcelain 2>/dev/null)
-    _status_rc=$?
-    if [[ "$_status_rc" -ne 0 ]]; then
-      msg_warn "Pull failed and \`git status\` errored in $REPO_DIR — refusing to deploy it"
-      exit 1
-    fi
-    if [[ -n "$_status_out" ]]; then
-      msg_warn "Pull failed and $REPO_DIR has local modifications — refusing to deploy it"
-      msg_info "Reset it (git -C $REPO_DIR reset --hard) and re-run"
-      exit 1
-    fi
-    if [[ -n "$(git -C "$REPO_DIR" ls-files --unmerged 2>/dev/null)" ]] || [[ "$_in_progress" == true ]]; then
-      msg_warn "Pull failed and $REPO_DIR has an unresolved merge — refusing to deploy a conflicted checkout"
-      msg_info "Resolve it (git -C $REPO_DIR merge --abort) and re-run"
-      exit 1
-    fi
-    msg_warn "Failed to update $REPO_DIR — deploying the existing checkout"
-  fi
-fi
-
-# Sync helpers: manifest-based prune plus the fill-missing merges used for files
-# the target app rewrites at runtime. Without this lib the deploy still works,
-# it just stops pruning files the repo has dropped.
-SYNC_LIB_LOADED=false
-if [[ -f "$REPO_DIR/lib/config-sync.sh" ]]; then
-  source "$REPO_DIR/lib/config-sync.sh"
-  SYNC_LIB_LOADED=true
-else
-  msg_warn "lib/config-sync.sh missing in $REPO_DIR — prune and fill-missing merges unavailable"
-fi
 
 # One-time cleanup of files earlier versions deployed before manifests existed,
 # so a machine that never had a manifest still loses them. Without a manifest
@@ -398,6 +305,12 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
   if [[ "$src_subdir" == "claude" ]]; then
     find_excludes+=("-not" "-name" "settings.json")
   fi
+
+  # A failed write aborts this target. The manifest entry for a file is
+  # written before the file is deployed, so committing a manifest after a
+  # failed write would claim a file that is not on disk — and a later run
+  # would prune against that claim.
+  target_failed=false
 
   # Records every file this run manages, deployed or already identical. The
   # diff against the previous run is what prune acts on.
@@ -469,7 +382,10 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
     if [[ ! -f "$dst_file" ]]; then
       msg_add "NEW: $rel_path"
       if [[ "$PREVIEW_ONLY" == false ]]; then
-        deploy_file "$src_file" "$dst_file"
+        if ! deploy_file "$src_file" "$dst_file"; then
+          target_failed=true
+          break
+        fi
       fi
       ADDED=$((ADDED + 1))
     else
@@ -484,7 +400,10 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
           diff_preview "$src_file" "$dst_file"
         fi
         if [[ "$PREVIEW_ONLY" == false ]]; then
-          deploy_file "$src_file" "$dst_file"
+          if ! deploy_file "$src_file" "$dst_file"; then
+            target_failed=true
+            break
+          fi
         fi
         CHANGED=$((CHANGED + 1))
       fi
@@ -494,7 +413,11 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
   # Prune files a previous sync deployed that the repo no longer ships. Files
   # absent from the previous manifest were installed by the user and are left
   # alone.
-  if [[ "$SYNC_LIB_LOADED" == true ]]; then
+  if [[ "$target_failed" == true ]]; then
+    msg_warn "$src_subdir: deploy failed — manifest not updated, nothing pruned"
+    FAILED=$((FAILED + 1))
+    rm -f "$manifest_tmp"
+  elif [[ "$SYNC_LIB_LOADED" == true ]]; then
     prune_target "$src_subdir" "$dst_dir" "$manifest_tmp" "$protected_tmp"
     PRUNED=$((PRUNED + PRUNE_COUNT))
     commit_manifest "$src_subdir" "$manifest_tmp"
@@ -808,3 +731,6 @@ msg_done "  Updated:   $CHANGED"
 msg_warn "  Pruned:    $PRUNED"
 msg_info "  Unchanged: $SKIPPED"
 echo
+
+[[ "$FAILED" -eq 0 ]]
+}

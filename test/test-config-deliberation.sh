@@ -15,14 +15,18 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/config-helpers.sh"
 INSTALL="$HERE/../lib/config-install.sh"
+INSTALL_MAIN="$HERE/../install"
 SETTINGS="$HERE/../config/claude/settings.json"
 
-# D1: -D flag is parsed and enables the install.
+# D1: the flag is parsed by ./install and reaches the library. A flag that is
+# parsed but never handed over installs nothing.
 test_flag_parsed() {
-  if grep -q 'D) DELIBERATION=true' "$INSTALL"; then
-    _pass "D1: -D flag sets DELIBERATION=true"
+  if grep -q -- '--deliberation|-D)' "$INSTALL_MAIN" \
+     && grep -q 'CFG_DELIBERATION=true' "$INSTALL_MAIN" \
+     && grep -q 'DELIBERATION="$CFG_DELIBERATION"' "$INSTALL_MAIN"; then
+    _pass "D1: --deliberation/-D sets CFG_DELIBERATION=true and is passed to the library"
   else
-    _fail "D1: -D flag does not enable deliberation"
+    _fail "D1: --deliberation/-D does not reach the library"
   fi
 }
 
