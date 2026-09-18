@@ -1,0 +1,46 @@
+{
+  "cursor.general.privacyMode": "disabled",
+  "cursor.general.enableShadowWorkspace": true,
+
+  "cursor.chat.defaultModel": "claude-opus-4-5",
+  "cursor.chat.showSuggestedFiles": true,
+  "cursor.chat.alwaysSearchWeb": false,
+
+  "cursor.composer.renderMarkdown": true,
+
+  "cursor.tab.enabled": true,
+  "cursor.tab.enableAutoImport": true,
+
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.rulers": [80, 120],
+  "editor.minimap.enabled": false,
+  "editor.wordWrap": "off",
+  "editor.suggestSelection": "first",
+
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/__pycache__": true,
+    "**/.venv": true
+  },
+
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.fontSize": 13,
+
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "git.enableSmartCommit": false,
+
+  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.iconTheme": "material-icon-theme",
+  "workbench.startupEditor": "none",
+  "workbench.editor.enablePreview": false
+}

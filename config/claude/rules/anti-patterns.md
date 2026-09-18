@@ -1,0 +1,72 @@
+# Anti-Patterns
+
+The single source for traps worth naming. Every item is written as an action —
+"do not do X", or "do Y instead of X" — so it is checkable against a diff.
+
+Use this as a self-review pass before a commit or PR.
+
+## Code Quality
+
+- Editing code without reading the context around it.
+- Introducing a new pattern that ignores the project's conventions.
+- Adding exception handling instead of finding the root cause.
+- Broad `catch` blocks that swallow the failure.
+- Premature optimization or abstraction.
+- Mutating an object where a new one would do.
+- Ignoring failures, warnings, or edge cases surfaced by the tooling.
+
+## Scope
+
+- Adjacent refactors and style changes beyond the request.
+- Deleting unrelated dead code instead of mentioning it.
+- Slipping in a new abstraction, flag, or configuration option nobody asked for.
+- Mixing two purposes into one commit or PR.
+- A 200-line diff for a one-line bug fix.
+
+## Problem Solving
+
+- Quick fixes applied without understanding the cause.
+- Treating symptoms (try/catch everywhere) instead of causes.
+- Stopping at the first plausible explanation.
+- Starting without an exit condition ("let's try and see").
+- Calling work done without verifying it.
+
+## Testing
+
+- Replacing every integration test with mocks.
+- Tests that share state or depend on execution order.
+- Changing the test to match the implementation when the test was right.
+
+## Git & Deployment
+
+- Committing or pushing without explicit permission.
+- Bypassing hooks or signing (`--no-verify`, `--no-gpg-sign`).
+- Force-pushing a shared branch.
+- Committing secrets, binaries, or generated files.
+- Tool-attribution trailers in commits or PR bodies (see `rules/authorship.md`).
+
+## Tooling
+
+- Running independent tool calls sequentially for no reason.
+- Guessing at a skill or agent that does not exist.
+- Large refactors in the last stretch of the context window.
+
+## Documentation
+
+- Accumulating past state, change history, and dead ends in docs and comments.
+  Record only the current state — git and PRs are the history.
+- Leaving a comment that no longer matches the code. Delete it rather than let
+  it mislead.
+- Comments that restate the code instead of explaining why.
+
+## Working If
+
+Signs the work is going well:
+
+- The diff contains nothing *unrelated* to the request — no style unification,
+  no adjacent refactor, no dead-code removal mixed in.
+- Clarifying questions arrive *before* implementation, not as post-hoc excuses.
+- One task, one purpose (one request = one PR).
+- Lines changed are proportional to the size of the request.
+- The exit condition can be checked automatically by tests, measurement, or
+  lint.

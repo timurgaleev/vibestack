@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "approvalMode": "allowlist",
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "deny": [
+      "Bash(chmod -R 777 /:*)",
+      "Bash(chown -R * /:*)",
+      "Bash(dd if=/dev/zero:*)",
+      "Bash(fdisk:*)",
+      "Bash(gdisk:*)",
+      "Bash(halt:*)",
+      "Bash(init 0:*)",
+      "Bash(init 6:*)",
+      "Bash(mkfs:*)",
+      "Bash(parted:*)",
+      "Bash(poweroff:*)",
+      "Bash(reboot:*)",
+      "Bash(rm -rf $HOME/*)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~/*)",
+      "Bash(shutdown:*)",
+      "Bash(sudo rm -rf:*)",
+      "Bash(systemctl disable:*)",
+      "Bash(systemctl halt:*)",
+      "Bash(systemctl poweroff:*)",
+      "Bash(systemctl reboot:*)",
+      "Bash(systemctl stop:*)"
+    ]
+  }
+}

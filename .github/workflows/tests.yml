@@ -38,6 +38,13 @@ jobs:
           - test-brand-audit.sh
           - test-browse-shim.sh
           - test-evidence-bins.sh
+          - test-config-claude_md_preserve.sh
+          - test-config-codex_agents.sh
+          - test-config-deliberation.sh
+          - test-config-install_bootstrap.sh
+          - test-config-rtk.sh
+          - test-config-settings_merge.sh
+          - test-config-sync.sh
     steps:
       - uses: actions/checkout@v4
 

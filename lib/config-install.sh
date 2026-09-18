@@ -1,0 +1,810 @@
+#!/bin/bash
+
+################################################################################
+# install.sh - Deploy vibekit settings to local tools
+#
+# Targets:
+#   claude/ -> ~/.claude/
+#   kiro/   -> ~/.kiro/
+#   cursor/ -> ~/.cursor/
+#   codex/  -> ~/.codex/
+#
+# Each sync records the files it manages in ~/.local/state/vibekit/manifest_<target>
+# and prunes deployed files the repo has since dropped. Files absent from that
+# manifest were installed by the user and are never touched. Configuration the
+# target app rewrites at runtime (codex/config.toml, codex/rules/default.rules,
+# codex/hooks.json, kiro/agents/default.json) — and claude/CLAUDE.md, which
+# third-party tools append to — is merged rather than overwritten; see
+# lib/sync.sh.
+#
+# Usage:
+#   ./install.sh          # Deploy all changes (default)
+#   ./install.sh -n       # Preview mode (show changes, no writes)
+#   ./install.sh -C       # Install the Caveman token-compression skill
+#   ./install.sh -Y       # Install the Ponytail minimal-code plugin
+#   ./install.sh -D       # Install the deliberation multi-model plugin
+#   ./install.sh -R       # Skip RTK (Rust Token Killer; installed by default)
+#   ./install.sh -h       # Show help
+#
+# Environment variables:
+#   CAVEMAN=true ./install.sh      # Same as -C flag
+#   CAVEMAN_INSTALL_URL=<url> ./install.sh   # Override Caveman installer source
+#   PONYTAIL=true ./install.sh     # Same as -Y flag
+#   PONYTAIL_REPO=<owner/repo> ./install.sh  # Override Ponytail marketplace source
+#   DELIBERATION=true ./install.sh # Same as -D flag
+#   DELIBERATION_REPO=<owner/repo> ./install.sh  # Override deliberation marketplace source
+#   RTK=false ./install.sh         # Same as -R flag (skip RTK)
+#   RTK_VERSION=v0.43.0 ./install.sh         # Pin a specific RTK release (default: latest)
+#   RTK_INSTALL_URL=<url> ./install.sh       # Override RTK installer source
+#   RTK_INSTALL_DIR=<dir> ./install.sh       # Install dir (passed to RTK; default ~/.local/bin)
+#
+# Caveman (https://github.com/JuliusBrussee/caveman) is an optional Claude Code
+# skill that compresses agent output. It is disabled by default and self-updates
+# via its own installer; pass -C (or CAVEMAN=true) to run that installer. It
+# requires Node >= 18 and auto-detects which agents to install into.
+#
+# Ponytail (https://github.com/DietrichGebert/ponytail) is an optional Claude
+# Code plugin that steers the agent toward minimal, stdlib-first code. It is
+# disabled by default; pass -Y (or PONYTAIL=true) to install it via the official
+# `claude plugin` CLI. Unlike Caveman, the plugin CLI tracks the marketplace
+# repo's default branch — there is no commit-SHA pin.
+#
+# deliberation (https://github.com/antonbabenko/deliberation) is an optional
+# Claude Code plugin that delegates a second opinion to GPT, Gemini, Grok or an
+# OpenRouter model over MCP. It is disabled by default; pass -D (or
+# DELIBERATION=true) to install it via the `claude plugin` CLI. The installer
+# only installs the plugin: the plugin's own `/deliberation:setup` writes its
+# rules into ~/.claude/rules/deliberation/ and its config into
+# ~/.config/deliberation/config.json, and vibekit never runs it, never touches
+# that config, and never stores a provider key. Those rules load in every
+# session and cost roughly 12k tokens, so setup stays a deliberate, manual step.
+#
+# RTK (https://github.com/rtk-ai/rtk), "Rust Token Killer", is a standalone CLI
+# that compresses shell-command output before it reaches the model. It installs
+# by default; pass -R (or RTK=false) to skip. Install is idempotent: if `rtk` is
+# already on PATH the binary download is skipped and only the Claude Code hook is
+# refreshed. The installer (curl | sh) tracks the latest release unless RTK_VERSION
+# is set, and verifies SHA-256 checksums. `rtk init -g` writes a PreToolUse hook
+# into ~/.claude/settings.json; it runs after the settings merge so the hook
+# survives every sync. See SECURITY.md for the trust model.
+################################################################################
+
+set -e
+
+REPO_URL="https://github.com/timurgaleev/vibestack.git"
+REPO_DIR="${HOME}/.vibekit"
+
+# The deployable payload lives under config/ in the repo; REPO_DIR stays the
+# checkout root because the git freshness checks below operate on it.
+PAYLOAD_DIR="${PAYLOAD_DIR:-$REPO_DIR/config}"
+
+DEPLOY_TARGETS=(
+  "claude:${HOME}/.claude"
+  "kiro:${HOME}/.kiro"
+  "cursor:${HOME}/.cursor"
+  "codex:${HOME}/.codex"
+)
+
+PREVIEW_ONLY=false
+CAVEMAN=${CAVEMAN:-false}      # Set to true or use -C flag to install the Caveman skill
+# Pinned to a specific commit (not `main`) so enabling -C never silently runs
+# whatever lands upstream. Review the upstream diff before bumping this SHA.
+# Override with CAVEMAN_INSTALL_URL=<url> to use latest main, a fork, or a mirror.
+CAVEMAN_INSTALL_URL=${CAVEMAN_INSTALL_URL:-https://raw.githubusercontent.com/JuliusBrussee/caveman/25d22f864ad68cc447a4cb93aefde918aa4aec9f/install.sh}
+PONYTAIL=${PONYTAIL:-false}    # Set to true or use -Y flag to install the Ponytail plugin
+PONYTAIL_REPO=${PONYTAIL_REPO:-DietrichGebert/ponytail}  # Marketplace source (owner/repo, URL, or path)
+PONYTAIL_PLUGIN=${PONYTAIL_PLUGIN:-ponytail@ponytail}     # plugin@marketplace identifier
+DELIBERATION=${DELIBERATION:-false}  # Set to true or use -D flag to install the deliberation plugin
+DELIBERATION_REPO=${DELIBERATION_REPO:-antonbabenko/agent-plugins}  # Marketplace source (owner/repo, URL, or path)
+DELIBERATION_PLUGIN=${DELIBERATION_PLUGIN:-deliberation@antonbabenko}  # plugin@marketplace identifier
+RTK=${RTK:-true}               # Set to false or use -R flag to skip RTK install
+# Tracks the latest tagged release; the installer verifies SHA-256 checksums.
+# Pin with RTK_VERSION=vX.Y.Z, or point RTK_INSTALL_URL at a fork/mirror/pinned ref.
+RTK_INSTALL_URL=${RTK_INSTALL_URL:-https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh}
+RTK_VERSION=${RTK_VERSION:-}    # Empty = latest release; set e.g. v0.43.0 to pin
+
+# Files co-owned with the target app: the repo contributes some entries, the app
+# writes the rest at runtime. Declared statically as target:relpath:strategy.
+#
+# This list is the single source for two things — which merge strategy a file
+# gets, and which paths prune must never delete. Deriving the protected set from
+# the files actually present in the repo would drop protection at exactly the
+# moment it is needed: the release that stops shipping one of these.
+MERGE_MANAGED=(
+  "claude:CLAUDE.md:append"
+  "codex:config.toml:toml"
+  "codex:hooks.json:json"
+  "cursor:hooks.json:json"
+  "codex:rules/default.rules:block"
+  "kiro:agents/default.json:json"
+)
+
+# merge_strategy_for <target> <relpath> — echoes the strategy, or nothing.
+merge_strategy_for() {
+  local entry
+  for entry in "${MERGE_MANAGED[@]}"; do
+    if [[ "${entry%%:*}" == "$1" && "$(echo "$entry" | cut -d: -f2)" == "$2" ]]; then
+      printf '%s' "${entry##*:}"
+      return 0
+    fi
+  done
+}
+
+# ~/.claude/CLAUDE.md is repo-managed down to this line; `rtk init` and anything
+# else that wants to be loaded appends below it, and stays there across syncs.
+CLAUDE_MD_END="<!-- END vibekit-managed CLAUDE.md — lines below are yours and survive every sync -->"
+
+# Codex rewrites ~/.codex/rules/default.rules whenever the user approves a
+# command prefix, so only the region between these markers is repo-managed.
+CODEX_RULES_BEGIN="# BEGIN vibekit managed codex rules"
+CODEX_RULES_END="# END vibekit managed codex rules"
+
+# Counters
+ADDED=0
+CHANGED=0
+SKIPPED=0
+PRUNED=0
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+msg_info()  { echo -e "${BLUE}  > $*${NC}"; }
+msg_done()  { echo -e "${GREEN}  + $*${NC}"; }
+msg_add()   { echo -e "${CYAN}  * $*${NC}"; }
+msg_warn()  { echo -e "${YELLOW}  ! $*${NC}"; }
+
+file_hash() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    md5 -q "$1" 2>/dev/null
+  else
+    md5sum "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+is_bin() {
+  file "$1" | grep -qv "text"
+}
+
+# Defined here rather than taken from lib/sync.sh because the first thing it
+# guards is the clone that makes that lib available. sync.sh keeps this copy.
+retry() {
+  local description="$1"
+  shift
+  local max_retries=3 attempt=0 wait_time=5
+
+  while [[ $attempt -lt $max_retries ]]; do
+    if "$@"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if [[ $attempt -eq $max_retries ]]; then
+      return 1
+    fi
+    msg_warn "$description failed — retrying in ${wait_time}s (attempt $attempt/$max_retries)"
+    sleep "$wait_time"
+    wait_time=$((wait_time * 2))
+  done
+}
+
+deploy_file() {
+  local src="$1" dst="$2"
+  mkdir -p "$(dirname "$dst")"
+  cp "$src" "$dst"
+}
+
+diff_preview() {
+  local src="$1" dst="$2"
+
+  if command -v colordiff >/dev/null 2>&1; then
+    diff -u "$dst" "$src" | colordiff | head -30
+  else
+    diff -u "$dst" "$src" | head -30
+  fi
+
+  local total
+  total=$(diff -u "$dst" "$src" | wc -l)
+  if [[ $total -gt 30 ]]; then
+    msg_warn "... (${total} lines total, showing first 30)"
+  fi
+}
+
+
+# Parse arguments
+while getopts "nCYDRh" opt; do
+  case $opt in
+    n) PREVIEW_ONLY=true ;;
+    C) CAVEMAN=true ;;
+    Y) PONYTAIL=true ;;
+    D) DELIBERATION=true ;;
+    R) RTK=false ;;
+    h)
+      echo "Usage: $0 [-n] [-C] [-Y] [-D] [-R] [-h]"
+      echo "  -n  Preview mode (no changes written)"
+      echo "  -C  Install the Caveman token-compression skill (off by default)"
+      echo "  -Y  Install the Ponytail minimal-code plugin (off by default)"
+      echo "  -D  Install the deliberation multi-model plugin (off by default)"
+      echo "  -R  Skip RTK install (Rust Token Killer; installed by default)"
+      echo "  -h  Show this help"
+      echo ""
+      echo "  CAVEMAN=true $0       # Same as -C via env var"
+      echo "  PONYTAIL=true $0      # Same as -Y via env var"
+      echo "  DELIBERATION=true $0  # Same as -D via env var"
+      echo "  RTK=false $0          # Same as -R via env var"
+      exit 0
+      ;;
+    *)
+      echo "Usage: $0 [-n] [-C] [-Y] [-D] [-R] [-h]"
+      exit 1
+      ;;
+  esac
+done
+
+echo -e "\n${CYAN}---------------------------------------------------------------${NC}"
+echo -e "${CYAN}                     AI-CONFIG DEPLOY                         ${NC}"
+echo -e "${CYAN}---------------------------------------------------------------${NC}"
+
+if [[ "$PREVIEW_ONLY" == true ]]; then
+  msg_warn "Preview mode: no files will be written"
+fi
+
+if [[ "$CAVEMAN" == true ]]; then
+  msg_info "Caveman skill: will install (-C)"
+else
+  msg_info "Caveman skill: skipped (default — pass -C to install)"
+fi
+
+if [[ "$PONYTAIL" == true ]]; then
+  msg_info "Ponytail plugin: will install (-Y)"
+else
+  msg_info "Ponytail plugin: skipped (default — pass -Y to install)"
+fi
+
+if [[ "$DELIBERATION" == true ]]; then
+  msg_info "deliberation plugin: will install (-D)"
+else
+  msg_info "deliberation plugin: skipped (default — pass -D to install)"
+fi
+
+if [[ "$RTK" == true ]]; then
+  msg_info "RTK: will install/refresh (default — pass -R to skip)"
+else
+  msg_info "RTK: skipped (-R)"
+fi
+
+# Clone or pull repository
+echo -e "\n${CYAN}> Fetching repository...${NC}"
+
+if [[ ! -d "$REPO_DIR" ]]; then
+  msg_info "Cloning: $REPO_URL"
+  if ! retry "Clone" git clone "$REPO_URL" "$REPO_DIR"; then
+    msg_warn "Failed to clone $REPO_URL after 3 attempts"
+    exit 1
+  fi
+  msg_done "Cloned successfully"
+else
+  msg_info "Updating: $REPO_DIR"
+  # A failed pull is not fatal — the existing checkout is still deployable, and
+  # aborting would leave the machine stuck on whatever blocked the pull.
+  if retry "Pull" git -C "$REPO_DIR" pull; then
+    msg_done "Up to date"
+  else
+    # Falling back to the existing checkout is only safe if it is a clean
+    # snapshot. A conflicted merge leaves half-updated files, and deploying that
+    # would also drive prune from an incomplete file list.
+    # rev-parse --git-path resolves correctly for linked worktrees, where .git
+    # is a file rather than a directory. rebase-apply matters too: with the apply
+    # backend a resolved-but-uncontinued rebase leaves no unmerged index entries.
+    _in_progress=false
+    for _marker in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+      _p=$(git -C "$REPO_DIR" rev-parse --git-path "$_marker" 2>/dev/null) || continue
+      [[ -e "$REPO_DIR/$_p" || -e "$_p" ]] && _in_progress=true
+    done
+    # Compare against the literal "true": in a bare repository rev-parse prints
+    # "false" and still exits 0, so testing the exit status alone passes there.
+    if [[ "$(git -C "$REPO_DIR" rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]]; then
+      msg_warn "Pull failed and $REPO_DIR is not a valid git worktree — refusing to deploy it"
+      exit 1
+    fi
+    # Local modifications mean the checkout no longer matches any released
+    # commit. Deploying it would also drive prune from an edited file list.
+    # Capture status and exit code separately: a failing `git status` yields an
+    # empty string, which an emptiness test would read as "clean".
+    _status_out=$(git -C "$REPO_DIR" status --porcelain 2>/dev/null)
+    _status_rc=$?
+    if [[ "$_status_rc" -ne 0 ]]; then
+      msg_warn "Pull failed and \`git status\` errored in $REPO_DIR — refusing to deploy it"
+      exit 1
+    fi
+    if [[ -n "$_status_out" ]]; then
+      msg_warn "Pull failed and $REPO_DIR has local modifications — refusing to deploy it"
+      msg_info "Reset it (git -C $REPO_DIR reset --hard) and re-run"
+      exit 1
+    fi
+    if [[ -n "$(git -C "$REPO_DIR" ls-files --unmerged 2>/dev/null)" ]] || [[ "$_in_progress" == true ]]; then
+      msg_warn "Pull failed and $REPO_DIR has an unresolved merge — refusing to deploy a conflicted checkout"
+      msg_info "Resolve it (git -C $REPO_DIR merge --abort) and re-run"
+      exit 1
+    fi
+    msg_warn "Failed to update $REPO_DIR — deploying the existing checkout"
+  fi
+fi
+
+# Sync helpers: manifest-based prune plus the fill-missing merges used for files
+# the target app rewrites at runtime. Without this lib the deploy still works,
+# it just stops pruning files the repo has dropped.
+SYNC_LIB_LOADED=false
+if [[ -f "$REPO_DIR/lib/config-sync.sh" ]]; then
+  source "$REPO_DIR/lib/config-sync.sh"
+  SYNC_LIB_LOADED=true
+else
+  msg_warn "lib/config-sync.sh missing in $REPO_DIR — prune and fill-missing merges unavailable"
+fi
+
+# One-time cleanup of files earlier versions deployed before manifests existed,
+# so a machine that never had a manifest still loses them. Without a manifest
+# there is no ownership record, so each entry pairs a path with the SHA-256 of
+# the exact bytes this repo shipped (recovered from the removal commit). Only a
+# byte-identical file is deleted: any local edit, however small, means the user
+# has taken it over.
+# NOTE: drop this block once every machine has synced past v1.6.0.
+LEGACY_FILES=(
+  # Replaced by rules/memex.md in v1.5.4 (commit 4f424a6).
+  "${HOME}/.claude/rules/obsidian.md|627b1a56232c9b58a5aa5476e6db40440ea73cdb496f40f7be87d103392efb98"
+  "${HOME}/.cursor/rules/obsidian.mdc|9cb8671e4c1b82341c7e1cea6212e2c5fd5875ec7cbd4a958b66ec34521567d3"
+)
+for entry in "${LEGACY_FILES[@]}"; do
+  legacy="${entry%%|*}"
+  want_hash="${entry#*|}"
+  [[ -f "$legacy" ]] || continue
+  got_hash=$(shasum -a 256 "$legacy" 2>/dev/null | awk '{print $1}')
+  if [[ "$got_hash" != "$want_hash" ]]; then
+    msg_warn "KEEPING ${legacy/#$HOME/\~} — differs from the version vibekit shipped; delete it yourself if unwanted"
+    continue
+  fi
+  msg_warn "REMOVE (legacy): ${legacy/#$HOME/\~}"
+  [[ "$PREVIEW_ONLY" == false ]] && rm -f "$legacy"
+done
+
+# Deploy each target
+for entry in "${DEPLOY_TARGETS[@]}"; do
+  src_subdir="${entry%%:*}"
+  dst_dir="${entry#*:}"
+  src_path="$PAYLOAD_DIR/$src_subdir"
+
+  if [[ ! -d "$src_path" ]] || [[ -z "$(ls -A "$src_path" 2>/dev/null)" ]]; then
+    msg_info "Skipping $src_subdir/ (empty or missing)"
+    continue
+  fi
+
+  echo -e "\n${CYAN}> Deploying $src_subdir/ -> $dst_dir/${NC}"
+
+  if [[ ! -d "$dst_dir" ]] && [[ "$PREVIEW_ONLY" == false ]]; then
+    mkdir -p "$dst_dir"
+  fi
+
+  # claude/settings.json is merged separately below to preserve user customizations
+  # (locally-enabled plugins, additions to permissions.allow, etc.), so it is
+  # also left out of the manifest and never pruned.
+  find_excludes=(
+    "-not" "-path" "*/.git/*"
+    "-not" "-path" "*/__pycache__/*"
+    "-not" "-name" "*.pyc"
+    "-not" "-name" "cli-config.json"
+  )
+  if [[ "$src_subdir" == "claude" ]]; then
+    find_excludes+=("-not" "-name" "settings.json")
+  fi
+
+  # Records every file this run manages, deployed or already identical. The
+  # diff against the previous run is what prune acts on.
+  manifest_tmp="$(mktemp)"
+  # Paths this sync co-owns with the target app, taken from the static
+  # declaration rather than from what the repo currently ships — so prune keeps
+  # skipping them even after a release stops shipping one.
+  protected_tmp="$(mktemp)"
+  for entry in "${MERGE_MANAGED[@]}"; do
+    [[ "${entry%%:*}" == "$src_subdir" ]] && echo "$entry" | cut -d: -f2 >> "$protected_tmp"
+  done
+
+  while IFS= read -r -d '' src_file; do
+    rel_path="${src_file#$src_path/}"
+    dst_file="$dst_dir/$rel_path"
+
+    # The manifest is newline-delimited; a filename containing a newline would
+    # split into entries that prune later matches against unrelated files.
+    if [[ "$rel_path" == *$'\n'* ]]; then
+      msg_warn "SKIP: filename contains a newline — $(printf '%q' "$rel_path")"
+      SKIPPED=$((SKIPPED + 1))
+      continue
+    fi
+
+    # Files a second writer owns part of (Codex project trust and TUI state,
+    # Codex's accepted command prefixes, Kiro's agent hooks, the `@RTK.md` line
+    # `rtk init` appends to Claude's CLAUDE.md) are merged instead of
+    # overwritten, so that writer's state survives every sync.
+    merge_mode="$(merge_strategy_for "$src_subdir" "$rel_path")"
+
+    # Merge-managed files are co-owned: the repo contributes some keys, the app
+    # writes the rest. They are deliberately kept OUT of the manifest — if the
+    # repo ever stopped shipping one, pruning it would delete the user's runtime
+    # state along with our entries. Everything else is manifest-tracked and
+    # therefore prunable.
+    if [[ -z "$merge_mode" ]]; then
+      printf '%s\n' "$rel_path" >> "$manifest_tmp"
+    else
+      printf '%s\n' "$rel_path" >> "$protected_tmp"
+    fi
+
+    # Without the merge helpers a plain copy would wipe the runtime state these
+    # files hold, so skip them rather than overwrite.
+    if [[ -n "$merge_mode" && "$SYNC_LIB_LOADED" == false ]]; then
+      msg_warn "SKIP: $rel_path (needs lib/sync.sh to merge safely)"
+      SKIPPED=$((SKIPPED + 1))
+      continue
+    fi
+
+    if [[ -n "$merge_mode" ]]; then
+      rc=0
+      case "$merge_mode" in
+        toml)  toml_fill_missing "$src_file" "$dst_file" || rc=$? ;;
+        json)  json_fill_missing "$src_file" "$dst_file" || rc=$? ;;
+        block) sync_managed_block "$src_file" "$dst_file" \
+                 "$CODEX_RULES_BEGIN" "$CODEX_RULES_END" || rc=$? ;;
+        append) sync_append_managed "$src_file" "$dst_file" "$CLAUDE_MD_END" || rc=$? ;;
+      esac
+      case "$rc" in
+        0) SKIPPED=$((SKIPPED + 1)) ;;
+        1) msg_done "MERGE: $rel_path (added missing entries, kept local ones)"
+           CHANGED=$((CHANGED + 1)) ;;
+        2) msg_add  "NEW: $rel_path"
+           ADDED=$((ADDED + 1)) ;;
+      esac
+      continue
+    fi
+
+    if [[ ! -f "$dst_file" ]]; then
+      msg_add "NEW: $rel_path"
+      if [[ "$PREVIEW_ONLY" == false ]]; then
+        deploy_file "$src_file" "$dst_file"
+      fi
+      ADDED=$((ADDED + 1))
+    else
+      src_hash=$(file_hash "$src_file")
+      dst_hash=$(file_hash "$dst_file")
+
+      if [[ "$src_hash" == "$dst_hash" ]]; then
+        SKIPPED=$((SKIPPED + 1))
+      else
+        msg_done "UPDATE: $rel_path"
+        if ! is_bin "$src_file"; then
+          diff_preview "$src_file" "$dst_file"
+        fi
+        if [[ "$PREVIEW_ONLY" == false ]]; then
+          deploy_file "$src_file" "$dst_file"
+        fi
+        CHANGED=$((CHANGED + 1))
+      fi
+    fi
+  done < <(find "$src_path" -type f "${find_excludes[@]}" -print0 | sort -z)
+
+  # Prune files a previous sync deployed that the repo no longer ships. Files
+  # absent from the previous manifest were installed by the user and are left
+  # alone.
+  if [[ "$SYNC_LIB_LOADED" == true ]]; then
+    prune_target "$src_subdir" "$dst_dir" "$manifest_tmp" "$protected_tmp"
+    PRUNED=$((PRUNED + PRUNE_COUNT))
+    commit_manifest "$src_subdir" "$manifest_tmp"
+  else
+    rm -f "$manifest_tmp"
+  fi
+  rm -f "$protected_tmp"
+done
+
+# Claude settings.json: deep merge so user customizations survive sync.
+#   - Source wins for scalar/object keys (repo authoritative for shared policy)
+#   - permissions.allow/deny/ask/additionalDirectories: array union (user additions kept)
+#   - enabledPlugins: deep merge (user-enabled plugins not in repo preserved)
+#   - Destination-only top-level keys preserved (e.g. user-set skipAutoPermissionPrompt)
+CLAUDE_SETTINGS_SRC="$PAYLOAD_DIR/claude/settings.json"
+CLAUDE_SETTINGS_DST="${HOME}/.claude/settings.json"
+if [[ -f "$CLAUDE_SETTINGS_SRC" ]]; then
+  echo -e "\n${CYAN}> Merging claude/settings.json -> $CLAUDE_SETTINGS_DST${NC}"
+  if [[ ! -f "$CLAUDE_SETTINGS_DST" ]]; then
+    msg_add "NEW: claude/settings.json"
+    if [[ "$PREVIEW_ONLY" == false ]]; then
+      deploy_file "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST"
+    fi
+    ADDED=$((ADDED + 1))
+  elif command -v python3 >/dev/null 2>&1; then
+    merged=$(python3 - "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST" <<'PYEOF'
+import json, sys
+
+with open(sys.argv[1]) as f:
+    src = json.load(f)
+with open(sys.argv[2]) as f:
+    dst = json.load(f)
+
+PERMISSION_ARRAY_KEYS = ("allow", "deny", "ask", "additionalDirectories")
+
+def deep_merge(s, d):
+    if not isinstance(s, dict) or not isinstance(d, dict):
+        return s
+    out = dict(d)
+    for k, v in s.items():
+        if k in d and isinstance(v, dict) and isinstance(d[k], dict):
+            out[k] = deep_merge(v, d[k])
+        else:
+            out[k] = v
+    return out
+
+def union_dedup(*arrays):
+    seen = set()
+    result = []
+    for arr in arrays:
+        if not isinstance(arr, list):
+            continue
+        for item in arr:
+            key = item if isinstance(item, (str, int, float, bool, type(None))) else repr(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(item)
+    return result
+
+merged = deep_merge(src, dst)
+
+if isinstance(src.get("permissions"), dict) and isinstance(dst.get("permissions"), dict):
+    merged.setdefault("permissions", {})
+    for k in PERMISSION_ARRAY_KEYS:
+        s_list = src["permissions"].get(k)
+        d_list = dst["permissions"].get(k)
+        if isinstance(s_list, list) or isinstance(d_list, list):
+            merged["permissions"][k] = union_dedup(s_list or [], d_list or [])
+
+print(json.dumps(merged, indent=2))
+PYEOF
+)
+    merged_hash=$(echo "$merged" | md5 -q 2>/dev/null || echo "$merged" | md5sum | awk '{print $1}')
+    dst_hash=$(file_hash "$CLAUDE_SETTINGS_DST")
+    if [[ "$merged_hash" != "$dst_hash" ]]; then
+      msg_done "MERGE: claude/settings.json (preserved user customizations)"
+      if [[ "$PREVIEW_ONLY" == false ]]; then
+        echo "$merged" > "$CLAUDE_SETTINGS_DST"
+      fi
+      CHANGED=$((CHANGED + 1))
+    else
+      msg_info "no changes after merge"
+      SKIPPED=$((SKIPPED + 1))
+    fi
+  else
+    msg_warn "python3 not found — falling back to full overwrite of claude/settings.json"
+    if [[ "$PREVIEW_ONLY" == false ]]; then
+      deploy_file "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST"
+    fi
+    CHANGED=$((CHANGED + 1))
+  fi
+fi
+
+# Cursor cli-config.json: merge only non-personal keys (permissions, approvalMode)
+# to avoid overwriting personal data (authInfo, model, etc.)
+CURSOR_CLI_CONFIG_SRC="$PAYLOAD_DIR/cursor/cli-config.json"
+CURSOR_CLI_CONFIG_DST="${HOME}/.cursor/cli-config.json"
+if [[ -f "$CURSOR_CLI_CONFIG_SRC" ]]; then
+  if [[ ! -f "$CURSOR_CLI_CONFIG_DST" ]]; then
+    msg_add "NEW: cursor/cli-config.json"
+    if [[ "$PREVIEW_ONLY" == false ]]; then
+      deploy_file "$CURSOR_CLI_CONFIG_SRC" "$CURSOR_CLI_CONFIG_DST"
+    fi
+    ADDED=$((ADDED + 1))
+  else
+    if command -v python3 >/dev/null 2>&1; then
+      merged=$(python3 - "$CURSOR_CLI_CONFIG_SRC" "$CURSOR_CLI_CONFIG_DST" <<'PYEOF'
+import json, sys
+src = json.load(open(sys.argv[1]))
+dst = json.load(open(sys.argv[2]))
+for key in ("permissions", "approvalMode", "version"):
+    if key in src:
+        dst[key] = src[key]
+print(json.dumps(dst, indent=2))
+PYEOF
+)
+      merged_hash=$(echo "$merged" | md5 -q 2>/dev/null || echo "$merged" | md5sum | awk '{print $1}')
+      dst_hash=$(file_hash "$CURSOR_CLI_CONFIG_DST")
+      if [[ "$merged_hash" != "$dst_hash" ]]; then
+        msg_done "MERGE: cursor/cli-config.json (permissions, approvalMode)"
+        if [[ "$PREVIEW_ONLY" == false ]]; then
+          echo "$merged" > "$CURSOR_CLI_CONFIG_DST"
+        fi
+        CHANGED=$((CHANGED + 1))
+      else
+        SKIPPED=$((SKIPPED + 1))
+      fi
+    else
+      msg_warn "python3 not found — skipping cursor/cli-config.json merge"
+    fi
+  fi
+fi
+
+# Cursor settings.json requires a manual step (different path per OS)
+CURSOR_SETTINGS_SRC="$PAYLOAD_DIR/cursor/settings.json"
+if [[ -f "$CURSOR_SETTINGS_SRC" ]]; then
+  if [[ "$(uname)" == "Darwin" ]]; then
+    CURSOR_SETTINGS_DST="$HOME/Library/Application Support/Cursor/User/settings.json"
+  else
+    CURSOR_SETTINGS_DST="$HOME/.config/Cursor/User/settings.json"
+  fi
+  if [[ ! -f "$CURSOR_SETTINGS_DST" ]]; then
+    msg_add "NOTE: Cursor settings.json not applied automatically."
+    msg_info "  To apply: cp \"$CURSOR_SETTINGS_SRC\" \"$CURSOR_SETTINGS_DST\""
+  else
+    src_hash=$(file_hash "$CURSOR_SETTINGS_SRC")
+    dst_hash=$(file_hash "$CURSOR_SETTINGS_DST")
+    if [[ "$src_hash" != "$dst_hash" ]]; then
+      msg_warn "Cursor settings.json has changes — merge manually:"
+      msg_info "  Source:      $CURSOR_SETTINGS_SRC"
+      msg_info "  Destination: $CURSOR_SETTINGS_DST"
+    fi
+  fi
+fi
+
+# Caveman skill: opt-in install via its official installer (self-updating).
+# Off by default; enabled with -C or CAVEMAN=true. Requires Node >= 18 — if it
+# is missing we warn and skip rather than aborting the whole sync.
+if [[ "$CAVEMAN" == true ]]; then
+  echo -e "\n${CYAN}> Installing Caveman skill...${NC}"
+
+  node_major=""
+  if command -v node >/dev/null 2>&1; then
+    node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo "")
+  fi
+
+  if [[ -z "$node_major" ]]; then
+    msg_warn "Node not found — skipping Caveman (needs Node >= 18)"
+    msg_info "Install Node, then re-run: $0 -C"
+  elif [[ "$node_major" -lt 18 ]]; then
+    msg_warn "Node $(node -v 2>/dev/null) is too old — skipping Caveman (needs Node >= 18)"
+    msg_info "Upgrade Node, then re-run: $0 -C"
+  elif [[ "$PREVIEW_ONLY" == true ]]; then
+    msg_warn "Preview mode: would run Caveman installer:"
+    msg_info "  curl -fsSL \"$CAVEMAN_INSTALL_URL\" | bash"
+  else
+    msg_info "Running Caveman installer: $CAVEMAN_INSTALL_URL"
+    if curl -fsSL "$CAVEMAN_INSTALL_URL" | bash; then
+      msg_done "Caveman installed"
+    else
+      msg_warn "Caveman installer failed — skipping (sync continues)"
+    fi
+  fi
+fi
+
+# Ponytail plugin: opt-in install via the official `claude plugin` CLI.
+# Off by default; enabled with -Y or PONYTAIL=true. Needs the `claude` CLI — if
+# it is missing we warn and skip rather than aborting the whole sync. The
+# marketplace add is idempotent: a second run reports "already added".
+if [[ "$PONYTAIL" == true ]]; then
+  echo -e "\n${CYAN}> Installing Ponytail plugin...${NC}"
+
+  if ! command -v claude >/dev/null 2>&1; then
+    msg_warn "claude CLI not found — skipping Ponytail"
+    msg_info "Install Claude Code, then re-run: $0 -Y"
+  elif [[ "$PREVIEW_ONLY" == true ]]; then
+    msg_warn "Preview mode: would install Ponytail plugin:"
+    msg_info "  claude plugin marketplace add $PONYTAIL_REPO"
+    msg_info "  claude plugin install $PONYTAIL_PLUGIN"
+  else
+    msg_info "Adding marketplace: $PONYTAIL_REPO"
+    if ! claude plugin marketplace add "$PONYTAIL_REPO" 2>/dev/null; then
+      msg_info "Marketplace already added (or could not be re-added)"
+    fi
+    if claude plugin install "$PONYTAIL_PLUGIN"; then
+      msg_done "Ponytail installed (restart Claude Code to load it)"
+    else
+      msg_warn "Ponytail install failed — skipping (sync continues)"
+    fi
+  fi
+fi
+
+# deliberation plugin: opt-in install via the official `claude plugin` CLI.
+# Off by default; enabled with -D or DELIBERATION=true. Needs the `claude` CLI —
+# if it is missing we warn and skip rather than aborting the whole sync.
+#
+# This installs the plugin and nothing else. The plugin's own
+# `/deliberation:setup` owns ~/.claude/rules/deliberation/ and
+# ~/.config/deliberation/config.json; running it from here would add ~12k tokens
+# of always-on rules and could enable a paid provider behind the user's back.
+if [[ "$DELIBERATION" == true ]]; then
+  echo -e "\n${CYAN}> Installing deliberation plugin...${NC}"
+
+  if ! command -v claude >/dev/null 2>&1; then
+    msg_warn "claude CLI not found — skipping deliberation"
+    msg_info "Install Claude Code, then re-run: $0 -D"
+  elif [[ "$PREVIEW_ONLY" == true ]]; then
+    msg_warn "Preview mode: would install deliberation plugin:"
+    msg_info "  claude plugin marketplace add $DELIBERATION_REPO"
+    msg_info "  claude plugin install $DELIBERATION_PLUGIN"
+  else
+    msg_info "Adding marketplace: $DELIBERATION_REPO"
+    if ! claude plugin marketplace add "$DELIBERATION_REPO" 2>/dev/null; then
+      msg_info "Marketplace already added (or could not be re-added)"
+    fi
+    if claude plugin install "$DELIBERATION_PLUGIN"; then
+      msg_done "deliberation installed (restart Claude Code to load it)"
+      msg_info "Configuration is a separate, manual step — run /deliberation:setup"
+      msg_info "  it installs ~12k tokens of rules loaded in every session"
+      msg_info "  providers need their own auth: codex login, agy, XAI_API_KEY, OPENROUTER_API_KEY"
+    else
+      msg_warn "deliberation install failed — skipping (sync continues)"
+    fi
+  fi
+fi
+
+# RTK (Rust Token Killer): standalone CLI that compresses shell-command output.
+# Installed by default; skip with -R or RTK=false. Idempotent — if `rtk` is
+# already on PATH the binary download is skipped and only the hook is refreshed.
+#
+# `rtk init -g` adds a PreToolUse hook to ~/.claude/settings.json. The settings
+# merge above is repo-authoritative for the hooks map, so init MUST run here
+# (after the merge) to re-apply the RTK hook on every sync instead of having it
+# clobbered. If the installer or init fails we warn and continue the sync.
+if [[ "$RTK" == true ]]; then
+  echo -e "\n${CYAN}> Installing RTK...${NC}"
+
+  # Honor the upstream installer's RTK_INSTALL_DIR so a binary placed off-PATH
+  # is still found for `rtk init -g`; default matches the installer's own default.
+  rtk_dir="${RTK_INSTALL_DIR:-${HOME}/.local/bin}"
+  rtk_bin="$(command -v rtk 2>/dev/null || true)"
+  if [[ -z "$rtk_bin" && -x "${rtk_dir}/rtk" ]]; then
+    rtk_bin="${rtk_dir}/rtk"
+  fi
+
+  if [[ -n "$rtk_bin" ]]; then
+    msg_info "RTK already installed ($("$rtk_bin" --version 2>/dev/null || echo present)) — skipping binary install"
+  elif [[ "$PREVIEW_ONLY" == true ]]; then
+    msg_warn "Preview mode: would install RTK:"
+    msg_info "  curl -fsSL \"$RTK_INSTALL_URL\" | sh"
+  else
+    msg_info "Running RTK installer: $RTK_INSTALL_URL"
+    [[ -n "$RTK_VERSION" ]] && msg_info "Pinned version: $RTK_VERSION"
+    # Download to a temp file first: `curl | sh` reports the shell's exit status,
+    # not curl's (no pipefail here), so a failed download would look like success.
+    rtk_installer="$(mktemp)"
+    if curl -fsSL "$RTK_INSTALL_URL" -o "$rtk_installer" && RTK_VERSION="$RTK_VERSION" sh "$rtk_installer"; then
+      msg_done "RTK installed"
+      rtk_bin="$(command -v rtk 2>/dev/null || true)"
+      [[ -z "$rtk_bin" && -x "${rtk_dir}/rtk" ]] && rtk_bin="${rtk_dir}/rtk"
+    else
+      msg_warn "RTK installer failed — skipping (sync continues)"
+    fi
+    rm -f "$rtk_installer"
+  fi
+
+  # Apply/refresh the Claude Code hook (additive + idempotent). Runs after the
+  # settings.json merge so the RTK PreToolUse hook survives each sync.
+  # --auto-patch patches settings.json without prompting; </dev/null guards
+  # against any stray prompt blocking the curl|bash one-liner on a live TTY.
+  if [[ -n "$rtk_bin" ]]; then
+    if [[ "$PREVIEW_ONLY" == true ]]; then
+      msg_warn "Preview mode: would run: rtk init -g --auto-patch"
+    elif "$rtk_bin" init -g --auto-patch </dev/null >/dev/null 2>&1; then
+      msg_done "RTK hook applied (restart Claude Code to load it)"
+    else
+      msg_warn "rtk init failed — hook not applied (sync continues)"
+    fi
+  fi
+fi
+
+# Summary
+echo -e "\n${GREEN}---------------------------------------------------------------${NC}"
+echo -e "${GREEN}                       DEPLOY COMPLETE                        ${NC}"
+echo -e "${GREEN}---------------------------------------------------------------${NC}"
+echo
+msg_info "Results:"
+msg_add  "  New:       $ADDED"
+msg_done "  Updated:   $CHANGED"
+msg_warn "  Pruned:    $PRUNED"
+msg_info "  Unchanged: $SKIPPED"
+echo

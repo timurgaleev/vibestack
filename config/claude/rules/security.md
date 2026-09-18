@@ -1,0 +1,48 @@
+# Security Guidelines
+
+## Mandatory Security Checks
+
+Run this checklist on changes that touch a security-relevant area —
+authentication, authorization, cryptography, external input, secret handling, or
+sensitive data. It is not a per-commit ritual for unrelated work.
+
+- [ ] No hardcoded secrets (API keys, passwords, tokens)
+- [ ] All user inputs validated
+- [ ] SQL injection prevention (parameterized queries)
+- [ ] XSS prevention (sanitized HTML)
+- [ ] CSRF protection enabled
+- [ ] Authentication/authorization verified
+- [ ] Rate limiting on all endpoints
+- [ ] Error messages don't leak sensitive data
+
+## Secret Management
+
+```typescript
+// NEVER: Hardcoded secrets
+const apiKey = "sk-proj-xxxxx"
+
+// ALWAYS: Environment variables
+const apiKey = process.env.OPENAI_API_KEY
+
+if (!apiKey) {
+  throw new Error('OPENAI_API_KEY not configured')
+}
+```
+
+## Confirm Before Acting
+
+Report the blast radius and get confirmation before changing:
+
+- Authentication, session, or token handling
+- Authorization logic
+- Encryption, hashing, or signing
+- PII or payment data handling
+- Credentials for external systems
+
+## Security Response Protocol
+
+If security issue found:
+1. STOP immediately
+2. Fix CRITICAL issues before continuing
+3. Rotate any exposed secrets
+4. Review entire codebase for similar issues

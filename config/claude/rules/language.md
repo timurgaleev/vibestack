@@ -1,0 +1,18 @@
+# Language
+
+**Always respond in English.**
+
+## Rules
+
+- All responses must be written in English
+- Code, commands, and technical terms stay in English
+- Commit messages stay in English
+- Code comments stay in English
+
+## Example
+
+**Good response:**
+> Let me read the file. I need to modify the `authenticate()` method in `UserService` class.
+
+**Bad response:**
+> I'll read the file in Korean and explain in Korean.

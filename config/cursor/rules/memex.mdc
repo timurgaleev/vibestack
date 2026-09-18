@@ -1,0 +1,48 @@
+---
+description: Memex MCP memory — how to read context and save decisions.
+globs:
+alwaysApply: true
+---
+
+# Memex — Persistent Memory
+
+The user's knowledge base is the **memex MCP server**. It is the single source
+of truth for cross-session memory. Do not use any other store (local notes
+apps, vaults) for assistant memory.
+
+## Reading Context
+
+When the user references ongoing projects, decisions, or prior work, query
+memex before answering:
+
+- Semantic questions ("what is this product?", "what did I decide about X?")
+  → memex `search` / `recall`
+- Everything tied to a named project or person → `entity_recall`,
+  `entity_timeline`
+- Direct page lookup → `page_get`, listing → `page_list`
+- "What happened recently?" → `chronicle_since`, `chronicle_day`
+
+Grep is still right for known exact strings, regex, and file globs in the
+current repo.
+
+## Saving Information
+
+Save directly to memex when work produces something worth keeping:
+
+- Discrete facts and decisions → `add_fact`
+- Longer notes, designs, research → `page_put` / `page_append`
+- Timeline events (shipped X, decided Y) → `add_timeline_event`
+
+## When to Save
+
+- Architectural or design decisions made during a session
+- Discovered constraints, gotchas, or non-obvious facts about a project
+- Completed features or milestones
+- When the user says "remember this" or "note that"
+
+## Fallback
+
+If memex tools are unavailable (server down, 401 = token rotated —
+re-register the MCP server), say so and continue without blocking. The MCP
+registration (URL + token) lives in the editor's MCP config — no secret
+belongs in this repo.
