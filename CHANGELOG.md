@@ -1,5 +1,69 @@
 # Changelog
 
+## 1.39.0 — 2026-09-18
+
+### Added
+
+- **The pack now carries its configuration as well as its skills.** `./install
+  --with-config` deploys `CLAUDE.md`, thirteen behaviour rules, thirty-three
+  sub-agents, a statusline and the Cursor/Kiro/Codex payloads into `~/.claude`,
+  `~/.cursor`, `~/.kiro` and `~/.codex` — the always-on context the workflows
+  were written against. It lives in `config/` and installs through the same
+  command as the skills, so a new machine takes one clone and one command.
+- **`--only=config` and `--only=skills`** run a single phase, and `--no-config`
+  states the default explicitly. `--target=` now scopes both phases, so
+  `--target=codex` touches Codex and nothing else.
+- **The optional tools come with it:** `--caveman`, `--ponytail`,
+  `--deliberation` and `--no-rtk`, plus the environment switches those already
+  answered to (`CAVEMAN=true`, `RTK=false`, and the URL and version overrides).
+- **`./uninstall --with-config`** removes what the configuration phase recorded
+  installing: files the manifest lists, and the marked region of the two files
+  it co-owns. Anything you added is left alone, and merged keys are reported
+  rather than guessed at.
+
+### Fixed
+
+- **A configuration file the installer could not parse is no longer replaced
+  with an empty one.** A failed merge printed nothing, and that nothing went
+  to disk: a malformed `~/.claude/settings.json` came back as a single byte,
+  taking permissions, plugins and environment with it. Cursor's
+  `cli-config.json`, which holds credentials, had the same shape. Results are
+  now validated before they are written, writes go through an atomic rename,
+  and a merge that cannot run leaves the file exactly as it was.
+- **A failed run no longer deletes what it just installed.** The manifest that
+  drives pruning was staged by unchecked commands, so a failure produced an
+  empty list and pruning read that as "the repository dropped everything" —
+  measured at 48 of 50 deployed files removed, with the run reporting success.
+  Staging is checked at every step, and a failure skips pruning entirely.
+- **The Codex `config.toml` merge no longer produces a file Codex cannot read.**
+  A table header carrying a trailing comment — `[features] # mine`, which is
+  valid TOML — was invisible to the merge, so it appended a second `[features]`
+  and the duplicate made the whole file unparseable. Array-of-tables headers
+  were invisible the same way. The result is now checked with a real TOML
+  parser before it is committed.
+- **An interrupted configuration run cleans up after itself.** Ctrl-C during a
+  merge left `CLAUDE.md.vibekit.a1b2c3` beside the real file in a directory the
+  agent reads, and `--only=config` ran before the signal handlers were even
+  installed. Both are fixed, and the recovery advice now matches the phase that
+  was interrupted.
+- **The PATH notice stops firing once you have followed it.** The check died on
+  a broken pipe under `pipefail`, so it reported the directory missing exactly
+  when it was present and early in a long `PATH`.
+- **Missing `python3` refuses instead of overwriting.** It used to fall back to
+  replacing `settings.json` wholesale, discarding the customizations the merge
+  exists to preserve.
+
+### Changed
+
+- The configuration phase is **opt-in in this release**. It writes into files
+  you may already own, so `./install` on its own still installs only the skills
+  until you pass `--with-config`. Contradictory combinations are refused rather
+  than guessed at, and `--scope=project` with the configuration phase is
+  rejected — there is no project-local `~/.claude/CLAUDE.md` to pin.
+- `README.md`, `SECURITY.md`, `docs/configuration.md` and `CLAUDE.md` describe
+  one product with two halves, including what the payload allows (`Bash(*)`,
+  `acceptEdits`) and where to read about it before installing it.
+
 ## 1.38.5 — 2026-09-18
 
 ### Fixed
