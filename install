@@ -303,6 +303,37 @@ if [ "$WITH_CONFIG" = "1" ] && [ "$SCOPE" = "project" ]; then
   exit 2
 fi
 
+# ───────────────────────────────────────────────────────────────────────────
+# Signal handlers. After arg parsing (eng-review R2) and before any phase runs
+# — the --only=config path returns below, and used to return before these were
+# installed, leaving that run with no handler at all.
+# Per Codex outside-voice (R14): SIGINT exits 130, SIGTERM exits 143.
+# ───────────────────────────────────────────────────────────────────────────
+# Recovery differs per phase: staging dirs belong to the skills phase, while an
+# interrupted config phase may have left a merge half-applied.
+interrupt_recovery_hint() {
+  if [ "$RUN_SKILLS" = "1" ]; then
+    echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)."
+  else
+    echo "Re-run ./install --only=config to converge (idempotent — merges re-apply cleanly)."
+  fi
+}
+
+on_interrupt() {
+  echo "" >&2
+  echo "Installation interrupted (SIGINT); some targets may be partially updated." >&2
+  interrupt_recovery_hint >&2
+  exit 130
+}
+on_terminate() {
+  echo "" >&2
+  echo "Installation terminated (SIGTERM); some targets may be partially updated." >&2
+  interrupt_recovery_hint >&2
+  exit 143
+}
+trap on_interrupt INT
+trap on_terminate TERM
+
 # run_config_phase — source the config library and hand it the resolved flags.
 # Returns the library's status; the caller decides what a failure means for the
 # run as a whole.
@@ -332,24 +363,6 @@ if [ "$RUN_SKILLS" = "0" ]; then
   exit $?
 fi
 
-# ───────────────────────────────────────────────────────────────────────────
-# Signal handlers (placed AFTER arg parsing per eng-review R2).
-# Per Codex outside-voice (R14): SIGINT exits 130, SIGTERM exits 143.
-# ───────────────────────────────────────────────────────────────────────────
-on_interrupt() {
-  echo "" >&2
-  echo "Installation interrupted (SIGINT); some targets may be partially updated." >&2
-  echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)." >&2
-  exit 130
-}
-on_terminate() {
-  echo "" >&2
-  echo "Installation terminated (SIGTERM); some targets may be partially updated." >&2
-  echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)." >&2
-  exit 143
-}
-trap on_interrupt INT
-trap on_terminate TERM
 
 # ───────────────────────────────────────────────────────────────────────────
 # Install plan printer (v1.5.0)

@@ -209,6 +209,17 @@ else
   msg_warn "lib/config-sync.sh missing in $CFG_REPO_DIR — prune and fill-missing merges unavailable"
 fi
 
+# Sweeps the temps staged beside their destinations. Without it an interrupt
+# mid-merge leaves e.g. ~/.claude/CLAUDE.md.vibekit.a1b2c3 next to the real
+# file, in a directory the agent reads.
+config_cleanup_tmps() {
+  local f
+  for f in "${CFG_TMP_FILES[@]:-}"; do
+    [[ -n "$f" ]] && rm -f "$f"
+  done
+  CFG_TMP_FILES=()
+}
+
 # config_phase_run — deploy the payload into every target present on this
 # machine. Returns 0 when every target applied, 1 when any target was refused
 # or failed; the caller reports both without aborting the other phase.
@@ -225,6 +236,9 @@ local legacy want_hash got_hash merged merged_hash node_major
 local rtk_dir rtk_bin rtk_installer target_failed
 
 ADDED=0; CHANGED=0; SKIPPED=0; PRUNED=0; FAILED=0
+CFG_TMP_FILES=()
+# ./install's INT and TERM handlers call exit, so EXIT covers an interrupt too.
+trap config_cleanup_tmps EXIT
 
 echo -e "\n${CYAN}---------------------------------------------------------------${NC}"
 echo -e "${CYAN}                     AI-CONFIG DEPLOY                         ${NC}"
@@ -323,10 +337,12 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
   # Records every file this run manages, deployed or already identical. The
   # diff against the previous run is what prune acts on.
   manifest_tmp="$(mktemp)"
+  CFG_TMP_FILES+=("$manifest_tmp")
   # Paths this sync co-owns with the target app, taken from the static
   # declaration rather than from what the repo currently ships — so prune keeps
   # skipping them even after a release stops shipping one.
   protected_tmp="$(mktemp)"
+  CFG_TMP_FILES+=("$protected_tmp")
   for mm_entry in "${MERGE_MANAGED[@]}"; do
     [[ "${mm_entry%%:*}" == "$src_subdir" ]] && echo "$mm_entry" | cut -d: -f2 >> "$protected_tmp"
   done

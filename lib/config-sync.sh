@@ -19,6 +19,11 @@
 # caller has not declared it — an unset flag means "write", the safe reading
 # only because every write path here is otherwise guarded.
 
+# Temp files staged next to their destination. Recorded so an interrupted run
+# does not leave a CLAUDE.md.vibekit.a1b2c3 sitting in a directory the agent
+# reads. Entries that were already renamed away are a no-op to remove.
+CFG_TMP_FILES=()
+
 GREEN="${GREEN:-\033[0;32m}"
 YELLOW="${YELLOW:-\033[0;33m}"
 BLUE="${BLUE:-\033[0;34m}"
@@ -64,6 +69,7 @@ inside_dir() {
 write_atomic() {
   local dst="$1" tmp mode
   tmp="$(mktemp "${dst}.vibekit.XXXXXX")" || return 1
+  CFG_TMP_FILES+=("$tmp")
   if ! cat > "$tmp"; then
     rm -f "$tmp"
     return 1
@@ -277,6 +283,7 @@ commit_merge() {
     msg_warn "Could not stage a merge for $dst — leaving it untouched"
     return 0
   }
+  CFG_TMP_FILES+=("$tmp")
   printf '%s\n' "$content" > "$tmp"
 
   if cmp -s "$tmp" "$dst"; then
