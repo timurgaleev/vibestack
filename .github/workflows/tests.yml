@@ -45,6 +45,7 @@ jobs:
           - test-config-rtk.sh
           - test-config-settings_merge.sh
           - test-config-sync.sh
+          - test-config-phase.sh
     steps:
       - uses: actions/checkout@v4
 
