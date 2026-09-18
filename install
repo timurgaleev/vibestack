@@ -742,7 +742,11 @@ if [ "$DRY_RUN" != "1" ]; then
     fi
   fi
 
-  if ! echo "$PATH" | tr ':' '\n' | grep -qF "$VIBE_BIN"; then
+  # Here-string, not `echo "$PATH" | tr | grep -q`: grep exits at the first
+  # match, tr takes SIGPIPE, and pipefail turns that into 141 — so once
+  # VIBE_BIN is actually at the front of a long PATH the check would report it
+  # missing forever, which is precisely when it should go quiet.
+  if ! grep -qF "$VIBE_BIN" <<<"${PATH//:/$'\n'}"; then
     echo ""
     echo "  NOTE: Add $VIBE_BIN to your PATH:"
     echo "    echo 'export PATH=\"$VIBE_BIN:\$PATH\"' >> ~/.zshrc"
