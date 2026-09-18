@@ -468,6 +468,13 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
            CHANGED=$((CHANGED + 1)) ;;
         2) msg_add  "NEW: $rel_path"
            ADDED=$((ADDED + 1)) ;;
+        # A refusal is the merge declining to touch the file. Counting it as
+        # unchanged is how a run that merged nothing still prints DEPLOY
+        # COMPLETE and exits 0.
+        3) msg_warn "REFUSED: $rel_path is unchanged — the merge could not be made safely"
+           FAILED=$((FAILED + 1)) ;;
+        *) msg_warn "FAILED: $rel_path (merge helper exited $rc)"
+           FAILED=$((FAILED + 1)) ;;
       esac
       continue
     fi
@@ -680,7 +687,8 @@ PYEOF
       fi
       fi
     else
-      msg_warn "python3 not found — skipping cursor/cli-config.json merge"
+      msg_warn "cursor/cli-config.json: python3 not found — cannot merge, leaving it untouched"
+      FAILED=$((FAILED + 1))
     fi
   fi
 fi

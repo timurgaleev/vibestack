@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.39.1 — 2026-09-18
+
+### Fixed
+
+- **The Codex `config.toml` merge no longer rewrites a file it cannot check.**
+  v1.39.0 validated the merged result with `tomllib`, which arrives in Python
+  3.11 — and on anything older the check was skipped silently and the merge went
+  ahead unvalidated. The `python3` on stock macOS Command Line Tools is 3.9, as
+  is Debian 11's; Ubuntu 20.04 ships 3.8. Measured on 3.9.6: four destination
+  shapes (dotted keys, an inline table, a spaced table header, an array of
+  arrays) were rewritten into files no TOML parser accepts, and the run reported
+  success. Without a parser to check the result there is no way to promise the
+  file still reads, so the merge is now refused and the destination left alone.
+- **Two shapes a line-based merge cannot read are refused up front.** A
+  multi-line string can contain a line that looks like a table header, so the
+  merge inserted its keys *inside the user's string* — producing valid TOML with
+  a silently rewritten value, which validating the result cannot catch. A table
+  header whose quoted key contains `]` hides where the header ends, so the
+  repo's root keys landed under that table instead of at the root.
+- **A refused merge is no longer reported as success.** The merge helpers
+  returned 0 — "unchanged" — when they declined to touch a file, so a run that
+  merged nothing printed DEPLOY COMPLETE and exited 0. They now return a
+  distinct code, and the installer counts it as a failure. The same hole made a
+  cursor-only run on a machine without `python3` exit 0 having merged nothing.
+
 ## 1.39.0 — 2026-09-18
 
 ### Added
