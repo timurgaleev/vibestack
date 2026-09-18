@@ -1,0 +1,19 @@
+approval_policy = "on-request"
+default_permissions = "git-write"
+
+web_search = "live"
+
+model_reasoning_effort = "high"
+model_verbosity = "low"
+
+[permissions.git-write]
+extends = ":workspace"
+
+[permissions.git-write.filesystem.":workspace_roots"]
+".git" = "write"
+
+[permissions.git-write.network]
+enabled = true
+
+[features]
+hooks = true

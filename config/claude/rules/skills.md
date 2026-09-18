@@ -1,0 +1,64 @@
+# Skill Routing
+
+These skills ship with this configuration — slash commands that carry a full
+workflow. `./install` puts both halves on the machine, so if these rules are
+loaded the skills are installed too. When a task matches one, prefer the skill
+over improvising: invoke it before starting the work.
+
+**Availability:** installing the configuration without the skills is possible
+(`./install --only=config`), so a missing skill is not an error — proceed
+normally if one is not there.
+
+**Ordering:** Process skills come first. Brainstorm or plan before implementing;
+investigate before fixing. Then run the implementation and review skills.
+
+## Task → skill
+
+| When the task is… | Use |
+|-------------------|-----|
+| Plan a feature, refactor, or architecture change | `/plan-eng-review`, `/autoplan` |
+| Weigh product scope or the bigger problem | `/plan-ceo-review` |
+| Turn a rough intent into a precise spec | `/spec` |
+| Implement a feature or bugfix with tests | `/tdd` |
+| Debug an error, test failure, or odd behavior | `/investigate` |
+| Review a diff before merge | `/code-review`, `/review` |
+| Tidy code for reuse/simplicity (no bug hunt) | `/simplify` |
+| Audit security | `/cso` |
+| QA a running web app | `/qa` (fixes), `/qa-only` (report) |
+| Verify a change actually works end to end | `/verify` |
+| Ship: commit, PR, version, changelog | `/ship` |
+| Merge, deploy, and confirm production health | `/land-and-deploy` |
+| Update docs after shipping | `/document-release`, `/document-generate` |
+| Review a UI/visual change | `/design-review`, `/plan-design-review` |
+| Save or restore working context across sessions | `/context-save`, `/context-restore` |
+| Record or review a session learning | `/learn` |
+| Check code-quality health or find refactors | `/health`, `/improve-arch` |
+
+## Second opinion from another model
+
+The [deliberation](https://github.com/antonbabenko/deliberation) plugin delegates
+a question to GPT, Gemini, Grok or an OpenRouter model. It is optional
+(`./install -D`); where it is absent, carry on without it.
+
+| When the task is… | Use |
+|-------------------|-----|
+| Review a diff with a pass/fail gate | `/codex review` |
+| Put one question to several models at once | `/deliberation:ask-all` |
+| Settle a contested design decision | `/deliberation:consensus` |
+| Ask one named model | `/deliberation:ask-gpt`, `:ask-gemini`, `:ask-grok`, `:ask-openrouter` |
+
+- Use the namespaced form. The short aliases (`/ask-all`) exist only if the
+  plugin's setup installed them.
+- **Never delegate the same question twice.** Most vibestack review skills
+  (`/review`, `/ship`, `/plan-eng-review`, `/plan-ceo-review`, `/spec`, …) already
+  run their own outside voice through Codex. When one of them is running, do not
+  add a deliberation call on top.
+- Only Gemini can edit files; GPT, Grok and OpenRouter advise only.
+
+## Notes
+
+- The slash command names above are the canonical triggers. The user may also
+  describe the intent in their own words ("ship this", "review the diff") —
+  route to the same skill.
+- Don't stack skills needlessly. Pick the one that fits; let it run its workflow.
+- A skill's own instructions take precedence once invoked.

@@ -49,8 +49,24 @@ Options:
                     version per repo. Runtime bin/state stay in ~/.vibestack.
   --project-root=<d>  Project root for --scope=project (default: $PWD, or
                     $VIBESTACK_PROJECT_ROOT).
-  --dry-run         Preview every output, write nothing.
+  --dry-run, -n     Preview every output, write nothing.
   -h, --help        Show this help and exit.
+
+Configuration phase:
+  The pack also ships the always-on configuration — CLAUDE.md, the behaviour
+  rules, the sub-agents and the statusline — under config/. It deploys into
+  ~/.claude, ~/.cursor, ~/.kiro and ~/.codex, alongside the skills.
+
+  --with-config     Deploy the configuration as well as the skills.
+  --no-config       Skills only (the current default).
+  --only=<phase>    Run one phase: skills or config.
+  --caveman, -C     Also install the Caveman output-compression skill.
+  --ponytail, -Y    Also install the Ponytail minimal-code plugin.
+  --deliberation, -D  Also install the deliberation second-opinion plugin.
+  --no-rtk, -R      Skip RTK, which the configuration phase installs by default.
+
+  The configuration phase is user scope only: --scope=project is about pinning
+  skills per repo, and there is no project-local ~/.claude/CLAUDE.md to pin.
 
 Default behavior:
   Interactive (TTY):     shows write plan + Enter installs detected
@@ -166,10 +182,52 @@ YES_FLAG=0
 SCOPE="user"
 PROJECT_ROOT=""
 
+# The configuration phase is opt-in for now. It writes into files the user may
+# already own — ~/.claude/CLAUDE.md and settings.json among them — so it stays
+# off until the first-run adoption gate exists to ask.
+WITH_CONFIG=0
+ONLY_PHASE=""
+# Seeded from the environment because CAVEMAN=true / RTK=false and friends are
+# a documented way to drive this; the flags below override them.
+CFG_CAVEMAN="${CAVEMAN:-false}"
+CFG_PONYTAIL="${PONYTAIL:-false}"
+CFG_DELIBERATION="${DELIBERATION:-false}"
+CFG_RTK="${RTK:-true}"
+# "" until the user states a phase; then on or off. An optional-tool flag may
+# turn the phase on from "", but never argue with an explicit off.
+CONFIG_CHOICE=""
+
 for arg in "$@"; do
   case "$arg" in
     --target=*)
       TARGETS_RAW="${arg#*=}"
+      ;;
+    --with-config)
+      WITH_CONFIG=1
+      CONFIG_CHOICE="on"
+      ;;
+    --no-config)
+      WITH_CONFIG=0
+      CONFIG_CHOICE="off"
+      ;;
+    --only=*)
+      ONLY_PHASE="${arg#*=}"
+      case "$ONLY_PHASE" in
+        skills|config) ;;
+        *) echo "ERROR: invalid --only '$ONLY_PHASE' (skills|config)" >&2; exit 2 ;;
+      esac
+      ;;
+    --caveman|-C)
+      CFG_CAVEMAN=true
+      ;;
+    --ponytail|-Y)
+      CFG_PONYTAIL=true
+      ;;
+    --deliberation|-D)
+      CFG_DELIBERATION=true
+      ;;
+    --no-rtk|-R)
+      CFG_RTK=false
       ;;
     --scope=*)
       SCOPE="${arg#*=}"
@@ -180,7 +238,7 @@ for arg in "$@"; do
     --yes|-y)
       YES_FLAG=1
       ;;
-    --dry-run)
+    --dry-run|-n)
       DRY_RUN=1
       ;;
     -h|--help)
@@ -194,6 +252,39 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# --only= names the single phase to run, so it overrides --with-config/--no-config.
+RUN_SKILLS=1
+case "$ONLY_PHASE" in
+  skills)
+    if [ "$CONFIG_CHOICE" = "on" ]; then
+      echo "ERROR: --only=skills excludes the configuration phase that --with-config asks for." >&2
+      exit 2
+    fi
+    WITH_CONFIG=0; CONFIG_CHOICE="off"
+    ;;
+  config)
+    if [ "$CONFIG_CHOICE" = "off" ]; then
+      echo "ERROR: --only=config runs the configuration phase that --no-config excludes." >&2
+      exit 2
+    fi
+    WITH_CONFIG=1; CONFIG_CHOICE="on"; RUN_SKILLS=0
+    ;;
+esac
+
+# Asking for one of the optional tools is asking for the phase that installs
+# them — but only when the user has not already said the phase is off. Turning
+# it back on there would let `--no-config -C` write to four config directories
+# the user just excluded. --no-rtk never turns the phase on: it turns something
+# off.
+if [ "$CFG_CAVEMAN" = "true" ] || [ "$CFG_PONYTAIL" = "true" ] || [ "$CFG_DELIBERATION" = "true" ]; then
+  if [ "$CONFIG_CHOICE" = "off" ]; then
+    echo "ERROR: --caveman/--ponytail/--deliberation install through the configuration" >&2
+    echo "       phase, which this command also excludes. Drop one of the two." >&2
+    exit 2
+  fi
+  WITH_CONFIG=1
+fi
 
 # Project scope: install skills into a project-local tree instead of $HOME, so
 # a team can pin the pack's version per repo. Runtime bin/state stay global
@@ -231,24 +322,110 @@ case "$SCOPE" in
     ;;
 esac
 
+# The configuration phase deploys into ~/.claude, ~/.cursor, ~/.kiro and
+# ~/.codex. Project scope pins skills per repo; those files have no per-repo
+# counterpart, so the combination is refused rather than silently ignored.
+if [ "$WITH_CONFIG" = "1" ] && [ "$SCOPE" = "project" ]; then
+  echo "ERROR: the configuration phase is user scope only (--scope=project installs skills)" >&2
+  exit 2
+fi
+
 # ───────────────────────────────────────────────────────────────────────────
-# Signal handlers (placed AFTER arg parsing per eng-review R2).
+# Signal handlers. After arg parsing (eng-review R2) and before any phase runs
+# — the --only=config path returns below, and used to return before these were
+# installed, leaving that run with no handler at all.
 # Per Codex outside-voice (R14): SIGINT exits 130, SIGTERM exits 143.
 # ───────────────────────────────────────────────────────────────────────────
+# Recovery differs per phase: staging dirs belong to the skills phase, while an
+# interrupted config phase may have left a merge half-applied.
+interrupt_recovery_hint() {
+  if [ "$RUN_SKILLS" = "1" ]; then
+    echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)."
+  else
+    echo "Re-run ./install --only=config to converge (idempotent — merges re-apply cleanly)."
+  fi
+}
+
 on_interrupt() {
   echo "" >&2
   echo "Installation interrupted (SIGINT); some targets may be partially updated." >&2
-  echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)." >&2
+  interrupt_recovery_hint >&2
   exit 130
 }
 on_terminate() {
   echo "" >&2
   echo "Installation terminated (SIGTERM); some targets may be partially updated." >&2
-  echo "Re-run ./install to converge (idempotent — staging dirs are cleaned on next run)." >&2
+  interrupt_recovery_hint >&2
   exit 143
 }
 trap on_interrupt INT
 trap on_terminate TERM
+
+# run_config_phase — source the config library and hand it the resolved flags.
+# Returns the library's status; the caller decides what a failure means for the
+# run as a whole.
+# The library is sourced here, before the skills phase, and only called later.
+# A checkout that lives inside a target's skills root is moved aside by that
+# target's atomic swap, so by the time the configuration phase runs the file
+# may no longer be at the path we started from. Sourcing writes nothing, so
+# doing it early costs nothing and removes the dependency.
+CONFIG_LIB_LOADED=0
+if [ "$WITH_CONFIG" = "1" ] || [ "$RUN_SKILLS" = "0" ]; then
+  if [ -f "$REPO_DIR/lib/config-install.sh" ]; then
+    CFG_REPO_DIR="$REPO_DIR"
+    PAYLOAD_DIR="$REPO_DIR/config"
+    # shellcheck source=lib/config-install.sh
+    . "$REPO_DIR/lib/config-install.sh"
+    CONFIG_LIB_LOADED=1
+  else
+    echo "ERROR: $REPO_DIR/lib/config-install.sh is missing — cannot run the configuration phase" >&2
+  fi
+fi
+
+run_config_phase() {
+  if [ "$CONFIG_LIB_LOADED" != "1" ]; then
+    echo "ERROR: the configuration library did not load — skipping that phase" >&2
+    return 1
+  fi
+
+  # Without this the library falls back to its own four-target list, so
+  # `--target=codex` would rewrite Claude, Cursor and Kiro configuration too.
+  CFG_TARGETS="$1"
+
+  PREVIEW_ONLY=$([ "$DRY_RUN" = "1" ] && echo true || echo false)
+  CAVEMAN="$CFG_CAVEMAN"
+  PONYTAIL="$CFG_PONYTAIL"
+  DELIBERATION="$CFG_DELIBERATION"
+  RTK="$CFG_RTK"
+
+  config_phase_run
+}
+
+if [ "$RUN_SKILLS" = "0" ]; then
+  # This path returns before the shared target resolution below, so it validates
+  # its own — otherwise `--only=config --target=typo` would sail past the check
+  # that every other invocation gets.
+  config_only_targets=""
+  if [ -n "$TARGETS_RAW" ]; then
+    if [ "$TARGETS_RAW" = "all" ]; then
+      config_only_targets="${ALL_TARGETS[*]}"
+    else
+      IFS=',' read -ra _cfg_targets <<< "$TARGETS_RAW"
+      for t in "${_cfg_targets[@]}"; do
+        if [ -z "${TARGET_ROOT[$t]:-}" ]; then
+          echo "ERROR: unknown target '$t'. Valid: ${!TARGET_ROOT[*]}, all." >&2
+          exit 2
+        fi
+      done
+      config_only_targets="${_cfg_targets[*]}"
+    fi
+  else
+    config_only_targets="${ALL_TARGETS[*]}"
+  fi
+  run_config_phase "$config_only_targets"
+  exit $?
+fi
+
 
 # ───────────────────────────────────────────────────────────────────────────
 # Install plan printer (v1.5.0)
@@ -742,7 +919,11 @@ if [ "$DRY_RUN" != "1" ]; then
     fi
   fi
 
-  if ! echo "$PATH" | tr ':' '\n' | grep -qF "$VIBE_BIN"; then
+  # Here-string, not `echo "$PATH" | tr | grep -q`: grep exits at the first
+  # match, tr takes SIGPIPE, and pipefail turns that into 141 — so once
+  # VIBE_BIN is actually at the front of a long PATH the check would report it
+  # missing forever, which is precisely when it should go quiet.
+  if ! grep -qF "$VIBE_BIN" <<<"${PATH//:/$'\n'}"; then
     echo ""
     echo "  NOTE: Add $VIBE_BIN to your PATH:"
     echo "    echo 'export PATH=\"$VIBE_BIN:\$PATH\"' >> ~/.zshrc"
@@ -955,6 +1136,14 @@ if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo "    Verify per: docs/hook-verification.md"
 fi
 
+# Configuration phase, after the skills are in place: `rtk init` writes a
+# PreToolUse hook into ~/.claude/settings.json and the settings merge is
+# authoritative for that map, so the merge has to happen first.
+CONFIG_RC=0
+if [ "$WITH_CONFIG" = "1" ]; then
+  run_config_phase "${TARGETS[*]}" || CONFIG_RC=$?
+fi
+
 # Version stamp — written only after every target installed successfully, so
 # `vibestack version` never claims a release that failed to land.
 if [ "$DRY_RUN" != "1" ] && [ -f "$REPO_DIR/VERSION" ]; then
@@ -972,4 +1161,6 @@ if [ "$DRY_RUN" != "1" ]; then
   echo "Uninstall: $REPO_DIR/uninstall"
 fi
 
-exit 0
+# A failed configuration phase does not undo the skills that landed, but the
+# run did not do everything it was asked to, and the exit status says so.
+exit "$CONFIG_RC"

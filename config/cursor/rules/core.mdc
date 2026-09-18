@@ -1,0 +1,128 @@
+---
+description: Core engineering guidelines — mindset, principles, problem solving, and anti-patterns.
+globs:
+alwaysApply: true
+---
+
+# Global Code Guidelines
+
+## Instruction Hierarchy
+
+When *sources* of instruction conflict, the one higher on this list wins:
+
+1. Platform and tool policy
+2. The user's direct instruction
+3. The current repository's local instructions and conventions
+4. These global rules
+
+Local instructions may specialize style, testing, and tooling. **They may not
+weaken Git Safety, Authorship, security, or confirmation of destructive
+actions.**
+
+## Priority
+
+A different axis from the hierarchy above — this ranks *behavioral rules* by how
+often they conflict in practice.
+
+1. **Git Safety** — never commit or push without permission (`git.mdc`)
+2. **Authorship** — no AI attribution anywhere (`authorship.mdc`)
+3. **Plan First** — agree on an approach before implementing
+4. **Language** — respond in English (`language.mdc`)
+5. **Project Conventions** — the repository's way wins
+6. **Surgical Changes** — touch only what the request requires (`style.mdc`)
+7. **Goal-Driven Execution** — start from a verifiable exit condition
+   (`problem-solving.mdc`)
+
+**Important: Refer to project-specific documentation (e.g., docs/, README.md) when available.**
+
+**Important: Before writing new code, search for similar existing code and maintain consistent patterns.**
+
+**Important: Perform only the necessary work. If work is not needed, stop.**
+
+## Mindset
+
+- Think like a senior engineer.
+- Don't rush to conclusions; evaluate multiple approaches before deciding.
+- Problem definition → small, safe change → review → refactor — repeat the loop.
+- Keep changes small, focused, and incremental.
+
+## Before Changing Code
+
+- Read relevant files end to end, including call/reference paths.
+- Locate definitions, references, call sites, related tests, and configs.
+- Do not change code without having read the entire file.
+- Record assumptions clearly.
+- **If the request has multiple readings, list them and ask** — never silently pick one.
+- **Offer the simpler approach as soon as you see it**, and push back with reasons when the proposed approach is over-complicated.
+- **Stop when confused** — name what is unclear and ask. "I'll ask if I get stuck partway" is not allowed.
+
+## Goal-Driven Execution
+
+Convert an imperative instruction into a verifiable exit condition before
+starting — "fix the bug" becomes "write a reproducing test, then make it pass".
+For multi-step work, state the verification per step. A step with no defined
+verification does not belong in the plan.
+
+Full rule: `problem-solving.mdc`
+
+## Core Principles
+
+- **Solve the right problem**: Avoid unnecessary complexity or scope creep.
+- **Favor standard solutions**: Use well-known libraries and patterns before writing custom code.
+- **Keep code readable**: Use clear naming, logical structure, and avoid deep nesting.
+- **Handle errors explicitly**: Catch specific exceptions, fail fast with meaningful messages.
+- **Design for security**: Validate inputs, apply least privilege, never expose secrets.
+- **Keep dependencies shallow**: Minimize tight coupling, maintain clear boundaries.
+- **Address root causes**: Fix the underlying issue, not symptoms.
+
+## Problem Solving
+
+**Reproduce → Investigate → Root Cause → Fix → Verify.** Separate symptom from
+cause, ask "Why?" until you reach the underlying issue, and add a regression
+test after the fix.
+
+Full rule: `problem-solving.mdc`
+
+## File Size Guidelines
+
+- Keep source code files under 800 lines (absolute maximum).
+- Typical files should be 200-400 lines.
+- Consider refactoring when files approach 500+ lines.
+- Split large components into smaller, focused modules.
+
+## Function Size Guidelines
+
+- Keep functions under 50 lines.
+- Extract helper functions when logic becomes complex.
+- Single Responsibility Principle: one function, one purpose.
+
+## Documentation
+
+- Write self-documenting code: clear names, logical structure
+- Add comments only for non-obvious logic (explain "why", not "what")
+- Keep README.md updated with setup instructions, usage examples, and architecture overview
+- Document APIs with request/response examples and error cases
+- Update documentation when changing behavior or adding features
+- Avoid outdated comments - delete rather than leave incorrect information
+
+## Code Review & Collaboration
+
+- **Before Submitting**:
+  - Review your own diff first
+  - Ensure tests pass and code is linted
+  - Check for debug code, console.logs, TODOs
+- **As Reviewer**:
+  - Focus on logic, edge cases, and maintainability
+  - Ask questions, don't just criticize
+  - Approve only if you understand and verify the changes
+- **Receiving Feedback**:
+  - Respond promptly and professionally
+  - Explain your reasoning, but be open to better approaches
+  - Mark conversations resolved only after addressing them
+
+## Anti-Patterns
+
+The catalog of traps, plus the "Working If" self-check to run against a diff
+before committing.
+
+Full rule: `anti-patterns.mdc`

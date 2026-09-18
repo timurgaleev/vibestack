@@ -20,6 +20,13 @@ Options:
                       Default: claude (preserves v1.3.x behavior).
   --delete-state      Bypass the prompt and delete ~/.vibestack/ (learnings,
                       analytics, project state).
+  --with-config       Also remove the configuration this pack deployed into
+                      ~/.claude, ~/.cursor, ~/.kiro and ~/.codex. Only files
+                      the install manifest recorded are removed, plus the
+                      marked region of the two files we co-own. Keys merged
+                      into settings.json, config.toml, hooks.json and
+                      agents/default.json are left alone: the install never
+                      recorded which of those keys were ours.
   -h, --help          Show this help and exit.
 
 Examples:
@@ -33,6 +40,7 @@ EOF
 # Parse args
 TARGETS_RAW=""
 DELETE_STATE_FLAG=0
+WITH_CONFIG=0
 SCOPE="user"
 PROJECT_ROOT=""
 
@@ -49,6 +57,9 @@ for arg in "$@"; do
       ;;
     --delete-state)
       DELETE_STATE_FLAG=1
+      ;;
+    --with-config)
+      WITH_CONFIG=1
       ;;
     -h|--help)
       usage
@@ -236,6 +247,128 @@ if [ -d "$VIBE_BIN" ]; then
   if [ -z "$(ls -A "$VIBE_BIN" 2>/dev/null)" ]; then
     rmdir "$VIBE_BIN" 2>/dev/null || true
   fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
+# Configuration removal
+#
+# The install records every file it deployed and owns in a per-target manifest;
+# that list is exactly what is safe to delete. Files the user put there are not
+# in it. The two marker-delimited files are co-owned: our region is bounded and
+# provably ours, so it goes, and everything the user or another tool wrote
+# outside it stays.
+#
+# The fill-missing merges (settings.json, config.toml, hooks.json,
+# agents/default.json) are a different matter: the install added keys without
+# recording which, so removing "our" keys later would be guesswork against the
+# user's own configuration. Those files are reported and left.
+# ───────────────────────────────────────────────────────────────────────────
+CONFIG_MANIFEST_DIR="${MANIFEST_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/vibekit}"
+declare -A CONFIG_DEST=(
+  [claude]="$HOME/.claude"
+  [cursor]="$HOME/.cursor"
+  [kiro]="$HOME/.kiro"
+  [codex]="${CODEX_HOME:-$HOME/.codex}"
+)
+CLAUDE_MD_END="<!-- END vibekit-managed CLAUDE.md — lines below are yours and survive every sync -->"
+CODEX_RULES_BEGIN="# BEGIN vibekit managed codex rules"
+CODEX_RULES_END="# END vibekit managed codex rules"
+
+config_manifest_path() {
+  printf '%s/manifest_%s' "$CONFIG_MANIFEST_DIR" "${1//\//_}"
+}
+
+# Drop our region from ~/.claude/CLAUDE.md, keeping every line below the marker.
+# No marker means the file is not one we deployed, so it is left as it is.
+remove_claude_md_region() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  if ! grep -qxF "$CLAUDE_MD_END" "$file"; then
+    echo "  - kept $file (no managed marker — not ours to edit)"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp "${file}.vibekit.XXXXXX")" || { echo "  ! could not stage $file"; return 1; }
+  awk -v marker="$CLAUDE_MD_END" '
+    seen { print; next }
+    $0 == marker { seen = 1 }
+  ' "$file" > "$tmp" || { rm -f "$tmp"; echo "  ! could not rewrite $file"; return 1; }
+  # A file that is only our region leaves nothing behind worth keeping.
+  if [ -s "$tmp" ] && grep -q '[^[:space:]]' "$tmp"; then
+    mv -f "$tmp" "$file" && echo "  - removed the managed region of $file (kept your lines below it)"
+  else
+    rm -f "$tmp" "$file" && echo "  - removed $file (nothing of yours was below the marker)"
+  fi
+}
+
+remove_codex_rules_region() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  if ! grep -qxF "$CODEX_RULES_BEGIN" "$file"; then
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp "${file}.vibekit.XXXXXX")" || { echo "  ! could not stage $file"; return 1; }
+  awk -v b="$CODEX_RULES_BEGIN" -v e="$CODEX_RULES_END" '
+    $0 == b { skip = 1; next }
+    $0 == e { skip = 0; next }
+    !skip
+  ' "$file" > "$tmp" || { rm -f "$tmp"; echo "  ! could not rewrite $file"; return 1; }
+  mv -f "$tmp" "$file" && echo "  - removed the managed rules block from $file"
+}
+
+if [ "$WITH_CONFIG" = "1" ]; then
+  echo ""
+  echo "Configuration:"
+  config_removed=0
+  config_kept=()
+  for target in "${TARGETS[@]}"; do
+    dest="${CONFIG_DEST[$target]:-}"
+    [ -n "$dest" ] || continue
+    manifest="$(config_manifest_path "$target")"
+    if [ ! -f "$manifest" ]; then
+      echo "  $target: nothing recorded as installed"
+      continue
+    fi
+    removed=0
+    while IFS= read -r rel; do
+      [ -n "$rel" ] || continue
+      file="$dest/$rel"
+      if [ -f "$file" ]; then
+        rm -f "$file" && removed=$((removed + 1))
+        # Take the directory too once we emptied it, never one with anything left.
+        rmdir -p "$(dirname "$file")" 2>/dev/null || true
+      fi
+    done < "$manifest"
+    rm -f "$manifest"
+    echo "  $target: $removed file(s) removed, manifest cleared"
+    config_removed=$((config_removed + removed))
+  done
+
+  for target in "${TARGETS[@]}"; do
+    case "$target" in
+      claude) remove_claude_md_region "$HOME/.claude/CLAUDE.md" ;;
+      codex)  remove_codex_rules_region "${CODEX_HOME:-$HOME/.codex}/rules/default.rules" ;;
+    esac
+  done
+
+  echo ""
+  echo "  Left in place — the install merged keys into these without recording"
+  echo "  which were its own, so removing them would be guesswork:"
+  for target in "${TARGETS[@]}"; do
+    case "$target" in
+      claude) [ -f "$HOME/.claude/settings.json" ] && echo "    ~/.claude/settings.json" ;;
+      cursor) [ -f "$HOME/.cursor/cli-config.json" ] && echo "    ~/.cursor/cli-config.json"
+              [ -f "$HOME/.cursor/hooks.json" ] && echo "    ~/.cursor/hooks.json" ;;
+      codex)  [ -f "${CODEX_HOME:-$HOME/.codex}/config.toml" ] && echo "    ~/.codex/config.toml"
+              [ -f "${CODEX_HOME:-$HOME/.codex}/hooks.json" ] && echo "    ~/.codex/hooks.json" ;;
+      kiro)   [ -f "$HOME/.kiro/agents/default.json" ] && echo "    ~/.kiro/agents/default.json" ;;
+    esac
+  done
+elif [ -d "$CONFIG_MANIFEST_DIR" ] && [ -n "$(ls -A "$CONFIG_MANIFEST_DIR" 2>/dev/null)" ]; then
+  echo ""
+  echo "Configuration files from this pack are still installed."
+  echo "  Remove them with: ./uninstall --with-config"
 fi
 
 # Decide whether to remove ~/.vibestack/ state.

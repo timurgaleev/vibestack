@@ -1,0 +1,25 @@
+# Codex command-approval rules.
+#
+# Only the block between the two markers is managed by vibekit. Codex appends
+# its own prefix rules to this file when you approve a command; those live
+# outside the markers and survive every sync.
+
+# BEGIN vibekit managed codex rules
+prefix_rule(
+    pattern = ["git", "status"],
+    decision = "allow",
+    justification = "Read-only repository inspection.",
+)
+
+prefix_rule(
+    pattern = ["git", "diff"],
+    decision = "allow",
+    justification = "Read-only repository inspection.",
+)
+
+prefix_rule(
+    pattern = ["git", "log"],
+    decision = "allow",
+    justification = "Read-only repository inspection.",
+)
+# END vibekit managed codex rules

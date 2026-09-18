@@ -1,0 +1,58 @@
+---
+description: Performance and complexity guidelines — model selection, context management, and build troubleshooting.
+globs:
+alwaysApply: true
+---
+
+# Performance Optimization
+
+## Model Selection Strategy
+
+Refer to model tiers, not pinned versions, so this guidance stays current as new
+releases ship. Always prefer the latest model in each tier.
+
+**Latest Opus tier** (Deepest reasoning, PREFERRED):
+- Complex architectural decisions
+- All subagent workflows (task-planner, system-designer, etc.)
+- Main development work
+- Maximum reasoning requirements
+- Research and analysis tasks
+
+**Latest Sonnet tier** (Best balance for coding):
+- Simple code generation when Opus is not needed
+- Quick edits and modifications
+- Orchestrating workflows
+
+**Latest Haiku tier** (Fast and economical):
+- Simple utility functions
+- Documentation updates
+- Quick queries
+
+## Context Window Management
+
+Avoid last 20% of context window for:
+- Large-scale refactoring
+- Feature implementation spanning multiple files
+- Debugging complex interactions
+
+Lower context sensitivity tasks:
+- Single-file edits
+- Independent utility creation
+- Documentation updates
+- Simple bug fixes
+
+## For Complex Tasks
+
+For complex tasks requiring deep reasoning:
+1. Switch to **Opus** model for maximum reasoning
+2. Plan the approach before writing any code
+3. Break into independent subtasks
+4. Use specialized subagents for isolated context and diverse analysis
+
+## Build Troubleshooting
+
+If build fails:
+1. Use **build-doctor** subagent
+2. Analyze error messages
+3. Fix incrementally
+4. Verify after each fix

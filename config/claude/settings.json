@@ -1,0 +1,81 @@
+{
+  "cleanupPeriodDays": 3650,
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "ENABLE_TOOL_SEARCH": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Skill(*)",
+      "WebFetch",
+      "WebSearch",
+      "mcp__plugin_telegram_telegram__reply",
+      "mcp__plugin_telegram_telegram__react",
+      "mcp__plugin_telegram_telegram__edit_message",
+      "mcp__plugin_telegram_telegram__download_attachment"
+    ],
+    "deny": [
+      "Bash(chmod -R 777 /:*)",
+      "Bash(chown -R * /:*)",
+      "Bash(curl * | bash:*)",
+      "Bash(curl * | sh:*)",
+      "Bash(dd if=/dev/zero:*)",
+      "Bash(fdisk:*)",
+      "Bash(gdisk:*)",
+      "Bash(halt:*)",
+      "Bash(init 0:*)",
+      "Bash(init 6:*)",
+      "Bash(mkfs:*)",
+      "Bash(parted:*)",
+      "Bash(poweroff:*)",
+      "Bash(reboot:*)",
+      "Bash(rm -rf $HOME/*)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~/*)",
+      "Bash(shutdown:*)",
+      "Bash(sudo rm -rf:*)",
+      "Bash(systemctl disable:*)",
+      "Bash(systemctl halt:*)",
+      "Bash(systemctl poweroff:*)",
+      "Bash(systemctl reboot:*)",
+      "Bash(systemctl stop:*)"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "python3 ~/.claude/statusline.py"
+  },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "telegram@claude-plugins-official": true,
+    "caveman@caveman": true,
+    "ponytail@ponytail": true,
+    "deliberation@antonbabenko": true
+  },
+  "tui": "fullscreen",
+  "theme": "auto",
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    },
+    "antonbabenko": {
+      "source": {
+        "source": "github",
+        "repo": "antonbabenko/agent-plugins"
+      }
+    }
+  }
+}

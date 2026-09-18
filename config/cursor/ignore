@@ -1,0 +1,72 @@
+# Cursor context ignore — files excluded from AI context
+# Equivalent to .gitignore but for Cursor's AI indexing
+
+# Dependencies
+node_modules/
+vendor/
+bower_components/
+.pnp/
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+target/
+.next/
+.nuxt/
+.vercel/
+.output/
+
+# Cache
+.cache/
+.tmp/
+tmp/
+__pycache__/
+*.pyc
+.turbo/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+
+# Virtual environments
+.venv/
+venv/
+.env/
+env/
+
+# Test coverage
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+credentials.json
+secrets.json
+
+# Generated
+*.min.js
+*.min.css
+*.bundle.js
+*.map
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

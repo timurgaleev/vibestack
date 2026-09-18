@@ -1,0 +1,73 @@
+---
+description: Problem solving — think before coding, goal-driven execution, and root cause analysis.
+globs:
+alwaysApply: true
+---
+
+# Problem Solving
+
+The single source for how to approach a problem before and during
+implementation. `CLAUDE.md` carries only the summary.
+
+## Think Before Coding
+
+**Do not let an assumption pass as fact. Do not hide confusion. Surface
+trade-offs.**
+
+The most common failure is *quietly picking one interpretation* and running with
+it. Code built on a wrong assumption is thrown away in full, however much of it
+there is.
+
+- **State assumptions** — one line of "proceeding on the assumption that X" is
+  enough.
+- **Surface multiple readings** — if the request is ambiguous, list two or three
+  possible interpretations and ask which one. Do not silently choose.
+- **Offer the simpler alternative first** — say so as soon as you see one. If
+  the user's approach is over-complicated, push back with reasons.
+- **Stop when confused** — "I'll ask if I get stuck partway" is not allowed.
+  Name what is unclear and ask.
+
+## Goal-Driven Execution
+
+**Convert an imperative instruction into a *verifiable exit condition* before
+starting.** Only a strong exit condition lets you work independently and judge
+your own completion.
+
+| Vague instruction | Verifiable goal |
+|-------------------|-----------------|
+| "fix the bug" | write a test that reproduces it → make it pass → lock it in as a regression test |
+| "refactor this" | the same test suite passes before and after |
+| "make it faster" | define a measured baseline and a target number → verify by measuring |
+| "clean it up" | meets the defined lint / typecheck / coverage bar |
+| "make it work" | ask the user what "done" looks like, first |
+
+For multi-step work, state the verification per step — `1. [step] → verify:
+[how]`. A step with no defined verification does not belong in the plan.
+
+## Root Cause Analysis
+
+**Reproduce → Investigate → Root Cause → Fix → Verify**
+
+1. **Reproduce** — capture the exact error message, stack trace, and
+   environment.
+2. **Investigate**
+   - Read the error message carefully; it often contains the cause.
+   - Check logs for the pattern leading up to the failure.
+   - Trace the execution path from entry point to failure point.
+   - Verify assumptions with the smallest possible experiment.
+3. **Root Cause**
+   - Ask "Why?" until you reach the underlying issue.
+   - Separate symptom from cause ("API returns 500" vs "connection pool
+     exhausted").
+   - Look for the systemic version of the problem, not the one-off.
+4. **Fix** — remove the cause, not the symptom. Mark any workaround as
+   *temporary* and file the follow-up.
+5. **Verify** — add a regression test and scan for the same cause on other code
+   paths.
+
+### Example
+
+**Symptom**: intermittent crashes in production
+**Bad**: add error handling and an auto-restart
+**Good**: profile → identify the memory leak (temp files never cleaned) → fix
+cleanup and add limits → verify under load
