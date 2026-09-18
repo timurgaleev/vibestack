@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.38.5 — 2026-09-18
+
+### Fixed
+
+- **`test/test-install-integration.sh` passes on Linux runners again.** The
+  suite runs under `pipefail` and checked output with `echo "$out" | grep -q`;
+  grep stops at the first match, echo then hits a broken pipe on large output,
+  and the check failed although the text was there. `main` went red on
+  `dry_run_reports_all_three_targets` this way. The checks now read from a
+  here-string.
+- **The byte-identity checks actually run on Linux.** They hashed with `md5 -q`,
+  which exists only on macOS, so on ubuntu every hash was empty and `"" == ""`
+  passed. Hashing now uses POSIX `cksum`, and a missing file fails the test
+  instead of hashing to an empty string.
+
 ## 1.38.4 — 2026-09-17
 
 ### Changed
