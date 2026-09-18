@@ -72,6 +72,20 @@ CFG_REPO_DIR="${CFG_REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # is resolved from it.
 PAYLOAD_DIR="${PAYLOAD_DIR:-$CFG_REPO_DIR/config}"
 
+# Targets this run may write to, space separated. Empty means every target in
+# DEPLOY_TARGETS — ./install always passes the resolved list, so `--target=codex`
+# no longer rewrites Claude, Cursor and Kiro configuration on the way past.
+CFG_TARGETS="${CFG_TARGETS:-}"
+
+cfg_target_selected() {
+  [[ -z "$CFG_TARGETS" ]] && return 0
+  local t
+  for t in $CFG_TARGETS; do
+    [[ "$t" == "$1" ]] && return 0
+  done
+  return 1
+}
+
 DEPLOY_TARGETS=(
   "claude:${HOME}/.claude"
   "kiro:${HOME}/.kiro"
@@ -165,6 +179,18 @@ is_bin() {
 }
 
 
+# cfg_write_file <dst> <content> — write through the atomic helper when the sync
+# library is loaded, so a failed or short write cannot truncate a destination
+# the user already had.
+cfg_write_file() {
+  local dst="$1" content="$2"
+  if declare -f write_atomic >/dev/null 2>&1; then
+    printf '%s\n' "$content" | write_atomic "$dst"
+  else
+    printf '%s\n' "$content" > "$dst"
+  fi
+}
+
 # Returns non-zero on failure and says so. Without errexit a silent `cp`
 # failure would be reported as a successful UPDATE and then recorded in the
 # manifest, which is how a file the sync never wrote becomes prunable.
@@ -232,6 +258,7 @@ config_phase_run() {
 # ./install grows a variable of its own called rc, merged or root.
 local entry mm_entry src_subdir dst_dir src_path rel_path dst_file src_file
 local merge_mode rc src_hash dst_hash manifest_tmp protected_tmp find_excludes
+local list_tmp find_status
 local legacy want_hash got_hash merged merged_hash node_major
 local rtk_dir rtk_bin rtk_installer target_failed
 
@@ -302,6 +329,8 @@ done
 for entry in "${DEPLOY_TARGETS[@]}"; do
   src_subdir="${entry%%:*}"
   dst_dir="${entry#*:}"
+
+  cfg_target_selected "$src_subdir" || continue
   src_path="$PAYLOAD_DIR/$src_subdir"
 
   if [[ ! -d "$src_path" ]] || [[ -z "$(ls -A "$src_path" 2>/dev/null)" ]]; then
@@ -336,16 +365,41 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
 
   # Records every file this run manages, deployed or already identical. The
   # diff against the previous run is what prune acts on.
-  manifest_tmp="$(mktemp)"
+  if ! manifest_tmp="$(mktemp)"; then
+    msg_warn "$src_subdir: could not stage a manifest — skipping this target"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
   CFG_TMP_FILES+=("$manifest_tmp")
   # Paths this sync co-owns with the target app, taken from the static
   # declaration rather than from what the repo currently ships — so prune keeps
   # skipping them even after a release stops shipping one.
-  protected_tmp="$(mktemp)"
+  if ! protected_tmp="$(mktemp)"; then
+    msg_warn "$src_subdir: could not stage the protected list — skipping this target"
+    FAILED=$((FAILED + 1))
+    rm -f "$manifest_tmp"
+    continue
+  fi
   CFG_TMP_FILES+=("$protected_tmp")
   for mm_entry in "${MERGE_MANAGED[@]}"; do
     [[ "${mm_entry%%:*}" == "$src_subdir" ]] && echo "$mm_entry" | cut -d: -f2 >> "$protected_tmp"
   done
+
+  if ! list_tmp="$(mktemp)"; then
+    msg_warn "$src_subdir: could not stage the file list — skipping this target"
+    FAILED=$((FAILED + 1))
+    rm -f "$manifest_tmp" "$protected_tmp"
+    continue
+  fi
+  CFG_TMP_FILES+=("$list_tmp")
+  find "$src_path" -type f "${find_excludes[@]}" -print0 | sort -z > "$list_tmp"
+  find_status=("${PIPESTATUS[@]}")
+  if [[ "${find_status[0]}" -ne 0 || "${find_status[1]}" -ne 0 ]]; then
+    msg_warn "$src_subdir: could not list the payload (find/sort failed) — skipping this target"
+    FAILED=$((FAILED + 1))
+    rm -f "$manifest_tmp" "$protected_tmp" "$list_tmp"
+    continue
+  fi
 
   while IFS= read -r -d '' src_file; do
     rel_path="${src_file#$src_path/}"
@@ -371,9 +425,17 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
     # state along with our entries. Everything else is manifest-tracked and
     # therefore prunable.
     if [[ -z "$merge_mode" ]]; then
-      printf '%s\n' "$rel_path" >> "$manifest_tmp"
+      if ! printf '%s\n' "$rel_path" >> "$manifest_tmp"; then
+        msg_warn "$src_subdir: could not record $rel_path — aborting before prune"
+        target_failed=true
+        break
+      fi
     else
-      printf '%s\n' "$rel_path" >> "$protected_tmp"
+      if ! printf '%s\n' "$rel_path" >> "$protected_tmp"; then
+        msg_warn "$src_subdir: could not protect $rel_path — aborting before prune"
+        target_failed=true
+        break
+      fi
     fi
 
     # Without the merge helpers a plain copy would wipe the runtime state these
@@ -432,7 +494,7 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
         CHANGED=$((CHANGED + 1))
       fi
     fi
-  done < <(find "$src_path" -type f "${find_excludes[@]}" -print0 | sort -z)
+  done < "$list_tmp"
 
   # Prune files a previous sync deployed that the repo no longer ships. Files
   # absent from the previous manifest were installed by the user and are left
@@ -442,9 +504,17 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
     FAILED=$((FAILED + 1))
     rm -f "$manifest_tmp"
   elif [[ "$SYNC_LIB_LOADED" == true ]]; then
-    prune_target "$src_subdir" "$dst_dir" "$manifest_tmp" "$protected_tmp"
+    if ! prune_target "$src_subdir" "$dst_dir" "$manifest_tmp" "$protected_tmp"; then
+      msg_warn "$src_subdir: prune failed"
+      FAILED=$((FAILED + 1))
+    fi
     PRUNED=$((PRUNED + PRUNE_COUNT))
-    commit_manifest "$src_subdir" "$manifest_tmp"
+    # A manifest that did not land means the next run prunes against a stale
+    # list, so this is reported rather than swallowed.
+    if ! commit_manifest "$src_subdir" "$manifest_tmp"; then
+      msg_warn "$src_subdir: could not record the manifest — the next run will prune against the previous one"
+      FAILED=$((FAILED + 1))
+    fi
   else
     rm -f "$manifest_tmp"
   fi
@@ -456,6 +526,7 @@ done
 #   - permissions.allow/deny/ask/additionalDirectories: array union (user additions kept)
 #   - enabledPlugins: deep merge (user-enabled plugins not in repo preserved)
 #   - Destination-only top-level keys preserved (e.g. user-set skipAutoPermissionPrompt)
+if cfg_target_selected claude; then
 CLAUDE_SETTINGS_SRC="$PAYLOAD_DIR/claude/settings.json"
 CLAUDE_SETTINGS_DST="${HOME}/.claude/settings.json"
 if [[ -f "$CLAUDE_SETTINGS_SRC" ]]; then
@@ -514,30 +585,48 @@ if isinstance(src.get("permissions"), dict) and isinstance(dst.get("permissions"
 
 print(json.dumps(merged, indent=2))
 PYEOF
-)
-    merged_hash=$(echo "$merged" | md5 -q 2>/dev/null || echo "$merged" | md5sum | awk '{print $1}')
-    dst_hash=$(file_hash "$CLAUDE_SETTINGS_DST")
-    if [[ "$merged_hash" != "$dst_hash" ]]; then
-      msg_done "MERGE: claude/settings.json (preserved user customizations)"
-      if [[ "$PREVIEW_ONLY" == false ]]; then
-        echo "$merged" > "$CLAUDE_SETTINGS_DST"
-      fi
-      CHANGED=$((CHANGED + 1))
+) || merged=""
+    # An unreadable or malformed file makes the merge program exit non-zero with
+    # nothing on stdout. Writing that would replace the user's settings with a
+    # blank line, so the result is validated before it is allowed anywhere near
+    # the destination.
+    if [[ -z "$merged" ]] || ! printf '%s\n' "$merged" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+      msg_warn "claude/settings.json: merge failed — leaving the existing file untouched"
+      FAILED=$((FAILED + 1))
     else
-      msg_info "no changes after merge"
-      SKIPPED=$((SKIPPED + 1))
+      merged_hash=$(printf '%s\n' "$merged" | md5 -q 2>/dev/null || printf '%s\n' "$merged" | md5sum | awk '{print $1}')
+      dst_hash=$(file_hash "$CLAUDE_SETTINGS_DST")
+      if [[ "$merged_hash" != "$dst_hash" ]]; then
+        msg_done "MERGE: claude/settings.json (preserved user customizations)"
+        if [[ "$PREVIEW_ONLY" == false ]]; then
+          if ! cfg_write_file "$CLAUDE_SETTINGS_DST" "$merged"; then
+            msg_warn "claude/settings.json: could not write $CLAUDE_SETTINGS_DST"
+            FAILED=$((FAILED + 1))
+          else
+            CHANGED=$((CHANGED + 1))
+          fi
+        else
+          CHANGED=$((CHANGED + 1))
+        fi
+      else
+        msg_info "no changes after merge"
+        SKIPPED=$((SKIPPED + 1))
+      fi
     fi
   else
-    msg_warn "python3 not found — falling back to full overwrite of claude/settings.json"
-    if [[ "$PREVIEW_ONLY" == false ]]; then
-      deploy_file "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST"
-    fi
-    CHANGED=$((CHANGED + 1))
+    # The old behaviour here was a full overwrite, which silently discarded
+    # every customization the merge exists to preserve. Refusing is the only
+    # honest answer when the tool that does the preserving is missing.
+    msg_warn "claude/settings.json: python3 not found — refusing to replace it (the merge needs python3)"
+    FAILED=$((FAILED + 1))
   fi
+fi
+
 fi
 
 # Cursor cli-config.json: merge only non-personal keys (permissions, approvalMode)
 # to avoid overwriting personal data (authInfo, model, etc.)
+if cfg_target_selected cursor; then
 CURSOR_CLI_CONFIG_SRC="$PAYLOAD_DIR/cursor/cli-config.json"
 CURSOR_CLI_CONFIG_DST="${HOME}/.cursor/cli-config.json"
 if [[ -f "$CURSOR_CLI_CONFIG_SRC" ]]; then
@@ -558,17 +647,30 @@ for key in ("permissions", "approvalMode", "version"):
         dst[key] = src[key]
 print(json.dumps(dst, indent=2))
 PYEOF
-)
-      merged_hash=$(echo "$merged" | md5 -q 2>/dev/null || echo "$merged" | md5sum | awk '{print $1}')
+) || merged=""
+      # Same guard as the Claude settings merge: a failed program prints
+      # nothing, and writing that would replace the file — which here holds the
+      # user's Cursor credentials and model choice — with a blank line.
+      if [[ -z "$merged" ]] || ! printf '%s\n' "$merged" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+        msg_warn "cursor/cli-config.json: merge failed — leaving the existing file untouched"
+        FAILED=$((FAILED + 1))
+        merged_hash=""
+        dst_hash=""
+      else
+      merged_hash=$(printf '%s\n' "$merged" | md5 -q 2>/dev/null || printf '%s\n' "$merged" | md5sum | awk '{print $1}')
       dst_hash=$(file_hash "$CURSOR_CLI_CONFIG_DST")
       if [[ "$merged_hash" != "$dst_hash" ]]; then
         msg_done "MERGE: cursor/cli-config.json (permissions, approvalMode)"
         if [[ "$PREVIEW_ONLY" == false ]]; then
-          echo "$merged" > "$CURSOR_CLI_CONFIG_DST"
+          if ! cfg_write_file "$CURSOR_CLI_CONFIG_DST" "$merged"; then
+            msg_warn "cursor/cli-config.json: could not write $CURSOR_CLI_CONFIG_DST"
+            FAILED=$((FAILED + 1))
+          fi
         fi
         CHANGED=$((CHANGED + 1))
       else
         SKIPPED=$((SKIPPED + 1))
+      fi
       fi
     else
       msg_warn "python3 not found — skipping cursor/cli-config.json merge"
@@ -576,7 +678,10 @@ PYEOF
   fi
 fi
 
+fi
+
 # Cursor settings.json requires a manual step (different path per OS)
+if cfg_target_selected cursor; then
 CURSOR_SETTINGS_SRC="$PAYLOAD_DIR/cursor/settings.json"
 if [[ -f "$CURSOR_SETTINGS_SRC" ]]; then
   if [[ "$(uname)" == "Darwin" ]]; then
@@ -596,6 +701,8 @@ if [[ -f "$CURSOR_SETTINGS_SRC" ]]; then
       msg_info "  Destination: $CURSOR_SETTINGS_DST"
     fi
   fi
+fi
+
 fi
 
 # Caveman skill: opt-in install via its official installer (self-updating).
@@ -697,7 +804,10 @@ fi
 # merge above is repo-authoritative for the hooks map, so init MUST run here
 # (after the merge) to re-apply the RTK hook on every sync instead of having it
 # clobbered. If the installer or init fails we warn and continue the sync.
-if [[ "$RTK" == true ]]; then
+#
+# Gated on the claude target for the same reason: `rtk init -g` writes into
+# ~/.claude/settings.json, so a run that excluded Claude must not reach it.
+if [[ "$RTK" == true ]] && cfg_target_selected claude; then
   echo -e "\n${CYAN}> Installing RTK...${NC}"
 
   # Honor the upstream installer's RTK_INSTALL_DIR so a binary placed off-PATH

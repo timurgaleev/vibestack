@@ -187,10 +187,15 @@ PROJECT_ROOT=""
 # off until the first-run adoption gate exists to ask.
 WITH_CONFIG=0
 ONLY_PHASE=""
-CFG_CAVEMAN=false
-CFG_PONYTAIL=false
-CFG_DELIBERATION=false
-CFG_RTK=true
+# Seeded from the environment because CAVEMAN=true / RTK=false and friends are
+# a documented way to drive this; the flags below override them.
+CFG_CAVEMAN="${CAVEMAN:-false}"
+CFG_PONYTAIL="${PONYTAIL:-false}"
+CFG_DELIBERATION="${DELIBERATION:-false}"
+CFG_RTK="${RTK:-true}"
+# "" until the user states a phase; then on or off. An optional-tool flag may
+# turn the phase on from "", but never argue with an explicit off.
+CONFIG_CHOICE=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -199,9 +204,11 @@ for arg in "$@"; do
       ;;
     --with-config)
       WITH_CONFIG=1
+      CONFIG_CHOICE="on"
       ;;
     --no-config)
       WITH_CONFIG=0
+      CONFIG_CHOICE="off"
       ;;
     --only=*)
       ONLY_PHASE="${arg#*=}"
@@ -249,13 +256,33 @@ done
 # --only= names the single phase to run, so it overrides --with-config/--no-config.
 RUN_SKILLS=1
 case "$ONLY_PHASE" in
-  skills) WITH_CONFIG=0 ;;
-  config) WITH_CONFIG=1; RUN_SKILLS=0 ;;
+  skills)
+    if [ "$CONFIG_CHOICE" = "on" ]; then
+      echo "ERROR: --only=skills excludes the configuration phase that --with-config asks for." >&2
+      exit 2
+    fi
+    WITH_CONFIG=0; CONFIG_CHOICE="off"
+    ;;
+  config)
+    if [ "$CONFIG_CHOICE" = "off" ]; then
+      echo "ERROR: --only=config runs the configuration phase that --no-config excludes." >&2
+      exit 2
+    fi
+    WITH_CONFIG=1; CONFIG_CHOICE="on"; RUN_SKILLS=0
+    ;;
 esac
 
 # Asking for one of the optional tools is asking for the phase that installs
-# them. --no-rtk is not: it turns something off, and must not turn the phase on.
+# them — but only when the user has not already said the phase is off. Turning
+# it back on there would let `--no-config -C` write to four config directories
+# the user just excluded. --no-rtk never turns the phase on: it turns something
+# off.
 if [ "$CFG_CAVEMAN" = "true" ] || [ "$CFG_PONYTAIL" = "true" ] || [ "$CFG_DELIBERATION" = "true" ]; then
+  if [ "$CONFIG_CHOICE" = "off" ]; then
+    echo "ERROR: --caveman/--ponytail/--deliberation install through the configuration" >&2
+    echo "       phase, which this command also excludes. Drop one of the two." >&2
+    exit 2
+  fi
   WITH_CONFIG=1
 fi
 
@@ -349,6 +376,10 @@ run_config_phase() {
   # shellcheck source=lib/config-install.sh
   . "$lib"
 
+  # Without this the library falls back to its own four-target list, so
+  # `--target=codex` would rewrite Claude, Cursor and Kiro configuration too.
+  CFG_TARGETS="$1"
+
   PREVIEW_ONLY=$([ "$DRY_RUN" = "1" ] && echo true || echo false)
   CAVEMAN="$CFG_CAVEMAN"
   PONYTAIL="$CFG_PONYTAIL"
@@ -359,7 +390,27 @@ run_config_phase() {
 }
 
 if [ "$RUN_SKILLS" = "0" ]; then
-  run_config_phase
+  # This path returns before the shared target resolution below, so it validates
+  # its own — otherwise `--only=config --target=typo` would sail past the check
+  # that every other invocation gets.
+  config_only_targets=""
+  if [ -n "$TARGETS_RAW" ]; then
+    if [ "$TARGETS_RAW" = "all" ]; then
+      config_only_targets="${ALL_TARGETS[*]}"
+    else
+      IFS=',' read -ra _cfg_targets <<< "$TARGETS_RAW"
+      for t in "${_cfg_targets[@]}"; do
+        if [ -z "${TARGET_ROOT[$t]:-}" ]; then
+          echo "ERROR: unknown target '$t'. Valid: ${!TARGET_ROOT[*]}, all." >&2
+          exit 2
+        fi
+      done
+      config_only_targets="${_cfg_targets[*]}"
+    fi
+  else
+    config_only_targets="${ALL_TARGETS[*]}"
+  fi
+  run_config_phase "$config_only_targets"
   exit $?
 fi
 
@@ -1078,7 +1129,7 @@ fi
 # authoritative for that map, so the merge has to happen first.
 CONFIG_RC=0
 if [ "$WITH_CONFIG" = "1" ]; then
-  run_config_phase || CONFIG_RC=$?
+  run_config_phase "${TARGETS[*]}" || CONFIG_RC=$?
 fi
 
 # Version stamp — written only after every target installed successfully, so
