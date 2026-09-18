@@ -166,6 +166,7 @@ assert_dir_exists() {
 
 # md5 is macOS-only; cksum is POSIX and exists on every runner.
 file_hash() {
+  [ -f "$1" ] || { echo "    missing file to hash: $1" >&2; return 1; }
   cksum < "$1"
 }
 
@@ -302,10 +303,10 @@ test_all_three_targets_byte_identical_per_skill() {
     else
       rm -f "$probe"
       # No substitution → every target gets the same bytes.
-      h_claude=$(file_hash "$HOME/.claude/skills/$skill/SKILL.md")
-      h_cursor=$(file_hash "$HOME/.cursor/skills/$skill/SKILL.md")
-      h_kiro=$(file_hash "$HOME/.kiro/skills/$skill/SKILL.md")
-      h_codex=$(file_hash "$HOME/.agents/skills/$skill/SKILL.md")
+      h_claude=$(file_hash "$HOME/.claude/skills/$skill/SKILL.md") || return 1
+      h_cursor=$(file_hash "$HOME/.cursor/skills/$skill/SKILL.md") || return 1
+      h_kiro=$(file_hash "$HOME/.kiro/skills/$skill/SKILL.md") || return 1
+      h_codex=$(file_hash "$HOME/.agents/skills/$skill/SKILL.md") || return 1
       if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ] || [ "$h_claude" != "$h_codex" ]; then
         echo "    drift on $skill: claude=$h_claude cursor=$h_cursor kiro=$h_kiro" >&2
         return 1
@@ -345,9 +346,10 @@ test_repo_inside_target_installs_all_targets() {
 # --- Idempotency: re-running install produces identical bytes
 test_install_idempotent_per_target() {
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
-  local h1=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md")
+  local h1 h2
+  h1=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md") || return 1
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
-  local h2=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md")
+  h2=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md") || return 1
   assert_eq "$h1" "$h2" "rendered hash"
 }
 
