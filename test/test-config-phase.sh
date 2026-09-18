@@ -217,6 +217,40 @@ test_dry_run_writes_nothing() {
     || _fail "P8: --dry-run wrote $n files"
 }
 
+# --- P9: uninstall --with-config removes ours and keeps theirs --------------
+# The manifest is the ownership record, so it bounds what may be deleted. The
+# marker bounds the region of CLAUDE.md we may cut. Merged keys have no such
+# record, so they stay.
+test_uninstall_round_trip() {
+  local sb; sb="$(new_sandbox)" || { _fail "P9: no sandbox"; return; }
+  run_config "$sb" --target=claude >/dev/null 2>&1
+
+  printf '\n@MY-OWN-FILE.md\n' >> "$sb/home/.claude/CLAUDE.md"
+  mkdir -p "$sb/home/.claude/agents"
+  echo mine > "$sb/home/.claude/agents/my-own-agent.md"
+
+  env HOME="$sb/home" XDG_STATE_HOME="$sb/state" MANIFEST_DIR="$sb/state/vibekit" \
+    bash "$REPO/uninstall" --target=claude --with-config >/dev/null 2>&1
+
+  [[ ! -f "$sb/home/.claude/rules/git.md" ]] \
+    && _pass "P9: uninstall removed the files the manifest recorded" \
+    || _fail "P9: manifest-recorded files survived uninstall"
+
+  [[ -f "$sb/home/.claude/agents/my-own-agent.md" ]] \
+    && _pass "P9: a file the user added was left alone" \
+    || _fail "P9: uninstall deleted a file it never installed"
+
+  if [[ -f "$sb/home/.claude/CLAUDE.md" ]] && grep -q '@MY-OWN-FILE.md' "$sb/home/.claude/CLAUDE.md"; then
+    _pass "P9: the user's lines below the marker survived uninstall"
+  else
+    _fail "P9: uninstall took the user's CLAUDE.md tail with it"
+  fi
+
+  [[ -f "$sb/home/.claude/settings.json" ]] \
+    && _pass "P9: the merged settings.json was left in place" \
+    || _fail "P9: uninstall deleted a file whose keys it cannot attribute"
+}
+
 echo "configuration phase (executable)"
 echo ""
 test_install_and_idempotency
@@ -227,6 +261,7 @@ test_failed_staging_does_not_prune
 test_contradictory_options_refused
 test_only_config_validates_targets
 test_dry_run_writes_nothing
+test_uninstall_round_trip
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"
