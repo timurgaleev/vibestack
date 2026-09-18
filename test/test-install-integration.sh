@@ -164,6 +164,12 @@ assert_dir_exists() {
   fi
 }
 
+# md5 is macOS-only; cksum is POSIX and exists on every runner.
+file_hash() {
+  [ -f "$1" ] || { echo "    missing file to hash: $1" >&2; return 1; }
+  cksum < "$1"
+}
+
 assert_eq() {
   local expected="$1" actual="$2" label="${3:-values}"
   if [ "$expected" != "$actual" ]; then
@@ -250,14 +256,14 @@ test_dry_run_writes_nothing() {
 test_dry_run_reports_all_three_targets() {
   local out
   out=$("$INSTALL" --dry-run --target=all < /dev/null 2>&1)
-  echo "$out" | grep -q "Claude Code" || { echo "    missing Claude Code in dry-run output" >&2; return 1; }
-  echo "$out" | grep -q "Cursor"      || { echo "    missing Cursor in dry-run output" >&2; return 1; }
-  echo "$out" | grep -q "Kiro"        || { echo "    missing Kiro in dry-run output" >&2; return 1; }
-  echo "$out" | grep -q "Codex CLI"   || { echo "    missing Codex CLI in dry-run output" >&2; return 1; }
+  grep -q "Claude Code" <<<"$out" || { echo "    missing Claude Code in dry-run output" >&2; return 1; }
+  grep -q "Cursor" <<<"$out"      || { echo "    missing Cursor in dry-run output" >&2; return 1; }
+  grep -q "Kiro" <<<"$out"        || { echo "    missing Kiro in dry-run output" >&2; return 1; }
+  grep -q "Codex CLI" <<<"$out"   || { echo "    missing Codex CLI in dry-run output" >&2; return 1; }
   # Codex's root is .agents/skills, not .codex/skills — the plan must print the
   # path Codex actually reads.
-  echo "$out" | grep -q "\.agents/skills" || { echo "    dry-run plan does not name ~/.agents/skills for codex" >&2; return 1; }
-  if echo "$out" | grep -q "\.codex/skills"; then
+  grep -q "\.agents/skills" <<<"$out" || { echo "    dry-run plan does not name ~/.agents/skills for codex" >&2; return 1; }
+  if grep -q "\.codex/skills" <<<"$out"; then
     echo "    dry-run plan still points codex at ~/.codex/skills" >&2; return 1
   fi
 }
@@ -297,10 +303,10 @@ test_all_three_targets_byte_identical_per_skill() {
     else
       rm -f "$probe"
       # No substitution → every target gets the same bytes.
-      h_claude=$(md5 -q "$HOME/.claude/skills/$skill/SKILL.md")
-      h_cursor=$(md5 -q "$HOME/.cursor/skills/$skill/SKILL.md")
-      h_kiro=$(md5 -q "$HOME/.kiro/skills/$skill/SKILL.md")
-      h_codex=$(md5 -q "$HOME/.agents/skills/$skill/SKILL.md")
+      h_claude=$(file_hash "$HOME/.claude/skills/$skill/SKILL.md") || return 1
+      h_cursor=$(file_hash "$HOME/.cursor/skills/$skill/SKILL.md") || return 1
+      h_kiro=$(file_hash "$HOME/.kiro/skills/$skill/SKILL.md") || return 1
+      h_codex=$(file_hash "$HOME/.agents/skills/$skill/SKILL.md") || return 1
       if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ] || [ "$h_claude" != "$h_codex" ]; then
         echo "    drift on $skill: claude=$h_claude cursor=$h_cursor kiro=$h_kiro" >&2
         return 1
@@ -340,9 +346,10 @@ test_repo_inside_target_installs_all_targets() {
 # --- Idempotency: re-running install produces identical bytes
 test_install_idempotent_per_target() {
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
-  local h1=$(md5 -q "$HOME/.cursor/skills/office-hours/SKILL.md")
+  local h1 h2
+  h1=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md") || return 1
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
-  local h2=$(md5 -q "$HOME/.cursor/skills/office-hours/SKILL.md")
+  h2=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md") || return 1
   assert_eq "$h1" "$h2" "rendered hash"
 }
 
@@ -371,7 +378,7 @@ test_uninstall_target_cursor_preserves_claude() {
 test_install_warns_about_hooks_for_non_claude() {
   local out
   out=$("$INSTALL" --target=cursor < /dev/null 2>&1)
-  echo "$out" | grep -q "Hook-bearing skills" || {
+  grep -q "Hook-bearing skills" <<<"$out" || {
     echo "    expected hook warning in cursor install output" >&2
     return 1
   }
@@ -381,7 +388,7 @@ test_install_warns_about_hooks_for_non_claude() {
 test_install_no_hook_warning_for_claude_only() {
   local out
   out=$("$INSTALL" --target=claude < /dev/null 2>&1)
-  if echo "$out" | grep -q "Hook-bearing skills"; then
+  if grep -q "Hook-bearing skills" <<<"$out"; then
     echo "    unexpected hook warning in claude-only install" >&2
     return 1
   fi
@@ -701,7 +708,7 @@ test_install_staging_failure_preserves_prod() {
   "$INSTALL" --target=cursor < /dev/null >/dev/null 2>&1
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
   local first_hash
-  first_hash=$(md5 -q "$HOME/.cursor/skills/office-hours/SKILL.md")
+  first_hash=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md")
 
   # Second install with a stub that fails for cursor on office-hours.
   with_failing_renderer "office-hours" "cursor"
@@ -714,7 +721,7 @@ test_install_staging_failure_preserves_prod() {
   # Production cursor/skills/ MUST still be present and unchanged.
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
   local after_hash
-  after_hash=$(md5 -q "$HOME/.cursor/skills/office-hours/SKILL.md")
+  after_hash=$(file_hash "$HOME/.cursor/skills/office-hours/SKILL.md")
   assert_eq "$first_hash" "$after_hash" "production hash preserved on staging fail" || return 1
   # The failed staging dir should be parked as .staging.failed.* for debugging.
   if ! ls -d "$HOME/.cursor/skills.staging.failed."* >/dev/null 2>&1; then
