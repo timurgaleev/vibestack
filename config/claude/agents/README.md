@@ -1,6 +1,6 @@
 # Claude Code Agents
 
-This directory holds the sub-agent definitions deployed to `~/.claude/agents/` by `install.sh`.
+This directory holds the sub-agent definitions deployed to `~/.claude/agents/` by the configuration phase of `./install`.
 
 - **Total agents:** 33
 - **Model:** all agents use `opus` (Claude Opus 4.8) for deepest reasoning

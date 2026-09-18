@@ -15,20 +15,17 @@ maintainer directly. Please do not file public issues for sensitive reports.
 ### The install one-liner
 
 ```bash
-bash -c "$(curl -fsSL timurgaleev.github.io/vibekit/install.sh)"
+git clone https://github.com/timurgaleev/vibestack.git
+cd vibestack
+less install                     # review
+./install --with-config -n       # preview every change, writes nothing
+./install --with-config          # apply
 ```
 
-This downloads and executes a script over the network. It is convenient but
-gives the host (GitHub Pages) the ability to run code as your user. If you
-prefer to inspect before running:
-
-```bash
-git clone https://github.com/timurgaleev/vibekit.git
-cd vibekit
-less install.sh        # review
-./install.sh -n        # preview the diff, writes nothing
-./install.sh           # apply
-```
+The configuration phase is opt-in: `./install` on its own installs the skills
+and leaves your ~/.claude, ~/.cursor, ~/.kiro and ~/.codex configuration alone.
+`--with-config` is what puts this repository's CLAUDE.md, rules, sub-agents and
+statusline on your machine, and `--only=config` runs that half by itself.
 
 `-n` (preview) writes nothing — use it first on any machine you care about.
 
@@ -51,7 +48,7 @@ or fork and change the shipped value.
 
 ### Caveman skill (`-C`, opt-in, off by default)
 
-`./install.sh -C` runs a third-party installer
+`./install -C` runs a third-party installer
 ([JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman)). To avoid
 silently executing whatever lands on the upstream `main` branch, the default
 installer URL is **pinned to a specific commit**:
@@ -61,10 +58,10 @@ https://raw.githubusercontent.com/JuliusBrussee/caveman/25d22f864ad68cc447a4cb93
 ```
 
 - Pinning means upstream changes are not pulled in until this repo bumps the SHA.
-- To bump: replace the SHA in `install.sh` (`CAVEMAN_INSTALL_URL` default) after
+- To bump: replace the SHA in `lib/config-install.sh` (`CAVEMAN_INSTALL_URL` default) after
   reviewing the upstream diff between the old and new commit.
 - To use a different source (latest `main`, a fork, a mirror), override at runtime:
-  `CAVEMAN_INSTALL_URL=<url> ./install.sh -C`.
+  `CAVEMAN_INSTALL_URL=<url> ./install -C`.
 - Requires Node >= 18; if missing, the step warns and skips without aborting.
 
 Note: Caveman's own installer may self-update on later runs — review upstream
@@ -72,7 +69,7 @@ before enabling it on sensitive machines.
 
 ### deliberation plugin (`-D`, opt-in, off by default)
 
-`./install.sh -D` installs a third-party plugin
+`./install -D` installs a third-party plugin
 ([antonbabenko/deliberation](https://github.com/antonbabenko/deliberation))
 through the `claude plugin` CLI. Like Ponytail it tracks the marketplace repo's
 default branch — there is no commit-SHA pin, so review upstream before enabling
@@ -93,14 +90,14 @@ it on a sensitive machine.
 
 ### RTK (on by default, skip with `-R`)
 
-`./install.sh` runs the third-party RTK installer
+`./install --with-config` runs the third-party RTK installer
 ([rtk-ai/rtk](https://github.com/rtk-ai/rtk)) via `curl -fsSL ... | sh` unless
 you pass `-R` (or `RTK=false`). RTK is a standalone Rust binary; the install is
 idempotent — if `rtk` is already on `PATH` the download is skipped.
 
 - The installer tracks the **latest tagged release** by default (no commit-SHA
   pin, unlike Caveman). It verifies SHA-256 checksums of the downloaded archive.
-- Pin a known release with `RTK_VERSION=vX.Y.Z ./install.sh`, or point
+- Pin a known release with `RTK_VERSION=vX.Y.Z ./install --with-config`, or point
   `RTK_INSTALL_URL` at a fork, mirror, or pinned ref to vet the script first.
 - `rtk init -g` modifies `~/.claude/settings.json` (adds a `PreToolUse` hook)
   and writes `RTK.md` + a `rtk-rewrite.sh` hook script. The hook rewrites Bash
@@ -111,7 +108,7 @@ idempotent — if `rtk` is already on `PATH` the download is skipped.
 
 ### File deletion during sync
 
-Since v1.6.0 `install.sh` deletes files, not just writes them. The scope is
+`./install --with-config` deletes files, not just writes them. The scope is
 bounded on several sides:
 
 - Only paths recorded in the previous sync's manifest
@@ -131,7 +128,7 @@ bounded on several sides:
 - Filenames containing a newline are skipped rather than recorded, since the
   manifest is newline-delimited.
 
-Preview every deletion first with `./install.sh -n`.
+Preview every deletion first with `./install --with-config -n`.
 
 One cleanup is hard-coded rather than manifest-driven: a short list of files
 earlier versions shipped and later dropped, removed once so machines that never

@@ -1,7 +1,15 @@
 # Configuration reference
 
-Everything optional lives here. The defaults work out of the box — reach for
-this page only when you want to change something.
+The pack has two halves. `./install` installs the skills; `./install
+--with-config` also deploys the always-on configuration described here —
+`CLAUDE.md`, the behaviour rules, the sub-agents and the statusline — into
+`~/.claude`, `~/.cursor`, `~/.kiro` and `~/.codex`. `--only=config` runs that
+half alone, and `./uninstall --with-config` removes it again.
+
+The payload lives under `config/` in this repository: `config/claude/`,
+`config/cursor/`, `config/kiro/` and `config/codex/`, one directory per
+destination. Everything on this page is optional — the defaults work out of the
+box, so reach for it only when you want to change something.
 
 ## Status line
 
@@ -23,9 +31,9 @@ Two environment variables tune it:
 
 ## Codex CLI
 
-`codex/` deploys to `~/.codex/`. Codex loads no `rules/` directory, so
+`config/codex/` deploys to `~/.codex/`. Codex loads no `rules/` directory, so
 `AGENTS.md` has to be self-contained — every rule inlined, not pointed at. It is
-**generated** from `claude/CLAUDE.md` + `claude/rules/` by
+**generated** from `config/claude/CLAUDE.md` + `config/claude/rules/` by
 `scripts/gen-codex-agents.py`; edit those, not `AGENTS.md`. A project-root
 `AGENTS.md` still wins over it.
 
@@ -48,12 +56,12 @@ was in the previous manifest but is no longer in the repo — so a rule dropped 
 stops loading on your machine instead of lingering forever.
 
 Files that are not in the manifest were installed by you (hand-written skills,
-vendored packs) and are never touched. `./install.sh -n` lists what would be
+vendored packs) and are never touched. `./install --with-config -n` lists what would be
 pruned without deleting anything.
 
 ## Cursor editor settings
 
-Cursor stores editor settings at an OS-specific path, so `install.sh` doesn't
+Cursor stores editor settings at an OS-specific path, so the configuration phase doesn't
 write them automatically:
 
 ```bash
@@ -63,12 +71,12 @@ cp cursor/settings.json ~/Library/Application\ Support/Cursor/User/settings.json
 cp cursor/settings.json ~/.config/Cursor/User/settings.json
 ```
 
-`install.sh` warns you when this file has changed and needs re-applying.
+`./install --with-config` warns you when this file has changed and needs re-applying.
 
 ## Caveman skill (`-C`, opt-in)
 
 [Caveman](https://github.com/JuliusBrussee/caveman) compresses agent output
-(`/caveman`, `/caveman-commit`, …). It is **not vendored** — `install.sh -C` runs
+(`/caveman`, `/caveman-commit`, …). It is **not vendored** — `./install -C` runs
 Caveman's own installer, pinned to a specific upstream commit (override with
 `CAVEMAN_INSTALL_URL`). Requires Node >= 18; if missing, the step warns and
 skips. See [`SECURITY.md`](../SECURITY.md) for the trust model.
@@ -77,7 +85,7 @@ skips. See [`SECURITY.md`](../SECURITY.md) for the trust model.
 
 [Ponytail](https://github.com/DietrichGebert/ponytail) steers the agent toward
 minimal, stdlib-first code (the "best code is the code you never wrote"). It is
-**not vendored** — `install.sh -Y` installs it through the official
+**not vendored** — `./install -Y` installs it through the official
 `claude plugin` CLI (`marketplace add DietrichGebert/ponytail` + `install
 ponytail@ponytail`). Override the source with `PONYTAIL_REPO`. Requires the
 `claude` CLI; if missing, the step warns and skips. Unlike Caveman it tracks the
@@ -89,7 +97,7 @@ install to load it.
 [deliberation](https://github.com/antonbabenko/deliberation) delegates a second
 opinion to GPT (via the Codex CLI), Gemini, Grok or an OpenRouter model over MCP,
 with seven expert personas and the `/deliberation:ask-all` and
-`/deliberation:consensus` commands. It is **not vendored** — `install.sh -D`
+`/deliberation:consensus` commands. It is **not vendored** — `./install -D`
 installs it through the `claude plugin` CLI (`marketplace add
 antonbabenko/agent-plugins` + `install deliberation@antonbabenko`). Override the
 source with `DELIBERATION_REPO`. Requires the `claude` CLI; if missing, the step
@@ -108,7 +116,7 @@ CLI for Gemini, `XAI_API_KEY`, `OPENROUTER_API_KEY`). Routing lives in
 
 [RTK](https://github.com/rtk-ai/rtk) ("Rust Token Killer") is a standalone Rust
 CLI that compresses shell-command output before it reaches the model. Unlike
-Caveman and Ponytail it is **on by default** — `install.sh` installs it via
+Caveman and Ponytail it is **on by default** within that phase — `./install --with-config` installs it via
 `curl | sh` and runs `rtk init -g` to apply the Claude Code `PreToolUse` hook.
 The install is idempotent: if `rtk` is already on `PATH` the binary download is
 skipped and only the hook is refreshed. Init runs **after** the `settings.json`

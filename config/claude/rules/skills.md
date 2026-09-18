@@ -1,11 +1,13 @@
 # Skill Routing
 
-These are [vibestack](https://github.com/timurgaleev/vibestack) skills — slash
-commands that carry a full workflow. When a task matches one, prefer the skill
+These skills ship with this configuration — slash commands that carry a full
+workflow. `./install` puts both halves on the machine, so if these rules are
+loaded the skills are installed too. When a task matches one, prefer the skill
 over improvising: invoke it before starting the work.
 
-**Availability:** If a skill below is installed, use it. If it isn't present on
-this machine, proceed normally — these are suggestions, not hard dependencies.
+**Availability:** installing the configuration without the skills is possible
+(`./install --only=config`), so a missing skill is not an error — proceed
+normally if one is not there.
 
 **Ordering:** Process skills come first. Brainstorm or plan before implementing;
 investigate before fixing. Then run the implementation and review skills.
@@ -36,7 +38,7 @@ investigate before fixing. Then run the implementation and review skills.
 
 The [deliberation](https://github.com/antonbabenko/deliberation) plugin delegates
 a question to GPT, Gemini, Grok or an OpenRouter model. It is optional
-(`install.sh -D`); where it is absent, carry on without it.
+(`./install -D`); where it is absent, carry on without it.
 
 | When the task is… | Use |
 |-------------------|-----|

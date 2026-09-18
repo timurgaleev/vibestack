@@ -32,6 +32,12 @@ cross-model review, debugging, AWS and agent reviews, release. Same source insta
 Code, Cursor, Kiro, and Codex CLI. No lock-in, no telemetry, state stays in
 `~/.vibestack/`.
 
+The pack also ships the **always-on configuration** those workflows assume: a
+`CLAUDE.md` index, thirteen behaviour rules, thirty-three sub-agents and a live
+statusline, deployed into `~/.claude`, `~/.cursor`, `~/.kiro` and `~/.codex`.
+Skills are what you invoke; the configuration is what shapes every answer in
+between. `./install --with-config` installs both.
+
 > Think of it as turning a junior-level "just do it" assistant into one that
 > plans, gets a second opinion, tests, and ships like a team would.
 
@@ -47,6 +53,22 @@ git clone https://github.com/timurgaleev/vibestack ~/vibestack
 Clone anywhere **outside** an agent's skills directory. The installer renders the
 skills into each agent's own folder; a checkout sitting inside one of those folders
 gets indexed a second time, so every skill shows up twice in the picker.
+
+### Add the configuration
+
+```bash
+~/vibestack/install --with-config -n    # preview every change, writes nothing
+~/vibestack/install --with-config       # apply
+```
+
+This half writes into files you may already own — `~/.claude/CLAUDE.md` and
+`settings.json` among them — so it is opt-in and every merge is conservative:
+your lines below the managed marker survive, keys you added are kept, and a file
+the installer cannot parse is left exactly as it was. `--only=config` runs it
+alone, and `./uninstall --with-config` removes what it recorded installing.
+See [`docs/configuration.md`](docs/configuration.md) and
+[`SECURITY.md`](SECURITY.md) — the payload allows `Bash(*)` and sets
+`acceptEdits`, which is worth reading about before you run it.
 
 **macOS needs a newer bash.** The installer uses associative arrays and refuses to
 run on the bash 3.2 Apple still ships as `/bin/bash`. `brew install bash` is

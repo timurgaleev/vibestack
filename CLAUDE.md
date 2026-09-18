@@ -157,10 +157,45 @@ bin/vibe-render-skill --check skills/<name>/SKILL.md ~/.claude/skills/<name>/SKI
 # exit 0 = no drift; exit 1 = drift; the diff is printed to stderr.
 ```
 
+## The configuration payload
+
+`config/` holds what the pack deploys into the runtimes themselves, as opposed
+to `skills/`, which holds what they load as slash commands:
+
+```
+config/claude/   CLAUDE.md, rules/, agents/, settings.json, statusline.py -> ~/.claude
+config/cursor/   settings.json, cli-config.json, hooks.json, rules/*.mdc   -> ~/.cursor
+config/kiro/     agents/default.json                                       -> ~/.kiro
+config/codex/    AGENTS.md, config.toml, hooks.json, rules/default.rules   -> ~/.codex
+```
+
+`lib/config-install.sh` deploys it and `lib/config-sync.sh` holds the merge
+helpers. Both are libraries: `./install` sources them and calls
+`config_phase_run()`, and neither writes anything at source time.
+
+Three rules govern edits here:
+
+- **`config/codex/AGENTS.md` is generated**, from `config/claude/CLAUDE.md` plus
+  `config/claude/rules/` by `scripts/gen-codex-agents.py`. Edit the sources.
+- **The marker strings and the manifest directory are frozen.** They name state
+  already written to installed machines (`~/.claude/CLAUDE.md` carries the end
+  marker; `~/.local/state/vibekit/` holds the per-target manifests). Renaming
+  either orphans that state and duplicates managed blocks on the next sync.
+- **The manifest is the ownership record.** A file the install recorded may be
+  pruned or uninstalled; anything else on disk belongs to the user. Keys merged
+  into settings.json, config.toml, hooks.json and agents/default.json have no
+  such record, so nothing removes them.
+
+`bash test/test-config-phase.sh` runs real installs into isolated HOMEs and is
+the suite to run after touching any of this.
+
 ## Install and update
 
 ```bash
 ./install                          # interactive: asks per-target (claude, cursor, kiro, codex)
+./install --with-config            # skills + the configuration payload
+./install --only=config            # the configuration payload alone
+./install --no-config              # skills only (the default)
 ./install --target=all             # all four, non-interactive
 ./install --target=claude          # claude only
 ./install --target=cursor,kiro     # cursor + kiro
@@ -171,6 +206,7 @@ bin/vibe-render-skill --check skills/<name>/SKILL.md ~/.claude/skills/<name>/SKI
 ./install --dry-run --target=all   # preview, no writes
 
 ./uninstall                        # claude only (default for v1.3.x compat)
+./uninstall --with-config          # also remove the deployed configuration
 ./uninstall --target=all           # remove from all four
 ./uninstall --target=cursor        # cursor only
 ```
