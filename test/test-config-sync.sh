@@ -6,6 +6,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/config-helpers.sh"
 LIB="$HERE/../lib/config-sync.sh"
+REPO_ROOT="$(cd "$HERE/.." && pwd)"
 
 assert_contains() {
   local file="$1" needle="$2" name="$3"
@@ -481,6 +482,107 @@ test_toml_fill_noop
 test_managed_block_preserves_outside
 test_managed_block_refuses_unmarked_source
 test_managed_block_prepends_to_unmanaged
+
+
+# --- TOML: refuse rather than write what cannot be checked ---------------------
+# The merge is line-based, so the only thing standing between it and a file the
+# tool cannot read is a parser. tomllib arrives in python 3.11, and stock macOS
+# Command Line Tools ships 3.9 — the released version rewrote those machines'
+# config.toml unvalidated, and four shapes came out invalid.
+test_toml_refuses_without_a_validator() {
+  local d shim rc before after
+  d=$(mktemp -d); shim=$(mktemp -d)
+  # A python3 whose tomllib import fails, standing in for 3.8-3.10.
+  # The interpreter is resolved BEFORE the shim goes on PATH — a shim named
+  # python3 that calls "python3" re-enters itself, and the test then passes
+  # because the shim crashed rather than because tomllib was absent.
+  local real_py; real_py=$(command -v python3)
+  cat > "$shim/python3" <<SHIM
+#!/bin/bash
+exec "$real_py" -c '
+import sys, builtins
+_real = builtins.__import__
+def _block(name, *a, **k):
+    if name == "tomllib":
+        raise ImportError("simulated: no tomllib")
+    return _real(name, *a, **k)
+builtins.__import__ = _block
+_src = sys.stdin.read()
+sys.argv = sys.argv[1:]
+exec(compile(_src, "<stdin>", "exec"))
+' "\$@"
+SHIM
+  chmod +x "$shim/python3"
+
+  printf 'features.hooks = false\n' > "$d/config.toml"
+  before=$(cat "$d/config.toml")
+  PATH="$shim:$PATH" toml_fill_missing "$REPO_ROOT/config/codex/config.toml" "$d/config.toml" >/dev/null 2>&1
+  rc=$?
+  after=$(cat "$d/config.toml")
+
+  [[ "$rc" == 3 ]] \
+    && _pass "T-refuse: no tomllib returns 3 (refused), not 0 (unchanged)" \
+    || _fail "T-refuse: no tomllib returned $rc (expected 3)"
+  [[ "$before" == "$after" ]] \
+    && _pass "T-refuse: the destination was left byte-identical" \
+    || _fail "T-refuse: the destination was rewritten without a validator"
+  rm -rf "$d" "$shim"
+}
+
+# A multi-line string can contain a line that reads as a table header. Inserting
+# into it yields VALID TOML with the user's value silently rewritten, so
+# validating the result cannot catch this one — it has to be refused up front.
+test_toml_refuses_multiline_string() {
+  local d rc before after
+  d=$(mktemp -d)
+  printf 'note = %s\n[features]\nhooks = false\n%s\n' '"""' '"""' > "$d/config.toml"
+  before=$(cat "$d/config.toml")
+  toml_fill_missing "$REPO_ROOT/config/codex/config.toml" "$d/config.toml" >/dev/null 2>&1
+  rc=$?
+  after=$(cat "$d/config.toml")
+  [[ "$rc" == 3 && "$before" == "$after" ]] \
+    && _pass "T-multiline: a multi-line string is refused, not written into" \
+    || _fail "T-multiline: rc=$rc, destination changed=$([[ "$before" == "$after" ]] && echo no || echo YES)"
+  rm -rf "$d"
+}
+
+# A quoted table key containing "]" defeats the header pattern, so the repo's
+# root keys would land under that table instead of at root.
+test_toml_refuses_quoted_table_key() {
+  local d rc before after
+  d=$(mktemp -d)
+  printf '["we]ird"]\nk = 1\n' > "$d/config.toml"
+  before=$(cat "$d/config.toml")
+  toml_fill_missing "$REPO_ROOT/config/codex/config.toml" "$d/config.toml" >/dev/null 2>&1
+  rc=$?
+  after=$(cat "$d/config.toml")
+  [[ "$rc" == 3 && "$before" == "$after" ]] \
+    && _pass "T-quotedkey: a quoted table key is refused" \
+    || _fail "T-quotedkey: rc=$rc, destination changed=$([[ "$before" == "$after" ]] && echo no || echo YES)"
+  rm -rf "$d"
+}
+
+# The ordinary case still has to merge, or the guards above have simply turned
+# the feature off.
+test_toml_still_merges_a_plain_destination() {
+  local d rc
+  d=$(mktemp -d)
+  printf '[features]\nhooks = false\n' > "$d/config.toml"
+  toml_fill_missing "$REPO_ROOT/config/codex/config.toml" "$d/config.toml" >/dev/null 2>&1
+  rc=$?
+  if [[ "$rc" == 1 ]] && grep -q 'hooks = false' "$d/config.toml" \
+     && python3 -c "import tomllib,sys; tomllib.load(open('$d/config.toml','rb'))" 2>/dev/null; then
+    _pass "T-plain: a plain destination still merges, keeps its value, and parses"
+  else
+    _fail "T-plain: rc=$rc — the ordinary merge path regressed"
+  fi
+  rm -rf "$d"
+}
+
+test_toml_refuses_without_a_validator
+test_toml_refuses_multiline_string
+test_toml_refuses_quoted_table_key
+test_toml_still_merges_a_plain_destination
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

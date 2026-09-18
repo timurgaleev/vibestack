@@ -14,6 +14,10 @@
 #   sync_managed_block  - replace only a BEGIN/END marked region of a text file
 #   sync_append_managed - repo-owned body + marker; foreign trailing lines kept
 #
+# Return codes: 0 unchanged, 1 updated, 2 created, 3 REFUSED. A refusal is not
+# "nothing to do" — the merge could not be performed safely, and a caller that
+# reads it as "unchanged" reports success for a run that merged nothing.
+#
 # Reads the global PREVIEW_ONLY (true => dry-run, print intent, change nothing).
 # Read through a default so the library is usable under `set -u` even when the
 # caller has not declared it — an unset flag means "write", the safe reading
@@ -244,11 +248,11 @@ json_fill_missing() {
   fi
 
   if ! command -v python3 >/dev/null 2>&1; then
-    msg_warn "python3 not found — leaving $dst untouched"
-    return 0
+    msg_warn "python3 not found — cannot merge $dst, leaving it untouched"
+    return 3
   fi
 
-  local filled
+  local filled py_rc=0
   if ! filled=$(python3 - "$src" "$dst" <<'PYEOF'
 import json, sys
 
@@ -275,8 +279,15 @@ def fill(dst_node, src_node):
 print(json.dumps(fill(dst, src), indent=2))
 PYEOF
   ); then
-    msg_warn "Failed to merge $dst — leaving it untouched"
-    return 0
+    py_rc=$?
+    # 3 is the merge declining on purpose; anything else is an unexpected
+    # failure. Both leave the destination alone, and both are reported.
+    if [[ "$py_rc" == 3 ]]; then
+      msg_warn "Refused to merge $dst — reason above; the file is unchanged"
+    else
+      msg_warn "Failed to merge $dst — leaving it untouched"
+    fi
+    return 3
   fi
 
   commit_merge "$dst" "$filled"
@@ -328,11 +339,11 @@ toml_fill_missing() {
   fi
 
   if ! command -v python3 >/dev/null 2>&1; then
-    msg_warn "python3 not found — leaving $dst untouched"
-    return 0
+    msg_warn "python3 not found — cannot merge $dst, leaving it untouched"
+    return 3
   fi
 
-  local filled
+  local filled py_rc=0
   if ! filled=$(python3 - "$src" "$dst" <<'PYEOF'
 import re, sys
 
@@ -365,6 +376,42 @@ with open(sys.argv[1]) as f:
 with open(sys.argv[2]) as f:
     dst_lines = f.read().splitlines()
 
+# A multi-line string can hold anything, including something that reads as a
+# table header, and this parser works line by line — so it would insert repo
+# keys INTO the user's string and produce valid TOML with a silently rewritten
+# value. Validating the result cannot catch that. A quoted table key holding a
+# closing bracket defeats the header pattern the same way. Neither is worth a
+# clever fix: refuse, and say which line caused it.
+_MULTILINE = ('"""', "'''")
+for _i, _l in enumerate(dst_lines):
+    if any(_m in _l for _m in _MULTILINE):
+        sys.stderr.write(
+            "destination line %d opens a multi-line string; a line-based "
+            "merge cannot see into it. Refusing.\\n" % (_i + 1)
+        )
+        sys.exit(3)
+    # Only a quoted segment holding "]" is a problem: the header pattern stops
+    # at the first bracket, so the real end of the header is invisible. A
+    # quoted key WITHOUT a bracket parses correctly and is ordinary — the
+    # payload shipped here has one — so refusing on quotes alone would turn the
+    # merge off for the common case.
+    _st = _l.strip()
+    if _st.startswith("["):
+        _quote = None
+        for _ch in _st:
+            if _quote is not None:
+                if _ch == _quote:
+                    _quote = None
+                elif _ch == "]":
+                    sys.stderr.write(
+                        "destination line %d has a quoted table key containing "
+                        "']'; the header pattern cannot find where it ends. "
+                        "Refusing.\\n" % (_i + 1)
+                    )
+                    sys.exit(3)
+            elif _ch in "\"'":
+                _quote = _ch
+
 src, dst = parse(src_lines), parse(dst_lines)
 out = list(dst_lines)
 
@@ -395,13 +442,20 @@ result = "\n".join(out)
 
 # The merge is line-based, so it can produce something no TOML parser accepts —
 # a duplicated table being the obvious one. Where the standard library can
-# check (3.11+), a result that does not parse is not worth writing. A
-# destination that was already invalid is left as it was rather than blamed on
-# the merge.
+# check, a result that does not parse is not worth writing, and without a
+# checker the merge is refused outright — the python3 on stock macOS Command
+# Line Tools is 3.9, and that is exactly the population that would otherwise
+# get an unvalidated rewrite of a working config. A destination that was
+# already invalid is left as it was rather than blamed on the merge.
 try:
     import tomllib
 except ImportError:
-    pass
+    sys.stderr.write(
+        "cannot validate the merged TOML: this python3 (%s) has no tomllib, "
+        "which arrives in 3.11. Refusing rather than rewriting the file "
+        "unchecked.\n" % sys.version.split()[0]
+    )
+    sys.exit(3)
 else:
     try:
         tomllib.loads("\n".join(dst_lines))
@@ -417,8 +471,15 @@ else:
 print(result)
 PYEOF
   ); then
-    msg_warn "Failed to merge $dst — leaving it untouched"
-    return 0
+    py_rc=$?
+    # 3 is the merge declining on purpose; anything else is an unexpected
+    # failure. Both leave the destination alone, and both are reported.
+    if [[ "$py_rc" == 3 ]]; then
+      msg_warn "Refused to merge $dst — reason above; the file is unchanged"
+    else
+      msg_warn "Failed to merge $dst — leaving it untouched"
+    fi
+    return 3
   fi
 
   commit_merge "$dst" "$filled"
