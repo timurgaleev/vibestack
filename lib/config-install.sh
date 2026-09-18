@@ -216,6 +216,14 @@ fi
 # The body below is deliberately not re-indented. Keeping it flush left leaves
 # the diff against the standalone installer it came from reviewable.
 config_phase_run() {
+# The body below is flush-left, so without this every working name would land
+# in the caller's scope. Nothing collides today; this keeps it that way when
+# ./install grows a variable of its own called rc, merged or root.
+local entry mm_entry src_subdir dst_dir src_path rel_path dst_file src_file
+local merge_mode rc src_hash dst_hash manifest_tmp protected_tmp find_excludes
+local legacy want_hash got_hash merged merged_hash node_major
+local rtk_dir rtk_bin rtk_installer target_failed
+
 ADDED=0; CHANGED=0; SKIPPED=0; PRUNED=0; FAILED=0
 
 echo -e "\n${CYAN}---------------------------------------------------------------${NC}"
@@ -319,8 +327,8 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
   # declaration rather than from what the repo currently ships — so prune keeps
   # skipping them even after a release stops shipping one.
   protected_tmp="$(mktemp)"
-  for entry in "${MERGE_MANAGED[@]}"; do
-    [[ "${entry%%:*}" == "$src_subdir" ]] && echo "$entry" | cut -d: -f2 >> "$protected_tmp"
+  for mm_entry in "${MERGE_MANAGED[@]}"; do
+    [[ "${mm_entry%%:*}" == "$src_subdir" ]] && echo "$mm_entry" | cut -d: -f2 >> "$protected_tmp"
   done
 
   while IFS= read -r -d '' src_file; do
