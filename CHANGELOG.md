@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.39.2 — 2026-09-19
+
+### Changed
+
+- **The README answers the question a newcomer actually has.** It opened with
+  three paragraphs of positioning and a mermaid diagram of the installer, and
+  never said what to type first. It now leads with one line on what this is, a
+  what-you-get table, the install, and a **What to type first** section naming
+  the three commands that carry most of the value. Two independent model reads
+  were used to find the skim points; both flagged the same three.
+- **The command table shows 21 of 60 with priority markers** (🔥 daily, ⭐
+  often) instead of 15 unmarked ones, so the daily chain is visible rather than
+  implied. The full list stays in `docs/skills.md`.
+- **The configuration half gets the one deep-dive section.** What a newcomer
+  hesitates over is not what a review command does, it is whether this will
+  overwrite an `~/.claude` they already care about. The marker boundary, the
+  merge behaviour, the three refusal paths and what `uninstall` will and will
+  not remove are now stated in one place, with a diagram.
+- **The context cost is stated and measured**: 13 rule files plus an index,
+  about 7,800 tokens, 3.9% of a 200k window — the sub-agents load on demand,
+  and Codex takes a single self-contained `AGENTS.md` at about 5,900. A reader
+  asked this and the README had no answer.
+- Install-time caveats that used to interrupt the pitch — cloning outside a
+  skills folder, the bash 4+ requirement, what happens without `python3` —
+  moved into a Requirements table stating the consequence of each.
+
+### Fixed
+
+- `docs/assets/hero.svg` redrawn around the two halves and one install; its
+  connector lines were invisible in correct renderers, because a horizontal
+  line has a zero-height bounding box and the gradient on it degenerated.
+- `docs/assets/merge-guard.svg` added for the configuration deep-dive.
+- The README referenced `/tdd`, withdrawn in v1.38.0, and miscounted the
+  sub-agents and the commands that need `gh`. Every count and command name in
+  it is now generated from the repository and checked.
+
 ## 1.39.1 — 2026-09-18
 
 ### Fixed
