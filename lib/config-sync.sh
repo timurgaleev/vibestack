@@ -213,6 +213,60 @@ prune_target() {
   done < <(comm -23 <(sort -u "$previous") <(sort -u "$current"))
 }
 
+# ---------------------------------------------------------------------------
+# Merge snapshots
+#
+# The manifest records whole files, which is all that is needed for the files
+# this sync owns outright. The merge-managed files are co-owned — the repo
+# contributes some keys, the user and the app own the rest — so a file-level
+# record cannot say which keys uninstall may take back.
+#
+# Two snapshots per merged file answer that without teaching uninstall anything
+# about how each merge works: the destination as it stood *before* the pack
+# first touched it, and what the pack *left* there. A key whose current value
+# still equals the post-merge value, and differs from the pre-merge one, is ours
+# and only ours. Everything else belongs to whoever changed it.
+# ---------------------------------------------------------------------------
+
+snapshot_path() { # snapshot_path <pre|post> <target-key> <rel-path>
+  printf '%s/%smerge_%s_%s' "$MANIFEST_DIR" "$1" "${2//\//_}" "${3//\//_}"
+}
+
+# snapshot_premerge <target-key> <rel-path> <dst>
+#
+# Written once and never rewritten. A later sync's "before" already contains our
+# own keys, so overwriting it would teach uninstall that none of them are ours —
+# the bug this exists to fix, one update later. A destination that does not
+# exist yet is recorded as an empty document, which makes the removal pass
+# uniform: every key the merge writes is then ours by construction.
+snapshot_premerge() {
+  local target="$1" rel="$2" dst="$3" snap
+  [[ "${PREVIEW_ONLY:-false}" == true ]] && return 0
+  snap="$(snapshot_path pre "$target" "$rel")"
+  [[ -e "$snap" ]] && return 0
+  mkdir -p "$MANIFEST_DIR" || { msg_warn "Could not record the pre-merge state of $rel"; return 0; }
+  if [[ -f "$dst" ]]; then
+    cp "$dst" "$snap" || msg_warn "Could not record the pre-merge state of $rel"
+  else
+    printf '{}\n' > "$snap" || msg_warn "Could not record the pre-merge state of $rel"
+  fi
+  return 0
+}
+
+# snapshot_postmerge <target-key> <rel-path> <dst>
+#
+# Rewritten every sync: it has to describe what is on disk now, or a key the
+# payload stopped shipping would look like something the user edited.
+snapshot_postmerge() {
+  local target="$1" rel="$2" dst="$3" snap
+  [[ "${PREVIEW_ONLY:-false}" == true ]] && return 0
+  [[ -f "$dst" ]] || return 0
+  snap="$(snapshot_path post "$target" "$rel")"
+  mkdir -p "$MANIFEST_DIR" || { msg_warn "Could not record the post-merge state of $rel"; return 0; }
+  cp "$dst" "$snap" || msg_warn "Could not record the post-merge state of $rel"
+  return 0
+}
+
 # commit_manifest <target-key> <current_manifest_file>
 commit_manifest() {
   local target_key="$1" current="$2"
@@ -239,12 +293,24 @@ commit_manifest() {
 # All three return: 0 = unchanged, 1 = updated, 2 = created.
 # ---------------------------------------------------------------------------
 
+# json_fill_missing <src> <dst> [target-key] [rel-path]
+#
+# The last two are optional: given both, the merge records what it found and
+# what it left, so uninstall can take our keys back. Callers that omit them —
+# the unit tests exercising the merge itself — get the merge without the
+# bookkeeping.
 json_fill_missing() {
-  local src="$1" dst="$2"
+  local src="$1" dst="$2" target="${3:-}" rel="${4:-}"
+  local track=false
+  [[ -n "$target" && -n "$rel" ]] && track=true
+
+  $track && snapshot_premerge "$target" "$rel" "$dst"
 
   if [[ ! -f "$dst" ]]; then
     create_from "$src" "$dst"
-    return $?
+    local create_rc=$?
+    $track && snapshot_postmerge "$target" "$rel" "$dst"
+    return "$create_rc"
   fi
 
   if ! command -v python3 >/dev/null 2>&1; then
@@ -290,7 +356,10 @@ PYEOF
     return 3
   fi
 
-  commit_merge "$dst" "$filled"
+  local merge_rc=0
+  commit_merge "$dst" "$filled" || merge_rc=$?
+  $track && snapshot_postmerge "$target" "$rel" "$dst"
+  return "$merge_rc"
 }
 
 # commit_merge <dst> <content>

@@ -218,11 +218,14 @@ test_dry_run_writes_nothing() {
 }
 
 # --- P9: uninstall --with-config removes ours and keeps theirs --------------
-# The manifest is the ownership record, so it bounds what may be deleted. The
-# marker bounds the region of CLAUDE.md we may cut. Merged keys have no such
-# record, so they stay.
+# Three ownership records bound what may be deleted: the manifest for whole
+# files, the marker for the region of CLAUDE.md we wrote, and the pre/post merge
+# snapshots for the keys we merged into a file someone else owns. Nothing
+# outside those three is ours to touch.
 test_uninstall_round_trip() {
   local sb; sb="$(new_sandbox)" || { _fail "P9: no sandbox"; return; }
+  # A settings.json that existed before the pack did, with a key of its own.
+  printf '{"model":"opus"}\n' > "$sb/home/.claude/settings.json"
   run_config "$sb" --target=claude >/dev/null 2>&1
 
   printf '\n@MY-OWN-FILE.md\n' >> "$sb/home/.claude/CLAUDE.md"
@@ -246,9 +249,20 @@ test_uninstall_round_trip() {
     _fail "P9: uninstall took the user's CLAUDE.md tail with it"
   fi
 
-  [[ -f "$sb/home/.claude/settings.json" ]] \
-    && _pass "P9: the merged settings.json was left in place" \
-    || _fail "P9: uninstall deleted a file whose keys it cannot attribute"
+  # The file survives because the user owned a key in it, but the keys the pack
+  # merged in — the permission grant above all — are gone again.
+  if [[ -f "$sb/home/.claude/settings.json" ]] \
+     && grep -q '"model"' "$sb/home/.claude/settings.json"; then
+    _pass "P9: settings.json survived, with the key the user owned"
+  else
+    _fail "P9: uninstall deleted a file the user had keys in"
+  fi
+
+  if grep -q 'Bash(\*)' "$sb/home/.claude/settings.json" 2>/dev/null; then
+    _fail "P9: the permission grant outlived the uninstall"
+  else
+    _pass "P9: the keys the install merged in were taken back"
+  fi
 }
 
 echo "configuration phase (executable)"
