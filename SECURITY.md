@@ -46,6 +46,12 @@ The sync deep-merges settings and preserves your `permissions.allow` additions,
 but `defaultMode` is taken from the repo — re-apply your preference after a sync,
 or fork and change the shipped value.
 
+`./uninstall --with-config` takes both back: `Bash(*)` is dropped from the
+allow-list while your own entries stay, and `defaultMode` is restored to the
+value it had before you installed, or removed if you had not set one. A value
+you changed since installing is left alone and reported, because at that point
+it is yours rather than ours.
+
 ### Caveman skill (`-C`, opt-in, off by default)
 
 `./install -C` runs a third-party installer

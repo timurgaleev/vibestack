@@ -1,6 +1,57 @@
 # Changelog
 
-## 1.39.2 — 2026-09-19
+## 1.40.0 — 2026-09-19
+
+### Added
+
+- **`./uninstall --with-config` takes back the keys the install merged in.**
+  Until now it removed the files its manifest recorded and stripped its own
+  marked region, then listed the merged files and left them — so removing the
+  pack did not revoke the permissions it had been granted. `Bash(*)` and
+  `acceptEdits` outlived it, and taking them back meant editing
+  `~/.claude/settings.json` by hand.
+
+  The install now records two snapshots per merged file: the destination as it
+  stood **before** the pack first touched it, written once, and what the merge
+  **left**, rewritten every sync. A key still holding the post-merge value, and
+  differing from the pre-merge one, is ours alone: it is restored to the value
+  it had before, or dropped if it had none. Everything else stays.
+
+  Written once is the whole trick. A record rewritten on every sync describes
+  the state *after* the first one, in which our keys are already present, and
+  would conclude that none of them are ours — the same bug, one update later.
+
+  What this means in practice:
+
+  - A permission array is reversed entry by entry. `Bash(*)` goes; the entries
+    you added yourself stay.
+  - A value the repo overwrote — `theme`, `permissions.defaultMode` — is
+    **restored** to what you had, not merely deleted. Deleting it would leave
+    you worse off than before you installed.
+  - A value you changed since installing is yours now: it is kept, and the run
+    says which keys it kept and why.
+  - An object that exists only because the merge created it, and is empty once
+    its keys are gone, is removed rather than left as `{}`.
+  - Without `python3`, nothing is removed and the run says so. A destination
+    that does not parse is left byte-identical.
+
+  Nothing in the removal knows how any individual merge works — it compares two
+  recordings — which is why one mechanism covers the repo-authoritative
+  `settings.json` merge and the fill-missing `hooks.json` and
+  `agents/default.json` merges alike.
+
+  Codex's `config.toml` is the exception and says so: that merge is line-based
+  rather than document-level, so there is nothing to compare. `uninstall`
+  reports it instead of implying it was handled.
+
+### Changed
+
+- `test/test-config-phase.sh`'s P9 asserted the old behaviour — that a merged
+  `settings.json` "was left in place". It now checks the opposite where it
+  matters: the file survives because the user owned a key in it, and the
+  permission grant does not.
+
+
 
 ### Changed
 

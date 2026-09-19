@@ -181,13 +181,25 @@ Three rules govern edits here:
   already written to installed machines (`~/.claude/CLAUDE.md` carries the end
   marker; `~/.local/state/vibekit/` holds the per-target manifests). Renaming
   either orphans that state and duplicates managed blocks on the next sync.
-- **The manifest is the ownership record.** A file the install recorded may be
-  pruned or uninstalled; anything else on disk belongs to the user. Keys merged
-  into settings.json, config.toml, hooks.json and agents/default.json have no
-  such record, so nothing removes them.
+- **The manifest is the ownership record for whole files.** A file the install
+  recorded may be pruned or uninstalled; anything else on disk belongs to the
+  user.
+- **The pre/post snapshots are the ownership record for merged keys.** A merged
+  file is co-owned, so the install writes `premerge_<target>_<file>` (once, the
+  state before the pack first arrived) and `postmerge_<target>_<file>` (every
+  sync, what it left). A key still holding the post value, and differing from
+  the pre value, is ours alone — `uninstall --with-config` restores the pre
+  value or drops the key. Nothing in that comparison knows how any individual
+  merge works, which is why one mechanism covers the repo-authoritative merges
+  and the fill-missing ones alike. Codex's `config.toml` is excluded: its merge
+  is line-based, not document-level.
+- **Never rewrite the pre snapshot.** A later sync's "before" already contains
+  our own keys, so overwriting it teaches uninstall that none of them are ours.
+  `test-config-uninstall-keys.sh` covers exactly this.
 
 `bash test/test-config-phase.sh` runs real installs into isolated HOMEs and is
-the suite to run after touching any of this.
+the suite to run after touching any of this;
+`bash test/test-config-uninstall-keys.sh` covers the round trip back out.
 
 ## Install and update
 

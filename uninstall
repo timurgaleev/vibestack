@@ -23,10 +23,13 @@ Options:
   --with-config       Also remove the configuration this pack deployed into
                       ~/.claude, ~/.cursor, ~/.kiro and ~/.codex. Only files
                       the install manifest recorded are removed, plus the
-                      marked region of the two files we co-own. Keys merged
-                      into settings.json, config.toml, hooks.json and
-                      agents/default.json are left alone: the install never
-                      recorded which of those keys were ours.
+                      marked region of the two files we co-own, plus the keys
+                      the install merged into settings.json, cli-config.json,
+                      hooks.json and agents/default.json — each restored to the
+                      value it had before, or dropped if it had none. A value
+                      you changed since installing is kept and reported.
+                      Codex's config.toml is the exception: its merge is
+                      line-based and records nothing to undo.
   -h, --help          Show this help and exit.
 
 Examples:
@@ -301,6 +304,205 @@ remove_claude_md_region() {
   fi
 }
 
+# The JSON files the install merges into rather than owns outright, per target.
+# Mirrors MERGE_MANAGED in lib/config-install.sh plus the two settings files
+# that library merges inline. Codex's config.toml is deliberately absent — see
+# where it is reported below.
+declare -A CONFIG_MERGED_JSON=(
+  [claude]="settings.json"
+  [cursor]="cli-config.json hooks.json"
+  [codex]="hooks.json"
+  [kiro]="agents/default.json"
+)
+
+snapshot_file() { # snapshot_file <pre|post> <target> <rel>
+  printf '%s/%smerge_%s_%s' "$CONFIG_MANIFEST_DIR" "$1" "${2//\//_}" "${3//\//_}"
+}
+
+# remove_merged_keys <target> <rel-path>
+#
+# The install recorded the destination as it stood before it first merged
+# (pre) and what it left behind (post). A key whose value still equals the
+# post-merge one, and differed before, is ours alone: it is restored to the
+# pre-merge value, or dropped if there was none. A key holding anything else
+# was changed by the user or the app since, so it stays and is reported.
+#
+# Nothing here knows how any individual merge works. Comparing the two
+# recordings is enough, which is why it covers the fill-missing merges and the
+# repo-authoritative ones alike.
+remove_merged_keys() {
+  local target="$1" rel="$2"
+  local dest="${CONFIG_DEST[$target]:-}"
+  [ -n "$dest" ] || return 0
+  local file="$dest/$rel"
+  local pre post
+  pre="$(snapshot_file pre "$target" "$rel")"
+  post="$(snapshot_file post "$target" "$rel")"
+
+  [ -f "$file" ] || { rm -f "$pre" "$post"; return 0; }
+  [ -f "$pre" ] && [ -f "$post" ] || return 0
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "  $target: $rel keeps its merged keys — python3 is needed to remove them safely"
+    return 0
+  fi
+
+  local TMP_REPORT
+  TMP_REPORT="$(mktemp)" || { echo "  $target: could not stage a report for $rel — left as it was"; return 0; }
+
+  local out rc=0
+  # The redirection belongs to python3, not to the assignment: on an assignment
+  # it is set up for the (null) command and the substitution keeps the shell's
+  # own stderr, so the report would be printed instead of captured.
+  out="$(python3 - "$pre" "$post" "$file" 2>"$TMP_REPORT" <<'PYEOF'
+import json, sys
+
+pre_path, post_path, cur_path = sys.argv[1], sys.argv[2], sys.argv[3]
+MISSING = object()
+
+def load(path):
+    with open(path) as fh:
+        return json.load(fh)
+
+try:
+    pre, post = load(pre_path), load(post_path)
+except (OSError, ValueError) as exc:
+    sys.stderr.write("could not read the merge record: %s\n" % exc)
+    sys.exit(3)
+
+try:
+    cur = load(cur_path)
+except (OSError, ValueError) as exc:
+    # The destination is not ours to repair. Leaving it byte-identical is the
+    # only safe answer.
+    sys.stderr.write("unreadable: %s\n" % exc)
+    sys.exit(3)
+
+removed, kept = [], []
+
+def label(path, key):
+    return ".".join(path + [str(key)])
+
+def walk(cur_node, post_node, pre_node, path):
+    """Undo, in cur_node, whatever post_node added on top of pre_node."""
+    if not isinstance(cur_node, dict) or not isinstance(post_node, dict):
+        return
+    pre_node = pre_node if isinstance(pre_node, dict) else {}
+
+    for key, post_val in post_node.items():
+        if key not in cur_node:
+            continue
+        cur_val = cur_node[key]
+        pre_val = pre_node.get(key, MISSING)
+
+        # Untouched by the merge: the value was already there and unchanged.
+        if pre_val is not MISSING and pre_val == post_val:
+            continue
+
+        if isinstance(post_val, list) and isinstance(cur_val, list):
+            pre_list = pre_val if isinstance(pre_val, list) else []
+            ours = [x for x in post_val if x not in pre_list]
+            survivors = [x for x in cur_val if x not in ours]
+            dropped = [x for x in cur_val if x in ours]
+            if dropped:
+                removed.append("%s  (%d entr%s; %d of yours kept)" % (
+                    label(path, key), len(dropped),
+                    "y" if len(dropped) == 1 else "ies", len(survivors)))
+            if survivors or pre_val is not MISSING:
+                cur_node[key] = survivors
+            else:
+                del cur_node[key]
+            continue
+
+        if isinstance(post_val, dict) and isinstance(cur_val, dict):
+            walk(cur_val, post_val, pre_val if pre_val is not MISSING else {},
+                 path + [str(key)])
+            # An object that exists only because we created it, now empty.
+            if not cur_val and pre_val is MISSING:
+                del cur_node[key]
+            continue
+
+        if cur_val != post_val:
+            kept.append(label(path, key))
+            continue
+
+        if pre_val is MISSING:
+            del cur_node[key]
+            removed.append(label(path, key))
+        else:
+            cur_node[key] = pre_val
+            removed.append("%s  (restored %s)" % (label(path, key),
+                                                  json.dumps(pre_val)))
+
+walk(cur, post, pre, [])
+
+for line in removed:
+    sys.stderr.write("REMOVED %s\n" % line)
+for line in kept:
+    sys.stderr.write("KEPT %s\n" % line)
+sys.stderr.write("EMPTY\n" if not cur else "")
+
+print(json.dumps(cur, indent=2))
+PYEOF
+)" || rc=$?
+
+  # 3 is the pass declining on purpose — an unreadable destination or an
+  # unreadable record. Anything else is python3 itself failing to run, which a
+  # broken interpreter on PATH produces without printing a word. Both keep the
+  # file; only the wording differs, and neither may be silent.
+  if [ "$rc" -eq 3 ]; then
+    echo "  $target: $rel keeps its merged keys — $(head -1 "$TMP_REPORT" 2>/dev/null)"
+    rm -f "$TMP_REPORT"
+    return 0
+  elif [ "$rc" -ne 0 ]; then
+    echo "  $target: $rel keeps its merged keys — python3 exited $rc and the keys"
+    echo "          cannot be identified without it"
+    rm -f "$TMP_REPORT"
+    return 0
+  fi
+
+  # grep -c prints its count and still exits 1 on no match, so `|| echo 0` would
+  # append a second line and every later integer test would fail to parse.
+  local n_removed n_kept
+  n_removed=$(grep -c '^REMOVED ' "$TMP_REPORT" 2>/dev/null)
+  n_kept=$(grep -c '^KEPT ' "$TMP_REPORT" 2>/dev/null)
+  n_removed=${n_removed:-0}
+  n_kept=${n_kept:-0}
+
+  if grep -qx 'EMPTY' "$TMP_REPORT" 2>/dev/null; then
+    rm -f "$file"
+    rmdir -p "$(dirname "$file")" 2>/dev/null || true
+    echo "  $target: removed $rel (nothing of yours was left in it)"
+  elif [ "$n_removed" -gt 0 ]; then
+    if printf '%s\n' "$out" > "$file.vibekit.tmp" && mv -f "$file.vibekit.tmp" "$file"; then
+      echo "  $target: $n_removed merged key(s) taken back from $rel"
+      # The lines worth reading are the ones where something of yours was at
+      # stake — a value put back, or an array we only partly own. The rest are
+      # keys that were ours outright, and listing twenty of them buries the two
+      # that matter, so they are counted instead.
+      # -E, not a BRE: BSD sed has no \| alternation, so a basic-regex version
+      # matches nothing on macOS and silently prints only the summary line.
+      sed -nE 's/^REMOVED (.*(restored|of yours kept).*)/    - \1/p' "$TMP_REPORT"
+      local n_plain
+      n_plain=$(grep -c '^REMOVED ' "$TMP_REPORT" 2>/dev/null)
+      n_plain=$(( ${n_plain:-0} - $(grep -cE '^REMOVED .*(restored|of yours kept)' "$TMP_REPORT" 2>/dev/null || echo 0) ))
+      [ "$n_plain" -gt 0 ] && echo "    - and $n_plain key(s) that were ours outright"
+    else
+      rm -f "$file.vibekit.tmp"
+      echo "  $target: could not rewrite $rel — left as it was"
+    fi
+  else
+    echo "  $target: $rel had no merged keys left to take back"
+  fi
+
+  if [ "$n_kept" -gt 0 ]; then
+    echo "  $target: $n_kept key(s) kept — you changed them since install"
+    sed -n 's/^KEPT /    - /p' "$TMP_REPORT"
+  fi
+
+  rm -f "$pre" "$post" "$TMP_REPORT"
+}
+
 remove_codex_rules_region() {
   local file="$1"
   [ -f "$file" ] || return 0
@@ -353,17 +555,20 @@ if [ "$WITH_CONFIG" = "1" ]; then
   done
 
   echo ""
-  echo "  Left in place — the install merged keys into these without recording"
-  echo "  which were its own, so removing them would be guesswork:"
   for target in "${TARGETS[@]}"; do
-    case "$target" in
-      claude) [ -f "$HOME/.claude/settings.json" ] && echo "    ~/.claude/settings.json" ;;
-      cursor) [ -f "$HOME/.cursor/cli-config.json" ] && echo "    ~/.cursor/cli-config.json"
-              [ -f "$HOME/.cursor/hooks.json" ] && echo "    ~/.cursor/hooks.json" ;;
-      codex)  [ -f "${CODEX_HOME:-$HOME/.codex}/config.toml" ] && echo "    ~/.codex/config.toml"
-              [ -f "${CODEX_HOME:-$HOME/.codex}/hooks.json" ] && echo "    ~/.codex/hooks.json" ;;
-      kiro)   [ -f "$HOME/.kiro/agents/default.json" ] && echo "    ~/.kiro/agents/default.json" ;;
-    esac
+    for rel in ${CONFIG_MERGED_JSON[$target]:-}; do
+      remove_merged_keys "$target" "$rel"
+    done
+  done
+
+  # Codex's config.toml is merged line by line, not as a document, so the same
+  # pre/post comparison does not apply to it. Say so rather than let a silence
+  # imply it was handled.
+  for target in "${TARGETS[@]}"; do
+    if [ "$target" = "codex" ] && [ -f "${CODEX_HOME:-$HOME/.codex}/config.toml" ]; then
+      echo "  codex: ~/.codex/config.toml keeps its merged keys — the TOML merge"
+      echo "         is line-based and records nothing to undo. Edit it by hand."
+    fi
   done
 elif [ -d "$CONFIG_MANIFEST_DIR" ] && [ -n "$(ls -A "$CONFIG_MANIFEST_DIR" 2>/dev/null)" ]; then
   echo ""

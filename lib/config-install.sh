@@ -201,6 +201,18 @@ cfg_write_file() {
 # Returns non-zero on failure and says so. Without errexit a silent `cp`
 # failure would be reported as a successful UPDATE and then recorded in the
 # manifest, which is how a file the sync never wrote becomes prunable.
+# cfg_snapshot <pre|post> <target-key> <rel-path> <dst>
+#
+# The two settings merges below this file are written inline rather than
+# dispatched through lib/sync.sh, so they record their pre/post snapshots by
+# hand — otherwise uninstall could take back the keys of every merged file
+# except the two that hold the permission grant. A missing sync library means
+# nothing merged either, so there is nothing to record.
+cfg_snapshot() {
+  declare -F "snapshot_${1}merge" >/dev/null 2>&1 || return 0
+  "snapshot_${1}merge" "$2" "$3" "$4"
+}
+
 deploy_file() {
   local src="$1" dst="$2"
   if ! mkdir -p "$(dirname "$dst")" 2>/dev/null; then
@@ -457,7 +469,7 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
       rc=0
       case "$merge_mode" in
         toml)  toml_fill_missing "$src_file" "$dst_file" || rc=$? ;;
-        json)  json_fill_missing "$src_file" "$dst_file" || rc=$? ;;
+        json)  json_fill_missing "$src_file" "$dst_file" "$src_subdir" "$rel_path" || rc=$? ;;
         block) sync_managed_block "$src_file" "$dst_file" \
                  "$CODEX_RULES_BEGIN" "$CODEX_RULES_END" || rc=$? ;;
         append) sync_append_managed "$src_file" "$dst_file" "$CLAUDE_MD_END" || rc=$? ;;
@@ -545,10 +557,12 @@ CLAUDE_SETTINGS_SRC="$PAYLOAD_DIR/claude/settings.json"
 CLAUDE_SETTINGS_DST="${HOME}/.claude/settings.json"
 if [[ -f "$CLAUDE_SETTINGS_SRC" ]]; then
   echo -e "\n${CYAN}> Merging claude/settings.json -> $CLAUDE_SETTINGS_DST${NC}"
+  cfg_snapshot pre claude settings.json "$CLAUDE_SETTINGS_DST"
   if [[ ! -f "$CLAUDE_SETTINGS_DST" ]]; then
     msg_add "NEW: claude/settings.json"
     if [[ "$PREVIEW_ONLY" == false ]]; then
       deploy_file "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST"
+      cfg_snapshot post claude settings.json "$CLAUDE_SETTINGS_DST"
     fi
     ADDED=$((ADDED + 1))
   elif command -v python3 >/dev/null 2>&1; then
@@ -626,6 +640,10 @@ PYEOF
         msg_info "no changes after merge"
         SKIPPED=$((SKIPPED + 1))
       fi
+      # Recorded on the unchanged path too: a re-run against a wiped state
+      # directory changes nothing on disk, and without this the file would have
+      # a pre-merge snapshot and no post-merge one to compare it against.
+      [[ "$PREVIEW_ONLY" == false ]] && cfg_snapshot post claude settings.json "$CLAUDE_SETTINGS_DST"
     fi
   else
     # The old behaviour here was a full overwrite, which silently discarded
@@ -644,10 +662,12 @@ if cfg_target_selected cursor; then
 CURSOR_CLI_CONFIG_SRC="$PAYLOAD_DIR/cursor/cli-config.json"
 CURSOR_CLI_CONFIG_DST="${HOME}/.cursor/cli-config.json"
 if [[ -f "$CURSOR_CLI_CONFIG_SRC" ]]; then
+  cfg_snapshot pre cursor cli-config.json "$CURSOR_CLI_CONFIG_DST"
   if [[ ! -f "$CURSOR_CLI_CONFIG_DST" ]]; then
     msg_add "NEW: cursor/cli-config.json"
     if [[ "$PREVIEW_ONLY" == false ]]; then
       deploy_file "$CURSOR_CLI_CONFIG_SRC" "$CURSOR_CLI_CONFIG_DST"
+      cfg_snapshot post cursor cli-config.json "$CURSOR_CLI_CONFIG_DST"
     fi
     ADDED=$((ADDED + 1))
   else
@@ -685,6 +705,7 @@ PYEOF
       else
         SKIPPED=$((SKIPPED + 1))
       fi
+      [[ "$PREVIEW_ONLY" == false ]] && cfg_snapshot post cursor cli-config.json "$CURSOR_CLI_CONFIG_DST"
       fi
     else
       msg_warn "cursor/cli-config.json: python3 not found — cannot merge, leaving it untouched"

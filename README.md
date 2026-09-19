@@ -147,9 +147,11 @@ before you run it, so here is the whole contract.
   would not parse, or a missing parser all end the same way: the file is left
   byte-identical and the run exits non-zero saying so.
 - **Uninstall removes only what it recorded installing.** `./uninstall
-  --with-config` deletes the files in its own manifest and strips its own marked
-  region. Keys merged into your settings are reported and left — it never wrote
-  down which were its own, so it will not guess.
+  --with-config` deletes the files in its own manifest, strips its own marked
+  region, and takes back the keys it merged in — each restored to the value it
+  had before, or dropped if it had none. A value you changed since installing is
+  kept, and the run says so. Codex's `config.toml` is the one exception: that
+  merge is line-based and records nothing to undo.
 
 **What it costs you in context:** the always-on part is 13 rule files plus an
 index — 31 KB, about 7,800 tokens, **3.9% of a 200k window**. The 33 sub-agents
@@ -160,11 +162,8 @@ load only when a command hands work to one. Codex gets a single self-contained
 Code's allow-list and sets `defaultMode: acceptEdits` — together that is "run
 shell commands and apply edits without asking me each time". Preview it with
 `--with-config -n` before you decide, and read
-[`SECURITY.md`](SECURITY.md) for how to tighten it. Both land as merged keys, so
-today `./uninstall --with-config` leaves them behind: removing the pack does not
-revoke the permission, and you take it back by editing
-`~/.claude/settings.json` yourself. Recording merged keys so uninstall can undo
-them is the next change queued here.
+[`SECURITY.md`](SECURITY.md) for how to tighten it. `./uninstall --with-config`
+revokes both again — removing the pack removes the permission it was granted.
 
 Full reference: [`docs/configuration.md`](docs/configuration.md).
 
