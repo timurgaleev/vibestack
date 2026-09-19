@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.39.2 — 2026-09-19
+
+### Changed
+
+- **The README answers the question a newcomer actually has.** It opened with
+  three paragraphs of positioning and a mermaid diagram of the installer, and
+  never said what to type first. It now leads with one line on what this is, a
+  what-you-get table, the install, and a **What to type first** section naming
+  the three commands that carry most of the value. Two independent model reads
+  were used to find the skim points; both flagged the same three.
+- **The command table shows 21 of 60 with priority markers** (🔥 daily, ⭐
+  often) instead of 15 unmarked ones, so the daily chain is visible rather than
+  implied. The full list stays in `docs/skills.md`.
+- **The configuration half gets the one deep-dive section.** What a newcomer
+  hesitates over is not what a review command does, it is whether this will
+  overwrite an `~/.claude` they already care about. The marker boundary, the
+  merge behaviour, the three refusal paths and what `uninstall` will and will
+  not remove are now stated in one place, with a diagram.
+- **The context cost is stated and measured**: 13 rule files plus an index,
+  about 7,800 tokens, 3.9% of a 200k window — the sub-agents load on demand,
+  and Codex takes a single self-contained `AGENTS.md` at about 5,900. A reader
+  asked this and the README had no answer.
+- Install-time caveats that used to interrupt the pitch — cloning outside a
+  skills folder, the bash 4+ requirement, what happens without `python3` —
+  moved into a Requirements table stating the consequence of each.
+
+### Fixed
+
+- **The hero image is redrawn** as `docs/assets/hero.webp`, replacing the SVG.
+  It labels its two columns — what you type on the left, what is always on on
+  the right — so the split the README is built around is legible without the
+  caption. The SVG it replaces drew its connector lines with a gradient in
+  `objectBoundingBox` units, and a horizontal line has a zero-height box, so
+  those lines rendered as nothing in every correct renderer.
+- `docs/assets/merge-guard.svg` added for the configuration deep-dive, carrying
+  only the marker split. The refusal list it also held was the same three
+  bullets printed directly beneath it, at a type size that fell below 5px on a
+  phone; the prose keeps them and the diagram keeps the one thing a picture
+  does better than a sentence.
+- `docs/assets/skill-map.svg` said "60 skills" where the README says commands,
+  and billed the review family as "two models have to agree" — which is only
+  true when the Codex CLI is installed.
+- The README referenced `/tdd`, withdrawn in v1.38.0, and miscounted the
+  sub-agents and the commands that need `gh`. Every count and command name in
+  it is now generated from the repository and checked.
+
 ## 1.39.1 — 2026-09-18
 
 ### Fixed

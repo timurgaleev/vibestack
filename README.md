@@ -1,80 +1,78 @@
 # vibestack
 
 <p align="center">
-  <img src="./docs/assets/hero.svg" alt="vibestack turns a vague idea into a shipped product through four guided steps — brainstorm, plan, review, ship — and learns every loop." width="100%">
+  <img src="./docs/assets/hero.webp" alt="One ./install gives an assistant two things. On the left, commands you type — /office-hours, /review, /ship. On the right, standing behaviour that is always on — it plans first, reviews its work, and writes in your voice." width="100%">
 </p>
 
 <p align="center">
-  <b>Give your AI coding assistant the habits of a senior engineering team.</b><br>
-  One install. Slash commands that take you from a rough idea to a shipped, reviewed pull request.
-</p>
-
-<p align="center">
-  <a href="https://github.com/timurgaleev/vibestack/releases"><img src="https://img.shields.io/github/v/release/timurgaleev/vibestack?style=flat-square&color=000" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-000?style=flat-square" alt="MIT"></a>
-  <a href="https://agentskills.io/specification"><img src="https://img.shields.io/badge/agent--skills-spec-000?style=flat-square" alt="Agent Skills standard"></a>
-  <a href="https://github.com/timurgaleev/vibestack/stargazers"><img src="https://img.shields.io/github/stars/timurgaleev/vibestack?style=flat-square&color=000" alt="Stars"></a>
+  <b>Your assistant already writes code. This teaches it how a senior engineer works.</b>
 </p>
 
 ---
 
-## What is this? (30-second version)
+## What is vibestack?
 
-**If you use an AI coding assistant** (Claude Code, Cursor, Kiro, or Codex CLI),
-vibestack adds a menu of expert workflows you trigger by name — `/` in Claude
-Code, Cursor and Kiro, `$` in Codex. Instead of "write me some code," you get
-`/office-hours` to shape the idea, `/review` to catch bugs, and `/ship` to open a
-clean pull request — each one a structured, opinionated process, not a vague
-prompt.
+Sixty commands for AI coding assistants, each one a file your agent reads and
+exposes by name. You type `/review` instead of "check my code," and a written
+process runs: read the diff, look for the things that actually break, report with
+evidence. Same for planning, debugging, security, shipping.
 
-**For engineers:** 60 portable `SKILL.md` workflows — planning, security audit,
-cross-model review, debugging, AWS and agent reviews, release. Same source installs into Claude
-Code, Cursor, Kiro, and Codex CLI. No lock-in, no telemetry, state stays in
-`~/.vibestack/`.
+It also installs the standing rules those commands assume — plan before coding,
+never commit without being asked, write commits in the author's voice — so the
+assistant behaves that way between commands too.
 
-The pack also ships the **always-on configuration** those workflows assume: a
-`CLAUDE.md` index, thirteen behaviour rules, thirty-three sub-agents and a live
-statusline, deployed into `~/.claude`, `~/.cursor`, `~/.kiro` and `~/.codex`.
-Skills are what you invoke; the configuration is what shapes every answer in
-between. `./install --with-config` installs both.
+Works in Claude Code, Cursor, Kiro and Codex CLI from one source. MIT, no
+telemetry, no account, no cloud service of its own. Some commands do reach out
+by design — `/codex` sends your diff to a second model, `/benchmark-models`
+queries providers, `/pair-agent` opens a tunnel — and each says so before it
+runs.
 
-> Think of it as turning a junior-level "just do it" assistant into one that
-> plans, gets a second opinion, tests, and ships like a team would.
+| What you get | Why it matters |
+|---|---|
+| A command per job, not a prompt per job | The process is written down once and runs the same way every time |
+| A second pass before you ship | `/review` runs an adversarial pass in a fresh context, and a genuine second model when the Codex CLI is installed — it says which one it got |
+| Standing rules, always on | The assistant plans and asks before it commits, without being reminded |
+| One source, four runtimes | Switch tools and keep the same commands — nothing is vendor-shaped |
+| Plain bash, no daemon | `git pull && ./install` is the whole update story |
+| Your machine by default | State lives in `~/.vibestack/`. Nothing phones home; the commands that call another model say so first |
 
 ---
 
-## Install in 30 seconds
+## Install
+
+Needs bash 4+ and, for the merge step below, python3 — [the full
+list](#requirements) says what happens when one is missing. Clone anywhere
+**outside** an agent's skills folder; a checkout inside one gets indexed twice
+and every command shows up doubled.
 
 ```bash
 git clone https://github.com/timurgaleev/vibestack ~/vibestack
 ~/vibestack/install
 ```
 
-Clone anywhere **outside** an agent's skills directory. The installer renders the
-skills into each agent's own folder; a checkout sitting inside one of those folders
-gets indexed a second time, so every skill shows up twice in the picker.
-
-### Add the configuration
+That installs the commands. The standing rules are a second, opt-in step, because
+they write into files you may already own:
 
 ```bash
-~/vibestack/install --with-config -n    # preview every change, writes nothing
-~/vibestack/install --with-config       # apply
+~/vibestack/install --with-config -n   # show every change, write nothing
+~/vibestack/install --with-config      # apply
 ```
 
-This half writes into files you may already own — `~/.claude/CLAUDE.md` and
-`settings.json` among them — so it is opt-in and every merge is conservative:
-your lines below the managed marker survive, keys you added are kept, and a file
-the installer cannot parse is left exactly as it was. `--only=config` runs it
-alone, and `./uninstall --with-config` removes what it recorded installing.
-See [`docs/configuration.md`](docs/configuration.md) and
-[`SECURITY.md`](SECURITY.md) — the payload allows `Bash(*)` and sets
-`acceptEdits`, which is worth reading about before you run it.
+It never clobbers what it finds — [see how below](#how-it-writes-into-your-files).
 
-**macOS needs a newer bash.** The installer uses associative arrays and refuses to
-run on the bash 3.2 Apple still ships as `/bin/bash`. `brew install bash` is
-enough — nothing else changes, and the skills themselves run fine on 3.2.
+---
 
-That's it. Open a new session of your agent and type `/office-hours`:
+## What to type first
+
+Three commands carry most of the value. Run them in this order on real work:
+
+```
+/office-hours        shape a vague idea into a design doc you can act on
+/review              before you merge: correctness, security, tests
+/ship                tests, review, version bump, CHANGELOG, PR
+```
+
+`/office-hours` opens by asking what you are actually trying to do:
 
 ```
 Before we dig in — what's your goal with this?
@@ -85,103 +83,135 @@ Before we dig in — what's your goal with this?
   Learning — teaching yourself to code, leveling up
 ```
 
-Pick a mode and it walks you through the right questions, then saves a design
-doc you can hand straight to `/plan-eng-review`. Every skill works like this —
-guided, structured, no filler. If `/office-hours` clicks, the rest will too.
+Pick a mode and it asks the questions that mode needs, then writes the doc you
+can hand to `/plan-eng-review`.
+
+In Codex CLI the same commands are `$office-hours`, `$review`, `$ship` — `/` is
+reserved there for Codex's own commands.
 
 ---
 
-## Why people use it
+## Commands
 
-- 🚀 **Idea → shipped, guided the whole way.** `/office-hours` → `/plan-eng-review` → `/review` → `/ship`. The chain is built for you.
-- 🧠 **A real second opinion.** Reviews run a cross-model check (a different AI) automatically, so two models have to agree before you ship.
-- 🔒 **Yours, private.** No telemetry, no accounts, no cloud. Everything lives on your machine in `~/.vibestack/`.
-- 🔁 **No lock-in.** One source installs into Claude Code, Cursor, Kiro, and Codex CLI alike. Switch tools, keep your workflow.
-- 📋 **Copy, run, done.** Two commands to install, `git pull && ./install` to update. Plain bash, zero runtime dependencies.
-- 🧰 **A real CLI.** `vibestack` on your PATH: `status`, `doctor`, `skills`, and every `vibe-*` tool from any directory — like any server-side CLI.
+🔥 daily · ⭐ reach for it often · · situational
 
----
+| Command | What it does | |
+|---|---|:-:|
+| `/office-hours` | Turn an idea into a design doc, via the questions that fit your goal | 🔥 |
+| `/review` | Pre-merge review: correctness, security, tests, scope drift | 🔥 |
+| `/ship` | Merge base, test, review, bump, CHANGELOG, open the PR | 🔥 |
+| `/investigate` | Systematic debugging — no fix without a confirmed root cause | 🔥 |
+| `/plan-eng-review` | Pressure-test a plan: architecture, data flow, edge cases, risk | ⭐ |
+| `/address-pr-review` | Work a PR's open threads and failing checks to a close | ⭐ |
+| `/cso` | Security audit: OWASP Top 10, threat model, live cloud posture | ⭐ |
+| `/spec` | Turn rough intent into an executable spec, then file it as an issue | ⭐ |
+| `/qa` | Drive a running web app, find bugs, fix them, verify | ⭐ |
+| `/learn` | Record what this session taught, so the next one starts ahead | ⭐ |
+| `/unslop` | Find the AI tells in prose and rewrite it in the author's voice | |
+| `/aws-cost` | Read-only bill review: month-over-month deltas, waste, commitments | |
+| `/ai-cost-guard` | Cap runaway model spend — in code and at the provider | |
+| `/bedrock-guardrails` | Audit Bedrock region pinning, IAM scope, guardrails, logging | |
+| `/kb-review` | RAG and Knowledge Base review: chunking, tenant filters, recall@5 | |
+| `/connect-review` | Review an Amazon Connect IVR: flows, Lex, latency, cost per contact | |
+| `/agent-eval` | Build and run an eval harness for an agent or prompt, with a gate | |
+| `/mcp-review` | Audit an MCP server: tools, auth, validation, injection surface | |
+| `/careful` `/freeze` `/guard` | Refuse destructive commands and edits outside a boundary | |
 
-## How it works
-
-One set of skill files installs into whichever agent you use:
-
-```mermaid
-flowchart LR
-  S["📄 One SKILL.md source"] --> I(["./install"])
-  I --> A["Claude Code"]
-  I --> B["Cursor"]
-  I --> C["Kiro"]
-  I --> D["Codex CLI"]
-  A --> U["Type /command → expert workflow runs"]
-  B --> U
-  C --> U
-  D --> V["Type $skill → expert workflow runs"]
-```
-
-Each skill is a plain `SKILL.md` file your agent discovers and exposes as a
-`/command`. Install writes the file plus links to its helpers — so
-`git pull && ./install` is the entire update story.
-
----
-
-## A taste of the skills
-
-60 skills across planning, shipping, QA, design, and security.
+The other 39 cover design, docs, retros, context handoff, browser QA and
+release. **[Every command, with what it does: `docs/skills.md`](docs/skills.md)**
 
 <p align="center">
-  <img src="./docs/assets/skill-map.svg" alt="The sixty skills in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive — each showing the commands you reach for most." width="100%">
+  <img src="./docs/assets/skill-map.svg" alt="The sixty commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
 </p>
 
-A few highlights:
+---
 
-| Command | What it does |
-|---|---|
-| `/office-hours` | Brainstorm an idea into a concrete design doc |
-| `/plan-eng-review` | Pressure-test a plan — architecture, data, risk |
-| `/review` | Pre-merge review — correctness, security, tests |
-| `/ship` | Merge base, run tests, review, version bump, open the PR |
-| `/address-pr-review` | Work a PR's open review threads and failing CI checks to a close |
-| `/investigate` | Systematic debugging — no fix without a confirmed root cause |
-| `/cso` | Security audit — OWASP Top 10 + threat model |
-| `/unslop` | Find AI writing tells and rewrite the text in the author's voice |
-| `/aws-cost` | Read-only AWS bill review: month-over-month deltas, waste, commitments, three actions |
-| `/ai-cost-guard` | Cap runaway AI spend — bound every paid-model call in code and at the provider |
-| `/bedrock-guardrails` | Audit Bedrock region pinning, IAM scoping, guardrails, logging, and tenant isolation |
-| `/kb-review` | Read-only RAG and Bedrock Knowledge Base review: chunking, tenant filters, recall@5, cost |
-| `/connect-review` | Review an Amazon Connect IVR — flows, Lex, Bedrock, latency, cost |
-| `/agent-eval` | Build and run an eval harness for an LLM agent or prompt, with a regression gate |
-| `/mcp-review` | Audit an MCP server's tools, auth, validation and injection surface |
+## How it writes into your files
 
-👉 **Full list of every skill: [`docs/skills.md`](docs/skills.md)**
+`--with-config` deploys into `~/.claude`, `~/.cursor`, `~/.kiro` and `~/.codex` —
+directories that already hold your settings. That is the part worth understanding
+before you run it, so here is the whole contract.
+
+<p align="center">
+  <img src="./docs/assets/merge-guard.svg" alt="Everything above the managed marker belongs to the repository and is replaced each sync; everything below it is yours and is carried across untouched. A file that cannot be parsed, a merged result that would not parse, and a missing parser all leave the file byte-identical and report the refusal." width="100%">
+</p>
+
+- **A marker splits each shared file.** Above it is ours and gets replaced; below
+  it is yours and is carried across untouched. `rtk init`'s `@RTK.md` line and
+  your own house rules live below it and survive every sync.
+- **Settings are merged, not overwritten.** Keys you added stay. Permission
+  arrays are unioned rather than replaced. Where a key exists on both sides the
+  repo's value wins, so an edit to a key the pack also sets does not survive a
+  sync — put anything you want kept under a key the pack does not touch.
+- **It refuses rather than guesses.** A file it cannot parse, a merge whose result
+  would not parse, or a missing parser all end the same way: the file is left
+  byte-identical and the run exits non-zero saying so.
+- **Uninstall removes only what it recorded installing.** `./uninstall
+  --with-config` deletes the files in its own manifest and strips its own marked
+  region. Keys merged into your settings are reported and left — it never wrote
+  down which were its own, so it will not guess.
+
+**What it costs you in context:** the always-on part is 13 rule files plus an
+index — 31 KB, about 7,800 tokens, **3.9% of a 200k window**. The 33 sub-agents
+load only when a command hands work to one. Codex gets a single self-contained
+`AGENTS.md` instead, at about 5,900 tokens.
+
+**The trust decision, stated plainly.** The payload adds `Bash(*)` to Claude
+Code's allow-list and sets `defaultMode: acceptEdits` — together that is "run
+shell commands and apply edits without asking me each time". Preview it with
+`--with-config -n` before you decide, and read
+[`SECURITY.md`](SECURITY.md) for how to tighten it. Both land as merged keys, so
+today `./uninstall --with-config` leaves them behind: removing the pack does not
+revoke the permission, and you take it back by editing
+`~/.claude/settings.json` yourself. Recording merged keys so uninstall can undo
+them is the next change queued here.
+
+Full reference: [`docs/configuration.md`](docs/configuration.md).
+
+---
+
+## Requirements
+
+| | Needed for | If it is missing |
+|---|---|---|
+| One of Claude Code, Cursor, Kiro, Codex CLI | Anything at all | Undetected runtimes are skipped, not failed |
+| bash 4+ | The installer's own arrays | It refuses and tells you `brew install bash` — the commands themselves run on 3.2 |
+| python3 | Merging `settings.json` and `hooks.json` | The merge is refused, never performed unchecked; the rest installs |
+| python3 **3.11+** | Merging Codex's `config.toml` (needs `tomllib` to verify the result) | Same: refused, not written unchecked. macOS ships 3.9 as `/usr/bin/python3` |
+| `gh` | The 23 commands that touch pull requests or issues | Those commands say so and stop |
 
 ---
 
 ## More
 
 ```bash
-./install --target=all      # Claude Code + Cursor + Kiro + Codex, non-interactive
-./install --dry-run         # Preview every change, write nothing
-git pull && ./install       # Update
-~/vibestack/uninstall --target=all      # Remove
+./install --target=all             # Claude Code + Cursor + Kiro + Codex, non-interactive
+./install --only=config            # the standing rules alone
+./install --scope=project --project-root=.   # pin the commands into this repo, for a team
+./install --dry-run                # preview everything, write nothing
+git pull && ./install              # update
+./uninstall --with-config          # remove, including the deployed configuration
+vibestack doctor                   # what is installed, where, and whether it is current
 ```
 
-- [`docs/skills.md`](docs/skills.md) — all skills, with descriptions
+- [`docs/skills.md`](docs/skills.md) — every command, in detail
+- [`docs/configuration.md`](docs/configuration.md) — the standing rules, statusline, sub-agents
 - [`ETHOS.md`](ETHOS.md) — the five principles behind the design
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — add your own skill in minutes
-- [`docs/agent-skills-compatibility-audit.md`](docs/agent-skills-compatibility-audit.md) — per-agent behavior, incl. safety-hook tiers
-- [`docs/internals.md`](docs/internals.md) — binaries, shared snippets, preamble flags, test suites, CI
-- [`docs/external-tools.md`](docs/external-tools.md) — the few tools vibestack expects but does not bundle
-- [`docs/aws-reviews-first-run.md`](docs/aws-reviews-first-run.md) · [`docs/llm-checks-first-run.md`](docs/llm-checks-first-run.md) — first run of the AWS and LLM skills: what to have in place, what you type, what comes back
-- [`CHANGELOG.md`](CHANGELOG.md) · [`LICENSE`](LICENSE) (MIT)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — add your own command in minutes
+- [`docs/agent-skills-compatibility-audit.md`](docs/agent-skills-compatibility-audit.md) — what each runtime actually supports
+- [`docs/internals.md`](docs/internals.md) — binaries, snippets, state paths, test suites
+- [`docs/external-tools.md`](docs/external-tools.md) — tools expected but not bundled
+- [`docs/aws-reviews-first-run.md`](docs/aws-reviews-first-run.md) · [`docs/llm-checks-first-run.md`](docs/llm-checks-first-run.md) — first run of the AWS and LLM reviews
+- [`SECURITY.md`](SECURITY.md) · [`CHANGELOG.md`](CHANGELOG.md) · [`LICENSE`](LICENSE) (MIT)
 
-> **Heads-up:** the safety skills (`/careful`, `/freeze`, `/guard`) enforce
-> hard blocks on Claude Code. On Cursor/Kiro they fall back to a soft LLM
-> nudge, and on Codex CLI the hooks have never been tested — details in the
-> compatibility audit above.
-
----
+> **Caveat worth knowing.** `/careful`, `/freeze` and `/guard` enforce hard blocks in
+> Claude Code. In Cursor and Kiro they degrade to a soft nudge the model can talk
+> itself past, and on Codex CLI the hooks have never been verified. Treat them as
+> a seatbelt there, not a lock — the compatibility audit has the per-runtime detail.
 
 <p align="center">
-  If vibestack saves you time, <a href="https://github.com/timurgaleev/vibestack/stargazers">give it a ⭐</a> — it's the simplest way to say opinionated workflows beat ad-hoc prompting.
+  <a href="https://github.com/timurgaleev/vibestack/releases"><img src="https://img.shields.io/github/v/release/timurgaleev/vibestack?style=flat-square&color=000" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-000?style=flat-square" alt="MIT"></a>
+  <a href="https://agentskills.io/specification"><img src="https://img.shields.io/badge/agent--skills-spec-000?style=flat-square" alt="Agent Skills standard"></a>
+  <a href="https://github.com/timurgaleev/vibestack/stargazers"><img src="https://img.shields.io/github/stars/timurgaleev/vibestack?style=flat-square&color=000" alt="Stars"></a>
 </p>

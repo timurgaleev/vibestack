@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-label="A file the pack shares with you, after a sync. The region above the managed marker belongs to the repository and is replaced every time you sync. The marker line is written at deploy time and never moves. The region below it is yours — your own house rules and any lines another tool added — and is carried across untouched.">
+  <defs>
+    <linearGradient id="mgbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B0F17"/>
+      <stop offset="1" stop-color="#121A2A"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="880" height="400" rx="14" fill="url(#mgbg)"/>
+
+  <text x="56" y="56" fill="#E6EDF3" font-size="21" font-weight="600">~/.claude/CLAUDE.md after a sync</text>
+
+  <rect x="56" y="84" width="768" height="256" rx="12" fill="#0D1117" stroke="#30363D"/>
+
+  <!-- repo-owned region -->
+  <rect x="56" y="84" width="768" height="120" rx="12" fill="#3FB950" fill-opacity="0.08"/>
+  <text x="84" y="122" fill="#3FB950" font-size="15" letter-spacing="1.4" font-weight="600">OURS &#8212; REPLACED EVERY SYNC</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8B949E">
+    <text x="84" y="158">## Git Safety</text>
+    <text x="84" y="186">## Authorship &#8230;</text>
+  </g>
+
+  <!-- the marker -->
+  <line x1="56" y1="212" x2="824" y2="212" stroke="#BC8CFF" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="84" y="240" fill="#BC8CFF" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15">&lt;!-- END managed --&gt;</text>
+  <text x="796" y="240" text-anchor="end" fill="#8B949E" font-size="14">written once, never moves</text>
+
+  <!-- user-owned region -->
+  <rect x="56" y="248" width="768" height="92" rx="12" fill="#58A6FF" fill-opacity="0.08"/>
+  <text x="84" y="282" fill="#58A6FF" font-size="15" letter-spacing="1.4" font-weight="600">YOURS &#8212; CARRIED ACROSS UNTOUCHED</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8B949E">
+    <text x="84" y="318">## My own house rules</text>
+  </g>
+
+  <text x="56" y="376" fill="#7D8590" font-size="16">Cannot parse the file, or the merge? It writes nothing and says so.</text>
+</svg>
