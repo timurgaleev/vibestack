@@ -1,7 +1,7 @@
 # vibestack
 
 <p align="center">
-  <img src="./docs/assets/hero.svg" alt="One install gives an AI coding assistant two things: workflows you invoke by name — /office-hours, /review, /ship — and standing rules that are always on. Both land in Claude Code, Cursor, Kiro and Codex CLI." width="100%">
+  <img src="./docs/assets/hero.webp" alt="One ./install gives an assistant two things. On the left, commands you type — /office-hours, /review, /ship. On the right, standing behaviour that is always on — it plans first, reviews its work, and writes in your voice." width="100%">
 </p>
 
 <p align="center">
@@ -12,38 +12,43 @@
 
 ## What is vibestack?
 
-Sixty workflows for AI coding assistants, each a file your agent reads and exposes
-as a command. You type `/review` instead of "check my code," and a structured
+Sixty commands for AI coding assistants, each one a file your agent reads and
+exposes by name. You type `/review` instead of "check my code," and a written
 process runs: read the diff, look for the things that actually break, report with
 evidence. Same for planning, debugging, security, shipping.
 
-It also installs the standing rules those workflows assume — plan before coding,
+It also installs the standing rules those commands assume — plan before coding,
 never commit without being asked, write commits in the author's voice — so the
 assistant behaves that way between commands too.
 
 Works in Claude Code, Cursor, Kiro and Codex CLI from one source. MIT, no
-telemetry, no account, nothing leaves your machine.
+telemetry, no account, no cloud service of its own. Some commands do reach out
+by design — `/codex` sends your diff to a second model, `/benchmark-models`
+queries providers, `/pair-agent` opens a tunnel — and each says so before it
+runs.
 
 | What you get | Why it matters |
 |---|---|
 | A command per job, not a prompt per job | The process is written down once and runs the same way every time |
-| A second model reviews before you ship | Two models have to agree; one model agreeing with itself is not review |
+| A second pass before you ship | `/review` runs an adversarial pass in a fresh context, and a genuine second model when the Codex CLI is installed — it says which one it got |
 | Standing rules, always on | The assistant plans and asks before it commits, without being reminded |
-| One source, four runtimes | Switch tools and keep the workflow — nothing is vendor-shaped |
+| One source, four runtimes | Switch tools and keep the same commands — nothing is vendor-shaped |
 | Plain bash, no daemon | `git pull && ./install` is the whole update story |
-| Your machine only | State lives in `~/.vibestack/`; no telemetry, no accounts, no cloud |
+| Your machine by default | State lives in `~/.vibestack/`. Nothing phones home; the commands that call another model say so first |
 
 ---
 
 ## Install
 
+Needs bash 4+ and, for the merge step below, python3 — [the full
+list](#requirements) says what happens when one is missing. Clone anywhere
+**outside** an agent's skills folder; a checkout inside one gets indexed twice
+and every command shows up doubled.
+
 ```bash
 git clone https://github.com/timurgaleev/vibestack ~/vibestack
 ~/vibestack/install
 ```
-
-Clone anywhere **outside** an agent's skills folder — a checkout inside one gets
-indexed twice and every command shows up doubled.
 
 That installs the commands. The standing rules are a second, opt-in step, because
 they write into files you may already own:
@@ -78,9 +83,8 @@ Before we dig in — what's your goal with this?
   Learning — teaching yourself to code, leveling up
 ```
 
-Pick a mode and it asks the questions that mode needs, then writes the doc. Every
-command works like this: guided, opinionated, no filler. If that one clicks, the
-rest will.
+Pick a mode and it asks the questions that mode needs, then writes the doc you
+can hand to `/plan-eng-review`.
 
 In Codex CLI the same commands are `$office-hours`, `$review`, `$ship` — `/` is
 reserved there for Codex's own commands.
@@ -135,8 +139,10 @@ before you run it, so here is the whole contract.
 - **A marker splits each shared file.** Above it is ours and gets replaced; below
   it is yours and is carried across untouched. `rtk init`'s `@RTK.md` line and
   your own house rules live below it and survive every sync.
-- **Settings are merged, not overwritten.** Keys you added stay, arrays are
-  unioned, and top-level keys we know nothing about are left alone.
+- **Settings are merged, not overwritten.** Keys you added stay. Permission
+  arrays are unioned rather than replaced. Where a key exists on both sides the
+  repo's value wins, so an edit to a key the pack also sets does not survive a
+  sync — put anything you want kept under a key the pack does not touch.
 - **It refuses rather than guesses.** A file it cannot parse, a merge whose result
   would not parse, or a missing parser all end the same way: the file is left
   byte-identical and the run exits non-zero saying so.
@@ -150,9 +156,17 @@ index — 31 KB, about 7,800 tokens, **3.9% of a 200k window**. The 33 sub-agent
 load only when a command hands work to one. Codex gets a single self-contained
 `AGENTS.md` instead, at about 5,900 tokens.
 
-The payload also allows `Bash(*)` and sets `acceptEdits` for Claude Code, which
-is a real trust decision — [`SECURITY.md`](SECURITY.md) explains it and how to
-tighten it. Full reference: [`docs/configuration.md`](docs/configuration.md).
+**The trust decision, stated plainly.** The payload adds `Bash(*)` to Claude
+Code's allow-list and sets `defaultMode: acceptEdits` — together that is "run
+shell commands and apply edits without asking me each time". Preview it with
+`--with-config -n` before you decide, and read
+[`SECURITY.md`](SECURITY.md) for how to tighten it. Both land as merged keys, so
+today `./uninstall --with-config` leaves them behind: removing the pack does not
+revoke the permission, and you take it back by editing
+`~/.claude/settings.json` yourself. Recording merged keys so uninstall can undo
+them is the next change queued here.
+
+Full reference: [`docs/configuration.md`](docs/configuration.md).
 
 ---
 
@@ -173,6 +187,7 @@ tighten it. Full reference: [`docs/configuration.md`](docs/configuration.md).
 ```bash
 ./install --target=all             # Claude Code + Cursor + Kiro + Codex, non-interactive
 ./install --only=config            # the standing rules alone
+./install --scope=project --project-root=.   # pin the commands into this repo, for a team
 ./install --dry-run                # preview everything, write nothing
 git pull && ./install              # update
 ./uninstall --with-config          # remove, including the deployed configuration
@@ -189,7 +204,7 @@ vibestack doctor                   # what is installed, where, and whether it is
 - [`docs/aws-reviews-first-run.md`](docs/aws-reviews-first-run.md) · [`docs/llm-checks-first-run.md`](docs/llm-checks-first-run.md) — first run of the AWS and LLM reviews
 - [`SECURITY.md`](SECURITY.md) · [`CHANGELOG.md`](CHANGELOG.md) · [`LICENSE`](LICENSE) (MIT)
 
-> **One honest caveat.** `/careful`, `/freeze` and `/guard` enforce hard blocks in
+> **Caveat worth knowing.** `/careful`, `/freeze` and `/guard` enforce hard blocks in
 > Claude Code. In Cursor and Kiro they degrade to a soft nudge the model can talk
 > itself past, and on Codex CLI the hooks have never been verified. Treat them as
 > a seatbelt there, not a lock — the compatibility audit has the per-runtime detail.

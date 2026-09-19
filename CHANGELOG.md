@@ -28,10 +28,20 @@
 
 ### Fixed
 
-- `docs/assets/hero.svg` redrawn around the two halves and one install; its
-  connector lines were invisible in correct renderers, because a horizontal
-  line has a zero-height bounding box and the gradient on it degenerated.
-- `docs/assets/merge-guard.svg` added for the configuration deep-dive.
+- **The hero image is redrawn** as `docs/assets/hero.webp`, replacing the SVG.
+  It labels its two columns — what you type on the left, what is always on on
+  the right — so the split the README is built around is legible without the
+  caption. The SVG it replaces drew its connector lines with a gradient in
+  `objectBoundingBox` units, and a horizontal line has a zero-height box, so
+  those lines rendered as nothing in every correct renderer.
+- `docs/assets/merge-guard.svg` added for the configuration deep-dive, carrying
+  only the marker split. The refusal list it also held was the same three
+  bullets printed directly beneath it, at a type size that fell below 5px on a
+  phone; the prose keeps them and the diagram keeps the one thing a picture
+  does better than a sentence.
+- `docs/assets/skill-map.svg` said "60 skills" where the README says commands,
+  and billed the review family as "two models have to agree" — which is only
+  true when the Codex CLI is installed.
 - The README referenced `/tdd`, withdrawn in v1.38.0, and miscounted the
   sub-agents and the commands that need `gh`. Every count and command name in
   it is now generated from the repository and checked.

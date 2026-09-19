@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 340" width="880" height="340" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-label="How the configuration phase writes into a file you already own. Everything above the managed marker belongs to the repository and is replaced on every sync. Everything below the marker is yours and is carried across untouched. When the destination cannot be parsed, or the merged result would not parse, the file is left exactly as it was and the run reports the refusal.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-label="A file the pack shares with you, after a sync. The region above the managed marker belongs to the repository and is replaced every time you sync. The marker line is written at deploy time and never moves. The region below it is yours — your own house rules and any lines another tool added — and is carried across untouched.">
   <defs>
     <linearGradient id="mgbg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0B0F17"/>
@@ -6,48 +6,31 @@
     </linearGradient>
   </defs>
 
-  <rect width="880" height="340" rx="14" fill="url(#mgbg)"/>
-  <text x="44" y="42" fill="#E6EDF3" font-size="15" font-weight="600">~/.claude/CLAUDE.md after a sync</text>
-  <text x="44" y="64" fill="#7D8590" font-size="12">the marker is the boundary — it is written at deploy time and never moves</text>
+  <rect width="880" height="400" rx="14" fill="url(#mgbg)"/>
 
-  <!-- the file -->
-  <rect x="44" y="84" width="470" height="212" rx="10" fill="#0D1117" stroke="#30363D"/>
+  <text x="56" y="56" fill="#E6EDF3" font-size="21" font-weight="600">~/.claude/CLAUDE.md after a sync</text>
+
+  <rect x="56" y="84" width="768" height="256" rx="12" fill="#0D1117" stroke="#30363D"/>
 
   <!-- repo-owned region -->
-  <rect x="44" y="84" width="470" height="104" rx="10" fill="#3FB950" fill-opacity="0.07"/>
-  <text x="66" y="112" fill="#3FB950" font-size="11" letter-spacing="1.2">REPO-OWNED — REPLACED EVERY SYNC</text>
-  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="#8B949E">
-    <text x="66" y="136"># CLAUDE.md</text>
-    <text x="66" y="156">## Git Safety</text>
-    <text x="66" y="176">## Authorship &#8230;</text>
+  <rect x="56" y="84" width="768" height="120" rx="12" fill="#3FB950" fill-opacity="0.08"/>
+  <text x="84" y="122" fill="#3FB950" font-size="15" letter-spacing="1.4" font-weight="600">OURS &#8212; REPLACED EVERY SYNC</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8B949E">
+    <text x="84" y="158">## Git Safety</text>
+    <text x="84" y="186">## Authorship &#8230;</text>
   </g>
 
-  <!-- marker -->
-  <line x1="44" y1="188" x2="514" y2="188" stroke="#BC8CFF" stroke-width="2" stroke-dasharray="5 4"/>
-  <text x="66" y="206" fill="#BC8CFF" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11">&lt;!-- END managed — lines below are yours --&gt;</text>
+  <!-- the marker -->
+  <line x1="56" y1="212" x2="824" y2="212" stroke="#BC8CFF" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="84" y="240" fill="#BC8CFF" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15">&lt;!-- END managed --&gt;</text>
+  <text x="796" y="240" text-anchor="end" fill="#8B949E" font-size="14">written once, never moves</text>
 
   <!-- user-owned region -->
-  <rect x="44" y="212" width="470" height="84" rx="10" fill="#58A6FF" fill-opacity="0.07"/>
-  <text x="66" y="234" fill="#58A6FF" font-size="11" letter-spacing="1.2">YOURS — CARRIED ACROSS UNTOUCHED</text>
-  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="12" fill="#8B949E">
-    <text x="66" y="258">@RTK.md</text>
-    <text x="66" y="278">## My own house rules</text>
+  <rect x="56" y="248" width="768" height="92" rx="12" fill="#58A6FF" fill-opacity="0.08"/>
+  <text x="84" y="282" fill="#58A6FF" font-size="15" letter-spacing="1.4" font-weight="600">YOURS &#8212; CARRIED ACROSS UNTOUCHED</text>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" fill="#8B949E">
+    <text x="84" y="318">## My own house rules</text>
   </g>
 
-  <!-- refusal column -->
-  <text x="566" y="112" fill="#7D8590" font-size="12" letter-spacing="1.6">WHEN IT REFUSES</text>
-
-  <rect x="562" y="126" width="276" height="50" rx="8" fill="#161B22" stroke="#F85149" stroke-opacity="0.5"/>
-  <text x="578" y="146" fill="#E6EDF3" font-size="12">the file will not parse</text>
-  <text x="578" y="164" fill="#7D8590" font-size="11">left byte-identical, run exits non-zero</text>
-
-  <rect x="562" y="184" width="276" height="50" rx="8" fill="#161B22" stroke="#F85149" stroke-opacity="0.5"/>
-  <text x="578" y="204" fill="#E6EDF3" font-size="12">the merged result would not parse</text>
-  <text x="578" y="222" fill="#7D8590" font-size="11">checked before writing, then refused</text>
-
-  <rect x="562" y="242" width="276" height="50" rx="8" fill="#161B22" stroke="#F85149" stroke-opacity="0.5"/>
-  <text x="578" y="262" fill="#E6EDF3" font-size="12">no parser available to check it</text>
-  <text x="578" y="280" fill="#7D8590" font-size="11">refuses rather than writing unchecked</text>
-
-  <text x="44" y="322" fill="#57606A" font-size="12">Merged keys are never removed on uninstall: the install records what it wrote, and nothing else is guessed at.</text>
+  <text x="56" y="376" fill="#7D8590" font-size="16">Cannot parse the file, or the merge? It writes nothing and says so.</text>
 </svg>
