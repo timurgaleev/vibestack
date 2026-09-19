@@ -51,7 +51,7 @@
   matters: the file survives because the user owned a key in it, and the
   permission grant does not.
 
-
+## 1.39.2 — 2026-09-19
 
 ### Changed
 
