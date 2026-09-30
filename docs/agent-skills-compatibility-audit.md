@@ -100,7 +100,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | kb-review | — | — | — | full / full / full |
 | land-and-deploy | — | yes | — | full / full / full |
 | landing-report | — | — | — | full / full / full |
-| learn | — | — | — | full / full / full (`sync` needs memex MCP; degrades to "not connected" without it) |
+| learn | — | — | — | full / full / full (`sync` needs memrain MCP; degrades to "not connected" without it) |
 | make-pdf | — | yes | — | full / full / full |
 | mcp-review | — | — | — | full / full / full |
 | office-hours | — | yes | yes | full / instr-only / instr-only |

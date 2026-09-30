@@ -24,6 +24,19 @@
   The session file is a full-account credential. It lives in `~/.config/tg/`,
   owner-only from the moment it is created, and is revoked from Telegram →
   Settings → Devices.
+## 1.40.1 — 2026-09-30
+
+### Changed
+
+- **The memory server is now Memrain.** The self-hosted memory MCP server
+  was renamed from memex, so the rules, snippets, `/learn` and the docs now
+  point at `mcp__memrain__*` tools, and the rule files install as
+  `rules/memrain.md` and `memrain.mdc`. The next sync removes the old
+  `rules/memex.md` through its manifest; nothing needs to be deleted by hand.
+- **`/learn sync` keeps its place across the rename.** Its record of what was
+  already pushed moves to `memrain-synced.txt`. An existing
+  `memex-synced.txt` is merged into it on the first run, so learnings that
+  already reached the server are not pushed a second time.
 
 ## 1.40.0 — 2026-09-19
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vibestack — umbrella CLI. One entry point for the vibe-* tools, in the same
-# spirit as running `memex` on the server: log in, type the name, get status
+# spirit as running `memrain` on the server: log in, type the name, get status
 # and subcommands.
 #
 # Usage:

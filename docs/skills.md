@@ -237,7 +237,7 @@ Triggers: `retro`, `weekly retro`, `retrospective`
 ### `/learn`
 Capture and persist project learnings.
 
-Writes structured learnings to a project learnings file to prevent solving the same problem twice. Covers: what was the problem, what was tried, what worked, what to do next time. Plain `/learn` runs the full loop — show recorded learnings, capture new ones from the current session, then sync consent-gated copies into connected memory (memex). `/learn sync` runs the sync step alone.
+Writes structured learnings to a project learnings file to prevent solving the same problem twice. Covers: what was the problem, what was tried, what worked, what to do next time. Plain `/learn` runs the full loop — show recorded learnings, capture new ones from the current session, then sync consent-gated copies into connected memory (memrain). `/learn sync` runs the sync step alone.
 
 Triggers: `learn`, `save learning`, `capture this`
 

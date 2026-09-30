@@ -299,7 +299,7 @@ change). `vibe-certify`: 4/4 targets PASS.
   work remains in scope.
 - **#13 Cross-session decision memory** — implemented as
   `vibe-decision-log` / `vibe-decision-search` (event-sourced local
-  `decisions.jsonl`); memex stays the semantic-recall layer.
+  `decisions.jsonl`); memrain stays the semantic-recall layer.
 - **#16 `/spec` Phase 4.5a Semantic Content Review** — LLM-judgment pass over
   the final draft (named individuals, customer names, unannounced strategy,
   NDA material, codename bleed) with `SEMANTIC_REVIEW:` marker,

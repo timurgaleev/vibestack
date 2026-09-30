@@ -9,9 +9,9 @@ preamble flags, and the memory architecture. For the skill catalogue see
 
 vibestack splits durable knowledge in two:
 
-- **memex is the brain** — a hosted Postgres + pgvector MCP server. It is the
+- **memrain is the brain** — a hosted Postgres + pgvector MCP server. It is the
   **semantic-recall** layer: skills query it for product/goal/prior context
-  (`mcp__memex__search`, `entity_recall`, …). It indexes its own corpus; the
+  (`mcp__memrain__search`, `entity_recall`, …). It indexes its own corpus; the
   pack never writes to it automatically. The one deliberate, consent-gated
   exception is `/learn sync`, which pushes *copies* of project learnings as
   facts (`learnings.jsonl` stays canonical; see `vibe-learnings-sync-plan`).
@@ -30,7 +30,7 @@ vibestack splits durable knowledge in two:
 ├── .update-check-stamp                 # update-check throttle (24h)
 └── projects/<slug>/
     ├── learnings.jsonl                 # vibe-learnings-*
-    ├── memex-synced.txt                # /learn sync watermark (key<TAB>type)
+    ├── memrain-synced.txt                # /learn sync watermark (key<TAB>type)
     ├── decisions.jsonl                 # vibe-decision-* (event-sourced)
     ├── timeline.jsonl                  # vibe-timeline-log
     ├── kb-isolation-<date>.json        # /kb-review tenant-isolation probe

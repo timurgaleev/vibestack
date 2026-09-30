@@ -511,49 +511,49 @@ If security issue found:
   force push, opening a PR or issue.
 - In a code review, lead with problems, risks, and missing tests — not a summary.
 
-## Memory (memex MCP)
+## Memory (memrain MCP)
 
-**Memex is the only persistent-memory backend.** Do not use any other store
+**Memrain is the only persistent-memory backend.** Do not use any other store
 (notes apps, vaults) for memory.
 
-Prefer memex tools over Grep when the question is semantic or you do not know
+Prefer memrain tools over Grep when the question is semantic or you do not know
 the exact identifier yet:
 
-- "Where is X handled?" / "What did I decide about X?" → `mcp__memex__search`
-- "Everything related to person/project Y" → `mcp__memex__entity_recall` /
+- "Where is X handled?" / "What did I decide about X?" → `mcp__memrain__search`
+- "Everything related to person/project Y" → `mcp__memrain__entity_recall` /
   `entity_timeline`
 
 Grep is still right for known exact strings, regex, and file globs in the
 current repo.
 
-The user's knowledge base is the **memex MCP server** (`mcp__memex__*` tools).
+The user's knowledge base is the **memrain MCP server** (`mcp__memrain__*` tools).
 It is the single source of truth for cross-session memory. Do not use any
 other store (local notes apps, vaults) for assistant memory.
 
 ### Reading Context
 
 When the user references ongoing projects, decisions, or prior work, query
-memex before answering:
+memrain before answering:
 
 - Semantic questions ("what is this product?", "what did I decide about X?")
-  → `mcp__memex__search` / `mcp__memex__recall`
-- Everything tied to a named project or person → `mcp__memex__entity_recall`,
-  `mcp__memex__entity_timeline`
-- Direct page lookup → `mcp__memex__page_get`, listing → `mcp__memex__page_list`
-- "What happened recently?" → `mcp__memex__chronicle_since`,
-  `mcp__memex__chronicle_day`
+  → `mcp__memrain__search` / `mcp__memrain__recall`
+- Everything tied to a named project or person → `mcp__memrain__entity_recall`,
+  `mcp__memrain__entity_timeline`
+- Direct page lookup → `mcp__memrain__page_get`, listing → `mcp__memrain__page_list`
+- "What happened recently?" → `mcp__memrain__chronicle_since`,
+  `mcp__memrain__chronicle_day`
 
 Grep is still right for known exact strings, regex, and file globs in the
 current repo.
 
 ### Saving Information
 
-Save directly to memex when work produces something worth keeping:
+Save directly to memrain when work produces something worth keeping:
 
-- Discrete facts and decisions → `mcp__memex__add_fact`
-- Longer notes, designs, research → `mcp__memex__page_put` /
-  `mcp__memex__page_append`
-- Timeline events (shipped X, decided Y) → `mcp__memex__add_timeline_event`
+- Discrete facts and decisions → `mcp__memrain__add_fact`
+- Longer notes, designs, research → `mcp__memrain__page_put` /
+  `mcp__memrain__page_append`
+- Timeline events (shipped X, decided Y) → `mcp__memrain__add_timeline_event`
 
 ### When to Save
 
@@ -564,7 +564,7 @@ Save directly to memex when work produces something worth keeping:
 
 ### Fallback
 
-If memex tools are unavailable (server down, 401 = token rotated —
+If memrain tools are unavailable (server down, 401 = token rotated —
 re-register the MCP server), say so and continue without blocking. The
 server registration (URL + token) lives in `~/.claude.json` — no secret
 belongs in this repo.
