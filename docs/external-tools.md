@@ -193,6 +193,24 @@ code is untrusted — listing its tools means executing it.
 
 ---
 
+## Telegram account access (`uv`, Telethon, whisper)
+
+**Required by:** `/telegram`
+
+**What it is:** `skills/telegram/bin/tg.py`, a Telethon (MTProto) client run through
+`uv`, which installs its declared dependencies on first use. It logs in as your own
+Telegram account — an `api_id`/`api_hash` from my.telegram.org plus a one-time QR
+login — and keeps the session in `~/.config/tg/`. `voice` shells out to `whisper` and
+`ffmpeg` for local transcription.
+
+**Status:** the script is bundled; `uv`, `whisper` and `ffmpeg` are not.
+
+**If you don't have it:** the skill stops at `status` and walks you through setup.
+The session file is a full-account credential — revoke it from Telegram → Settings →
+Devices when you stop using the skill.
+
+---
+
 ## vibe-model-benchmark
 
 **Required by:** `/benchmark-models`

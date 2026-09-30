@@ -12,7 +12,7 @@
 
 ## What is vibestack?
 
-Sixty commands for AI coding assistants, each one a file your agent reads and
+Sixty-one commands for AI coding assistants, each one a file your agent reads and
 exposes by name. You type `/review` instead of "check my code," and a written
 process runs: read the diff, look for the things that actually break, report with
 evidence. Same for planning, debugging, security, shipping.
@@ -115,13 +115,14 @@ reserved there for Codex's own commands.
 | `/connect-review` | Review an Amazon Connect IVR: flows, Lex, latency, cost per contact | |
 | `/agent-eval` | Build and run an eval harness for an agent or prompt, with a gate | |
 | `/mcp-review` | Audit an MCP server: tools, auth, validation, injection surface | |
+| `/telegram` | Read, transcribe and send Telegram messages as your own account | |
 | `/careful` `/freeze` `/guard` | Refuse destructive commands and edits outside a boundary | |
 
 The other 39 cover design, docs, retros, context handoff, browser QA and
 release. **[Every command, with what it does: `docs/skills.md`](docs/skills.md)**
 
 <p align="center">
-  <img src="./docs/assets/skill-map.svg" alt="The sixty commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
+  <img src="./docs/assets/skill-map.svg" alt="The sixty-one commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
 </p>
 
 ---

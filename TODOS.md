@@ -23,7 +23,7 @@ Shipped in v1.38.0. Added `/address-pr-review`, `/unslop`, `/aws-cost`,
 `/mcp-review`, `/kb-review`. Removed `/tdd` and `/reroll-buddy` — neither had
 been used. `/cso` gained a read-only AWS account posture phase and
 `/document-release` gained accuracy rules for the identifiers docs name.
-Sixty skills, all four runtimes.
+Sixty-one skills, all four runtimes.
 
 **Completed:** v1.38.0 (2026-09-02)
 
