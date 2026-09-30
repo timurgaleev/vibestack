@@ -42,11 +42,11 @@ echo "$out" | grep -q "0 new / 1 already synced / 1 skipped" && ok "watermark sk
 
 # 4. Mark is idempotent (no duplicate watermark lines)
 PLAN --mark "retry-loop" "pattern" >/dev/null 2>&1
-n=$(grep -c . "$PROJ/memex-synced.txt")
+n=$(grep -c . "$PROJ/memrain-synced.txt")
 [ "$n" -eq 1 ] && ok "mark idempotent" || no "watermark has $n lines"
 
 # 5. Corrupt watermark line tolerated (treated unsynced, warns)
-echo "garbage-no-tab" >> "$PROJ/memex-synced.txt"
+echo "garbage-no-tab" >> "$PROJ/memrain-synced.txt"
 out="$(PLAN)"; rc=$?
 [ $rc -eq 0 ] && ok "corrupt watermark line survives" || no "corrupt watermark rc=$rc"
 
@@ -54,7 +54,7 @@ out="$(PLAN)"; rc=$?
 cat > "$PROJ/learnings.jsonl" <<'EOF'
 {"ts":"2026-07-04T10:00:00Z","skill":"investigate","type":"tool","key":"db-conn","insight":"use postgres://admin:hunter2@db.internal:5432/prod for the fix","confidence":9,"source":"observed"}
 EOF
-rm -f "$PROJ/memex-synced.txt"
+rm -f "$PROJ/memrain-synced.txt"
 out="$(PLAN)"
 echo "$out" | grep -q "hunter2" && no "URL credential leaked" || ok "URL credential skipped"
 echo "$out" | grep -q "0 new / 0 already synced / 1 skipped" && ok "URL-cred summary" || no "URL-cred summary: '$out'"
@@ -71,7 +71,7 @@ cat > "$PROJ/learnings.jsonl" <<'EOF'
 {"ts":"2026-07-06T10:00:00Z","skill":"review","type":"pattern","key":"task-management","insight":"split desk-organizer risk-assessment into slices","confidence":7,"source":"observed"}
 {"ts":1720000000,"skill":"review","type":"pattern","key":"ssh-key","insight":"rotate host identities quarterly","confidence":6,"source":"observed"}
 EOF
-rm -f "$PROJ/memex-synced.txt"
+rm -f "$PROJ/memrain-synced.txt"
 out="$(PLAN)"; rc=$?
 [ $rc -eq 0 ] && ok "numeric ts survives" || no "numeric ts rc=$rc"
 echo "$out" | grep -q "2 new / 0 already synced / 0 skipped" && ok "kebab sk-/key not over-redacted" || no "over-redaction: '$out'"
@@ -81,7 +81,7 @@ cat > "$PROJ/learnings.jsonl" <<'EOF'
 {"ts":"2026-07-07T10:00:00Z","skill":"x","type":"AKIAABCDEFGHIJKLMNOP","key":"smuggle","insight":"benign text here","confidence":5,"source":"observed"}
 {"ts":"2026-07-08T10:00:00Z","skill":"x","type":"pattern","key":"bad$(touch /tmp/pwn)key","insight":"metachar key normalized","confidence":5,"source":"observed"}
 EOF
-rm -f "$PROJ/memex-synced.txt"
+rm -f "$PROJ/memrain-synced.txt"
 out="$(PLAN)"
 echo "$out" | grep -q "AKIA" && no "type-field secret leaked" || ok "type-field secret skipped"
 echo "$out" | grep -q '\$(' && no "shell metachars survived in FACT key" || ok "metachar key normalized"
@@ -90,18 +90,35 @@ echo "$out" | grep -q "1 new / 0 already synced / 1 skipped" && ok "type-secret 
 # 10. Dash-leading key: --mark stays idempotent (grep -- guard)
 PLAN --mark "-dashkey" "pattern" >/dev/null 2>&1
 PLAN --mark "-dashkey" "pattern" >/dev/null 2>&1
-n=$(grep -c . "$PROJ/memex-synced.txt")
+n=$(grep -c . "$PROJ/memrain-synced.txt")
 [ "$n" -eq 1 ] && ok "dash-leading key mark idempotent" || no "dash key watermark has $n lines"
 
 # 11. FACT line carries machine-readable confidence (5 tab-separated fields)
 cat > "$PROJ/learnings.jsonl" <<'EOF'
 {"ts":"2026-07-09T10:00:00Z","skill":"x","type":"pattern","key":"conf-check","insight":"plain","confidence":9,"source":"observed"}
 EOF
-rm -f "$PROJ/memex-synced.txt"
+rm -f "$PROJ/memrain-synced.txt"
 out="$(PLAN | grep '^FACT')"
 nf=$(printf '%s' "$out" | awk -F'\t' '{print NF}')
 [ "$nf" -eq 5 ] && ok "FACT has 5 fields" || no "FACT fields=$nf: '$out'"
 printf '%s' "$out" | cut -f4 | grep -qx "9" && ok "confidence field machine-readable" || no "confidence field: '$out'"
+
+# 12. Legacy watermark (memex-synced.txt) carries over: already-pushed facts stay synced
+cat > "$PROJ/learnings.jsonl" <<'EOF'
+{"ts":"2026-07-10T10:00:00Z","skill":"x","type":"pattern","key":"legacy-key","insight":"plain","confidence":8,"source":"observed"}
+EOF
+rm -f "$PROJ/memrain-synced.txt"
+printf 'legacy-key\tpattern\n' > "$PROJ/memex-synced.txt"
+out="$(PLAN)"
+echo "$out" | grep -q "0 new / 1 already synced" && ok "legacy watermark honored" || no "legacy watermark: '$out'"
+[ -f "$PROJ/memrain-synced.txt" ] && [ ! -e "$PROJ/memex-synced.txt" ] && ok "legacy watermark renamed" || no "legacy watermark not renamed"
+
+# 13. Both watermarks present: entries from each survive in the merged file
+printf 'legacy-key\tpattern\n' > "$PROJ/memex-synced.txt"
+printf 'other-key\tpattern\n' > "$PROJ/memrain-synced.txt"
+out="$(PLAN)"
+echo "$out" | grep -q "0 new / 1 already synced" && ok "merged legacy entry honored" || no "merge: '$out'"
+grep -qxF "$(printf 'other-key\tpattern')" "$PROJ/memrain-synced.txt" && [ ! -e "$PROJ/memex-synced.txt" ] && ok "merge keeps current entries" || no "merge lost current entries"
 
 echo
 echo "== summary =="

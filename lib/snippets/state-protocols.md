@@ -29,7 +29,7 @@ halves are needed: without the log the ceiling is lost, and without the marker
 the next reader finds an unexplained gap and either re-argues it or "fixes"
 something that was chosen deliberately.
 
-Reliable and local; memory (memex) is the broader semantic-recall layer, not the
+Reliable and local; memory (memrain) is the broader semantic-recall layer, not the
 decision store.
 
 ### Continuous checkpoint mode

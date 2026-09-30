@@ -41,12 +41,12 @@ find "$VIBESTACK_HOME/projects" -name timeline.jsonl 2>/dev/null | grep -q . && 
 "$BIN/vibe-timeline-log" 'not json' >/dev/null 2>&1 && ok "timeline survives bad json" || no "timeline errored on bad json"
 
 # vibe-decision-log + search roundtrip
-"$BIN/vibe-decision-log" '{"decision":"use memex as the brain","rationale":"single hosted source of truth","scope":"repo"}' >/dev/null 2>&1
+"$BIN/vibe-decision-log" '{"decision":"use memrain as the brain","rationale":"single hosted source of truth","scope":"repo"}' >/dev/null 2>&1
 id="$("$BIN/vibe-decision-search" --recent 5 | grep -oE 'd[0-9]+' | head -1)"
-"$BIN/vibe-decision-search" | grep -q "use memex as the brain" && ok "decision logged + searchable" || no "decision not found"
+"$BIN/vibe-decision-search" | grep -q "use memrain as the brain" && ok "decision logged + searchable" || no "decision not found"
 # supersede drops it from the active set
 "$BIN/vibe-decision-log" --supersede "$id" >/dev/null 2>&1
-"$BIN/vibe-decision-search" | grep -q "use memex as the brain" && no "superseded decision still active" || ok "supersede removes from active"
+"$BIN/vibe-decision-search" | grep -q "use memrain as the brain" && no "superseded decision still active" || ok "supersede removes from active"
 # secret rejection
 "$BIN/vibe-decision-log" '{"decision":"ship with key AKIAABCDEFGHIJKLMNOP"}' >/dev/null 2>&1 && no "secret decision was accepted" || ok "secret decision rejected"
 

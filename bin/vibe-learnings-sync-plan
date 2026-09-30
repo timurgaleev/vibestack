@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vibe-learnings-sync-plan — deterministic half of /learn sync.
-# Plans which learnings are pushable to connected memory (memex): dedups
+# Plans which learnings are pushable to connected memory (memrain): dedups
 # (key,type) latest-wins, skips already-synced (watermark) and secret-bearing
 # entries. The MCP push itself happens in the skill body; this bin only plans
 # and records.
@@ -14,7 +14,7 @@
 #   PLAN: X new / N already synced / S skipped (redacted)
 # key/type are normalized to [A-Za-z0-9._/-] before emission, so FACT fields
 # are safe to interpolate into the --mark command. Watermark:
-# <project-dir>/memex-synced.txt, one "key<TAB>type" (normalized) per pushed
+# <project-dir>/memrain-synced.txt, one "key<TAB>type" (normalized) per pushed
 # fact — stable identity, so a re-logged learning does not re-push.
 set -euo pipefail
 
@@ -36,7 +36,15 @@ if [ -z "$PROJECT_DIR" ]; then
 fi
 
 LEARN_FILE="$PROJECT_DIR/learnings.jsonl"
-MARK_FILE="$PROJECT_DIR/memex-synced.txt"
+MARK_FILE="$PROJECT_DIR/memrain-synced.txt"
+# The watermark was memex-synced.txt before the rename; carry it over so
+# already-pushed learnings are not pushed a second time.
+LEGACY_MARK_FILE="$PROJECT_DIR/memex-synced.txt"
+if [ -f "$LEGACY_MARK_FILE" ]; then
+  { cat "$LEGACY_MARK_FILE"; [ ! -f "$MARK_FILE" ] || cat "$MARK_FILE"; } | sort -u > "$MARK_FILE.tmp"
+  mv "$MARK_FILE.tmp" "$MARK_FILE"
+  rm -f "$LEGACY_MARK_FILE"
+fi
 
 if [ -n "$MARK_KEY" ]; then
   mkdir -p "$PROJECT_DIR"
@@ -90,7 +98,7 @@ if os.path.exists(mark_file):
             if len(parts) == 2:
                 synced.add((parts[0], parts[1]))
             elif line.strip():
-                print("WARN: malformed watermark line(s) in memex-synced.txt — "
+                print("WARN: malformed watermark line(s) in memrain-synced.txt — "
                       "affected entries count as unsynced", file=sys.stderr)
 
 # Unanchored, prose-oriented secret patterns — a secret embedded mid-insight

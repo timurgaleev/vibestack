@@ -39,17 +39,17 @@ test_prune_removes_stale() {
   local dst="$sandbox/.claude/rules"
   mkdir -p "$dst" "$MANIFEST_DIR"
 
-  touch "$dst/obsidian.md" "$dst/memex.md"
-  printf 'obsidian.md\nmemex.md\n' > "$(manifest_path claude)"
+  touch "$dst/obsidian.md" "$dst/memrain.md"
+  printf 'obsidian.md\nmemrain.md\n' > "$(manifest_path claude)"
 
   local current="$sandbox/current"
-  printf 'memex.md\n' > "$current"
+  printf 'memrain.md\n' > "$current"
 
   prune_target claude "$dst" "$current"
   local pruned="$PRUNE_COUNT"
 
   assert_absent  "$dst/obsidian.md" "P1: file removed from repo is pruned"
-  assert_present "$dst/memex.md"    "P1: file still in repo is kept"
+  assert_present "$dst/memrain.md"    "P1: file still in repo is kept"
   assert_eq "$pruned" "1" "P1: prune count is 1"
   rm -rf "$sandbox"
 }
