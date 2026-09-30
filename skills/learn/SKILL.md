@@ -14,7 +14,7 @@ allowed-tools:
   - AskUserQuestion
   - Glob
   - Grep
-  - mcp__memex__add_fact
+  - mcp__memrain__add_fact
 ---
 
 ## When to invoke
@@ -105,8 +105,8 @@ nothing capture-worthy, say "nothing new to capture this session" — do not
 invent entries to have something to log.
 
 **Pass 3 — Sync.** If anything is recorded (pre-existing or just captured) and
-memex is connected, run the **Sync to memory** flow below — plan, consent gate,
-push. If memex is not connected or there is nothing recorded, report that and
+memrain is connected, run the **Sync to memory** flow below — plan, consent gate,
+push. If memrain is not connected or there is nothing recorded, report that and
 stop.
 
 ---
@@ -186,12 +186,12 @@ or save it as a separate file.
 
 ## Sync to memory
 
-Push a *copy* of this project's learnings into connected memory (memex).
+Push a *copy* of this project's learnings into connected memory (memrain).
 `learnings.jsonl` stays the source of truth; sync is additive — `/learn prune`
 removes entries locally but does not retract facts already pushed.
 
-**1. Availability.** If no `mcp__memex__add_fact` tool is in your tool list,
-say "memex not connected — sync unavailable" and stop. Never block on memory.
+**1. Availability.** If no `mcp__memrain__add_fact` tool is in your tool list,
+say "memrain not connected — sync unavailable" and stop. Never block on memory.
 
 **2. Plan.** Run the planner:
 
@@ -218,7 +218,7 @@ approval). This question is one-way — never suppressible by a question-tuning
 preference. This is an irreversible egress decision: **in a headless session,
 STOP and report — never auto-approve.**
 
-**4. Push loop.** For each approved FACT line, call `mcp__memex__add_fact` with:
+**4. Push loop.** For each approved FACT line, call `mcp__memrain__add_fact` with:
 - `entity_slug`: the project SLUG
 - `fact`: the fact-text field
 - `confidence`: the confidence field / 10 (clamp to 0..1)

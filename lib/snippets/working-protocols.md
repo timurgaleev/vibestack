@@ -54,7 +54,7 @@ fi
 
 If artifacts are listed, read the newest useful one and give a 2-sentence
 "welcome back" summary. For prior decisions and their rationale, query connected
-memory (memex) — that is the single source of truth, not a local store.
+memory (memrain) — that is the single source of truth, not a local store.
 
 ### Completeness — boil the ocean one lake at a time
 

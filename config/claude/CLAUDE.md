@@ -171,22 +171,22 @@ skill map (`/plan-eng-review` to plan, `/investigate` to debug, `/code-review`
 before merge, `/ship` to ship). Invoke the skill before starting the work. If a
 referenced skill is not installed, proceed normally.
 
-## Memory (memex MCP)
+## Memory (memrain MCP)
 
-**Memex is the only persistent-memory backend.** Do not use any other store
+**Memrain is the only persistent-memory backend.** Do not use any other store
 (notes apps, vaults) for memory.
 
-Prefer memex tools over Grep when the question is semantic or you do not know
+Prefer memrain tools over Grep when the question is semantic or you do not know
 the exact identifier yet:
 
-- "Where is X handled?" / "What did I decide about X?" → `mcp__memex__search`
-- "Everything related to person/project Y" → `mcp__memex__entity_recall` /
+- "Where is X handled?" / "What did I decide about X?" → `mcp__memrain__search`
+- "Everything related to person/project Y" → `mcp__memrain__entity_recall` /
   `entity_timeline`
 
 Grep is still right for known exact strings, regex, and file globs in the
 current repo.
 
-Full rule: `rules/memex.md`
+Full rule: `rules/memrain.md`
 
 ## Anti-Patterns
 

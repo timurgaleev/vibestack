@@ -6,7 +6,7 @@ Usage:
 
 Appends one line to ``$VIBESTACK_HOME/projects/<slug>/<branch>-reviews.jsonl``.
 The Review Readiness Dashboard (/ship) and /retro read it via vibe-review-read.
-Local and reliable — memex is semantic recall, this is per-branch workflow state.
+Local and reliable — memrain is semantic recall, this is per-branch workflow state.
 
 NON-INTERACTIVE — never prompts. A payload carrying a high-confidence secret is
 rejected (exit 1), nothing written. `TIMESTAMP`/`COMMIT`/`STATUS` placeholders
