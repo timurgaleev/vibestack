@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.41.0 — 2026-09-30
+
+### Added
+
+- **`/telegram` — your own Telegram account, from the terminal.** Read a chat's
+  history, transcribe voice notes locally with whisper, and send text and files
+  as yourself. A bot cannot do any of this: it sees no history and speaks under
+  its own name. The skill ships a small Telethon client (`bin/tg.py`, run
+  through `uv`, which installs its dependencies on first use) that logs in once
+  by QR code from the phone, with the 2FA password prompted hidden.
+
+  Sending is the dangerous half, so it is built to be hard to get wrong. `send`
+  accepts only an exact chat name, an `@username` or an id — never a substring
+  that happens to be unique — and `--dry-run` prints who it resolved to before
+  anything goes out. Text and files travel in one request, so a failed upload
+  cannot leave the text delivered on its own. Every command connects without
+  falling into an interactive login prompt; an expired session says so and
+  stops. Messages are printed one per line with embedded newlines flattened, so
+  a message cannot forge a line of the transcript, and the skill treats
+  everything it reads as the other person's words, not instructions.
+
+  The session file is a full-account credential. It lives in `~/.config/tg/`,
+  owner-only from the moment it is created, and is revoked from Telegram →
+  Settings → Devices.
 ## 1.40.1 — 2026-09-30
 
 ### Changed

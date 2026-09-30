@@ -2,10 +2,10 @@
 
 **Generated:** 2026-05-09 (Day 0 Track A of v1.4.0 multi-target install)
 **Track B verified:** 2026-05-09 (Cursor 2026.05.07-42ddaca, Kiro CLI 2.2.2)
-**Skills audited:** 60. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent.
+**Skills audited:** 61. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent.
 **Spec reference:** [agentskills.io/specification](https://agentskills.io/specification)
 
-This audit verifies vibestack's 60 skills against the Agent Skills open standard,
+This audit verifies vibestack's 61 skills against the Agent Skills open standard,
 which Claude Code, Cursor (`~/.cursor/skills/`), and Kiro (`~/.kiro/skills/`) all
 implement. The spec standardizes the SKILL.md **file shape** — frontmatter +
 markdown body. It does **not** standardize runtime behavior (hooks, env vars,
@@ -21,7 +21,7 @@ Codex-specific unknowns: invocation is `$name` inside a message, or implicit fro
 the `description`, rather than `/name`,
 and Codex caps its initial skill list at 2% of the context window (or 8,000
 chars), shortening descriptions and possibly omitting skills beyond that — with
-60 skills, some may not surface in the initial list.
+61 skills, some may not surface in the initial list.
 
 **Track A (file-shape spec compliance)** is below. **Track B (per-target runtime
 verification)** has been completed empirically against installed Cursor and Kiro;
@@ -31,13 +31,13 @@ results are in the new "Track B — Empirical Verification" section near the end
 
 | Audit dimension | Pass/Fail | Skills affected |
 |---|---|---|
-| Required `name` field present | 60/60 PASS | — |
-| `name` matches directory basename | 60/60 PASS | — |
-| Required `description` field present | 60/60 PASS | — |
-| Description ≤ 1024 chars (spec limit) | 60/60 PASS | — |
-| YAML frontmatter parseable | 60/60 PASS | — |
+| Required `name` field present | 61/61 PASS | — |
+| `name` matches directory basename | 61/61 PASS | — |
+| Required `description` field present | 61/61 PASS | — |
+| Description ≤ 1024 chars (spec limit) | 61/61 PASS | — |
+| YAML frontmatter parseable | 61/61 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 26 skills | address-pr-review, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, qa, qa-only, scrape, setup-browser-cookies, ship, vibe. Fourteen carry the token in their own SKILL.md (`vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` its own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 27 skills | address-pr-review, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, qa, qa-only, scrape, setup-browser-cookies, ship, telegram, vibe. Fifteen carry the token in their own SKILL.md (`vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
 | Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
@@ -58,7 +58,7 @@ done
 rm -rf "$tmp"
 ```
 
-**Verdict:** All 60 skills are **spec-compliant for file shape**. Cross-target
+**Verdict:** All 61 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
 runtime verification (manual, requires Cursor/Kiro running on the user's machine).
 
@@ -122,6 +122,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | ship | — | yes (in body, not hook) | — | full / full / full |
 | skillify | — | — | — | full / full / full |
 | spec | — | — | — | full / full / full |
+| telegram | — | yes | — | full / full / full (needs `uv`; `voice` needs whisper + ffmpeg) |
 | unfreeze | — | — | — | full / full / full |
 | unslop | — | — | — | full / full / full |
 | vibe-upgrade | — | — | — | full / full / full |
@@ -138,7 +139,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 
 ## Findings
 
-### F1 — All 60 skills are spec-compliant on file shape (PASS)
+### F1 — All 61 skills are spec-compliant on file shape (PASS)
 
 Every skill has a parseable YAML frontmatter block, a required `name` matching
 its directory basename, a required `description` under the spec's 1024-char
@@ -227,7 +228,7 @@ Direct quotes:
   installed Kiro skills at `/Users/timurgaleev/.kiro/skills/office-hours/SKILL.md`."_
 
 Verdict: **all 46 skills the pack shipped on 2026-05-09 were discoverable in
-both targets.** No source-file changes required. The pack ships 60 skills today;
+both targets.** No source-file changes required. The pack ships 61 skills today;
 Track B has not been re-run since, and every count in this section is the count
 as it stood on that date.
 

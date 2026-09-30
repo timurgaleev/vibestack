@@ -496,6 +496,13 @@ Triggers: `scrape this page`, `get data from`, `pull from`, `extract from`
 
 ---
 
+### `/telegram`
+Read chat history, transcribe voice notes with local whisper, and send text and files as the user's own Telegram account (Telethon/MTProto, one-time QR login). `send` requires an exact recipient and has a `--dry-run` that shows who it resolved to; the skill confirms with you before the real send. Incoming messages are treated as untrusted input.
+
+Triggers: `read my telegram`, `listen to the voice message`, `transcribe the voice note`, `send it on telegram`
+
+---
+
 ### `/skillify`
 Turn a working browse/scrape flow into a reusable skill — write a new `SKILL.md` from the captured steps, render-validate, brand-check, and install.
 

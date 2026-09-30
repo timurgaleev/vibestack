@@ -45,6 +45,7 @@ implementing, investigate before fixing, review before shipping.
 | Audit security | `cso` |
 | QA a running web app | `qa` (fixes), `qa-only` (report) |
 | Drive a browser, scrape a page, pair a remote agent | `browse`, `scrape`, `open-browser`, `pair-agent` |
+| Read, transcribe or send Telegram messages as yourself | `telegram` |
 | Review a shipped UI, or explore design directions | `design-review`, `design-shotgun`, `design-consultation` |
 | Ship: tests, version, changelog, PR | `ship` |
 | Address PR review threads and failing CI | `address-pr-review` |
