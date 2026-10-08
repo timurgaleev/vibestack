@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.45.0 — 2026-10-08
+
+### Changed
+
+- **Releases are cut after the merge, not before.** `/ship` no longer tags
+  the version-bump commit or creates a release while the PR is open; it prints
+  `Release deferred` instead. `/land-and-deploy` tags the merge commit once it
+  is confirmed on the base branch and creates the release from that version's
+  CHANGELOG section. An existing tag that points elsewhere is never moved and
+  nothing is force-pushed. Re-running `/ship` on a merged PR cuts the release
+  instead of opening a new PR.
+- **Plan audits use the plan you named.** `/ship` and `/review` bind the plan
+  from the conversation, `/autoplan`, or a `Plan: <path>` line in the PR body.
+  Content search only offers candidates, and the newest file on disk is never
+  taken as the plan. With nothing bound, the audit says it did not run.
+- **One test value bar.** `/ship`, `/review`, `/qa` and the plan reviews write
+  at most five new tests per pass, extend existing tests first, require every
+  test to name what it protects, and weight coverage by test value.
+- **No automatic WIP commits.** The continuous checkpoint mode and the history
+  rewrite that squashed its commits are gone; `/context-save` is unchanged.
+- **A bare Codex review with no verdict reads as unverified**, not clean, on
+  the review dashboard.
+
+### Fixed
+
+- `/ship` runs the documentation sync before the commit, so doc edits go
+  through the final test run; verifies the push against the remote with
+  `ls-remote` and never retries with `--no-verify` or force; handles a repo
+  with no `VERSION` file without inventing one; selects eval suites from the
+  project's own contract.
+- `/codex` treats a review that could not read the diff as a failed run, even
+  when an unrelated command succeeded.
+- Saved context records where each step came from, and `/context-restore`
+  reads the marker with the outcome on either side of it. Learnings lookups
+  report an unavailable store instead of returning nothing.
+
 ## 1.44.0 — 2026-10-08
 
 ### Added
