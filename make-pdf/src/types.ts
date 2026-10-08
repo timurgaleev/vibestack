@@ -105,7 +105,7 @@ export interface BrowsePdfOptions {
   outline?: boolean;
   printBackground?: boolean;
   preferCSSPageSize?: boolean;
-  toc?: boolean;                  // signals browse to wait for Paged.js
+  toc?: boolean;
 }
 
 /**
@@ -116,7 +116,7 @@ export const ExitCode = {
   Success: 0,
   BadArgs: 1,
   RenderError: 2,
-  PagedJsTimeout: 3,
+  TocPagination: 3,
   BrowseUnavailable: 4,
 } as const;
 export type ExitCode = typeof ExitCode[keyof typeof ExitCode];

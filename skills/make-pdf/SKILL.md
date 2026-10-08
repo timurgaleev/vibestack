@@ -69,7 +69,7 @@ If `NOT_FOUND`, stop and tell the user:
 Parse the user's input to determine what to do:
 
 1. `/make-pdf` with no args — **Auto-detect**: look for markdown files or ask what to convert
-2. `/make-pdf preview <file>` — **Preview mode**: generate and open a PDF preview
+2. `/make-pdf preview <file>` — **Preview mode**: render the print-styled HTML and open it in a browser
 3. `/make-pdf setup` — **Setup mode**: run `$P setup` to configure defaults
 4. `/make-pdf <file or description>` — **Generate mode**: produce a PDF from the specified input
 
@@ -88,18 +88,19 @@ Parse the user's input to determine what to do:
 
 2. Determine output filename. Default: `<source-basename>.pdf` in the same directory.
 
-3. Run the generator:
+3. Run the generator. The output path is the second positional argument — there is no
+   `--output` flag, and any flag the CLI does not know fails the run with exit 1:
 
 ```bash
-"$P" generate "<source>" --output "<output.pdf>" [flags]
+"$P" generate "<source>" "<output.pdf>" [flags]
 ```
 
 Common flags:
 - `--cover` — add a cover page (uses repo name + date)
-- `--toc` — add a table of contents
+- `--toc` — add a table of contents with page numbers
 - `--watermark "<text>"` — overlay watermark text (e.g., "DRAFT", "CONFIDENTIAL")
 - `--margins <dim>` — one dimension for all four margins (default: `1in`; also `72pt`, `2.54cm`, `25mm`)
-- `--page-size <size>` — A4 (default), Letter, Legal
+- `--page-size <size>` — `letter` (default), `a4`, `legal`
 - `--title "<title>"` — override document title
 - `--author "<name>"` — set author metadata
 - `--to pdf|html|docx` — output format (default: `pdf`)
@@ -121,13 +122,13 @@ Pages:   <page count>
 
 ## Step 2B: Preview mode
 
-Generate the PDF and open it:
+Render the print-styled HTML and open it:
 
 ```bash
 "$P" preview "<source>" [flags]
 ```
 
-This generates a temporary PDF and opens it in the system PDF viewer. Report the path if the user wants to save it.
+This writes an HTML file with the print CSS and opens it in the browser; no PDF is produced. Preview skips the diagram and image pre-pass, so diagram fences show as code. Report the path, and run generate mode when the user wants the PDF.
 
 ---
 
@@ -317,7 +318,7 @@ stderr: Rendering HTML...        ← progress (unless --quiet)
         Generating PDF...
         Done in 1.5s. 43 words · 22KB · /tmp/letter.pdf
 
-exit code: 0 success / 1 bad args / 2 render error / 3 Paged.js timeout / 4 binary unavailable
+exit code: 0 success / 1 bad args or unknown flag / 2 render error / 3 TOC page numbers failed / 4 binary unavailable
 ```
 
 Capture the path: `PDF=$("$P" generate letter.md)` — then use `$PDF`.
@@ -328,7 +329,9 @@ Capture the path: `PDF=$("$P" generate letter.md)` — then use `$PDF`.
 
 - **Blank output** → check binary is executable: `ls -la "$P"`
 - **Fragmented text on copy-paste** → remove fenced code blocks and regenerate
-- **Timeout** → no headings in the markdown, drop `--toc`
+- **Exit 3 with `--toc`** → the TOC page numbers could not be filled (they kept moving after
+  three prints, or the PDF had no destination for a heading); shorten the longest TOC entries or
+  drop `--toc`
 - **External image missing** → the binary fetches external images only when `--allow-network` is set
 - **Wrong text metrics or ▯ boxes where emoji should be (Linux, containers)** → the print CSS
   falls back to Liberation Sans and a system color-emoji font; install `fonts-liberation` and a

@@ -6,8 +6,10 @@
  * mocked by manipulating strings directly).
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { normalize, copyPasteGate, findExecutable, resolvePdftotext, PdftotextUnavailableError } from "../src/pdftotext";
 
@@ -145,6 +147,18 @@ describe("findExecutable (pdftotext.ts)", () => {
   test("returns null when no extension matches", () => {
     expect(findExecutable("/nonexistent/path/to/nothing")).toBeNull();
   });
+
+  // access(X_OK) is true for directories (the traverse bit), so a bare X_OK
+  // probe would accept a directory as the binary. Only regular files count.
+  test("rejects a directory even though it passes access(X_OK)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mkpdf-dir-"));
+    try {
+      fs.accessSync(dir, fs.constants.X_OK);
+      expect(findExecutable(dir)).toBeNull();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("resolvePdftotext (override resolution, v1.24-aligned)", () => {
@@ -203,5 +217,58 @@ describe("resolvePdftotext (override resolution, v1.24-aligned)", () => {
       expect((thrown as Error).message).toContain("Windows");
       expect((thrown as Error).message).toContain("scoop install poppler");
     }
+  });
+});
+
+// ─── Version + flavor probe ─────────────────────────────────────────
+//
+// poppler writes its -v banner to stderr and exits 0, and names itself only on
+// the copyright line. Shell shims reproduce each vendor's banner, stream and
+// exit status, since a real pdftotext cannot be assumed present in CI.
+
+describe("version + flavor probe", () => {
+  const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "pdftotext-shim-"));
+  afterAll(() => fs.rmSync(shimDir, { recursive: true, force: true }));
+
+  function shim(name: string, body: string): string {
+    const p = path.join(shimDir, name);
+    fs.writeFileSync(p, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    return p;
+  }
+
+  const posixOnly = test.skipIf(process.platform === "win32");
+
+  posixOnly("reads a poppler banner from stderr on a zero exit", () => {
+    const bin = shim("poppler-pdftotext", [
+      'if [ "$1" = "-v" ]; then',
+      '  echo "pdftotext version 26.06.0" >&2',
+      '  echo "Copyright 2005-2026 The Poppler Developers - http://poppler.freedesktop.org" >&2',
+      "fi",
+      "exit 0",
+    ].join("\n"));
+    const info = withEnv({ VIBESTACK_PDFTOTEXT_BIN: bin }, () => resolvePdftotext());
+    expect(info.version).toBe("pdftotext version 26.06.0");
+    expect(info.flavor).toBe("poppler");
+  });
+
+  posixOnly("reads an xpdf banner from stderr on a non-zero exit", () => {
+    const bin = shim("xpdf-pdftotext", [
+      'if [ "$1" = "-v" ]; then',
+      '  echo "pdftotext version 4.05 [xpdf]" >&2',
+      '  echo "Copyright 1996-2024 Glyph & Cog, LLC" >&2',
+      "  exit 99",
+      "fi",
+      "exit 0",
+    ].join("\n"));
+    const info = withEnv({ VIBESTACK_PDFTOTEXT_BIN: bin }, () => resolvePdftotext());
+    expect(info.version).toBe("pdftotext version 4.05 [xpdf]");
+    expect(info.flavor).toBe("xpdf");
+  });
+
+  posixOnly("falls back to unknown when the binary prints no banner", () => {
+    const bin = shim("silent-pdftotext", "exit 0");
+    const info = withEnv({ VIBESTACK_PDFTOTEXT_BIN: bin }, () => resolvePdftotext());
+    expect(info.version).toBe("unknown");
+    expect(info.flavor).toBe("unknown");
   });
 });

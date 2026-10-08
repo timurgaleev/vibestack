@@ -7,20 +7,32 @@
  *   stderr: progress spinner per stage, final "Done in Xs. N pages."
  *   --quiet: suppress progress. Errors still print.
  *   --verbose: per-stage timings.
- *   exit 0 success / 1 bad args / 2 render error / 3 Paged.js timeout / 4 browse unavailable.
+ *   exit 0 success / 1 bad args (incl. unknown flags) / 2 render error /
+ *   3 TOC page numbers failed / 4 browse unavailable.
  */
 
 import { COMMANDS } from "./commands";
 import { ExitCode, BrowseClientError } from "./types";
 import type { GenerateOptions, PreviewOptions } from "./types";
 
-interface ParsedArgs {
+export interface ParsedArgs {
   command: string;
   positional: string[];
   flags: Record<string, string | boolean>;
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+// Boolean flags never consume the next token — otherwise
+// `generate --cover --toc essay.md` would eat the input path.
+export const BOOLEAN_FLAGS = new Set([
+  "cover", "toc", "no-chapter-breaks",
+  "confidential", "no-confidential",
+  "page-numbers", "no-page-numbers",
+  "tagged", "no-tagged",
+  "outline", "no-outline",
+  "quiet", "verbose", "allow-network", "strict",
+]);
+
+export function parseArgs(argv: string[]): ParsedArgs {
   const args = argv.slice(2);
   if (args.length === 0) {
     printUsage();
@@ -31,17 +43,6 @@ function parseArgs(argv: string[]): ParsedArgs {
   let command = "";
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
-
-  // Boolean flags never consume the next token — otherwise
-  // `generate --cover --toc essay.md` would eat the input path.
-  const BOOLEAN_FLAGS = new Set([
-    "cover", "toc", "no-chapter-breaks",
-    "confidential", "no-confidential",
-    "page-numbers", "no-page-numbers",
-    "tagged", "no-tagged",
-    "outline", "no-outline",
-    "quiet", "verbose", "allow-network", "strict",
-  ]);
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -62,6 +63,18 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return { command, positional, flags };
+}
+
+/**
+ * Flags the command does not declare in commands.ts. A misspelled or invented
+ * flag must fail loudly: the parser would otherwise take `--output out.pdf`
+ * as an ignored value flag and write the PDF to the default path instead.
+ */
+export function unknownFlags(parsed: ParsedArgs): string[] {
+  const known = new Set(COMMANDS.get(parsed.command)?.flags ?? []);
+  return Object.keys(parsed.flags)
+    .map((key) => `--${key}`)
+    .filter((flag) => !known.has(flag));
 }
 
 function printUsage(): void {
@@ -86,7 +99,7 @@ function printUsage(): void {
   lines.push("");
   lines.push("Document structure:");
   lines.push("  --cover                   Add a cover page.");
-  lines.push("  --toc                     Generate clickable table of contents.");
+  lines.push("  --toc                     Generate clickable table of contents with page numbers.");
   lines.push("  --no-chapter-breaks       Don't start a new page at every H1.");
   lines.push("");
   lines.push("Branding:");
@@ -216,6 +229,19 @@ async function main(): Promise<void> {
     process.exit(ExitCode.BadArgs);
   }
 
+  const unknown = unknownFlags(parsed);
+  if (unknown.length > 0) {
+    console.error(`$P ${parsed.command}: unknown flag${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}`);
+    if (unknown.includes("--output")) {
+      console.error(`The output path is the second positional: $P ${COMMANDS.get(parsed.command)!.usage}`);
+    }
+    if (unknown.some((f) => f.includes("="))) {
+      console.error("Flags take their value as a separate argument: --page-size a4, not --page-size=a4.");
+    }
+    console.error("Run `$P` with no arguments for the flag list.");
+    process.exit(ExitCode.BadArgs);
+  }
+
   try {
     switch (parsed.command) {
       case "version": {
@@ -271,9 +297,9 @@ async function main(): Promise<void> {
       console.error(`$P: file not found: ${err.path ?? err.message}`);
       process.exit(ExitCode.BadArgs);
     }
-    if (err?.name === "PagedJsTimeout") {
-      console.error(`$P: ${err.message}`);
-      process.exit(ExitCode.PagedJsTimeout);
+    if (err?.name === "TocPaginationError") {
+      console.error(`$P: --toc: ${err.message}`);
+      process.exit(ExitCode.TocPagination);
     }
     console.error(`$P: ${err?.message ?? String(err)}`);
     if (parsed.flags.verbose && err?.stack) {
@@ -283,4 +309,5 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// Guarded so tests can import parseArgs without running the CLI.
+if (import.meta.main) main();

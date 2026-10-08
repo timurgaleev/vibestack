@@ -56,6 +56,24 @@ describe("smartypants", () => {
     expect(out).toContain("\u201cdetails\u201d");
   });
 
+  test("keeps the closing tag when a URL sits flush against it", () => {
+    const input = `<a href="https://x.com">https://x.com</a> "ok"`;
+    const out = smartypants(input);
+    expect(out).toBe(`<a href="https://x.com">https://x.com</a> “ok”`);
+    expect(out).not.toContain("\u0000");
+  });
+
+  test("keeps every tag in a run of linked URLs", () => {
+    const input = `<p><a href="https://a.io">https://a.io</a><br><a href="https://b.io">https://b.io</a></p>`;
+    expect(smartypants(input)).toBe(input);
+  });
+
+  test("strips stray NULs so input cannot forge a placeholder", () => {
+    const out = smartypants(`<p>x\u0000SMARTPANTS_PRESERVED_0\u0000y</p>`);
+    expect(out).toBe(`<p>xSMARTPANTS_PRESERVED_0y</p>`);
+    expect(out).not.toContain("\u0000");
+  });
+
   test("does NOT touch HTML attribute values", () => {
     const out = smartypants(`<a href="it's-a-test.html">link</a>`);
     expect(out).toContain(`href="it's-a-test.html"`);

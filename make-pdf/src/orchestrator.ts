@@ -37,6 +37,7 @@ import {
   substituteSlots,
 } from "./diagram-prepass";
 import { applyImagePolicy } from "./image-policy";
+import { printWithTocPages } from "./toc-pages";
 
 class ProgressReporter {
   private readonly quiet: boolean;
@@ -251,52 +252,50 @@ export async function generate(opts: GenerateOptions): Promise<string> {
   const htmlTmp = tmpFile("html");
   fs.writeFileSync(htmlTmp, finalHtml, "utf8");
 
-  // Stage 4: spin up a dedicated tab, load HTML, (wait for Paged.js if TOC),
-  // then emit PDF. Always close the tab.
+  // Stage 4: spin up a dedicated tab, load HTML, then emit PDF. With --toc,
+  // toc-pages.ts prints until each TOC page cell holds the page the PDF itself
+  // puts that heading on. Always close the tab.
   progress.begin("Opening tab");
   const tabId = browseClient.newtab();
   progress.end("Opening tab", `tabId=${tabId}`);
 
   try {
-    progress.begin("Loading HTML into Chromium");
-    browseClient.loadHtml({
-      html: finalHtml,
-      waitUntil: "domcontentloaded",
-      tabId,
-    });
-    progress.end("Loading HTML into Chromium");
-
-    if (opts.toc) {
-      progress.begin("Paginating with Paged.js");
-      // Browse's $B pdf already waits internally when --toc is passed.
-      // We pass toc=true to browseClient.pdf() below.
-      progress.end("Paginating with Paged.js", "Paged.js after");
-    }
+    const print = (html: string, out: string): void => {
+      browseClient.loadHtml({
+        html,
+        waitUntil: "domcontentloaded",
+        tabId,
+      });
+      browseClient.pdf({
+        output: out,
+        tabId,
+        format: opts.pageSize ?? "letter",
+        marginTop: opts.marginTop ?? opts.margins ?? "1in",
+        marginRight: opts.marginRight ?? opts.margins ?? "1in",
+        marginBottom: opts.marginBottom ?? opts.margins ?? "1in",
+        marginLeft: opts.marginLeft ?? opts.margins ?? "1in",
+        headerTemplate: opts.headerTemplate,
+        footerTemplate: opts.footerTemplate,
+        // CSS is the single source of truth for page numbers (see print-css.ts
+        // @bottom-center). Chromium's native numbering always off to avoid double
+        // footers. The CSS layer honors pageNumbers + footerTemplate via render().
+        pageNumbers: false,
+        tagged: opts.tagged !== false,
+        outline: opts.outline !== false,
+        printBackground: !!opts.watermark,
+        // Named landscape pages only take effect when Chromium honors CSS page
+        // sizes. Flip it ONLY when a promotion exists — minimal behavior change
+        // for every other document.
+        preferCSSPageSize: hasLandscape ? true : undefined,
+      });
+    };
 
     progress.begin("Generating PDF");
-    browseClient.pdf({
-      output: outputPath,
-      tabId,
-      format: opts.pageSize ?? "letter",
-      marginTop: opts.marginTop ?? opts.margins ?? "1in",
-      marginRight: opts.marginRight ?? opts.margins ?? "1in",
-      marginBottom: opts.marginBottom ?? opts.margins ?? "1in",
-      marginLeft: opts.marginLeft ?? opts.margins ?? "1in",
-      headerTemplate: opts.headerTemplate,
-      footerTemplate: opts.footerTemplate,
-      // CSS is the single source of truth for page numbers (see print-css.ts
-      // @bottom-center). Chromium's native numbering always off to avoid double
-      // footers. The CSS layer honors pageNumbers + footerTemplate via render().
-      pageNumbers: false,
-      tagged: opts.tagged !== false,
-      outline: opts.outline !== false,
-      printBackground: !!opts.watermark,
-      // Named landscape pages only take effect when Chromium honors CSS page
-      // sizes. Flip it ONLY when a promotion exists — minimal behavior change
-      // for every other document.
-      preferCSSPageSize: hasLandscape ? true : undefined,
-      toc: opts.toc,
-    });
+    if (opts.toc) {
+      await printWithTocPages(finalHtml, outputPath, print);
+    } else {
+      print(finalHtml, outputPath);
+    }
     progress.end("Generating PDF");
 
     const stat = fs.statSync(outputPath);
