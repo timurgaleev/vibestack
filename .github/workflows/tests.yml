@@ -69,6 +69,7 @@ jobs:
           - test-autoplan-ledger.sh
           - test-plan-design-review.sh
           - test-design-saved-paths.sh
+          - test-untrusted-shell-text.sh
     steps:
       - uses: actions/checkout@v4
 

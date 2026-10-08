@@ -10,6 +10,7 @@ triggers:
 allowed-tools:
   - Bash
   - Read
+  - Write
   - AskUserQuestion
 ---
 
@@ -73,7 +74,20 @@ Use AskUserQuestion with the preamble format:
 
 If A: list skills that have SKILL.md files (from `find ~/.claude/skills -name SKILL.md -not -path '*/vibestack/*'`), ask the user to pick one via a second AskUserQuestion. Use the picked SKILL.md path as the prompt file.
 
-If B: ask the user for the inline prompt. Use it verbatim via `--prompt "<text>"`.
+If B: ask the user for the inline prompt. It never goes on the command line — inside
+shell quotes its backticks and `$(...)` would run on this machine. Create a private
+file for it:
+
+```bash
+PROMPT_FILE=$(mktemp "${TMPDIR:-/tmp}/vibe-bench-prompt-XXXXXXXX")
+echo "PROMPT_FILE: $PROMPT_FILE"
+```
+
+Read the empty file, then Write the prompt into the printed path verbatim with the
+Write tool, and use that path as the positional argument, exactly as in C. The file holds
+the user's text, so remove it once the benchmark finishes or stops early — run
+`rm -f "<PROMPT_FILE>"` with the printed path before the final report, including after
+an error or a cancelled run.
 
 If C: ask for the path. Verify it exists. Use as positional argument.
 
@@ -124,7 +138,8 @@ Construct the command from Step 1, 2, 3 decisions:
 "$BIN" <prompt-spec> --models <picked-models> [--judge] --output table
 ```
 
-Where `<prompt-spec>` is either `--prompt "<text>"` (Step 1B), a file path (Step 1A or 1C), and `<picked-models>` is the comma-separated list from Step 2.
+Where `<prompt-spec>` is a file path (the SKILL.md from Step 1A, the printed
+`PROMPT_FILE` from Step 1B, or the path from Step 1C), and `<picked-models>` is the comma-separated list from Step 2.
 
 Stream the output as it arrives. This is slow — each provider runs the prompt fully. Expect 30s-5min depending on prompt complexity and whether `--judge` is on.
 

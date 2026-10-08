@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.47.0 — 2026-10-09
+
+### Security
+
+- **Untrusted text never becomes shell source.** PR and MR bodies, spec drafts,
+  user questions, custom review instructions, focus text, design briefs,
+  review replies and inline benchmark prompts used to be pasted into heredocs
+  or quoted shell arguments. A line equal to the heredoc delimiter, a backtick
+  or a `$(...)` in that text ran as a command on your machine. Every one of
+  these paths now has the model write the text to a private file with the
+  Write tool and hands the file to `gh`, `glab`, `codex`, `claude` or
+  `vibe-design` by path, stdin or a single subprocess argument. Affected:
+  `/ship`, `/spec`, `/claude`, `/pr-summary`, `/address-pr-review`,
+  `/benchmark-models`, `/design-consultation`, `/design-review` and
+  `/office-hours`.
+- **A permanent guard.** A new test scans every shell block in every rendered
+  skill, sub-doc and snippet for a heredoc or quoted argument that holds a
+  placeholder for external text, runs the fixed skills against hostile input,
+  and fails when a skill uses the Write tool without granting it.
+
+### Added
+
+- `vibe-design --brief-file PATH` and `pr-thread-reply.sh --body-file PATH`.
+
 ## 1.46.0 — 2026-10-09
 
 ### Changed

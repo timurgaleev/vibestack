@@ -1,7 +1,7 @@
 ---
 name: pr-summary
 description: Analyze all PR changes and update PR description with accurate summary.
-allowed-tools: Read, Bash, Grep, Glob
+allowed-tools: Read, Write, Bash, Grep, Glob
 ---
 
 ## Preamble
@@ -155,23 +155,25 @@ If the existing body contains user-added content, preserve it in a `## Notes` se
 
 ### Step 6: Update PR Description
 
+The body quotes commit messages, diff content and the existing PR text, so it
+never appears in shell source — not in a quoted argument, and not in a heredoc
+either: a line equal to the terminator ends the heredoc and everything after it
+runs as shell. Create a private file for it:
+
 ```bash
-gh pr edit {PR_NUMBER} --body "$(cat <<'EOF'
-## Summary
-- {accurate summary based on analysis}
+PR_BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/vibe-pr-summary-XXXXXXXX")
+echo "PR_BODY_FILE: $PR_BODY_FILE"
+```
 
-## Changes
-- {change 1}: {why}
-- {change 2}: {why}
+Read the empty file, then **Write the body into the printed `PR_BODY_FILE` with the
+Write tool**, in the Step 5 format with every section filled from the analysis
+(omit Breaking Changes when there are none). Then publish that file, substituting
+the printed path and the PR number:
 
-## Breaking Changes
-- {if any, otherwise omit this section}
-
-## Test Plan
-- [ ] {verification step 1}
-- [ ] {verification step 2}
-EOF
-)"
+```bash
+PR_BODY_FILE='<PR_BODY_FILE>'
+[ -s "$PR_BODY_FILE" ] || { echo "ABORT: $PR_BODY_FILE is empty — write the body with the Write tool first" >&2; exit 1; }
+gh pr edit {PR_NUMBER} --body-file "$PR_BODY_FILE" && rm -f "$PR_BODY_FILE"
 ```
 
 ### Step 7: Verify Update

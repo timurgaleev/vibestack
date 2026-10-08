@@ -1002,9 +1002,20 @@ For each fixable finding, in impact order:
 
 If the vibestack designer is available and the finding involves visual layout, hierarchy, or spacing (not just a CSS value fix like wrong color or font-size), generate a target mockup showing what the corrected version should look like:
 
+Create the finding directory first, so the Write tool has a parent to write into:
+
 ```bash
-$D variants --count 1 --output-dir "$REPORT_DIR/mockups/finding-NNN" \
-  --brief "<description of the page/component with the finding fixed, referencing DESIGN.md constraints>"
+mkdir -p "$REPORT_DIR/mockups/finding-NNN" && echo "FINDING_DIR: $REPORT_DIR/mockups/finding-NNN"
+```
+
+Describe the page/component with the finding fixed, referencing DESIGN.md constraints. The description draws on page content and DESIGN.md, so it never appears in shell source — not in a quoted argument, not in a heredoc. **Write it with the Write tool** to `brief.txt` inside `$REPORT_DIR/mockups/finding-NNN/` (the same finding directory), then run:
+
+```bash
+FINDING_DIR="$REPORT_DIR/mockups/finding-NNN"
+BRIEF_FILE="$FINDING_DIR/brief.txt"
+[ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
+  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
+$D variants --count 1 --output-dir "$FINDING_DIR" --brief-file "$BRIEF_FILE"
 ```
 
 The mockup's path is the one printed on the `saved:` line (`$D` never overwrites, so a rerun for the same finding saves `variant-A-2.png`). Record that path for the finding; no `saved:` line means no mockup — note the `DESIGN_ERROR` and continue without one.

@@ -73,6 +73,9 @@ out=""; prev=""
 for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
 printf '%s\n' "$*" >> "$VD_LOG"
 [ -n "$out" ] && cp "$VD_RESP" "$out"
+if [ -n "${VD_REQ:-}" ]; then
+  for a in "$@"; do case "$a" in @*) cp "${a#@}" "$VD_REQ" ;; esac; done
+fi
 printf '%s' "${VD_HTTP:-200}"
 exit "${VD_RC:-0}"
 SH
@@ -174,6 +177,34 @@ VD_RESP="$VD/two.json" TMPDIR=/nonexistent/vibe-design-test vd "$TMP/vd-notmp" -
   && [ "$(grep -c '^failed: variant-[AB]: ' <<<"$vd_out")" -eq 2 ] && ! grep -q '^saved: ' <<<"$vd_out" \
   && ok "design reports a missing TMPDIR as DESIGN_ERROR with exit 2" \
   || no "design missing TMPDIR ($vd_rc): $vd_out"
+
+# --brief-file: the brief travels from a file to the request byte-for-byte, and
+# hostile text in it (a heredoc terminator line, $(...), backticks, quotes) is
+# never evaluated.
+vdf() { # vdf ARGS... ; like vd, without the default --brief
+  vd_out="$(PATH="$VD/bin:$PATH" OPENAI_API_KEY=dummy VD_LOG="$VD/argv.log" \
+    "$BIN/vibe-design" variants "$@" 2>&1)" && vd_rc=0 || vd_rc=$?
+}
+VDS="$TMP/vd-sentinel"
+printf 'Hero: "Ship it" today\nEOF\ntouch %s.1\n$(touch %s.2)\n`touch %s.3`\n'"'"'; touch %s.4; '"'"'\n' \
+  "$VDS" "$VDS" "$VDS" "$VDS" > "$VD/brief.txt"
+VD_RESP="$VD/two.json" VD_REQ="$VD/req.json" vdf --brief-file "$VD/brief.txt" --output-dir "$TMP/vd-bf" --count 1
+if [ "$vd_rc" -eq 0 ] && python3 -c 'import json,sys
+req=json.load(open(sys.argv[1])); want=open(sys.argv[2]).read().rstrip("\n")
+sys.exit(0 if req["prompt"]==want else 1)' "$VD/req.json" "$VD/brief.txt" \
+  && [ -z "$(ls "$VDS".* 2>/dev/null)" ]; then
+  ok "design --brief-file sends the file's text verbatim and runs none of it"
+else
+  no "design --brief-file ($vd_rc): $vd_out; sentinels: $(ls "$VDS".* 2>/dev/null)"
+fi
+VD_RESP="$VD/two.json" vdf --brief-file "$VD/brief.txt" --brief x --output-dir "$TMP/vd-bf2"
+[ "$vd_rc" -eq 1 ] && ok "design rejects --brief with --brief-file" || no "design accepted both brief flags ($vd_rc)"
+VD_RESP="$VD/two.json" vdf --brief-file "$VD/no-such-brief.txt" --output-dir "$TMP/vd-bf3"
+[ "$vd_rc" -eq 1 ] && grep -q 'cannot read brief file' <<<"$vd_out" \
+  && ok "design rejects a missing brief file" || no "design missing brief file ($vd_rc): $vd_out"
+: > "$VD/empty-brief.txt"
+VD_RESP="$VD/two.json" vdf --brief-file "$VD/empty-brief.txt" --output-dir "$TMP/vd-bf4"
+[ "$vd_rc" -eq 1 ] && ok "design rejects an empty brief file" || no "design accepted an empty brief file ($vd_rc)"
 
 # vibe-question-log — the only writer of the log /plan-tune reads
 "$BIN/vibe-question-log" '{"skill":"ship","question_id":"ship:t","question_summary":"Tests failed","user_choice":"fix","recommended":"fix"}' >/dev/null 2>&1 \

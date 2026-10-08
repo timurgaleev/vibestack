@@ -9,6 +9,7 @@ triggers:
 allowed-tools:
   - Bash
   - Read
+  - Write
   - AskUserQuestion
 ---
 
@@ -92,7 +93,10 @@ All `claude -p` calls MUST include:
 Never pass `Bash`, `Edit`, or `Write` to nested Claude in this skill.
 
 All prompts MUST be written to a temp file and fed through stdin. Never interpolate
-user text directly into the shell command.
+user text directly into the shell command — not into a quoted argument, and not into
+a heredoc either: a line of user text equal to the terminator ends the heredoc and
+everything after it runs as shell. User text reaches the prompt only through
+`USER_TEXT_FILE`, which you fill with the Write tool.
 
 ---
 
@@ -118,12 +122,19 @@ Create temp files:
 PROMPT_FILE=$(mktemp /tmp/vibe-claude-prompt-XXXXXX)
 RESP_FILE=$(mktemp /tmp/vibe-claude-response-XXXXXX.json)
 ERR_FILE=$(mktemp /tmp/vibe-claude-error-XXXXXX.txt)
+USER_TEXT_FILE=$(mktemp /tmp/vibe-claude-user-XXXXXX)
+echo "USER_TEXT_FILE: $USER_TEXT_FILE"
 ```
+
+`mktemp` creates each file readable by you alone. The user's instructions, focus
+area or question go into the printed `USER_TEXT_FILE` — **Read the empty file, then
+Write the user's text into it verbatim with the Write tool.** Leave it empty when
+the user gave none (review and challenge only; consult always has a question).
 
 Cleanup at the end of every mode:
 
 ```bash
-rm -f "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE"
+rm -f "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 
 Parse JSON output:
@@ -180,20 +191,22 @@ git diff "origin/$BASE_BRANCH" > "$DIFF_FILE" 2>/dev/null || git diff "$BASE_BRA
 If the diff file is empty, stop and say:
 "Nothing to review - no changes against the base branch."
 
-2. Write the prompt file:
+2. Write any custom review instructions the user gave into `USER_TEXT_FILE` with the
+   Write tool (see Shared Helpers), then assemble the prompt file:
 
 ```bash
-cat > "$PROMPT_FILE" <<'EOF'
+{
+  cat <<'EOF'
 You are a brutally honest Claude Code reviewer. Review this git diff for bugs,
 production failure modes, security issues, missing tests, and maintainability
 problems. Be direct. No compliments. Reference files and changed code where possible.
 
 Additional user instructions, if any:
-<custom review instructions>
-
-DIFF:
 EOF
-cat "$DIFF_FILE" >> "$PROMPT_FILE"
+  cat "$USER_TEXT_FILE"
+  printf '\nDIFF:\n'
+  cat "$DIFF_FILE"
+} > "$PROMPT_FILE"
 ```
 
 3. Run Claude:
@@ -214,7 +227,7 @@ CLAUDE SAYS (code review):
 5. Cleanup:
 
 ```bash
-rm -f "$DIFF_FILE" "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE"
+rm -f "$DIFF_FILE" "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 
 ---
@@ -225,21 +238,23 @@ Run an adversarial failure-mode review with nested Claude in tool-less mode.
 
 1. Capture the diff using the same diff commands from Review mode.
 
-2. Write the prompt:
+2. Write the focus area the user gave, if any, into `USER_TEXT_FILE` with the Write
+   tool (see Shared Helpers), then assemble the prompt:
 
 ```bash
-cat > "$PROMPT_FILE" <<'EOF'
+{
+  cat <<'EOF'
 You are an adversarial Claude Code reviewer. Try to break this change before users do.
 Find edge cases, race conditions, security holes, resource leaks, silent data
 corruption, bad error handling, and operational failure modes. Be thorough. No
 compliments. If the user provided a focus area, prioritize it.
 
 Focus area, if any:
-<focus>
-
-DIFF:
 EOF
-cat "$DIFF_FILE" >> "$PROMPT_FILE"
+  cat "$USER_TEXT_FILE"
+  printf '\nDIFF:\n'
+  cat "$DIFF_FILE"
+} > "$PROMPT_FILE"
 ```
 
 3. Run Claude:
@@ -260,7 +275,7 @@ CLAUDE SAYS (adversarial challenge):
 5. Cleanup:
 
 ```bash
-rm -f "$DIFF_FILE" "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE"
+rm -f "$DIFF_FILE" "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 
 ---
@@ -278,18 +293,22 @@ cat .context/claude-session-id 2>/dev/null || echo "NO_SESSION"
 
 If a session exists, ask the user whether to continue it or start fresh.
 
-2. Write the prompt:
+2. Write the user's question into `USER_TEXT_FILE` with the Write tool (see Shared
+   Helpers), then assemble the prompt:
 
 ```bash
-cat > "$PROMPT_FILE" <<'EOF'
+[ -s "$USER_TEXT_FILE" ] || { echo "QUESTION_MISSING: write the question into $USER_TEXT_FILE with the Write tool first" >&2; exit 1; }
+{
+  cat <<'EOF'
 You are Claude Code acting as an independent outside voice for this repository.
 Answer the user's question directly. You may inspect repository files with Read,
 Grep, and Glob only. Do not use Bash. Do not edit or write files. Do not invoke
 slash commands or vibestack skills.
 
 USER QUESTION:
-<user prompt>
 EOF
+  cat "$USER_TEXT_FILE"
+} > "$PROMPT_FILE"
 ```
 
 3. Run Claude.
@@ -337,7 +356,7 @@ Session saved - run /claude again to continue this conversation.
 6. Cleanup:
 
 ```bash
-rm -f "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE"
+rm -f "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 
 ---

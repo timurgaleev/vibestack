@@ -6,6 +6,10 @@
 # Usage:
 #   vibe-design status
 #   vibe-design variants --brief "<prompt>" [--count N] [--output-dir <dir>] [--size WxH]
+#   vibe-design variants --brief-file <path> [--count N] [--output-dir <dir>] [--size WxH]
+#
+# --brief-file reads the brief from a file, so a brief written from plan or user
+# text never has to appear in shell source. --brief and --brief-file are exclusive.
 #
 # variants never overwrites: when variant-A.png already exists (an earlier round,
 # an approved mockup) the image is saved as variant-A-2.png, -3, and so on. Every
@@ -33,17 +37,24 @@ case "${1:-}" in
     [ -n "$KEY" ] || { echo "DESIGN_NOT_AVAILABLE: set OPENAI_API_KEY"; exit 0; }
     command -v curl >/dev/null 2>&1 || { echo "DESIGN_NOT_AVAILABLE: curl not found"; exit 0; }
     shift
-    brief=""; count=1; outdir="."; size="1024x1024"
+    brief=""; brief_file=""; brief_set=0; count=1; outdir="."; size="1024x1024"
     while [ $# -gt 0 ]; do
       case "$1" in
-        --brief) brief="${2:-}"; shift 2 ;;
+        --brief) brief="${2:-}"; brief_set=1; shift 2 ;;
+        --brief-file) brief_file="${2:-}"; shift 2 ;;
         --count) count="${2:-1}"; shift 2 ;;
         --output-dir) outdir="${2:-.}"; shift 2 ;;
         --size) size="${2:-1024x1024}"; shift 2 ;;
         *) shift ;;
       esac
     done
-    [ -n "$brief" ] || { echo "usage: vibe-design variants --brief <prompt> [--count N] [--output-dir <dir>]"; exit 1; }
+    if [ -n "$brief_file" ]; then
+      [ "$brief_set" = 0 ] || { echo "vibe-design: use --brief or --brief-file, not both"; exit 1; }
+      { [ -f "$brief_file" ] && [ -r "$brief_file" ]; } || { echo "vibe-design: cannot read brief file '$brief_file'"; exit 1; }
+      brief="$(cat "$brief_file")"
+      [ -n "$brief" ] || { echo "vibe-design: brief file '$brief_file' is empty"; exit 1; }
+    fi
+    [ -n "$brief" ] || { echo "usage: vibe-design variants --brief <prompt> | --brief-file <path> [--count N] [--output-dir <dir>]"; exit 1; }
     case "$count" in
       [1-9]|10) ;;
       *) echo "vibe-design: --count must be 1-10, got '$count'"; exit 1 ;;
@@ -193,6 +204,6 @@ PY
     echo "DESIGN_${1}_NOT_SUPPORTED: vibestack generates design variants only"
     exit 0 ;;
   *)
-    echo "usage: vibe-design status | variants --brief <prompt> [--count N] [--output-dir <dir>] [--size WxH]"
+    echo "usage: vibe-design status | variants --brief <prompt> | --brief-file <path> [--count N] [--output-dir <dir>] [--size WxH]"
     exit 1 ;;
 esac

@@ -568,8 +568,17 @@ explore wide across diverse directions.
 
 **Step 3: Generate 3 variants**
 
+The brief is assembled from the user's idea and DESIGN.md, so it never appears in
+shell source — not in a quoted argument, not in a heredoc (a line equal to the
+terminator ends a heredoc and the rest runs as commands). **Write the assembled
+brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above,
+replacing any earlier brief there, then run:
+
 ```bash
-$D variants --brief "<assembled brief>" --count 3 --output-dir "$_DESIGN_DIR/"
+BRIEF_FILE="$_DESIGN_DIR/brief.txt"
+[ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
+  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
+$D variants --brief-file "$BRIEF_FILE" --count 3 --output-dir "$_DESIGN_DIR/"
 ```
 
 This generates 3 style variations of the same brief (~40 seconds total). Each image
@@ -595,7 +604,7 @@ If `$D serve` is not available or fails, fall back to AskUserQuestion:
 
 If the JSON contains `"regenerated": true`:
 1. Read `regenerateAction` (or `remixSpec` for remix requests)
-2. Generate new variants with `$D iterate` or `$D variants` using updated brief
+2. Rewrite `$_DESIGN_DIR/brief.txt` with the updated brief (Write tool) and rerun the Step 3 `$D variants` block
 3. Create new board with `$D compare`
 4. POST the new HTML to the running server via `curl -X POST http://localhost:PORT/api/reload -H 'Content-Type: application/json' -d "{\"html\":\"$_DESIGN_DIR/design-board.html\"}"`
    (parse the port from stderr: look for `SERVE_STARTED: port=XXXXX`)
@@ -605,8 +614,28 @@ If `"regenerated": false`: proceed with the approved variant.
 
 **Step 6: Save approved choice**
 
+The user's feedback reaches the shell the same way the brief does: **write the
+feedback summary with the Write tool** to `approved-feedback.txt` inside DESIGN_DIR,
+then run this block, replacing `<V>` with the approved variant letter:
+
 ```bash
-echo '{"approved_variant":"<VARIANT>","feedback":"<FEEDBACK>","date":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","screen":"mockup","branch":"'$(git branch --show-current 2>/dev/null)'"}' > "$_DESIGN_DIR/approved.json"
+_FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
+python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
+import datetime, json, os, re, sys
+d, fb_file, variant, branch = sys.argv[1:5]
+if not re.fullmatch(r"[A-J]", variant):
+    sys.exit("approved variant must be one letter A-J, got %r" % variant)
+feedback = open(fb_file, encoding="utf-8").read().strip() if os.path.isfile(fb_file) else ""
+if not feedback:
+    sys.exit("write the feedback into %s with the Write tool first" % fb_file)
+rec = {"approved_variant": variant,
+       "feedback": feedback,
+       "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+       "screen": "mockup", "branch": branch}
+with open(os.path.join(d, "approved.json"), "w", encoding="utf-8") as f:
+    json.dump(rec, f)
+print("APPROVED_SAVED:", os.path.join(d, "approved.json"))
+VIBE_PY_EOF
 ```
 
 Reference the saved mockup in the design doc or plan.
