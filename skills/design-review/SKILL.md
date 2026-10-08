@@ -1007,7 +1007,7 @@ $D variants --count 1 --output-dir "$REPORT_DIR/mockups/finding-NNN" \
   --brief "<description of the page/component with the finding fixed, referencing DESIGN.md constraints>"
 ```
 
-The mockup lands at `$REPORT_DIR/mockups/finding-NNN/variant-A.png`.
+The mockup's path is the one printed on the `saved:` line (`$D` never overwrites, so a rerun for the same finding saves `variant-A-2.png`). Record that path for the finding; no `saved:` line means no mockup — note the `DESIGN_ERROR` and continue without one.
 
 Show the user: "Here's the current state (screenshot) and here's what it should look like (mockup). Now I'll fix the source to match."
 
@@ -1087,7 +1087,7 @@ DESIGN-FIX RISK:
 After all fixes are applied:
 
 1. Re-run the design audit on all affected pages
-2. If target mockups were generated during the fix loop: read the mockup (`$REPORT_DIR/mockups/finding-NNN/variant-A.png`) and the after-screenshot (`$REPORT_DIR/screenshots/finding-NNN-after.png`) inline with the Read tool and judge the result against the target yourself — the comparison is yours to make, there is no verifier to run. Record met / partially met / missed per finding in the report.
+2. If target mockups were generated during the fix loop: read the mockup (the `saved:` path recorded for finding-NNN) and the after-screenshot (`$REPORT_DIR/screenshots/finding-NNN-after.png`) inline with the Read tool and judge the result against the target yourself — the comparison is yours to make, there is no verifier to run. Record met / partially met / missed per finding in the report.
 3. Compute final design score and AI slop score
 4. **If final scores are WORSE than baseline:** WARN prominently — something regressed
 

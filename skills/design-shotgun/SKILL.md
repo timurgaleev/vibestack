@@ -417,16 +417,17 @@ Generate a design variant and save it.
 
 Design binary: {absolute path to $D binary}
 Brief: {the full variant-specific brief for this direction}
-Staging dir: /tmp/variant-{letter}
 Final location: {_DESIGN_DIR absolute path}/variant-{letter}.png
 
 Steps:
-1. Run: {$D path} variants --brief "{brief}" --count 1 --output-dir /tmp/variant-{letter}
-   The image lands at /tmp/variant-{letter}/variant-A.png.
-2. If the command prints DESIGN_ERROR mentioning a rate limit (429), wait 5 seconds
-   and retry. Up to 3 retries.
-3. If the output file is missing or empty after the command succeeds, retry once.
-4. Copy: cp /tmp/variant-{letter}/variant-A.png {_DESIGN_DIR}/variant-{letter}.png
+1. Make a fresh staging dir for this run only: STAGE=$(mktemp -d /tmp/variant-{letter}.XXXXXX)
+   Never reuse a staging dir from an earlier run — it may hold another run's image.
+2. Run: {$D path} variants --brief "{brief}" --count 1 --output-dir "$STAGE"
+   The image's path is the one printed on the `saved:` line. Use only that path;
+   never assume a file name.
+3. If the command prints DESIGN_ERROR mentioning a rate limit (429), wait 5 seconds
+   and retry. Up to 3 retries. Any other run with no `saved:` line is a failure.
+4. Copy: cp "<the saved: path>" {_DESIGN_DIR}/variant-{letter}.png
 5. Verify: ls -lh {_DESIGN_DIR}/variant-{letter}.png
 6. Report exactly one of:
    VARIANT_{letter}_DONE: {file size}
@@ -438,7 +439,8 @@ The agents do not judge their own output — quality is gated once, by you, in S
 
 **Why /tmp/ then cp?** In observed sessions, generating straight into
 `~/.vibestack/...` failed with "The operation was aborted" while `/tmp/...`
-succeeded. This is a sandbox restriction. Always generate to `/tmp/` first, then `cp`.
+succeeded. This is a sandbox restriction. Always generate into a fresh `/tmp/`
+staging dir first, then `cp` the printed `saved:` path.
 
 ### Step 3d: Results
 

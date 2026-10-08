@@ -572,7 +572,9 @@ explore wide across diverse directions.
 $D variants --brief "<assembled brief>" --count 3 --output-dir "$_DESIGN_DIR/"
 ```
 
-This generates 3 style variations of the same brief (~40 seconds total).
+This generates 3 style variations of the same brief (~40 seconds total). Each image
+it saved is printed on a `saved:` line — use those paths below, never assumed names
+(`$D` never overwrites, so a second run today saves `variant-A-2.png`).
 
 **Step 4: Show variants inline, then open comparison board**
 
@@ -580,7 +582,7 @@ Show each variant to the user inline first (read the PNGs with Read tool), then
 create and serve the comparison board:
 
 ```bash
-$D compare --images "$_DESIGN_DIR/variant-A.png,$_DESIGN_DIR/variant-B.png,$_DESIGN_DIR/variant-C.png" --output "$_DESIGN_DIR/design-board.html" --serve
+$D compare --images "<the saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
 ```
 
 This opens the board in the user's default browser and blocks until feedback is
@@ -595,7 +597,7 @@ If the JSON contains `"regenerated": true`:
 1. Read `regenerateAction` (or `remixSpec` for remix requests)
 2. Generate new variants with `$D iterate` or `$D variants` using updated brief
 3. Create new board with `$D compare`
-4. POST the new HTML to the running server via `curl -X POST http://localhost:PORT/api/reload -H 'Content-Type: application/json' -d '{"html":"$_DESIGN_DIR/design-board.html"}'`
+4. POST the new HTML to the running server via `curl -X POST http://localhost:PORT/api/reload -H 'Content-Type: application/json' -d "{\"html\":\"$_DESIGN_DIR/design-board.html\"}"`
    (parse the port from stderr: look for `SERVE_STARTED: port=XXXXX`)
 5. Board auto-refreshes in the same tab
 

@@ -60,6 +60,96 @@ id="$("$BIN/vibe-decision-search" --recent 5 | grep -oE 'd[0-9]+' | head -1)"
   && ok "design available with key" || no "design status wrong with key"
 "$BIN/vibe-design" compare >/dev/null 2>&1 && ok "design skips unsupported verb" || no "design crashed on compare"
 
+# vibe-design variants — round accounting against a stub curl on PATH.
+#
+# The stub writes a canned response to curl's -o file, prints an HTTP code and
+# exits with a chosen curl status, and logs its argv so the request flags and the
+# staging location can be asserted. No network, no key.
+VD="$TMP/vd"; mkdir -p "$VD/bin"
+cat > "$VD/bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""; prev=""
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+printf '%s\n' "$*" >> "$VD_LOG"
+[ -n "$out" ] && cp "$VD_RESP" "$out"
+printf '%s' "${VD_HTTP:-200}"
+exit "${VD_RC:-0}"
+SH
+chmod +x "$VD/bin/curl"
+vd_resp() { # vd_resp FILE N_IMAGES [BYTES_PER_IMAGE]
+  python3 -c 'import base64,json,sys
+n,size=int(sys.argv[2]),int(sys.argv[3])
+img=base64.b64encode(b"\x89PNG"+b"x"*size).decode()
+json.dump({"data":[{"b64_json":img} for _ in range(n)]},open(sys.argv[1],"w"))' "$1" "$2" "${3:-16}"
+}
+vd() { # vd OUTDIR ARGS... ; prints combined output, sets vd_rc
+  local dir="$1"; shift
+  vd_out="$(PATH="$VD/bin:$PATH" OPENAI_API_KEY=dummy VD_LOG="$VD/argv.log" \
+    "$BIN/vibe-design" variants --brief 'a "quoted" $(brief)' --output-dir "$dir" "$@" 2>&1)" && vd_rc=0 || vd_rc=$?
+}
+
+# Fewer images than requested, into a dir that already holds an approved mockup.
+D1="$TMP/vd-round"; mkdir -p "$D1"; printf 'APPROVED' > "$D1/variant-A.png"
+vd_resp "$VD/two.json" 2
+VD_RESP="$VD/two.json" vd "$D1" --count 3
+[ "$vd_rc" -eq 3 ] && ok "design exits 3 on a partial round" || no "design partial round exit $vd_rc: $vd_out"
+grep -qx 'failures: 1' <<<"$vd_out" && grep -q '^failed: variant-C: API returned 2 of 3 images' <<<"$vd_out" \
+  && ok "design reports the missing image as a failure" || no "design hid the shortfall: $vd_out"
+[ "$(cat "$D1/variant-A.png")" = "APPROVED" ] \
+  && ok "design never overwrites an existing variant" || no "design overwrote variant-A.png"
+grep -qx "saved: $D1/variant-A-2.png" <<<"$vd_out" && grep -qx "saved: $D1/variant-B.png" <<<"$vd_out" \
+  && [ -s "$D1/variant-A-2.png" ] && [ ! -e "$D1/variant-C.png" ] \
+  && ok "design prints the bumped names it actually saved" || no "design saved paths wrong: $vd_out"
+
+# Every image saved -> exit 0 and an empty failure count.
+D2="$TMP/vd-full"
+vd_resp "$VD/three.json" 3
+VD_RESP="$VD/three.json" vd "$D2" --count 3
+[ "$vd_rc" -eq 0 ] && grep -qx 'failures: 0' <<<"$vd_out" && [ "$(grep -c '^saved: ' <<<"$vd_out")" -eq 3 ] \
+  && ok "design exits 0 when every image is saved" || no "design full round wrong ($vd_rc): $vd_out"
+
+# The API refuses (bad key, no quota): nothing saved -> exit 2 with the API's reason.
+printf '{"error":{"message":"Incorrect API key provided"}}' > "$VD/err.json"
+VD_RESP="$VD/err.json" VD_HTTP=401 VD_RC=22 vd "$TMP/vd-err" --count 2
+[ "$vd_rc" -eq 2 ] && grep -q '^DESIGN_ERROR: .*HTTP 401.*Incorrect API key' <<<"$vd_out" && grep -qx 'failures: 2' <<<"$vd_out" \
+  && ok "design exits 2 with the API error when nothing is saved" || no "design API error handling wrong ($vd_rc): $vd_out"
+
+# A hung request is cut off by --max-time (curl exit 28) and named as a timeout.
+printf '' > "$VD/empty.json"
+VD_RESP="$VD/empty.json" VD_HTTP=000 VD_RC=28 VIBE_DESIGN_TIMEOUT=7 vd "$TMP/vd-slow"
+[ "$vd_rc" -eq 2 ] && grep -q '^DESIGN_ERROR: request timed out after 7s' <<<"$vd_out" \
+  && ok "design reports a timeout as nothing saved" || no "design timeout handling wrong ($vd_rc): $vd_out"
+
+# A curl too old for --fail-with-body exits 2; the error names the version needed.
+VD_RESP="$VD/empty.json" VD_HTTP=000 VD_RC=2 vd "$TMP/vd-oldcurl"
+[ "$vd_rc" -eq 2 ] && grep -q '^DESIGN_ERROR: .*curl 7.76 or later is required' <<<"$vd_out" \
+  && ok "design names the curl version when curl rejects an option" || no "design old-curl hint missing ($vd_rc): $vd_out"
+
+# The request itself carries --fail-with-body and --max-time.
+: > "$VD/argv.log"
+VD_RESP="$VD/two.json" vd "$TMP/vd-flags" --count 2
+grep -q -- '--fail-with-body' "$VD/argv.log" && grep -q -- '--max-time 180' "$VD/argv.log" \
+  && ok "design calls curl with --fail and --max-time" || no "design curl flags: $(cat "$VD/argv.log")"
+
+# Each run stages in its own private dir, removed afterwards.
+: > "$VD/argv.log"
+VD_RESP="$VD/two.json" vd "$TMP/vd-stage1" --count 1
+VD_RESP="$VD/two.json" vd "$TMP/vd-stage2" --count 1
+stages="$(grep -oE -- '-o [^ ]+' "$VD/argv.log" | sed 's/^-o //' | xargs -n1 dirname | sort -u)"
+[ "$(wc -l <<<"$stages" | tr -d ' ')" -eq 2 ] && ! grep -q '^/tmp/variant' <<<"$stages" \
+  && (while read -r s; do [ ! -e "$s" ] || exit 1; done <<<"$stages") \
+  && ok "design stages each run in its own removed dir" || no "design staging shared or left behind: $stages"
+
+# A response larger than ARG_MAX (three ~1 MiB images) is read from a file, not argv.
+vd_resp "$VD/big.json" 3 1100000
+VD_RESP="$VD/big.json" vd "$TMP/vd-big" --count 3
+[ "$vd_rc" -eq 0 ] && [ "$(grep -c '^saved: ' <<<"$vd_out")" -eq 3 ] \
+  && ok "design saves a response larger than ARG_MAX" || no "design failed on a large response ($vd_rc): $vd_out"
+
+VD_RESP="$VD/two.json" vd "$TMP/vd-bad" --count 0
+[ "$vd_rc" -eq 1 ] && ok "design rejects an out-of-range --count" || no "design accepted --count 0 ($vd_rc)"
+
 # vibe-question-log — the only writer of the log /plan-tune reads
 "$BIN/vibe-question-log" '{"skill":"ship","question_id":"ship:t","question_summary":"Tests failed","user_choice":"fix","recommended":"fix"}' >/dev/null 2>&1 \
   && ok "question-log accepts a valid event" || no "question-log rejected a valid event"

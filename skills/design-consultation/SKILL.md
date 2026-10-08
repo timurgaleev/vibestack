@@ -439,7 +439,12 @@ Construct a design brief from the Phase 3 proposal (aesthetic, colors, typograph
 $D variants --brief "<product name: [name]. Product type: [type]. Aesthetic: [direction]. Colors: primary [hex], secondary [hex], neutrals [range]. Typography: display [font], body [font]. Layout: [approach]. Show a realistic [page type] screen with [specific content for this product].>" --count 3 --output-dir "$_DESIGN_DIR/"
 ```
 
-Show each variant inline (Read tool on each PNG) for instant preview. You are the
+`$D` never overwrites an existing image: when `variant-A.png` is already there (an
+earlier run today) it saves `variant-A-2.png` instead. Each image this run produced is
+printed on a `saved:` line — note those paths and use only them from here on. A run
+that prints no `saved:` line produced nothing; report its `DESIGN_ERROR` line.
+
+Show each variant inline (Read tool on each `saved:` path) for instant preview. You are the
 quality check — there is no vision critique to call.
 
 **Before presenting to the user, self-gate:** For each variant, ask yourself: *"Would
@@ -493,8 +498,8 @@ echo '{"approved_variant":"<V>","feedback":"<FB>","date":"'$(date -u +%Y-%m-%dT%
 
 After the user picks a direction:
 
-- Read the approved mockup (`$_DESIGN_DIR/variant-<CHOSEN>.png`) inline and extract its design tokens yourself — the dominant colors as hex, the typographic feel (family, weights, scale), the spacing rhythm, the corner radii. Write them down; they populate DESIGN.md in Phase 6. This grounds the design system in what was actually approved visually, not just what was described in text. Where the image is ambiguous (an exact hex, a font family you can't name), say so and take the value from the Phase 3 proposal instead of guessing.
-- If the user wants to iterate further, run `$D variants` again with a brief that folds in their feedback — there is no refine-in-place verb.
+- Read the approved mockup (the `saved:` path of the chosen variant from the round the user picked from) inline and extract its design tokens yourself — the dominant colors as hex, the typographic feel (family, weights, scale), the spacing rhythm, the corner radii. Write them down; they populate DESIGN.md in Phase 6. This grounds the design system in what was actually approved visually, not just what was described in text. Where the image is ambiguous (an exact hex, a font family you can't name), say so and take the value from the Phase 3 proposal instead of guessing.
+- If the user wants to iterate further, run `$D variants` again with a brief that folds in their feedback, into a fresh `--output-dir` subdirectory, and use the new `saved:` paths — there is no refine-in-place verb.
 
 **Plan mode vs. implementation mode:**
 - **If in plan mode:** Add the approved mockup path (the full `$_DESIGN_DIR` path) and extracted tokens to the plan file under an "## Approved Design Direction" section. The design system gets written to DESIGN.md when the plan is implemented.
