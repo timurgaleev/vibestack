@@ -487,6 +487,8 @@ Dispatch the same prompt to a Claude subagent via the Agent tool — fresh conte
 so it reviews the docs rather than defending them. If it also fails: "Doc review
 unavailable — continuing." and move on.
 
+{{include lib/snippets/foreground-dispatch.md}}
+
 Present whichever pass ran verbatim — Codex under a `CODEX SAYS (documentation
 review):` header, the subagent under `OUTSIDE VOICE (Claude subagent):`. Then use
 AskUserQuestion — this is informational, nothing is auto-applied:

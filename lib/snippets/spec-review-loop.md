@@ -6,7 +6,9 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 Use the Agent tool to dispatch an independent reviewer. The reviewer has fresh context
 and cannot see the brainstorming conversation — only the document. This ensures genuine
-adversarial independence.
+adversarial independence. Pass `run_in_background: false` on the Agent call (wherever the
+tool accepts it) and wait for the reviewer to return — a backgrounded reviewer hands back
+control before its score exists, and the loop would read that silence as a PASS.
 
 Prompt the subagent with:
 - The file path of the document just written
@@ -29,7 +31,8 @@ The subagent should return:
 
 If the reviewer returns issues:
 1. Fix each issue in the document on disk (use Edit tool)
-2. Re-dispatch the reviewer subagent with the updated document
+2. Re-dispatch the reviewer subagent with the updated document, again with
+   `run_in_background: false`
 3. Maximum 3 iterations total
 
 **Convergence guard:** If the reviewer returns the same issues on consecutive iterations
