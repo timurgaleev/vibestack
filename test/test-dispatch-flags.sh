@@ -135,5 +135,28 @@ else
   no "codex gate block differs between review and ship (or is missing)"
 fi
 
+# Grade fixture outputs through the extracted gate. Every way a review can fail
+# to happen must come out FAIL or SKIPPED; only an explicit conclusion passes.
+sed -n '/^_CX_BLOCK=/,/^echo "GATE:/p' "$ROOT/skills/review/SKILL.md" > "$TMP/gate.sh"
+grade() {  # shell exit-code output expected label
+  printf '%b' "$4" > "$TMP/gate.out"
+  got=$("$1" -c '_CX_EXIT=$1; _CX_OUT=$2; . "$3"' gate "$2" "$TMP/gate.out" "$TMP/gate.sh" |
+        sed -n 's/^GATE: \([A-Z]*\).*/\1/p')
+  if [ "$got" = "$3" ]; then ok "gate $1: $5 -> $3"; else no "gate $1: $5 -> ${got:-nothing}, want $3"; fi
+}
+for sh in bash zsh; do
+  command -v "$sh" >/dev/null 2>&1 || continue
+  grade "$sh" 0   PASS    "Looks good. I did not find any discrete issues." "clean conclusion"
+  grade "$sh" 0   PASS    "NO_FINDINGS"                                    "marker"
+  grade "$sh" 0   PASS    "Review comments:\n- [P2] naming nit"            "P2 only"
+  grade "$sh" 0   FAIL    "There is a critical race condition in a.ts."    "untagged prose"
+  grade "$sh" 0   FAIL    "Review comments:\n- [P1] data loss"             "P1"
+  grade "$sh" 0   FAIL    "[P2] nit\nError: not logged in"                 "P2 plus auth error"
+  grade "$sh" 0   FAIL    "Review comments:\n- the null check is gone"     "untagged comments"
+  grade "$sh" 0   FAIL    ""                                               "empty"
+  grade "$sh" 1   FAIL    "NO_FINDINGS"                                    "non-zero exit"
+  grade "$sh" 124 SKIPPED "partial"                                        "timeout"
+done
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

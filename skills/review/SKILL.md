@@ -924,12 +924,13 @@ echo "--- codex stderr (exit $_CX_EXIT) ---"
 cat "$_CX_DIR/err"
 
 # Codex gate: fail closed. PASS needs a clean exit, non-empty output, no P0/P1, and no
-# auth/CLI error or refusal. `codex review` reports a clean diff as a short summary with no
-# "Review comment(s):" section and lists findings under that heading with [Pn] tags, so a
-# heading whose comments carry no severity tag is unreadable, never clean.
+# auth/CLI error or refusal. Findings arrive under a "Review comment(s):" heading with [Pn]
+# tags; a clean diff must say so in words. Output that is neither tagged nor an explicit
+# no-findings conclusion is unrecognized, and unrecognized is never clean.
 _CX_BLOCK='\[P[01]\]|^[[:space:]>*_#-]*P[01][*_]*:|VERDICT:[[:space:]]*findings'
 _CX_BROKEN='^[[:space:]>*_#-]*((error|fatal)[[:space:]]*:|unauthorized|not logged in|you.ve hit your usage limit)|invalid api key|insufficient_quota|^[[:space:]]*(I.m sorry|I am sorry|I.m unable|I am unable|I (cannot|can.t|won.t) (help|assist|review|comply))'
 _CX_COMMENTS='^[[:space:]>*_#-]*(full )?review comments?[*_]*:'
+_CX_CLEAN='NO_FINDINGS|(^|[^[:alnum:]_])no (discrete |actionable |significant |new |concrete )?(bugs?|issues?|findings?|problems?|regressions?)( (were |was )?(found|identified|detected))?([^[:alnum:]_]|$)|(did not|didn.t|could not|couldn.t) (find|identify|spot) any'
 if [ "$_CX_EXIT" -eq 124 ]; then
   _CX_GATE="SKIPPED"; _CX_WHY="timed out after 540s, no coverage"
 elif [ "$_CX_EXIT" -ne 0 ]; then
@@ -938,14 +939,16 @@ elif ! grep -q '[^[:space:]]' "$_CX_OUT" 2>/dev/null; then
   _CX_GATE="FAIL"; _CX_WHY="empty output, no usable review"
 elif grep -Eq "$_CX_BLOCK" "$_CX_OUT"; then
   _CX_GATE="FAIL"; _CX_WHY="$(grep -Ec "$_CX_BLOCK" "$_CX_OUT") P0/P1 finding(s)"
-elif grep -Eq '\[P[23]\]|^[[:space:]>*_#-]*P[23][*_]*:' "$_CX_OUT"; then
-  _CX_GATE="PASS"; _CX_WHY="completed, P2/P3 findings only"
 elif grep -Eiq "$_CX_BROKEN" "$_CX_OUT"; then
   _CX_GATE="FAIL"; _CX_WHY="auth, quota, CLI error or refusal text, no usable review"
+elif grep -Eq '\[P[23]\]|^[[:space:]>*_#-]*P[23][*_]*:' "$_CX_OUT"; then
+  _CX_GATE="PASS"; _CX_WHY="completed, P2/P3 findings only"
 elif grep -Eiq "$_CX_COMMENTS" "$_CX_OUT"; then
   _CX_GATE="FAIL"; _CX_WHY="review comments without severity tags, no usable review"
+elif grep -Eiq "$_CX_CLEAN" "$_CX_OUT"; then
+  _CX_GATE="PASS"; _CX_WHY="completed, explicit no-findings conclusion"
 else
-  _CX_GATE="PASS"; _CX_WHY="completed, no review comments"
+  _CX_GATE="FAIL"; _CX_WHY="no severity tags and no no-findings conclusion, unrecognized output"
 fi
 echo "GATE: $_CX_GATE ($_CX_WHY)"
 ```
