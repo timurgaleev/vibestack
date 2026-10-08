@@ -201,12 +201,14 @@ Read the Lambda that calls Bedrock end to end. Trace the input from the Lex even
 | Output validation | Model output is checked before it is spoken: max length, no URLs or phone numbers the model invented, escaped for SSML if injected into `<speak>`. | No validation → MEDIUM. Unescaped output inside SSML → HIGH. |
 | Where the model call lands | In a Lambda the runtime sets `AWS_REGION`, so a client built without `region_name` already resolves to the deployed region — the absence of the argument is not itself a defect. Check the destination instead: the `modelId` or inference profile prefix (`eu.`, `us.`, `apac.`), any explicit `endpoint_url`, and the function's own region from `get-function-configuration`. | Cross-region profile whose geography sits outside the function's region — a `us.` profile called from an eu-* function → HIGH (data leaves the EU). Model id or region supplied at runtime from configuration this review cannot read → N-A; name the value to check. |
 | Timeouts and retries | `botocore.config.Config(connect_timeout=, read_timeout=, retries={...})` or the JS SDK `requestHandler` timeouts. Default read timeout is 60 s, which is far beyond what Lex or Connect will wait. | Defaults left in place → HIGH. |
+| Conversation state and memory admission | Find where the Lambda writes anything that outlives the turn: Lex session attributes, Connect contact attributes, DynamoDB, a Knowledge Base ingest or a memory store. Check which text goes in — the caller's words and verified tool results, or the model's own reply. | Model output written back as a fact the next turn or the next call reads as true (an account status, a promised refund, a summary used as context) → HIGH. Caller corrections overwritten by an earlier model statement → HIGH. |
 | Streaming | `converse_stream` / `InvokeModelWithResponseStream` when the audio path can consume partial output (custom media with Polly). In a plain Lex-in-Connect design the full response is needed before TTS, so streaming buys nothing — note that rather than report it. | Custom media path without streaming → MEDIUM. |
 
 ```bash
 grep -nE 'read_timeout|connect_timeout|requestTimeout|retries' "$LAMBDA_FILE"
 grep -nE 'region_name|AWS_REGION|inferenceProfile|modelId|model_id' "$LAMBDA_FILE"
 grep -nE 'system=|"system"|systemPrompt|SYSTEM_PROMPT' "$LAMBDA_FILE"
+grep -nE 'sessionAttributes|put_item|PutItem|update_item|UpdateContactAttributes|start_ingestion_job|memory' "$LAMBDA_FILE"
 ```
 
 ---

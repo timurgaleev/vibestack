@@ -2,7 +2,7 @@
 
 ## Instructions
 
-Review the `git diff origin/main` output for the issues listed below. Be specific — cite `file:line` and suggest fixes. Skip anything that's fine. Only flag real problems.
+Review the diff the caller produced against its detected base branch (`/review` Step 0, `/ship` Step 0) — never a hardcoded `origin/main`; a repo whose base is `develop` or `master` would get the wrong diff. Be specific — cite `file:line` and suggest fixes. Skip anything that's fine. Only flag real problems.
 
 **Two-pass review:**
 - **Pass 1 (CRITICAL):** Run SQL & Data Safety, Race Conditions, LLM Output Trust Boundary, Shell Injection, and Enum Completeness first. Highest severity.
@@ -52,6 +52,9 @@ Be terse. For each issue: one line describing the problem, one line with the fix
 - Structured tool output (arrays, hashes) accepted without type/shape checks before database writes.
 - LLM-generated URLs fetched without allowlist — SSRF risk if URL points to internal network (Python: `urllib.parse.urlparse` → check hostname against blocklist before `requests.get`/`httpx.get`)
 - LLM output stored in knowledge bases or vector DBs without sanitization — stored prompt injection risk
+- Tool use required only by prompt text ("always call `lookup_order` before answering") with nothing in code that checks a tool call happened — the model can answer from its own guess and the reply looks normal. Enforce it in the loop: reject or retry a final answer that arrives without the required `tool_use`, or force it with `tool_choice`. Probe: `rg -n 'must (call|use).*tool|always call|required.*tool' --glob '!*.lock'` then `rg -n 'tool_choice|tool_use|toolCall|tool_calls'` to see whether anything enforces it.
+- Hidden second LLM pass — a repair, fallback, re-prompt or summarize call that rewrites the answer after the main turn and before delivery, with no contract on what it may change. The user sees text the reviewed prompt never produced. Each extra pass needs a named purpose, a bounded input and a log line; a silent fallback to a different model or prompt is a finding. Probe: `rg -n 'fallback|retry.*llm|repair.*prompt|re-?prompt|summari[sz]e.*(llm|model)' --type py --type ts` and every `messages.create`/`converse`/`invoke_model`/`chat.completions.create`/`llm.invoke` outside the main agent loop: `rg -n 'messages\.create|converse(_stream)?\(|invoke_model|chat\.completions\.create|\.invoke\(' --type py --type ts`.
+- Memory poisoning — the agent's own output, reasoning or monologue admitted into persistent memory, a knowledge base or a facts store with the same weight as a user statement or correction. A wrong answer then persists and is retrieved as truth next session, and a later user correction loses to it. Admission must record the source (user / tool result / model) and rank model-authored entries below user corrections, or not store them at all. Probe: `rg -n 'memory.*(admit|add|save|store|write|upsert)|long.?term.*update|persist.*memory|add_fact|remember\(' --type py --type ts` and trace what text reaches each write.
 
 #### Shell Injection (Python-specific)
 - `subprocess.run()` / `subprocess.call()` / `subprocess.Popen()` with `shell=True` AND f-string/`.format()` interpolation in the command string — use argument arrays instead
@@ -85,6 +88,7 @@ To do this: use Grep to find all references to the sibling values (e.g., grep fo
 - 0-indexed lists in prompts (LLMs reliably return 1-indexed)
 - Prompt text listing available tools/capabilities that don't match what's actually wired up in the `tool_classes`/`tools` array
 - Word/token limits stated in multiple places that could drift
+- The same facts fed to the model through more than one channel — system prompt, replayed history and retrieved memory — so a stale copy in one channel contradicts the corrected copy in another and the token bill grows every turn. Pick one source per fact. Probe: find where the system prompt, history and retrieval results are assembled (`rg -n 'system_prompt|SYSTEM_PROMPT|messages\s*=|retrieve' --type py --type ts`) and check the same block is not added twice.
 
 #### Completeness Gaps
 - Shortcut implementations where the complete version would cost <30 minutes CC time (e.g., partial enum handling, incomplete error paths, missing edge cases that are straightforward to add)
