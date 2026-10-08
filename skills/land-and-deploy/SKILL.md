@@ -174,7 +174,7 @@ gh pr view --json number,state,title,url,mergeStateStatus,mergeable,baseRefName,
 
 5. Validate the PR state:
    - If no PR exists: **STOP.** "No PR found for this branch. Run `/ship` first to create a PR, then come back here to land and deploy it."
-   - If `state` is `MERGED`: "This PR is already merged — nothing to deploy. If you need to verify the deploy, run `/canary <url>` instead."
+   - If `state` is `MERGED`: "This PR is already merged — nothing to merge or deploy." Run §4a-release (tag and release) for it first, so a PR merged outside this skill still gets its tag and release, then stop: "If you need to verify the deploy, run `/canary <url>` instead."
    - If `state` is `CLOSED`: "This PR was closed without merging. Reopen it on GitHub first, then try again."
    - If `state` is `OPEN`: continue.
 
@@ -885,6 +885,20 @@ If the PR state changes to `MERGED`: capture the merge commit SHA. Tell the user
 If the PR is removed from the queue (state goes back to `OPEN`): **STOP.** "The PR was removed from the merge queue — this usually means a CI check failed on the merge commit, or another PR in the queue caused a conflict. Check the GitHub merge queue page to see what happened."
 If timeout (30 min): **STOP.** "The merge queue has been processing for 30 minutes. Something might be stuck — check the GitHub Actions tab and the merge queue page."
 
+### 4a-release: Tag and release the merged version
+
+Every path that ends in a merged PR — the direct merge, §4a-postfail's `MERGED` branch,
+and the merge queue finishing in §4a — runs this step **right after the merge is
+confirmed**, before §4b. `/ship` defers the tag and the release until the PR merges;
+this is where they happen. Set `PR_REF` to the PR number from Step 1: after
+`--delete-branch` the checkout is no longer on the PR's branch.
+
+{{include lib/snippets/release-after-merge.md}}
+
+A `BLOCKED` or `Release deferred` line does not undo the merge and does not stop the
+deploy — report it verbatim, carry it into the deploy report (Step 9), and continue to
+§4b. Never retry by moving or force-pushing a tag.
+
 ### 4b: CI auto-deploy detection
 
 After the PR is merged, check if a deploy workflow was triggered by the merge:
@@ -1171,6 +1185,7 @@ PR:           #<number> — <title>
 Branch:       <head-branch> → <base-branch>
 Merged:       <timestamp> (<merge method>)
 Merge SHA:    <sha>
+Release:      <TAG/Release lines from §4a-release, or its Release deferred / SKIPPED / BLOCKED line>
 Merge path:   <auto-merge / direct / merge queue>
 First run:    <yes (dry-run validated) / no (previously confirmed)>
 
