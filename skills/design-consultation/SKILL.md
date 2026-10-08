@@ -433,10 +433,15 @@ mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
 
-Construct a design brief from the Phase 3 proposal (aesthetic, colors, typography, spacing, layout) and the product context from Phase 1:
+Construct a design brief from the Phase 3 proposal (aesthetic, colors, typography, spacing, layout) and the product context from Phase 1, in this shape: "Product name: [name]. Product type: [type]. Aesthetic: [direction]. Colors: primary [hex], secondary [hex], neutrals [range]. Typography: display [font], body [font]. Layout: [approach]. Show a realistic [page type] screen with [specific content for this product]."
+
+The brief carries product and user text, so it never appears in shell source — not in a quoted argument, not in a heredoc (a line equal to the terminator ends a heredoc and the rest runs as commands). **Write the brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above, replacing any earlier brief there, then run:
 
 ```bash
-$D variants --brief "<product name: [name]. Product type: [type]. Aesthetic: [direction]. Colors: primary [hex], secondary [hex], neutrals [range]. Typography: display [font], body [font]. Layout: [approach]. Show a realistic [page type] screen with [specific content for this product].>" --count 3 --output-dir "$_DESIGN_DIR/"
+BRIEF_FILE="$_DESIGN_DIR/brief.txt"
+[ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
+  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
+$D variants --brief-file "$BRIEF_FILE" --count 3 --output-dir "$_DESIGN_DIR/"
 ```
 
 `$D` never overwrites an existing image: when `variant-A.png` is already there (an
