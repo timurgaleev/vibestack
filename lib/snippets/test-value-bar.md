@@ -1,0 +1,16 @@
+**Test value bar.** A test earns its place by protecting behavior a real regression would break. Propose or write a test only when all four questions have an answer; otherwise extend an existing test or drop it:
+
+1. What observable behavior, invariant or independent contract does it protect?
+2. What credible regression makes it fail?
+3. Why does existing coverage not already catch that? Prefer adding a row to an existing table-driven test or shared fixture over a near-duplicate.
+4. Does it need a production seam (export, flag, wrapper, injection hook) that no production caller needs? If yes, test at the real boundary instead.
+
+A test that breaks under a behavior-preserving refactor asserts implementation: rewrite it at the owning boundary, unless exact output is the declared contract (goldens, prompt bytes, wire formats). Mock only services unrelated to the behavior under test; a test that mocks the thing it claims to protect proves the mock.
+
+**Value card.** Record the four answers as one line: `Value: protects=<...>; fails_when=<...>; why_new=<...>; seam=none` (`seam` is `none` or the seam's name). Example: `Value: protects=refundPayment rejects an empty reason; fails_when=the reason guard is removed or inverted; why_new=billing.test.ts covers processPayment only; seam=none`. Where it goes: /plan-eng-review — under each Critical Path and Edge Case in the test plan; /ship — a header comment in each generated test; /qa — next to the regression attribution comment; /qa-only — under each proposed test. A missing card never blocks: derive it from the test.
+
+**Weak tests are not coverage.** A ★ test (smoke, existence check, trivial assertion such as "it renders" or "it doesn't throw"), or a new test that fails the four questions, never counts as covering a path. A path whose only tests are weak stays a gap at its existing severity.
+
+**Regression proof.** A test labelled as a regression test must fail, on its own assertion, against the code before the repair (an import or fixture failure in the test itself is a test defect: correct it once or drop it; a pass drops the regression label). It must pass after the repair. When the branch introduced the regression, it must also pass at the base commit as a control (`git worktree add --detach <tmp> <base>`, copy the test and its fixtures in, run it, `git worktree remove --force <tmp>`); a regression test that is red at base is invalid — drop the regression label or the test. A scratch worktree has no untracked dependencies (`node_modules`, `.venv`, build output), so a failure there from a missing dependency is the environment, not the test: link or install the dependencies, or run the proof in place with the fixed file temporarily restored from before the fix (`git show <fix>^:<file>`, then put it back); if neither works, record `unavailable (<reason>)` and keep the test. Record: `Regression proof — fails before fix: yes | unavailable (<reason>) · passes after fix: yes | pending · passes at base: yes | n/a | unavailable (<reason>)`.
+
+**Retention bar.** Keep a test that independently enforces a public API, protocol, config, migration, storage, security, platform, default, prompt-byte, generated-output, package, release or architecture contract. Static or slow is no reason to delete one; retiring a test is a proposal with its reason, never a silent edit.

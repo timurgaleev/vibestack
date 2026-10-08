@@ -131,7 +131,7 @@ Do NOT make any code changes. Do NOT start implementation. Your only job right n
 
 ## Engineering Preferences (use these to guide every recommendation)
 * DRY is important — flag repetition aggressively.
-* Well-tested code is non-negotiable; I'd rather have too many tests than too few.
+* Well-tested code is non-negotiable, and no test goes in without a regression it would catch.
 * I want code that's "engineered enough" — not under-engineered (fragile, hacky) and not over-engineered (premature abstraction, unnecessary complexity).
 * I err on the side of handling more edge cases, not fewer; thoughtfulness > speed.
 * Bias toward explicit over clever.
