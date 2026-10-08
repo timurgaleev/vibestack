@@ -3,10 +3,13 @@
 # ship_attribution key turns it on, and the PR/MR body update reads through the
 # trust envelope, secret-scans the outgoing text, and refuses to publish a body
 # the envelope banner leaked into.
+#
+# Usage: test-document-generate-pr-body.sh [SKILL.md]
+#        (default: skills/document-generate/SKILL.md)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SKILL="$ROOT/skills/document-generate/SKILL.md"
+SKILL="${1:-$ROOT/skills/document-generate/SKILL.md}"
 TMP="$(mktemp -d)"
 pass=0; fail=0
 ok() { pass=$((pass+1)); echo "  ok   $1"; }
@@ -73,6 +76,50 @@ bash "$ROOT/bin/vibe-untrusted" --source pr-body --file "$TMP/raw.md" > "$TMP/le
 if run_trip "$TMP/leaked.md" "$TMP/orig.md"; then no "leaked banner published"; else ok "leaked banner blocked"; fi
 
 if run_trip "$TMP/clean.md" "$TMP/missing-orig.md"; then no "missing snapshot published"; else ok "missing snapshot blocked"; fi
+fi
+
+# 6. The body lives in a private run directory, not a guessable /tmp name.
+if grep -Eq '/tmp/[A-Za-z0-9_-]*-body' "$STEP9"; then
+  no "fixed /tmp body path remains: $(grep -Eo '/tmp/[A-Za-z0-9_-]*-body[^ ]*' "$STEP9" | head -1)"
+else
+  ok "no fixed /tmp body path"
+fi
+grep -q 'umask 077; mktemp -d "${TMPDIR:-/tmp}/vibe-doc-generate-XXXXXXXX"' "$STEP9" \
+  && ok "private run dir via mktemp -d" || no "no private mktemp -d run dir"
+grep -q '^rmdir <run-dir>$' "$STEP9" && ok "run dir removed on cleanup" || no "run dir not removed on cleanup"
+
+# 7. The GitLab write-back, run as written against a stub glab, sends a hostile
+#    body byte-exact and never executes any of it. A body line equal to a
+#    heredoc terminator must not end the argument early.
+WB="$TMP/wb.sh"
+awk '/^```bash$/{inb=1; buf=""; next} /^```$/ && inb {if (buf ~ /glab"?[ ,]"?mr"?[ ,]"?update/) {printf "%s", buf; exit} inb=0; next} inb{buf = buf $0 "\n"}' "$STEP9" > "$WB"
+mkdir -p "$TMP/bin" "$TMP/run"
+cat > "$TMP/bin/glab" <<'STUB'
+#!/usr/bin/env bash
+# records the -d argument verbatim
+while [ $# -gt 0 ]; do [ "$1" = -d ] && { printf '%s' "$2" > "$STUB_OUT"; shift; }; shift; done
+STUB
+chmod +x "$TMP/bin/glab"
+run_wb() { # run_wb <body-file> -> sends it through the extracted block
+  awk -v body="$1" '/<paste the file contents here>/{while ((getline l < body) > 0) print l; next} {print}' "$WB" \
+    | sed "s#<body-file>#$1#g" > "$TMP/wb-run.sh"
+  rm -f "$TMP/sent"
+  PATH="$TMP/bin:$PATH" STUB_OUT="$TMP/sent" bash "$TMP/wb-run.sh" >/dev/null 2>&1
+}
+if [ -s "$WB" ]; then
+  ok "GitLab write-back block extracted"
+  # Where the block asks for the file to be pasted in, run_wb pastes it as an agent would.
+  BODY="$TMP/run/body.md"
+  printf 'intro\nMRBODY\ntouch %s/pwned\n' "$TMP" > "$BODY"
+  run_wb "$BODY"
+  cmp -s "$BODY" "$TMP/sent" && ok "terminator line: body sent byte-exact" || no "terminator line: body altered or truncated"
+  [ ! -e "$TMP/pwned" ] && ok "terminator line: rest of body never executes" || no "terminator line: body text executed as shell"
+  printf 'intro\n$(touch %s/pwned2) `id` "quote\n' "$TMP" > "$BODY"
+  run_wb "$BODY"
+  cmp -s "$BODY" "$TMP/sent" && ok "metacharacters: body sent byte-exact" || no "metacharacters: body altered"
+  [ ! -e "$TMP/pwned2" ] && ok "metacharacters: never executed" || no "metacharacters: executed as shell"
+else
+  no "GitLab write-back block missing"
 fi
 
 echo ""
