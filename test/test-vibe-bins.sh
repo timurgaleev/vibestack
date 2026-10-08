@@ -150,6 +150,31 @@ VD_RESP="$VD/big.json" vd "$TMP/vd-big" --count 3
 VD_RESP="$VD/two.json" vd "$TMP/vd-bad" --count 0
 [ "$vd_rc" -eq 1 ] && ok "design rejects an out-of-range --count" || no "design accepted --count 0 ($vd_rc)"
 
+# A write that fails part-way leaves no variant file: the name stays free for the
+# next run instead of being skipped forever. A python3 on PATH with a 2 KiB file
+# size limit makes the 8 KiB image write fail with EFBIG (python ignores SIGXFSZ).
+mkdir -p "$VD/smallfs"
+printf '#!/usr/bin/env bash\nulimit -f 4\nexec %q "$@"\n' "$(command -v python3)" > "$VD/smallfs/python3"
+chmod +x "$VD/smallfs/python3"
+vd_resp "$VD/eight.json" 1 8192
+D3="$TMP/vd-partial"
+VD_RESP="$VD/eight.json" PATH="$VD/smallfs:$PATH" vd "$D3" --count 1
+[ "$vd_rc" -eq 2 ] && ! grep -q '^saved: ' <<<"$vd_out" && grep -q '^failed: variant-A: cannot write' <<<"$vd_out" \
+  && [ -z "$(ls -A "$D3")" ] \
+  && ok "design leaves no file behind when an image write fails" \
+  || no "design write failure ($vd_rc): $vd_out; left: $(ls -A "$D3" | tr '\n' ' ')"
+VD_RESP="$VD/eight.json" vd "$D3" --count 1
+[ "$vd_rc" -eq 0 ] && grep -qx "saved: $D3/variant-A.png" <<<"$vd_out" \
+  && ok "design reuses a name a failed write never published" || no "design skipped the failed name ($vd_rc): $vd_out"
+
+# A setup failure (no usable TMPDIR) is a no-output round, not a usage error.
+VD_RESP="$VD/two.json" TMPDIR=/nonexistent/vibe-design-test vd "$TMP/vd-notmp" --count 2
+[ "$vd_rc" -eq 2 ] && grep -q '^DESIGN_ERROR: cannot create a staging dir' <<<"$vd_out" \
+  && grep -qx 'requested: 2' <<<"$vd_out" && grep -qx 'failures: 2' <<<"$vd_out" \
+  && [ "$(grep -c '^failed: variant-[AB]: ' <<<"$vd_out")" -eq 2 ] && ! grep -q '^saved: ' <<<"$vd_out" \
+  && ok "design reports a missing TMPDIR as DESIGN_ERROR with exit 2" \
+  || no "design missing TMPDIR ($vd_rc): $vd_out"
+
 # vibe-question-log — the only writer of the log /plan-tune reads
 "$BIN/vibe-question-log" '{"skill":"ship","question_id":"ship:t","question_summary":"Tests failed","user_choice":"fix","recommended":"fix"}' >/dev/null 2>&1 \
   && ok "question-log accepts a valid event" || no "question-log rejected a valid event"

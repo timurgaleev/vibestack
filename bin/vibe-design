@@ -51,15 +51,30 @@ case "${1:-}" in
     case "$TIMEOUT" in
       ''|*[!0-9]*) TIMEOUT=180 ;;
     esac
-    mkdir -p "$outdir"
+    # A setup failure saves nothing, so it reports like any other empty round:
+    # DESIGN_ERROR, the accounting lines, exit 2. Exit 1 stays for usage errors.
+    setup_failed() {
+      echo "DESIGN_ERROR: $1"
+      echo "requested: $count"
+      echo "failures: $count"
+      for label in A B C D E F G H I J; do
+        [ "$count" -gt 0 ] || break
+        echo "failed: variant-$label: $1"
+        count=$((count - 1))
+      done
+      exit 2
+    }
+    mkdir -p "$outdir" 2>/dev/null || setup_failed "cannot create output dir $outdir"
     # Private per-run staging: concurrent runs never share a request or response
     # file, and the response never travels through argv (a base64 image batch
     # exceeds ARG_MAX).
     tmp_root="${TMPDIR:-/tmp}"
-    stage="$(mktemp -d "${tmp_root%/}/vibe-design.XXXXXX")"
+    stage="$(mktemp -d "${tmp_root%/}/vibe-design.XXXXXX" 2>/dev/null)" \
+      || setup_failed "cannot create a staging dir under $tmp_root"
     trap 'rm -rf "$stage"' EXIT
     python3 -c 'import json,sys; json.dump({"model":sys.argv[1],"prompt":sys.argv[2],"n":int(sys.argv[3]),"size":sys.argv[4]}, open(sys.argv[5],"w"))' \
-      "$MODEL" "$brief" "$count" "$size" "$stage/request.json"
+      "$MODEL" "$brief" "$count" "$size" "$stage/request.json" 2>/dev/null \
+      || setup_failed "cannot write the request under $stage"
     http_code=""; curl_rc=0
     http_code="$(curl -sS --fail-with-body --max-time "$TIMEOUT" \
       -o "$stage/response.json" -w '%{http_code}' \
@@ -67,7 +82,7 @@ case "${1:-}" in
       -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
       -d @"$stage/request.json" 2>"$stage/curl.err")" || curl_rc=$?
     python3 - "$stage" "$outdir" "$count" "$curl_rc" "$http_code" "$TIMEOUT" <<'PY'
-import base64, binascii, json, os, sys
+import base64, binascii, json, os, sys, tempfile
 
 stage, outdir, count, curl_rc, http_code, timeout = sys.argv[1:7]
 count, curl_rc = int(count), int(curl_rc)
@@ -110,21 +125,31 @@ elif not isinstance(resp, dict) or not resp.get("data"):
 
 
 def claim(label, png):
-    """Write png under the first free variant-<label>[-N].png; never overwrite."""
-    n = 1
-    while True:
-        name = f"variant-{label}.png" if n == 1 else f"variant-{label}-{n}.png"
-        path = os.path.join(outdir, name)
-        try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-        except FileExistsError:
-            n += 1
-            continue
+    """Write png under the first free variant-<label>[-N].png; never overwrite.
+
+    The image is written in full to a private temp file first and then published
+    with link(), which fails rather than replace an existing name. A failed write
+    therefore leaves no variant file behind for a later run to step around.
+    """
+    fd, tmp = tempfile.mkstemp(prefix=f".variant-{label}.", suffix=".tmp", dir=outdir)
+    try:
         with os.fdopen(fd, "wb") as f:
             f.write(png)
-        if n > 1:
-            sys.stderr.write(f"note: variant-{label}.png exists; saved to {name} (existing file kept)\n")
-        return path
+        os.chmod(tmp, 0o644)
+        n = 1
+        while True:
+            name = f"variant-{label}.png" if n == 1 else f"variant-{label}-{n}.png"
+            path = os.path.join(outdir, name)
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                n += 1
+                continue
+            if n > 1:
+                sys.stderr.write(f"note: variant-{label}.png exists; saved to {name} (existing file kept)\n")
+            return path
+    finally:
+        os.unlink(tmp)
 
 
 saved, failures = [], []
