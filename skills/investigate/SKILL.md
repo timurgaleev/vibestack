@@ -30,6 +30,11 @@ hooks:
         - type: command
           command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/check-freeze.sh"
           statusMessage: "Checking debug scope boundary..."
+    - matcher: "NotebookEdit"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/check-freeze.sh"
+          statusMessage: "Checking debug scope boundary..."
 ---
 
 ## When to invoke
@@ -115,16 +120,25 @@ After forming your root cause hypothesis, lock edits to the affected module to p
 [ -x "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/check-freeze.sh" ] && echo "FREEZE_AVAILABLE" || echo "FREEZE_UNAVAILABLE"
 ```
 
-**If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Write it to the freeze state file:
+**If FREEZE_AVAILABLE:** Identify the narrowest directory containing the affected files. Acquire a run-owned boundary with the shared state writer. It resolves the physical absolute path and leaves any boundary the user (or another run) already set untouched:
 
 ```bash
-STATE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
-mkdir -p "$STATE_DIR"
-echo "<detected-directory>/" > "$STATE_DIR/freeze-dir.txt"
-echo "Debug scope locked to: <detected-directory>/"
+bash "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/freeze-state.sh" acquire "<detected-directory>"
 ```
 
-Substitute `<detected-directory>` with the actual directory path (e.g., `src/auth/`). Tell the user: "Edits restricted to `<dir>/` for this debug session. This prevents changes to unrelated code. Run `/unfreeze` to remove the restriction."
+Substitute `<detected-directory>` with the actual directory path (e.g., `src/auth/`). Then act on the output:
+
+- `FREEZE_OWNER=<token>` and `FREEZE_DIR=<path>` — this run owns a new lock. Keep the exact token for terminal cleanup; never reconstruct it from the state file. Tell the user: "Edits restricted to `<FREEZE_DIR>/` for this debug session. The lock is released when the investigation ends; `/unfreeze` removes it sooner."
+- `FREEZE_PRESERVED` — a boundary was already set. Keep it, tell the user which boundary stays in force, and do not release it at the end.
+- `FREEZE_ERROR` or `FREEZE_BUSY` (non-zero exit) — no lock was acquired. Report it before editing; never claim the scope is locked.
+
+**Terminal cleanup:** When the investigation ends — completed, aborted, or stopped by an error — and this run holds a `FREEZE_OWNER` token, release it before the final response:
+
+```bash
+bash "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/../freeze/bin/freeze-state.sh" release "<retained-owner-token>"
+```
+
+The writer removes the state only if it still carries this run's token, so a boundary the user set in the meantime survives (`FREEZE_PRESERVED`). Report the result; never retry by deleting the state file directly. A session killed before cleanup leaves the lock in place — `/unfreeze` removes it.
 
 If the bug spans the entire repo or the scope is genuinely unclear, skip the lock and note why.
 
@@ -225,6 +239,8 @@ Related:         [TODOS.md items, prior bugs in same area, architectural notes]
 Status:          DONE | DONE_WITH_CONCERNS | BLOCKED
 ════════════════════════════════════════
 ```
+
+If this run acquired a scope lock, run the terminal cleanup from **Scope Lock** now, before the report is final.
 
 Log the investigation as a learning for future sessions. Use `type: "investigation"` and include the affected files so future investigations on the same area can find this:
 

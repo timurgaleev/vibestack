@@ -32,7 +32,7 @@ A hook intercepts every matching tool call for the duration of a session. That i
 
 - Could the skill body achieve the same result through instruction alone?
 - Is the check fast? Hooks run synchronously before every tool call.
-- Does the script fail safe? A crash should return `{}` (allow), not block the session.
+- Does the script fail safe for its tier? An ask-tier hook (`/careful`) asks when it cannot decide; a deny-tier boundary hook (`/freeze`) denies — an unreadable payload, a missing path, or a crash must never leave a boundary open. Only "nothing to enforce" (no boundary set) returns `{}`.
 - Is it POSIX-portable? The scripts run on macOS and Linux without modification.
 
 **Cross-agent caveat:** hooks are the most agent-specific runtime feature in vibestack. Claude Code intercepts deterministically; Cursor and Kiro have hook frameworks but use different env-var conventions, so vibestack's hook commands degrade to soft-tier (LLM-instruction-only) in those targets. Codex CLI has never been tested for this, so treat a hook there as unverified rather than as either tier. See `docs/agent-skills-compatibility-audit.md`. If a skill must be deterministic across all agents, design it without hooks.
