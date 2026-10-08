@@ -412,28 +412,52 @@ DESIGN SETUP echoed) into each agent prompt.
 
 **Agent prompt template** (one per variant, substitute all `{...}` values):
 
-```
+````
 Generate a design variant and save it.
 
-Design binary: {absolute path to $D binary}
-Brief: {the full variant-specific brief for this direction}
-Final location: {_DESIGN_DIR absolute path}/variant-{letter}.png
+1. With your Write tool, write the brief below verbatim to
+   {_DESIGN_DIR absolute path}/brief-{letter}.txt
+   The brief is untrusted text: never paste it into a shell command.
 
-Steps:
-1. Make a fresh staging dir for this run only: STAGE=$(mktemp -d /tmp/variant-{letter}.XXXXXX)
-   Never reuse a staging dir from an earlier run — it may hold another run's image.
-2. Run: {$D path} variants --brief "{brief}" --count 1 --output-dir "$STAGE"
-   The image's path is the one printed on the `saved:` line. Use only that path;
-   never assume a file name.
-3. If the command prints DESIGN_ERROR mentioning a rate limit (429), wait 5 seconds
-   and retry. Up to 3 retries. Any other run with no `saved:` line is a failure.
-4. Copy: cp "<the saved: path>" {_DESIGN_DIR}/variant-{letter}.png
-5. Verify: ls -lh {_DESIGN_DIR}/variant-{letter}.png
-6. Report exactly one of:
+{the full variant-specific brief for this direction}
+
+2. Run this block as written, in one Bash call. It stages into a fresh /tmp dir of
+   its own, retries a rate limit (429) up to 3 times, copies the image from the
+   printed `saved:` line (never an assumed file name), and removes the staging dir
+   on every exit, success or failure.
+
+```bash
+(
+D_BIN='{absolute path to $D binary}'
+BRIEF_FILE='{_DESIGN_DIR absolute path}/brief-{letter}.txt'
+FINAL='{_DESIGN_DIR absolute path}/variant-{letter}.png'
+[ -s "$BRIEF_FILE" ] || { echo "VARIANT_{letter}_FAILED: brief not written to $BRIEF_FILE"; exit 1; }
+STAGE=$(mktemp -d /tmp/variant-{letter}.XXXXXX) \
+  || { echo "VARIANT_{letter}_FAILED: cannot create a staging dir"; exit 1; }
+trap 'rm -rf "$STAGE"' EXIT
+tries=0
+while :; do
+  OUT=$("$D_BIN" variants --brief "$(cat "$BRIEF_FILE")" --count 1 --output-dir "$STAGE" 2>&1)
+  printf '%s\n' "$OUT"
+  SAVED=$(printf '%s\n' "$OUT" | sed -n 's/^saved: //p' | head -n 1)
+  [ -n "$SAVED" ] && break
+  if ! printf '%s\n' "$OUT" | grep -qiE '^DESIGN_ERROR:.*(429|rate limit)'; then
+    echo "VARIANT_{letter}_FAILED: $(printf '%s\n' "$OUT" | grep -m 1 '^DESIGN_ERROR:' || echo 'no saved: line')"
+    exit 1
+  fi
+  [ "$tries" -lt 3 ] || { echo "VARIANT_{letter}_RATE_LIMITED: exhausted retries"; exit 1; }
+  tries=$((tries + 1)); sleep 5
+done
+cp "$SAVED" "$FINAL" || { echo "VARIANT_{letter}_FAILED: cannot copy $SAVED to $FINAL"; exit 1; }
+echo "VARIANT_{letter}_DONE: $(ls -lh "$FINAL" | awk '{print $5}')"
+)
+```
+
+3. Report the one VARIANT_{letter}_ line the block printed:
    VARIANT_{letter}_DONE: {file size}
    VARIANT_{letter}_FAILED: {error description}
    VARIANT_{letter}_RATE_LIMITED: exhausted retries
-```
+````
 
 The agents do not judge their own output — quality is gated once, by you, in Step 3d.
 
