@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.43.0 — 2026-10-08
+
+### Fixed
+
+- **`/vibe-upgrade` keeps your local work and tells the truth about failure.**
+  A failed install rolls back with `git reset --keep`, which refuses rather than
+  discards local edits. A vendored swap never deletes the live copy and refuses
+  to start over a stale backup. Migrations, the version marker and the
+  what's-new banner run only after a successful install, and every failure path
+  exits non-zero.
+- **Upgrades reinstall what you installed.** The replay is built from the
+  install manifests, so a Claude-only install stays Claude-only and a config
+  install is refreshed with the same RTK choice it was first made with, instead
+  of `--yes` reinstalling into all four runtimes.
+- **`vibe-update-check` reports a failed check.** With `--force` it prints
+  `CHECK_FAILED` and the reason instead of the silence that means "up to date".
+  It compares the installed version rather than a pulled checkout, so an
+  install that failed is offered again. It finds its checkout from the installed
+  layout, strips credentials from the remote it names, and throttles correctly
+  under GNU `stat`.
+- **Plan reviews follow their own gates.** `/autoplan`, `/plan-ceo-review`,
+  `/plan-eng-review` and `/plan-devex-review` skip only sections that exist,
+  restore the plan byte for byte, and give outside voices a plan extract
+  without earlier review output. Codex prompts go through a file on stdin with
+  the exit status captured, and every subagent runs in the foreground.
+- **`/plan-tune` edits its profile safely.** Dimension and value are validated,
+  the other dimensions are kept, and no stray file lands in the working
+  directory. The skill, the shared question-tuning text and the docs agree that
+  the profile is advisory: only an explicit never-ask preference on a two-way
+  question skips it.
+
 ## 1.42.0 — 2026-10-08
 
 ### Fixed
