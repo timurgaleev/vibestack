@@ -6,23 +6,28 @@ Shared reference for fetching, filtering, and classifying Greptile review commen
 
 ## Fetch
 
-Run these commands to detect the PR and fetch comments. Both API calls run in parallel.
+Run this block to detect the PR and fetch comments. Both API calls run in parallel into a
+private per-run directory — never a fixed `/tmp` name, which another user or a concurrent
+run can pre-create, read, or overwrite.
 
 ```bash
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 PR_NUMBER=$(gh pr view --json number --jq '.number' 2>/dev/null)
-```
-
-**If either fails or is empty:** Skip Greptile triage silently. This integration is additive — the workflow works without it.
-
-```bash
-# Fetch line-level review comments AND top-level PR comments in parallel
-gh api repos/$REPO/pulls/$PR_NUMBER/comments \
-  --jq '.[] | select(.user.login == "greptile-apps[bot]") | select(.position != null) | {id: .id, path: .path, line: .line, body: .body, html_url: .html_url, source: "line-level"}' > /tmp/greptile_line.json &
-gh api repos/$REPO/issues/$PR_NUMBER/comments \
-  --jq '.[] | select(.user.login == "greptile-apps[bot]") | {id: .id, body: .body, html_url: .html_url, source: "top-level"}' > /tmp/greptile_top.json &
+[ -n "$REPO" ] && [ -n "$PR_NUMBER" ] || { echo "GREPTILE: skip (no PR, or gh unavailable)"; exit 0; }
+GREPTILE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-greptile.XXXXXXXX") || { echo "GREPTILE: skip (mktemp failed)"; exit 0; }
+gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
+  --jq '.[] | select(.user.login == "greptile-apps[bot]") | select(.position != null) | {id: .id, path: .path, line: .line, body: .body, html_url: .html_url, source: "line-level"}' > "$GREPTILE_DIR/line.json" &
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+  --jq '.[] | select(.user.login == "greptile-apps[bot]") | {id: .id, body: .body, html_url: .html_url, source: "top-level"}' > "$GREPTILE_DIR/top.json" &
 wait
+echo "GREPTILE_DIR: $GREPTILE_DIR"
 ```
+
+**If it prints `GREPTILE: skip`:** Skip Greptile triage silently. This integration is additive — the workflow works without it.
+
+Every Bash call is a fresh shell, so later blocks do not inherit `GREPTILE_DIR`:
+substitute the printed path for `<greptile-dir>`. Remove the directory
+(`rm -rf <greptile-dir>`) once triage and replies are done.
 
 **If API errors or zero Greptile comments across both endpoints:** Skip silently.
 
@@ -42,6 +47,7 @@ are the values the reply and suppression steps key on, and they are not prose. B
 TEXT enters your context only through the trust envelope:
 
 ```bash
+GREPTILE_DIR='<greptile-dir>'
 python3 -c '
 import json, sys
 for path in sys.argv[1:]:
@@ -56,7 +62,7 @@ for path in sys.argv[1:]:
         c = json.loads(line)
         print("--- comment %s (%s)" % (c.get("id"), c.get("path") or "top-level"))
         print(c.get("body", ""))
-' /tmp/greptile_line.json /tmp/greptile_top.json \
+' "$GREPTILE_DIR/line.json" "$GREPTILE_DIR/top.json" \
   | ~/.vibestack/bin/vibe-untrusted --source greptile-comments
 ```
 
@@ -114,19 +120,67 @@ For each non-suppressed comment:
 
 ## Reply APIs
 
-When replying to Greptile comments, use the correct endpoint based on comment source:
+Reply text quotes commit SHAs, diff lines and reviewer text, so it never goes into a
+shell command. Inside double quotes the shell runs every backtick span and `$(...)`: a
+reply quoting `` `rm -rf ~` `` from the diff, or a Greptile body carrying `$(curl ...)`,
+would execute on this machine, and the posted reply would silently lose the quoted text.
+A heredoc is no better — it ends early at any line equal to its delimiter. The text
+travels as a file instead, and `gh` reads it with `-F body=@<file>`.
 
-**Line-level comments** (from `pulls/$PR/comments`):
+**1. Create the reply file** in a private per-run directory:
+
 ```bash
-gh api repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies \
-  -f body="<reply text>"
+REPLY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-greptile-reply.XXXXXXXX") || { echo "Not sent: mktemp failed." >&2; exit 1; }
+REPLY_FILE="$REPLY_DIR/reply.md"
+: > "$REPLY_FILE" || { echo "Not sent: cannot create $REPLY_FILE." >&2; exit 1; }
+echo "REPLY_FILE: $REPLY_FILE"
 ```
 
-**Top-level comments** (from `issues/$PR/comments`):
+**2. Write the reply** (a template below) into the printed file with your file-write
+tool, exactly as it should appear (Claude Code's Write tool needs a Read of the empty
+file first). The text never goes into a shell command, heredoc, `echo` or quoted
+argument. If the write fails or is refused, do not send: print the cause and the file path.
+
+**3. Post it.** Substitute the printed path for `<reply-file>` and the comment's raw
+numeric `id` from the fetched JSON for `<comment-id>`. The block refuses a non-numeric
+id, an empty file, and a reply that matches a high-confidence credential pattern
+(the same shapes as `lib/snippets/secret-scan-patterns.md`) — a reply quoting a diff
+line can carry a key that was never meant to leave the machine. On a credential match,
+rewrite the reply without the value; never post it. The block deletes the reply
+file and its directory after a successful post.
+
+Line-level comments (from `pulls/$PR/comments`):
 ```bash
-gh api repos/$REPO/issues/$PR_NUMBER/comments \
-  -f body="<reply text>"
+REPLY_FILE='<reply-file>'
+COMMENT_ID='<comment-id>'
+case "$COMMENT_ID" in ''|*[!0-9]*) echo "Not sent: comment id '$COMMENT_ID' is not numeric." >&2; exit 1 ;; esac
+case "$REPLY_FILE" in */vibe-greptile-reply.*/reply.md) ;; *) echo "Not sent: '$REPLY_FILE' is not a reply file from step 1." >&2; exit 1 ;; esac
+[ -s "$REPLY_FILE" ] || { echo "Not sent: $REPLY_FILE is missing or empty." >&2; exit 1; }
+if grep -Eq -e 'AKIA[0-9A-Z]{16}|gh[pos]_[A-Za-z0-9]{36}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48}|gl(pat|ptt|dt)-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{36}|dop_v1_[a-f0-9]{64}|-----BEGIN[A-Z ]*PRIVATE KEY-----|^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=.+' "$REPLY_FILE"; then
+  echo "Not sent: $REPLY_FILE matches a credential pattern. Rewrite it without the value." >&2; exit 1
+fi
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner') || { echo "Not sent: gh could not resolve the repo." >&2; exit 1; }
+PR_NUMBER=$(gh pr view --json number --jq '.number') || { echo "Not sent: gh could not resolve the PR." >&2; exit 1; }
+gh api "repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies" -F body=@"$REPLY_FILE" >/dev/null \
+  && rm -f "$REPLY_FILE" && rmdir "${REPLY_FILE%/reply.md}"
 ```
+
+Top-level comments (from `issues/$PR/comments`):
+```bash
+REPLY_FILE='<reply-file>'
+case "$REPLY_FILE" in */vibe-greptile-reply.*/reply.md) ;; *) echo "Not sent: '$REPLY_FILE' is not a reply file from step 1." >&2; exit 1 ;; esac
+[ -s "$REPLY_FILE" ] || { echo "Not sent: $REPLY_FILE is missing or empty." >&2; exit 1; }
+if grep -Eq -e 'AKIA[0-9A-Z]{16}|gh[pos]_[A-Za-z0-9]{36}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48}|gl(pat|ptt|dt)-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{36}|dop_v1_[a-f0-9]{64}|-----BEGIN[A-Z ]*PRIVATE KEY-----|^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=.+' "$REPLY_FILE"; then
+  echo "Not sent: $REPLY_FILE matches a credential pattern. Rewrite it without the value." >&2; exit 1
+fi
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner') || { echo "Not sent: gh could not resolve the repo." >&2; exit 1; }
+PR_NUMBER=$(gh pr view --json number --jq '.number') || { echo "Not sent: gh could not resolve the PR." >&2; exit 1; }
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@"$REPLY_FILE" >/dev/null \
+  && rm -f "$REPLY_FILE" && rmdir "${REPLY_FILE%/reply.md}"
+```
+
+Use one reply file per comment: create a fresh one (step 1) for each reply rather than
+rewriting a file another reply is still waiting on.
 
 **If a reply POST fails** (e.g., PR was closed, no write permission): warn and continue. Do not stop the workflow for a failed reply.
 
