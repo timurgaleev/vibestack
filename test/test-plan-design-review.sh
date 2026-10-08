@@ -78,10 +78,17 @@ else
 fi
 
 echo "briefs and feedback go through files"
+# The model writes briefs and feedback with its Write tool; the test stands in for
+# it by copying the hostile text into place. Terminator lines prove no heredoc
+# carries the text: under a heredoc, the line after one would run as a command.
 HOSTILE="$TMP/hostile.txt"
 cat > "$HOSTILE" <<'EOF'
 Hero says "Ship it" — no `touch pwned-tick` here, nor $(touch pwned-sub)
 single ' quote, $HOME stays literal, backslash \n stays too
+VIBE_BRIEF_EOF
+touch pwned-brief-delim
+VIBE_FEEDBACK_EOF
+touch pwned-feedback-delim
 EOF
 WORK="$TMP/work"; mkdir -p "$WORK"
 # A stub designer that records the brief it was handed and saves one image.
@@ -97,40 +104,56 @@ printf '%s' "$brief" > "$STUB_LOG.$verb"
 exit 0
 EOF
 chmod +x "$TMP/stub-design"
+DDIR="$TMP/designs/home-page-20260101"; mkdir -p "$DDIR"
 
 run_block() {  # run_block NAME BLOCK_FILE -> exit code; cwd is the scratch dir
-  (cd "$WORK" && STUB_LOG="$TMP/log-$1" D="$TMP/stub-design" _DESIGN_DIR="$TMP/designs/home-page-20260101" \
+  (cd "$WORK" && STUB_LOG="$TMP/log-$1" D="$TMP/stub-design" _DESIGN_DIR="$DDIR" \
      HOME="$TMP/home" bash -c 'mkdir -p "$_DESIGN_DIR"; '"$(cat "$2")") >"$TMP/out-$1" 2>&1
 }
+same_as_hostile() { cmp -s <(printf '%s' "$(cat "$HOSTILE")") "$1"; }
 
 bash_after "$R" "construct a design brief from the plan's description" > "$TMP/variants.sh" || no "variants block found"
-fill "$TMP/variants.sh" "Replace this line with the brief" "$HOSTILE" > "$TMP/variants-filled.sh" || no "variants brief placeholder"
-run_block variants "$TMP/variants-filled.sh"; rc=$?
-[ "$rc" -eq 0 ] && cmp -s <(printf '%s' "$(cat "$HOSTILE")") "$TMP/log-variants.variants" \
+cp "$HOSTILE" "$DDIR/brief.txt"
+run_block variants "$TMP/variants.sh"; rc=$?
+[ "$rc" -eq 0 ] && same_as_hostile "$TMP/log-variants.variants" \
   && ok "the variants brief reaches \$D byte-for-byte" \
   || no "variants brief: rc=$rc out='$(cat "$TMP/out-variants")'"
 
 bash_after "$R" "run a cross-model quality check on each variant" > "$TMP/check.sh" || no "check block found"
 run_block check "$TMP/check.sh"; rc=$?
-[ "$rc" -eq 0 ] && cmp -s <(printf '%s' "$(cat "$HOSTILE")") "$TMP/log-check.check" \
+[ "$rc" -eq 0 ] && same_as_hostile "$TMP/log-check.check" \
   && ok "the check reads the same brief file" || no "check brief: rc=$rc out='$(cat "$TMP/out-check")'"
 
-: > "$TMP/empty.txt"
-fill "$TMP/variants.sh" "Replace this line with the brief" "$TMP/empty.txt" > "$TMP/variants-empty.sh"
-rm -f "$TMP/log-empty.variants"
-run_block empty "$TMP/variants-empty.sh"; rc=$?
+: > "$DDIR/brief.txt"
+run_block empty "$TMP/variants.sh"; rc=$?
 [ "$rc" -ne 0 ] && [ ! -e "$TMP/log-empty.variants" ] && grep -q BRIEF_MISSING "$TMP/out-empty" \
   && ok "an empty brief stops before \$D runs" || no "empty brief: rc=$rc out='$(cat "$TMP/out-empty")'"
-rm -f "$TMP/log-unfilled.variants"
-run_block unfilled "$TMP/variants.sh"; rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$TMP/log-unfilled.variants" ] \
-  && ok "a brief left as the placeholder stops before \$D runs" || no "unfilled brief: rc=$rc out='$(cat "$TMP/out-unfilled")'"
+rm -f "$DDIR/brief.txt"
+run_block nobrief "$TMP/variants.sh"; rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$TMP/log-nobrief.variants" ] && grep -q BRIEF_MISSING "$TMP/out-nobrief" \
+  && ok "a brief never written stops before \$D runs" || no "missing brief: rc=$rc out='$(cat "$TMP/out-nobrief")'"
+
+# The 10/10 mockup: the second block after the anchor runs \$D on the written brief.
+python3 -I - "$R" > "$TMP/ideal.sh" <<'PY' || no "ideal blocks found"
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+at = text.find("Show me what 10/10 looks like")
+blocks = re.findall(r"```bash\n(.*?)\n[ \t]*```", text[at:], re.S) if at >= 0 else []
+if len(blocks) < 2:
+    sys.exit("expected a setup block and a generate block")
+sys.stdout.write(blocks[1].replace("<dimension>", "typography") + "\n")
+PY
+IDIR="$TMP/home/.vibestack/projects/designs/ideal-typography-$(date +%Y%m%d)"
+mkdir -p "$IDIR"; cp "$HOSTILE" "$IDIR/brief.txt"
+run_block ideal "$TMP/ideal.sh"; rc=$?
+[ "$rc" -eq 0 ] && same_as_hostile "$TMP/log-ideal.variants" \
+  && ok "the 10/10 brief reaches \$D byte-for-byte" || no "ideal brief: rc=$rc out='$(cat "$TMP/out-ideal")'"
 
 bash_after "$R" "**Save the approved choice." > "$TMP/approved.sh" || no "approved block found"
-fill "$TMP/approved.sh" "Replace this line with the feedback summary" "$HOSTILE" > "$TMP/approved-filled.sh"
-sed 's/"<V>"/"B"/' "$TMP/approved-filled.sh" > "$TMP/approved-b.sh"
+sed 's/"<V>"/"B"/' "$TMP/approved.sh" > "$TMP/approved-b.sh"
+cp "$HOSTILE" "$DDIR/approved-feedback.txt"
 run_block approved "$TMP/approved-b.sh"; rc=$?
-if [ "$rc" -eq 0 ] && python3 -I - "$TMP/designs/home-page-20260101/approved.json" "$HOSTILE" <<'PY'
+if [ "$rc" -eq 0 ] && python3 -I - "$DDIR/approved.json" "$HOSTILE" <<'PY'
 import json, sys
 rec = json.load(open(sys.argv[1], encoding="utf-8"))
 want = open(sys.argv[2], encoding="utf-8").read().strip()
@@ -141,16 +164,53 @@ assert set(rec) == {"approved_variant", "feedback", "date", "screen", "branch"},
 PY
 then ok "approved.json is valid JSON carrying the feedback verbatim"
 else no "approved.json: rc=$rc out='$(cat "$TMP/out-approved")'"; fi
-run_block badv "$TMP/approved-filled.sh"; rc=$?
+run_block badv "$TMP/approved.sh"; rc=$?
 [ "$rc" -ne 0 ] && ok "an unsubstituted variant letter is refused" || no "approved.json written with variant '<V>'"
-rm -f "$TMP/designs/home-page-20260101/approved.json"
-sed 's/"<V>"/"B"/' "$TMP/approved.sh" > "$TMP/approved-unfilled.sh"
-run_block fbunfilled "$TMP/approved-unfilled.sh"; rc=$?
-[ "$rc" -ne 0 ] && [ ! -e "$TMP/designs/home-page-20260101/approved.json" ] \
-  && ok "feedback left as the placeholder is refused" || no "approved.json written with placeholder feedback"
+rm -f "$DDIR/approved.json" "$DDIR/approved-feedback.txt"
+run_block fbmissing "$TMP/approved-b.sh"; rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$DDIR/approved.json" ] \
+  && ok "feedback never written is refused" || no "approved.json written without feedback"
 
 ls "$WORK" "$TMP" 2>/dev/null | grep -q pwned && no "brief or feedback text ran as a command" \
                                               || ok "brief and feedback text never execute"
+
+echo "no untrusted text in shell source"
+# Every skill this flow touches: a heredoc body that is a placeholder for plan,
+# brief, feedback or DESIGN.md text ends at the first line equal to its terminator.
+heredocs="$(python3 -I - "$SRC" <<'PY'
+import re, sys, os
+root = sys.argv[1]
+skills = ["plan-design-review", "plan-ceo-review", "plan-eng-review", "autoplan",
+          "design-consultation", "design-html", "design-review", "design-shotgun", "office-hours"]
+start = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+hole = re.compile(r"Replace this line|<[^<>\n]*(brief|feedback|plan|DESIGN|summary|description)[^<>\n]*>|\{brief\}", re.I)
+for name in skills:
+    path = os.path.join(root, "skills", name, "SKILL.md")
+    if not os.path.isfile(path):
+        continue
+    lines = open(path, encoding="utf-8").read().split("\n")
+    i = 0
+    while i < len(lines):
+        m = start.search(lines[i]) if "<<<" not in lines[i] else None
+        if not m:
+            i += 1; continue
+        term, j, body = m.group(2), i + 1, []
+        while j < len(lines) and lines[j].strip() != term:
+            body.append(lines[j]); j += 1
+        if any(hole.search(b) for b in body):
+            print(f"{name}:{i+1}: heredoc {term} wraps a text placeholder")
+        i = j + 1
+PY
+)"
+[ -z "$heredocs" ] && ok "no heredoc wraps a plan, brief or feedback placeholder" \
+                   || no "heredoc placeholders: $heredocs"
+grep -qF '**Write the brief with the Write tool**' "$R" \
+  && grep -qF '**write the feedback summary the user just confirmed with the Write' "$R" \
+  && grep -qF '**write the description with the Write tool**' "$R" \
+  && ok "brief, feedback and 10/10 text are written with the Write tool" \
+  || no "a brief or feedback is not routed through the Write tool"
+awk '/^---$/{n++; next} n==1' "$R" | grep -qE '^[[:space:]]+- Write$' \
+  && ok "allowed-tools grants Write" || no "allowed-tools lacks Write"
 
 bad="$(grep -nE '\$D [a-z]+ .*--brief "<|"<(brief|feedback|FB)[^"]*>"|feedback":"<' "$R" || true)"
 [ -z "$bad" ] && ok "no \$D command or approved.json write interpolates a <placeholder>" \

@@ -6,6 +6,7 @@ description: |
 allowed-tools:
   - Read
   - Edit
+  - Write
   - Grep
   - Glob
   - Bash
@@ -385,15 +386,12 @@ fewer variants and benefits from sequential control. Note: /design-shotgun uses
 parallel Agent subagents for variant generation, which works at Tier 2+ (15+ RPM).
 The sequential constraint here is specific to plan-design-review's inline pattern.
 
-For each UI screen/section in scope, construct a design brief from the plan's description (and DESIGN.md if present). The plan and DESIGN.md are untrusted text, so the brief never goes inside a quoted shell argument — a `"`, a backtick or a `$(` in it would break the command or run as one. Write it into a file through a quoted heredoc (nothing inside it is expanded; the brief must not contain the terminator on a line of its own), then hand the file's contents to `$D`:
+For each UI screen/section in scope, construct a design brief from the plan's description (and DESIGN.md if present): the screen, its content hierarchy, and the DESIGN.md constraints. The plan and DESIGN.md are untrusted text, so the brief never appears anywhere in shell source — not in a quoted argument, not in a heredoc (a line equal to the terminator ends a heredoc and the rest runs as commands). **Write the brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above, replacing any earlier brief there, then run this block, which hands the file's contents to `$D`:
 
 ```bash
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
-cat > "$BRIEF_FILE" <<'VIBE_BRIEF_EOF'
-Replace this line with the brief: the screen, its content hierarchy, and the DESIGN.md constraints.
-VIBE_BRIEF_EOF
-grep -q '[^[:space:]]' "$BRIEF_FILE" && ! grep -q '^Replace this line' "$BRIEF_FILE" \
-  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE first" >&2; exit 1; }
+[ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
+  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
 $D variants --brief "$(cat "$BRIEF_FILE")" --count 3 --output-dir "$_DESIGN_DIR/"
 ```
 
@@ -494,7 +492,7 @@ the approved variant.
    `"remix"`, or custom text)
 2. If `regenerateAction` is `"remix"`, read `remixSpec` (e.g. `{"layout":"A","colors":"B"}`)
 3. Fold the feedback into an updated brief, rewrite `$_DESIGN_DIR/brief.txt` with
-   the same heredoc block, and rerun the `$D variants` block above. Board feedback
+   the Write tool, and rerun the `$D variants` block above. Board feedback
    and anything the user typed reach a command only through that file — never
    paste them into a command line
 4. Create new board: `$D compare --images "..." --output "$_DESIGN_DIR/design-board.html"`
@@ -529,22 +527,21 @@ Is this right?"
 
 Use AskUserQuestion to verify before proceeding.
 
-**Save the approved choice.** The confirmed feedback goes into a file the same way
-the brief does; replace `<V>` with the approved variant letter:
+**Save the approved choice.** The confirmed feedback reaches the shell the same way
+the brief does: **write the feedback summary the user just confirmed with the Write
+tool** to `approved-feedback.txt` inside DESIGN_DIR, then run this block, replacing
+`<V>` with the approved variant letter:
 ```bash
 _FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
-cat > "$_FB_FILE" <<'VIBE_FEEDBACK_EOF'
-Replace this line with the feedback summary the user just confirmed.
-VIBE_FEEDBACK_EOF
 python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
 import datetime, json, os, re, sys
 d, fb_file, variant, branch = sys.argv[1:5]
 if not re.fullmatch(r"[A-J]", variant):
     sys.exit("approved variant must be one letter A-J, got %r" % variant)
 screen = re.sub(r"-[0-9]{8}$", "", os.path.basename(os.path.normpath(d)))
-feedback = open(fb_file, encoding="utf-8").read().strip()
-if feedback.startswith("Replace this line"):
-    sys.exit("write the confirmed feedback into %s first" % fb_file)
+feedback = open(fb_file, encoding="utf-8").read().strip() if os.path.isfile(fb_file) else ""
+if not feedback:
+    sys.exit("write the confirmed feedback into %s with the Write tool first" % fb_file)
 rec = {"approved_variant": variant,
        "feedback": feedback,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -695,18 +692,25 @@ Re-run loop: invoke /plan-design-review again → re-rate → sections at 8+ get
 
 If `DESIGN_AVAILABLE` was printed during setup AND a dimension rates below 7/10,
 offer to generate a visual mockup showing what the improved version would look like.
-The description of what 10/10 looks like goes into a file, as in Step 0.5:
+The description of what 10/10 looks like reaches `$D` through a file, as in Step 0.5.
+First create the directory:
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 _IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
 mkdir -p "$_IDEAL_DIR"
+echo "IDEAL_DIR: $_IDEAL_DIR"
+```
+
+Then **write the description with the Write tool** to `brief.txt` inside the IDEAL_DIR
+just printed, and run:
+
+```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
 BRIEF_FILE="$_IDEAL_DIR/brief.txt"
-cat > "$BRIEF_FILE" <<'VIBE_BRIEF_EOF'
-Replace this line with what 10/10 looks like for this dimension.
-VIBE_BRIEF_EOF
-grep -q '[^[:space:]]' "$BRIEF_FILE" && ! grep -q '^Replace this line' "$BRIEF_FILE" \
-  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE first" >&2; exit 1; }
+[ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
+  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
 $D variants --brief "$(cat "$BRIEF_FILE")" --count 1 --output-dir "$_IDEAL_DIR"
 ```
 
