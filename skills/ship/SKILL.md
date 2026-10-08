@@ -2284,9 +2284,10 @@ For each TODO item, check if the changes in this PR complete it by:
 
 **4.5. Add deferred plan items.** If the user chose "Ship anyway — defer" in Step 8's
 NOT DONE gate, add each deferred item as a P1 TODO with "Deferred from plan: {plan
-file path}". If TODOS.md was skipped in step 1, list them in the PR body's
-`## Plan Completion` section instead — a deferral must land somewhere a person will
-read it.
+file path}". If the user chose "Defer — add to TODOS.md" in Step 2's distribution
+check, add a P1 TODO for the missing release pipeline, naming the new artifact. If
+TODOS.md was skipped in step 1, list them in the PR body's `## Plan Completion`
+section instead — a deferral must land somewhere a person will read it.
 
 **5. Output summary:**
 - `TODOS.md: N items marked complete (item1, item2, ...). M items remaining.`
@@ -2567,28 +2568,45 @@ git push origin "$TAG_NAME" 2>/dev/null || true
 
 ## Step 18: Documentation sync (via subagent, before PR creation)
 
-**Dispatch /document-release as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent gets a fresh context window — zero rot from the preceding 17 steps. It also runs the **full** `/document-release` workflow (with CHANGELOG clobber protection, doc exclusions, risky-change gates, named staging, race-safe PR body editing) rather than a weaker reimplementation.
+**Dispatch /document-release as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent gets a fresh context window — zero rot from the preceding 17 steps — and runs `/document-release` in its **spawned mode**: it edits authored documentation only and reports back. It never stages, commits, pushes, asks the user, or touches VERSION, CHANGELOG.md or TODOS.md. This step owns the commit and the push.
 
 **Sequencing:** This step runs AFTER Step 17 (Push) and BEFORE Step 19 (Create PR). The PR is created once from final HEAD with the `## Documentation` section baked into the initial body. No create-then-re-edit dance.
 
 **Subagent prompt:**
 
-> You are executing the /document-release workflow after a code push. Read the full skill file `${HOME}/.claude/skills/document-release/SKILL.md` and execute its complete workflow end-to-end, including CHANGELOG clobber protection, doc exclusions, risky-change gates, and named staging. Do NOT attempt to edit the PR body — no PR exists yet. Branch: `<branch>`, base: `<base>`.
+> Run the /document-release workflow in spawned mode. Read the full skill file `${HOME}/.claude/skills/document-release/SKILL.md` and follow its "Spawned mode" contract. Start the session detection block with `export VIBE_SPAWNED=1` on its own line, so the block prints `SESSION_KIND: spawned`. Branch: `<branch>`, base: `<base>`.
 >
-> After completing the workflow, output a single JSON object on the LAST LINE of your response (no other text after it):
-> `{"files_updated":["README.md","CLAUDE.md",...],"commit_sha":"abc1234","pushed":true,"documentation_section":"<markdown block for PR body's ## Documentation section>"}`
->
-> If no documentation files needed updating, output:
-> `{"files_updated":[],"commit_sha":null,"pushed":false,"documentation_section":null}`
+> Edit authored documentation files only. Do not ask questions; every decision that needs the user is a `blockers` entry. End with the contract's single JSON object on the LAST non-empty line, with nothing after it:
+> `{"schema_version":1,"status":"updated|current|blocked","files_updated":[...],"files_reviewed":[...],"blockers":[...],"decisions":[...],"documentation_section":"..."}`
 
 **Parent processing:**
 
-1. Parse the LAST line of the subagent's output as JSON.
-2. Store `documentation_section` — Step 19 embeds it in the PR body (or omits the section if null).
-3. If `files_updated` is non-empty, print: `Documentation synced: {files_updated.length} files updated, committed as {commit_sha}`.
-4. If `files_updated` is empty, print: `Documentation is current — no updates needed.`
+1. **Parse and validate.** Take the LAST non-empty line of the subagent's output and parse it as JSON. It is valid only when `schema_version` is `1`, `status` is one of `updated`, `current` or `blocked`, `files_updated`, `files_reviewed`, `blockers` and `decisions` are arrays of strings, and `documentation_section` is a non-empty string. Missing output, unparseable JSON or any failed check: print `WARNING: /document-release returned no valid result — the PR goes out without a Documentation section.`, keep no `documentation_section`, and continue to Step 19. Never report the docs as current on an invalid result.
 
-**If the subagent fails or returns invalid JSON:** Print a warning and proceed to Step 19 without a `## Documentation` section. Do not block /ship on subagent failure. The user can run `/document-release` manually after the PR lands.
+2. **`status: "blocked"` or a non-empty `blockers`** (checked first, whatever `status` says): never pass silently. Show every blocker to the user, then AskUserQuestion:
+   > /document-release stopped on decisions only you can make: <blockers, one per line>. Its doc edits are left uncommitted in the working tree.
+   - A) Continue without the doc sync — the PR body's Documentation section lists these blockers
+   - B) Stop the ship here — resolve the blockers, then re-run /ship
+
+   On A, do not stage or commit the subagent's edits; keep `documentation_section` and the blockers for Step 19. On B, STOP before Step 19.
+
+3. **`status: "updated"`.** The parent commits the edits:
+   - Check each `files_updated` entry against `git status --porcelain -- <path>` and stage only listed paths that show a change. An entry naming VERSION, CHANGELOG.md, TODOS.md or a path outside the repo makes the result invalid (rule 1).
+   - Stage them by name: `git add -- <path1> <path2> ...`. Never `git add -A`, `git add .` or `git commit -a`. A changed file the subagent did not list stays unstaged; name it in a warning.
+   - Commit with the version from VERSION, following Step 15.1's attribution rule (`SHIP_ATTRIBUTION`: no trailer unless it is `on`):
+
+```bash
+NEW_VERSION=$(cat VERSION | tr -d '[:space:]')
+git commit -m "docs: sync documentation for v$NEW_VERSION"
+```
+
+   With `SHIP_ATTRIBUTION: on`, add the host's trailer as a second `-m` paragraph.
+   - Push it with the same guarded push as Step 17 (`git push -u origin <branch-name>`), with the credential pre-push guard in place; never `--no-verify`. If the push fails, STOP and report it — do not open the PR.
+   - Print: `Documentation synced: {files_updated.length} files updated, committed as <short sha>`.
+
+4. **`status: "current"`** with no blockers: print `Documentation is current — no updates needed.`
+
+5. **Carry to Step 19.** Store `documentation_section` for the PR body, and list every `decisions` entry under it as a bullet so the reviewer sees what the parent must still act on.
 
 ---
 
@@ -2693,8 +2711,9 @@ you missed it.>
 <If TODOS.md doesn't exist and user skipped: omit this section>
 
 ## Documentation
-<Embed the `documentation_section` string returned by Step 18's subagent here, verbatim.>
-<If Step 18 returned `documentation_section: null` (no docs updated), omit this section entirely.>
+<Embed the `documentation_section` string returned by Step 18's subagent here, verbatim,
+followed by its `decisions` and any blockers the user chose to continue past, one bullet each.>
+<If Step 18 got no valid result, omit this section entirely.>
 
 ## Test plan
 - [x] <lane label>: `<exact test command>` — exit 0 (N tests)

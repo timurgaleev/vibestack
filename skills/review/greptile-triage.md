@@ -1,6 +1,6 @@
 # Greptile Comment Triage
 
-Shared reference for fetching, filtering, and classifying Greptile review comments on GitHub PRs. Both `/review` (Step 2.5) and `/ship` (Step 3.75) reference this document.
+Shared reference for fetching, filtering, and classifying Greptile review comments on GitHub PRs. Both `/review` (Step 2.5) and `/ship` (Step 10) reference this document.
 
 ---
 
@@ -109,7 +109,7 @@ For each non-suppressed comment:
 
 1. **Line-level comments:** Read the file at the indicated `path:line` and surrounding context (±10 lines)
 2. **Top-level comments:** Read the full body from the envelope output above
-3. Cross-reference the comment against the full diff (`git diff origin/main`) and the review checklist
+3. Cross-reference the comment against the full diff (`git diff origin/<base>`, using the base branch the calling skill detected) and the review checklist
 4. Classify:
    - **VALID & ACTIONABLE** — a real bug, race condition, security issue, or correctness problem that exists in the current code
    - **VALID BUT ALREADY FIXED** — a real issue that was addressed in a subsequent commit on the branch. Identify the fixing commit SHA.
