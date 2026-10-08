@@ -99,9 +99,30 @@ Using the gathered state plus your conversation history, produce a summary cover
 
 1. **What's being worked on** — the high-level goal or feature
 2. **Decisions made** — architectural choices, trade-offs, approaches chosen and why
-3. **Remaining work** — concrete next steps, in priority order
+3. **Remaining work** — concrete next steps, in priority order, each marked with
+   how this session knows it (see the provenance table below)
 4. **Notes** — anything a future session needs to know (gotchas, blocked items,
    open questions, things that were tried and didn't work)
+
+**Remaining Work provenance.** A resumed session cannot tell a command you ran
+from one you guessed unless the item says so. Every item starts with the status
+`Open.` — never with a completion token such as `[done]` or `[executed]` — and
+ends with the marker from the first row that applies:
+
+| # | The item is... | Marker | Use when this session... |
+|---|----------------|--------|--------------------------|
+| 1 | a writing step (migration, sync, insert, import, deploy, a dialog that writes), with or without a concrete path | `(target state checked)` | inspected the target's schema or state (for example its unique key) |
+| | | `(code read)` | read the writer but not the target |
+| | | `(path assumed)` | inferred the write without reading either |
+| 2 | otherwise, names a concrete path: a runnable command, CLI flag or switch, config key or value, or file or directory path | `(path run)` | executed it and observed the outcome; state the outcome in the item (`exit 0`, `failed: <reason>`) |
+| | | `(path read)` | read the code or file but did not execute it |
+| | | `(path assumed)` | inferred it without running or reading it, however confident |
+| 3 | anything else | none | (`Open.` alone) |
+
+Writing steps get their own markers because whether a write is safe to repeat
+depends on the target's state, not on the code that performs it. Examples:
+`Open. Run the suite with CONFIG=staging. (path run) exit 0` and
+`Open. Switch B reads config key Y. (path assumed)`.
 
 If the user provided a title, use it. Otherwise, infer a concise title (3-6 words)
 from the work being done.
@@ -114,7 +135,10 @@ Try to determine how long this session has been active:
 if [ -n "$_TEL_START" ]; then
   START_EPOCH="$_TEL_START"
 elif [ -n "$PPID" ]; then
-  START_EPOCH=$(ps -o lstart= -p $PPID 2>/dev/null | xargs -I{} date -jf "%c" "{}" "+%s" 2>/dev/null || echo "")
+  _LSTART=$(ps -o lstart= -p "$PPID" 2>/dev/null)
+  # BSD date (macOS) parses with -jf, GNU date (Linux) with -d. Never parse an
+  # empty start: GNU `date -d ""` means today at midnight.
+  [ -n "$_LSTART" ] && START_EPOCH=$(date -jf "%c" "$_LSTART" "+%s" 2>/dev/null || date -d "$_LSTART" "+%s" 2>/dev/null || echo "")
 fi
 if [ -n "$START_EPOCH" ]; then
   NOW=$(date +%s)
@@ -189,7 +213,7 @@ files_modified:
 
 ### Remaining Work
 
-{Numbered list of concrete next steps, in priority order}
+{Numbered list of concrete next steps, in priority order. Each item starts with `Open.` and ends with its provenance marker from Step 2, or no marker under row 3.}
 
 ### Notes
 

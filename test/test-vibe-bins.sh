@@ -164,6 +164,84 @@ ll_roundtrip "plain ascii"          "$LLCASES/plain"
 "$LL" 'not json' >/dev/null 2>&1 && no "learnings-log accepted invalid JSON" \
                                  || ok "learnings-log rejects invalid JSON"
 
+# vibe-next-version — claims come from same-base PRs, read from each PR's head.
+#
+# The fake gh filters `pr list` by --base exactly as the real one does, so a
+# bin that drops --base sees the other-base PR and counts its claim. Titles
+# deliberately disagree with the head VERSION files: a bin that scrapes titles
+# picks the wrong slot.
+NV="$BIN/vibe-next-version"
+NVFAKE="$TMP/nvfake"; mkdir -p "$NVFAKE/bin" "$NVFAKE/heads"
+cat > "$NVFAKE/prs.json" <<'J'
+[
+ {"number":11,"title":"feat: dashboard","headRefName":"feat/dash","baseRefName":"main","headRepositoryOwner":{"login":"me"},"url":"https://x/pr/11"},
+ {"number":12,"title":"v9.9.9 fix: stale title","headRefName":"fix/stale","baseRefName":"main","headRepositoryOwner":{"login":"me"},"url":"https://x/pr/12"},
+ {"number":13,"title":"chore: release line","headRefName":"rel/next","baseRefName":"release-1.x","headRepositoryOwner":{"login":"me"},"url":"https://x/pr/13"},
+ {"number":14,"title":"feat: from a fork","headRefName":"feat/fork","baseRefName":"main","headRepositoryOwner":{"login":"someone"},"url":"https://x/pr/14"},
+ {"number":15,"title":"docs: no bump yet","headRefName":"docs/nobump","baseRefName":"main","headRepositoryOwner":{"login":"me"},"url":"https://x/pr/15"}
+]
+J
+printf '1.21.0\n' > "$NVFAKE/heads/feat%2Fdash"
+printf '1.20.1\n' > "$NVFAKE/heads/fix%2Fstale"
+printf '1.22.0\n' > "$NVFAKE/heads/rel%2Fnext"
+printf '1.22.0\n' > "$NVFAKE/heads/feat%2Ffork"
+printf '1.20.0\n' > "$NVFAKE/heads/docs%2Fnobump"
+cat > "$NVFAKE/bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${NV_GH_DOWN:-0}" = 1 ] && exit 1
+case "$1 $2" in
+  "pr list")
+    base=""; prev=""
+    for a in "$@"; do [ "$prev" = "--base" ] && base="$a"; prev="$a"; done
+    BASE="$base" python3 -c 'import json,os,sys
+prs=json.load(open(sys.argv[1])); b=os.environ["BASE"]
+print(json.dumps([p for p in prs if not b or p["baseRefName"]==b]))' "$NV_FIXTURE/prs.json" ;;
+  "repo view") [ "${NV_OWNER_DOWN:-0}" = 1 ] && exit 1; echo me ;;
+  "api "*)
+    ref="${2##*ref=}"
+    [ -f "$NV_FIXTURE/heads/$ref" ] || exit 1
+    base64 < "$NV_FIXTURE/heads/$ref" | tr -d '\n' ;;
+  *) exit 1 ;;
+esac
+SH
+printf '#!/usr/bin/env bash\nexit 1\n' > "$NVFAKE/bin/glab"
+chmod +x "$NVFAKE/bin/gh" "$NVFAKE/bin/glab"
+nv() { PATH="$NVFAKE/bin:$PATH" NV_FIXTURE="$NVFAKE" "$NV" "$@"; }
+nvq() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
+
+out="$(nv --base main --bump minor --current-version 1.20.0)"
+[ "$(nvq 'd["version"]' <<<"$out")" = "1.22.0" ] \
+  && ok "next-version advances past a head-VERSION claim" || no "next-version picked wrong slot: $out"
+[ "$(nvq 'sorted(c["pr"] for c in d["claimed"])' <<<"$out")" = "[11, 12]" ] \
+  && ok "next-version counts only same-base, same-repo, bumped PRs" || no "next-version claimed set wrong: $out"
+nvq '"9.9.9" in json.dumps(d)' <<<"$out" | grep -qx False \
+  && ok "next-version ignores versions in PR titles" || no "next-version read a title version: $out"
+[ "$(nvq '[c["branch"] for c in d["claimed"] if c["pr"]==11][0]' <<<"$out")" = "feat/dash" ] \
+  && ok "next-version claims carry pr, branch and url" || no "next-version claim objects incomplete: $out"
+[ "$(nvq 'd["host"]' <<<"$out")" = "github" ] && ok "next-version reports the host" || no "next-version host wrong: $out"
+
+out="$(nv --base release-1.x --bump minor --current-version 1.20.0)"
+[ "$(nvq 'd["version"]' <<<"$out")" = "1.21.0" ] && [ "$(nvq '[c["pr"] for c in d["claimed"]]' <<<"$out")" = "[13]" ] \
+  && ok "next-version honors --base for another branch" || no "next-version leaked main's claims into release-1.x: $out"
+
+out="$(nv --base main --bump minor --current-version 1.20.0 --exclude-pr 11)"
+[ "$(nvq 'd["version"]' <<<"$out")" = "1.21.0" ] \
+  && ok "next-version --exclude-pr drops your own claim" || no "next-version --exclude-pr ignored: $out"
+
+rm "$NVFAKE/heads/fix%2Fstale"
+out="$(nv --base main --bump patch --current-version 1.20.0)"
+nvq 'any("#12" in w for w in d["warnings"])' <<<"$out" | grep -qx True \
+  && ok "next-version warns on an unreadable head VERSION" || no "next-version silent on unreadable head: $out"
+
+out="$(NV_OWNER_DOWN=1 nv --base main --bump patch --current-version 1.20.0)"
+nvq 'any("fork PRs were not filtered" in w for w in d["warnings"])' <<<"$out" | grep -qx True \
+  && ok "next-version warns when fork PRs cannot be filtered" || no "next-version silent on an unresolved owner: $out"
+
+out="$(NV_GH_DOWN=1 nv --base main --bump patch --current-version 1.20.0)"
+[ "$(nvq 'd["offline"]' <<<"$out")" = "True" ] && [ "$(nvq 'd["version"]' <<<"$out")" = "1.20.1" ] \
+  && ok "next-version falls back offline to a local bump" || no "next-version offline fallback wrong: $out"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"
