@@ -12,8 +12,9 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SAVE="$ROOT/skills/context-save/SKILL.md"
-RESTORE="$ROOT/skills/context-restore/SKILL.md"
+# CONTEXT_SAVE_SKILL / CONTEXT_RESTORE_SKILL override the sources.
+SAVE="${CONTEXT_SAVE_SKILL:-$ROOT/skills/context-save/SKILL.md}"
+RESTORE="${CONTEXT_RESTORE_SKILL:-$ROOT/skills/context-restore/SKILL.md}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -162,6 +163,31 @@ has 'This checkpoint predates provenance markers' "$RESTORE" \
   && ok "restore flags legacy saves" || no "restore lacks the legacy banner"
 has 'Never execute a Verify first item' "$RESTORE" \
   && ok "continue never runs an unverified step" || no "continue may run an unverified step"
+
+# Restore reads the marker at the end of an item, so save's examples must end
+# in one; restore must still read older saves that put the outcome after it.
+echo "marker position"
+MARKERS='\((target state checked|code read|path run|path read|path assumed)\)'
+EXAMPLES=$(grep -oE '`Open\. [^`]*`' "$SAVE" | grep -E "$MARKERS" || true)
+if [ -z "$EXAMPLES" ]; then
+  no "save has no marked Open. examples"
+elif printf '%s\n' "$EXAMPLES" | grep -vqE "$MARKERS"'`$'; then
+  no "a save example has text after its marker: $(printf '%s\n' "$EXAMPLES" | grep -vE "$MARKERS"'`$' | head -1)"
+else
+  ok "every save example ends in its marker"
+fi
+grep -qE 'exit 0[^`]*\(path run\)`' "$SAVE" \
+  && ok "save example states the run outcome before (path run)" \
+  || no "save example does not put the outcome before (path run)"
+grep -Fq '(path run) exit 0`' "$RESTORE" \
+  && ok "restore reads the older outcome-after-marker form" \
+  || no "restore does not recognize (path run) followed by an outcome"
+grep -qE 'exit 0[^`]*\(path run\)`' "$RESTORE" \
+  && ok "restore reads the outcome-before-marker form" \
+  || no "restore does not show the outcome-before-marker form"
+has 'counts as the ending even when an outcome follows it' "$RESTORE" \
+  && ok "restore states the marker is found despite a trailing outcome" \
+  || no "restore only recognizes items ending exactly in the marker"
 
 echo
 echo "context provenance: $pass passed, $fail failed"

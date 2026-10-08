@@ -114,14 +114,14 @@ ends with the marker from the first row that applies:
 | 1 | a writing step (migration, sync, insert, import, deploy, a dialog that writes), with or without a concrete path | `(target state checked)` | inspected the target's schema or state (for example its unique key) |
 | | | `(code read)` | read the writer but not the target |
 | | | `(path assumed)` | inferred the write without reading either |
-| 2 | otherwise, names a concrete path: a runnable command, CLI flag or switch, config key or value, or file or directory path | `(path run)` | executed it and observed the outcome; state the outcome in the item (`exit 0`, `failed: <reason>`) |
+| 2 | otherwise, names a concrete path: a runnable command, CLI flag or switch, config key or value, or file or directory path | `(path run)` | executed it and observed the outcome; state the outcome in the item, before the marker (`exit 0`, `failed: <reason>`) |
 | | | `(path read)` | read the code or file but did not execute it |
 | | | `(path assumed)` | inferred it without running or reading it, however confident |
 | 3 | anything else | none | (`Open.` alone) |
 
 Writing steps get their own markers because whether a write is safe to repeat
 depends on the target's state, not on the code that performs it. Examples:
-`Open. Run the suite with CONFIG=staging. (path run) exit 0` and
+`Open. Run the suite with CONFIG=staging, exit 0. (path run)` and
 `Open. Switch B reads config key Y. (path assumed)`.
 
 If the user provided a title, use it. Otherwise, infer a concise title (3-6 words)

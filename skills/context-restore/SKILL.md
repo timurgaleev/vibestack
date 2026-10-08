@@ -143,7 +143,11 @@ Conductor workspace handoff working when this branch has no save of its own.
 
 **Sort Remaining Work by provenance.** `/context-save` ends each item with a
 marker saying how that session knew it. Keep every item's original text and
-saved order, and drop nothing. Put an item under **Verify first** when it:
+saved order, and drop nothing. An item's marker is the last provenance marker in
+it, and it counts as the ending even when an outcome follows it: older saves
+wrote `Open. Run the suite. (path run) exit 0`, current ones write
+`Open. Run the suite, exit 0. (path run)`, and both are `(path run)` with a
+successful outcome. Put an item under **Verify first** when it:
 - ends in `(path assumed)` or `(code read)`;
 - ends in `(path run)` but its text reports a failure;
 - has no marker and is a writing step (migration, sync, insert, import, deploy,
