@@ -54,7 +54,7 @@ If the user asks you to compress or the system triggers context compaction: Step
 
 ## My engineering preferences (use these to guide your recommendations):
 * DRY is important—flag repetition aggressively.
-* Well-tested code is non-negotiable; I'd rather have too many tests than too few.
+* Well-tested code is non-negotiable, and no test goes in without a regression it would catch.
 * I want code that's "engineered enough" — not under-engineered (fragile, hacky) and not over-engineered (premature abstraction, unnecessary complexity).
 * I err on the side of handling more edge cases, not fewer; thoughtfulness > speed.
 * Bias toward explicit over clever.
@@ -292,7 +292,7 @@ Evaluate:
 
 ### 3. Test review
 
-100% coverage is the goal. Evaluate every codepath in the plan and ensure the plan includes tests for each one. If the plan is missing tests, add them — the plan should be complete enough that implementation includes full test coverage from the start.
+Every codepath in the plan needs a test that would catch its regression. Evaluate every codepath and ensure the plan covers each one with a test that passes the test value bar below. If the plan is missing tests, add them — the plan should be complete enough that implementation includes full test coverage from the start. More tests is not the goal: a duplicate or weak test adds maintenance, not coverage.
 
 ### Test Framework Detection
 
@@ -374,6 +374,8 @@ Quality scoring rubric:
 - ★★   Tests correct behavior, happy path only
 - ★    Smoke test / existence check / trivial assertion (e.g., "it renders", "it doesn't throw")
 
+{{include lib/snippets/test-value-bar.md}}
+
 ### E2E Test Decision Matrix
 
 When checking each branch, also determine whether a unit test or E2E/integration test is the right tool:
@@ -433,15 +435,16 @@ CODE PATHS                                            USER FLOWS
   │   └── [GAP]         Invalid currency
   └── refundPayment()                                 [+] Error states
       ├── [★★  TESTED] Full refund — :89                ├── [★★  TESTED] Card declined message
-      └── [★   TESTED] Partial (non-throw only) — :101  └── [GAP]        Network timeout UX
+      └── [★   WEAK]   Partial (non-throw only) — :101  └── [GAP]        Network timeout UX
 
 LLM integration: [GAP] [→EVAL] Prompt template change — needs eval test
 
-COVERAGE: 5/13 paths tested (38%)  |  Code paths: 3/5 (60%)  |  User flows: 2/8 (25%)
-QUALITY: ★★★:2 ★★:2 ★:1  |  GAPS: 8 (2 E2E, 1 eval)
+COVERAGE: 4/13 paths tested (31%)  |  Code paths: 2/5 (40%)  |  User flows: 2/8 (25%)
+QUALITY: ★★★:2 ★★:2 ★:1  |  GAPS: 9 (2 E2E, 1 eval, 1 weak)
 ```
 
 Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke check
+[★ WEAK] = only a weak test; counts as a gap, not as tested
 [→E2E] = needs integration test  |  [→EVAL] = needs LLM eval
 
 **Fast path:** All paths covered → "Test review: All new code paths have test coverage ✓" Continue.
@@ -452,7 +455,10 @@ For each GAP identified in the diagram, add a test requirement to the plan. Be s
 - What test file to create (match existing naming conventions)
 - What the test should assert (specific inputs → expected outputs/behavior)
 - Whether it's a unit test, E2E test, or eval (use the decision matrix)
-- For regressions: flag as **CRITICAL** and explain what broke (diff target) or name the behavior to protect (plan target)
+- For regressions: flag as **CRITICAL** and explain what broke (diff target) or name the behavior to protect (plan target), and require the regression proof from the value bar
+- Its value card (`Value: protects=...; fails_when=...; why_new=...; seam=...`). A proposed test that cannot fill the card is not added: extend the existing test named in `why_new`, or drop it
+
+Existing tests the plan makes redundant, or that only assert implementation the plan changes, go under **Tests to Retire** in the test plan artifact, each with what it detects and the test that covers that instead. Retiring is a recommendation for the implementer; the retention bar wins over it.
 
 The plan should be complete enough that when implementation begins, every test is written alongside the feature code — not deferred to a follow-up.
 
@@ -482,10 +488,17 @@ Repo: {owner/repo}
 
 ## Edge Cases
 - {edge case} on {page}
+  Value: protects={...}; fails_when={...}; why_new={...}; seam={none|name}
 
 ## Critical Paths
 - {end-to-end flow that must work}
+  Value: protects={...}; fails_when={...}; why_new={...}; seam={none|name}
+
+## Tests to Retire
+- {test file:line} — detects {what it can actually catch}; covered instead by {stronger test}; reason: {duplicate | implementation-coupled | weak}
 ```
+
+Leave **Tests to Retire** out when nothing qualifies.
 
 This file is consumed by `/qa` and `/qa-only` as primary test input. Include only the information that helps a QA tester know **what to test and where** — not implementation details.
 

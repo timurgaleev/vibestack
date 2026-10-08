@@ -267,6 +267,12 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 
 **Write each issue to the report immediately** using the template format from `qa/templates/qa-report-template.md`.
 
+**Proposed regression test (functional and console issues only).** Under the issue, name the test `/qa` should write to lock the fix in, held to the bar below:
+
+{{include lib/snippets/test-value-bar.md}}
+
+From the browser alone you can answer `protects` (the user-visible behavior) and `fails_when` (the repro). This skill never reads source, so write `why_new=unchecked` and `seam=unchecked`; `/qa` answers those before writing the test. Propose nothing for a purely visual or content issue.
+
 ### Phase 6: Wrap Up
 
 1. **Compute health score** using the rubric below

@@ -3,6 +3,7 @@
 
 Usage:
   vibe-review-log '{"skill":"review","status":"pass","issues_found":0,...}'
+  vibe-review-log --snapshot      print the working-tree snapshot a review covers
 
 Appends one line to ``$VIBESTACK_HOME/projects/<slug>/<branch>-reviews.jsonl``.
 The Review Readiness Dashboard (/ship) and /retro read it via vibe-review-read.
@@ -11,12 +12,33 @@ Local and reliable — memrain is semantic recall, this is per-branch workflow s
 NON-INTERACTIVE — never prompts. A payload carrying a high-confidence secret is
 rejected (exit 1), nothing written. `TIMESTAMP`/`COMMIT`/`STATUS` placeholders
 left unsubstituted by a caller are filled in here (ts=now, commit=short HEAD).
+
+Every entry records ``tree``: a snapshot of the working tree at log time —
+tracked files and non-ignored untracked files, committed or not. Content alone
+decides it, so committing the reviewed bytes leaves it unchanged, while any edit
+moves it. A reader compares it with ``--snapshot`` to tell whether the tree
+being shipped is the tree that was reviewed. Untracked files are included
+because a review runs before anything is committed, when new files are not yet
+added.
+
+A caller that captured ``--snapshot`` before reading the diff passes it as
+``start_tree``. A ``clean`` status is refused (exit 1, nothing written) when:
+  - ``start_tree`` differs from the tree now: files changed after the review
+    started (auto-fixes, user edits), and nothing reviewed those changes;
+  - ``start_tree`` is set but the tree cannot be snapshotted now: an unknown
+    tree is never taken as a match;
+  - ``completed`` is false: a reviewer that was dispatched never finished, so
+    the run has incomplete coverage, not zero findings;
+  - ``converged`` is false: the fix/re-review loop hit its bound with edits
+    still unreviewed.
 """
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 
@@ -50,8 +72,56 @@ def branch() -> str:
     return _run(["git", "branch", "--show-current"]) or "unknown"
 
 
+def snapshot():
+    """Tree object id (12 chars) of the working tree, untracked files included.
+
+    Built in a throwaway index seeded from the real one, so the user's staged
+    state is never touched. `add -A` honours .gitignore. Returns None when the
+    tree cannot be fingerprinted (not a work tree, unmerged index, read-only
+    object store) — an unknown tree must never be mistaken for a match.
+    """
+    top = _run(["git", "rev-parse", "--show-toplevel"])
+    if not top:
+        return None
+    real = _run(["git", "-C", top, "rev-parse", "--git-path", "index"])
+    if real and not os.path.isabs(real):
+        real = os.path.join(top, real)
+    fd, idx = tempfile.mkstemp(prefix="vibe-review-snap.")
+    os.close(fd)
+    env = dict(os.environ, GIT_INDEX_FILE=idx)
+    try:
+        if real and os.path.isfile(real):
+            shutil.copyfile(real, idx)
+        else:
+            os.unlink(idx)
+            if subprocess.run(["git", "-C", top, "read-tree", "--empty"], env=env,
+                              capture_output=True, timeout=30).returncode != 0:
+                return None
+        if subprocess.run(["git", "-C", top, "add", "-A"], env=env,
+                          capture_output=True, timeout=120).returncode != 0:
+            return None
+        out = subprocess.run(["git", "-C", top, "write-tree"], env=env,
+                             capture_output=True, text=True, timeout=30)
+        tree = out.stdout.strip()
+        return tree[:12] if out.returncode == 0 and re.fullmatch(r"[0-9a-f]{40,64}", tree) else None
+    except Exception:
+        return None
+    finally:
+        try:
+            os.unlink(idx)
+        except OSError:
+            pass
+
+
 def main() -> int:
     args = sys.argv[1:]
+    if args and args[0] == "--snapshot":
+        tree = snapshot()
+        if not tree:
+            print("vibe-review-log: cannot snapshot this working tree", file=sys.stderr)
+            return 2
+        print(tree)
+        return 0
     if not args:
         print('usage: vibe-review-log \'{"skill":"...","status":"..."}\'', file=sys.stderr)
         return 1
@@ -76,6 +146,30 @@ def main() -> int:
     if body.get("commit") in (None, "", "COMMIT"):
         body["commit"] = _run(["git", "rev-parse", "--short", "HEAD"]) or "unknown"
     body.setdefault("branch", branch())
+
+    # The logger computes the tree itself; a caller-supplied value is not trusted.
+    body["tree"] = snapshot()
+    start = body.get("start_tree")
+    if start in ("", "START_TREE", None):
+        body.pop("start_tree", None)
+        start = None
+    if body.get("status") == "clean":
+        why = None
+        if start and not body["tree"]:
+            why = ("the working tree cannot be snapshotted now, so nothing proves it is the "
+                   f"tree the review started on ({start}). Log issues_found or incomplete.")
+        elif start and start != body["tree"]:
+            why = (f"the tree changed after the review started ({start} -> {body['tree']}); "
+                   "those edits were never reviewed. Re-review them, or log issues_found.")
+        elif body.get("completed") is False:
+            why = ("completed is false: a dispatched reviewer did not finish, so this is "
+                   "incomplete coverage, not a clean review. Log status incomplete.")
+        elif body.get("converged") is False:
+            why = ("converged is false: the last fix cycle's edits were never re-reviewed. "
+                   "Log issues_found.")
+        if why:
+            print(f"error: clean status rejected — {why}", file=sys.stderr)
+            return 1
 
     path = os.path.join(HOME, "projects", slug(), f"{branch()}-reviews.jsonl")
     os.makedirs(os.path.dirname(path), exist_ok=True)

@@ -32,7 +32,8 @@ if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ~/.vibestack/bin/vibe-learnings-search --limit 5 \
+      || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
   fi
 else
   echo "LEARNINGS: none yet"
@@ -80,11 +81,18 @@ learned, then offer to sync it into connected memory. Three passes, in order.
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-~/.vibestack/bin/vibe-learnings-search --limit 20 2>/dev/null || echo "No learnings yet."
+~/.vibestack/bin/vibe-learnings-search --limit 20 \
+  || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
 
 Present the output in a readable format. If no learnings exist yet, say so and
 continue to Pass 2 — an empty store is exactly when capture matters most.
+
+`LEARNINGS: unavailable (...)` is not an empty store: the read itself failed
+(python3 missing, an unreadable file). Report it in one line with the reason
+printed above it, and never describe it as "no learnings recorded". The same
+holds for every search below — Prune and Export stop rather than act on a list
+they could not read.
 
 **Pass 2 — Capture from this session.** Review the current conversation for
 learnings not yet recorded: non-obvious patterns, pitfalls hit and resolved,
@@ -115,10 +123,17 @@ stop.
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-~/.vibestack/bin/vibe-learnings-search --query "USER_QUERY" --limit 20 2>/dev/null || echo "No matches."
+~/.vibestack/bin/vibe-learnings-search --query "USER_QUERY" --limit 20 \
+  || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
 
 Replace USER_QUERY with the user's search terms. Present results clearly.
+
+If the user asks to search their other projects too, add `--cross-project`. Only
+entries the user stated outright (logged with `source` `user-stated`, which
+`vibe-learnings-log` marks `trusted`) cross over; observed and inferred
+learnings stay in the project that recorded them. Cross-project rows carry a
+`[cross-project: <slug>]` tag — say which project each one came from.
 
 ---
 
@@ -128,8 +143,12 @@ Check learnings for staleness and contradictions.
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-~/.vibestack/bin/vibe-learnings-search --limit 100 2>/dev/null
+~/.vibestack/bin/vibe-learnings-search --limit 100 \
+  || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
+
+If that printed `LEARNINGS: unavailable`, stop here: report the reason and flag or
+remove nothing — a failed read is not an empty or stale store.
 
 For each learning in the output:
 
@@ -158,8 +177,12 @@ Export learnings as markdown suitable for adding to CLAUDE.md or project documen
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-~/.vibestack/bin/vibe-learnings-search --limit 50 2>/dev/null
+~/.vibestack/bin/vibe-learnings-search --limit 50 \
+  || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
+
+If that printed `LEARNINGS: unavailable`, stop here and report the reason — never
+export an empty section in place of a failed read.
 
 Format the output as a markdown section:
 

@@ -5,7 +5,8 @@ Reads the review log (all branches for this project) and aggregates, per
 specialist, how often it was dispatched and how many findings it produced.
 A specialist that has been dispatched many times and never found anything is a
 GATE_CANDIDATE — /review and /ship skip it to save a subagent. Security and
-data-migration are NEVER_GATE (insurance specialists — always run).
+data-migration are NEVER_GATE (insurance specialists — always run). A dispatch
+recorded with `"completed": false` is not counted: it never looked.
 
 Usage: vibe-specialist-stats [--min-dispatches N]   (default N=10)
 
@@ -70,7 +71,10 @@ def main() -> int:
                         if not isinstance(s, dict):
                             continue
                         d, f_ = stats.get(name, (0, 0))
-                        if s.get("dispatched"):
+                        # A run that never finished found nothing because it
+                        # never looked; counting it would drift a broken
+                        # specialist toward GATE_CANDIDATE.
+                        if s.get("dispatched") and s.get("completed") is not False:
                             d += 1
                             f_ += int(s.get("findings", 0) or 0)
                         stats[name] = (d, f_)

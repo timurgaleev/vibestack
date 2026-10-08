@@ -113,7 +113,10 @@ def confidence(e):
     return max(0, conf)
 
 
-def read_store(path, project):
+def read_store(path, project, required=True):
+    """A required store that cannot be read ends the search. A foreign store
+    under --cross-project is optional: it is skipped with a warning, so one
+    broken project never blanks this project's own results."""
     rows = []
     try:
         with open(path, encoding="utf-8") as f:
@@ -127,8 +130,12 @@ def read_store(path, project):
                     continue
                 if isinstance(e, dict):
                     rows.append((project, e))
-    except OSError as exc:
-        sys.stderr.write(f"vibe-learnings-search: cannot read {path}: {exc.strerror}\n")
+    except (OSError, UnicodeDecodeError) as exc:
+        reason = getattr(exc, "strerror", None) or str(exc)
+        if not required:
+            sys.stderr.write(f"vibe-learnings-search: skipped {path}: {reason}\n")
+            return []
+        sys.stderr.write(f"vibe-learnings-search: cannot read {path}: {reason}\n")
         sys.exit(1)
     return rows
 
@@ -141,7 +148,7 @@ if cross and os.path.isdir(projects_dir):
         path = os.path.join(projects_dir, name, "learnings.jsonl")
         if name == slug or not os.path.isfile(path):
             continue
-        rows += [r for r in read_store(path, name) if r[1].get("trusted") is True]
+        rows += [r for r in read_store(path, name, required=False) if r[1].get("trusted") is True]
 
 # Dedup: the newest entry for each (project, key, type) wins.
 seen = {}

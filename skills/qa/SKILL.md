@@ -742,6 +742,10 @@ Read 2-3 test files closest to the fix (same directory, same code type). Match e
 - File naming, imports, assertion style, describe/it nesting, setup/teardown patterns
 The regression test must look like it was written by the same developer.
 
+{{include lib/snippets/test-value-bar.md}}
+
+The reproduced bug already answers what the test protects and what makes it fail; questions 3 and 4 still need answers. If an existing test already exercises this codepath, add the failing case to it (a new row, fixture or assertion) instead of creating a new file.
+
 **2. Trace the bug's codepath, then write a regression test:**
 
 Before writing the test, trace the data flow through the code you just fixed:
@@ -760,6 +764,7 @@ The test MUST:
   // Regression: ISSUE-NNN — {what broke}
   // Found by /qa on {YYYY-MM-DD}
   // Report: .vibestack/qa-reports/qa-report-{domain}-{date}.md
+  // Value: protects={...}; fails_when={...}; why_new={...}; seam=none
   ```
 
 Test type decision:
@@ -768,19 +773,22 @@ Test type decision:
 - Visual bug with JS behavior (broken dropdown, animation) → component test
 - Pure CSS → skip (caught by QA reruns)
 
-Generate unit tests. Mock all external dependencies (DB, API, Redis, file system).
+Pick the smallest test the project already supports at the boundary where the bug lived. Mock only services unrelated to the bug; mocking the DB, API or file system the bug ran through gives a test that passes against the mock and misses the regression.
 
 Use auto-incrementing names to avoid collisions: check existing `{name}.regression-*.test.{ext}` files, take max number + 1.
 
-**3. Run only the new test file:**
+**3. Run only the new test file, with and without the fix:**
 
 ```bash
 {detected test command} {new-test-file}
 ```
 
+Then prove it is red without the fix: `git worktree add --detach <tmp> <fix-commit>^`, copy the new or extended test file (and any new fixtures) to the same paths in `<tmp>`, run the same command there, then `git worktree remove --force <tmp>`. It must fail on its own assertion. If the bug was introduced on this branch, also run it at the base branch the same way: it must pass there. The scratch worktree has no `node_modules`, `.venv` or build output: a failure there from a missing dependency is the environment, not the test — link the dependencies in, or follow the value bar's in-place fallback, and otherwise record the proof as `unavailable (<reason>)` and keep the test.
+
 **4. Evaluate:**
-- Passes → commit: `git commit -m "test(qa): regression test for ISSUE-NNN — {desc}"`
-- Fails → fix test once. Still failing → delete test, defer.
+- Passes with the fix and fails on its assertion without it → commit: `git commit -m "test(qa): regression test for ISSUE-NNN — {desc}"`, and put the regression-proof line from the value bar in the issue's report entry
+- Passes without the fix too → it does not catch the bug. Rewrite it once at the boundary where the bug lived; still green without the fix → delete test, defer.
+- Fails with the fix → fix test once. Still failing → delete test, defer.
 - Taking >2 min exploration → skip and defer.
 
 **5. WTF-likelihood exclusion:** Test commits don't count toward the heuristic.
@@ -860,6 +868,6 @@ If the repo has a `TODOS.md`:
 
 11. **Clean working tree required.** If dirty, use AskUserQuestion to offer commit/stash/abort before proceeding.
 12. **One commit per fix.** Never bundle multiple fixes into one commit.
-13. **Only modify tests when generating regression tests in Phase 8e.5.** Never modify CI configuration. Never modify existing tests — only create new test files.
+13. **Only modify tests when generating regression tests in Phase 8e.5.** Never modify CI configuration. Never change or delete existing test cases — in an existing test file, only add the failing case for the bug being fixed; otherwise create a new test file.
 14. **Revert on regression.** If a fix makes things worse, `git revert HEAD` immediately.
 15. **Self-regulate.** Follow the WTF-likelihood heuristic. When in doubt, stop and ask.

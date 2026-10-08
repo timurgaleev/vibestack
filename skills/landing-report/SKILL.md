@@ -1,7 +1,7 @@
 ---
 name: landing-report
 description: |
-  Read-only queue dashboard for workspace-aware ship. Shows which VERSION slots are currently claimed by open PRs, which sibling Conductor workspaces have WIP work likely to ship soon, and what slot /ship would pick next. No mutations — just a snapshot.
+  Read-only queue dashboard for workspace-aware ship. Shows which VERSION slots are currently claimed by open PRs against the same base branch, and what slot /ship would pick next. No mutations — just a snapshot.
 triggers:
   - landing report
   - version queue
@@ -41,8 +41,8 @@ fi
 
 ## Why this skill exists
 
-When you're running 5-10 parallel Conductor workspaces, it helps to see — at a
-glance — which version numbers are claimed, by whom, and what slot your next
+When you're running several branches in parallel, it helps to see — at a
+glance — which version numbers are claimed, by which PR, and what slot your next
 `/ship` would land in. This skill is a read-only call into the same
 `~/.vibestack/bin/vibe-next-version` utility `/ship` uses, but with nothing mutating.
 Think of it as `gh pr list` for VERSION numbers.
@@ -76,16 +76,17 @@ echo "branch HEAD VERSION: $CURRENT_VERSION"
 
 ## Step 3: Query the queue
 
-Call the util three times — once for each bump level — so the user sees what
-they'd claim for micro/patch/minor/major. Cheap (same gh call cached by bun).
+Call the util once per bump level so the user sees what they'd claim for
+patch/minor/major. Versions are `MAJOR.MINOR.PATCH`; there is no separate micro
+level (the util treats `micro` as `patch`).
 
 ```bash
-for LEVEL in micro patch minor major; do
+for LEVEL in patch minor major; do
   ~/.vibestack/bin/vibe-next-version \
     --base "$BASE_BRANCH" \
     --bump "$LEVEL" \
     --current-version "$BASE_VERSION" \
-    > "/tmp/landing-$LEVEL.json" 2>/dev/null || echo '{"offline":true}' > "/tmp/landing-$LEVEL.json"
+    > "/tmp/landing-$LEVEL.json" 2>/dev/null || echo '{"offline":true,"reason":"vibe-next-version failed","claimed":[],"warnings":[]}' > "/tmp/landing-$LEVEL.json"
 done
 ```
 
@@ -93,16 +94,24 @@ done
 
 ## Step 4: Render the dashboard
 
-Build a single table output. Use the `patch`-level JSON as canonical for
-queue + siblings (they're identical across bump levels; only `.version`
-differs).
+Build a single table output. Use the `patch`-level JSON as canonical for the
+queue (it is identical across bump levels; only `.version` differs).
 
-Use `jq` to extract:
-- `.host` — github | gitlab | unknown
-- `.offline` — did the query fail?
-- `.claimed` — array of {pr, branch, version, url}
-- `.siblings` — all sibling worktrees found
-- `.active_siblings` — subset that's likely about to ship
+`vibe-next-version` emits exactly these fields — render only what they contain:
+- `.host` — `github` | `gitlab` | `unknown`
+- `.base` — the base branch the queue was filtered to
+- `.offline` — `true` when no PR host was reachable
+- `.reason` — one-line explanation of the pick (or of the offline fallback)
+- `.claimed` — array of `{pr, branch, version, url}`: open PRs against `.base`
+  whose head `VERSION` is ahead of the base version. Read from each PR's head
+  `VERSION` file, not its title.
+- `.warnings` — PRs whose head `VERSION` could not be read or is malformed
+- `.version` — the slot `/ship` would claim at this bump level
+
+Sibling worktree detection is not supported: `.active_siblings` is always an
+empty list. Do not render a sibling section, and do not infer siblings from
+`git worktree list` or anywhere else. A PR number, branch or version that is
+not in `.claimed` does not exist — never fill a row in from memory or a guess.
 
 Render in this exact format:
 
@@ -111,41 +120,35 @@ Render in this exact format:
 ║                   VIBESTACK LANDING REPORT                      ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║ Repo:    <owner/repo>                                            ║
-║ Base:    <base> @ v<base-version>                                ║
-║ Host:    <github|gitlab|unknown>                                 ║
-║ Status:  <ONLINE|OFFLINE: queue-awareness unavailable>           ║
+║ Base:    <.base> @ v<base-version>                               ║
+║ Host:    <.host>                                                 ║
+║ Status:  ONLINE                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-Open PRs claiming versions on <base>:
-  #1152  alpha-branch         → v1.7.0.0
-  #1153  beta-branch          → v1.7.0.0  ⚠ collision with #1152
-  #1151  gamma-branch         → v1.6.5.0
+Open PRs claiming versions on <.base>:
+  #<pr>  <branch>             → v<version>
+  #<pr>  <branch>             → v<version>  ⚠ collision with #<pr>
 
-Sibling Conductor worktrees (<workspace_root>):
-  path                        branch                 VERSION      last commit   PR
-  ──────────────────────────────────────────────────────────────────────────────────
-  ../tokyo-v2                 feat/dashboard         v1.7.1.0    3h ago         none  ★ active
-  ../melbourne                feat/review            v1.6.0.0    12d ago        none
-  ../osaka                    feat/payments          v1.8.0.0    5h ago         #1155
-
-★ active = has VERSION ahead of base AND last commit < 24h AND no open PR.
-  These are the ones likely to ship soon.
+Warnings:
+  <one line per entry in .warnings; omit the section when empty>
 
 If you ran /ship right now, you'd claim:
-  micro bump:  v1.6.3.1   (queue-advance: none)
-  patch bump:  v1.7.1.0   (bumped past claimed 1.7.0.0)
-  minor bump:  v1.8.0.0   (bumped past claimed 1.7.0.0)
-  major bump:  v2.0.0.0   (no major collisions)
+  patch bump:  v<patch .version>   (<patch .reason>)
+  minor bump:  v<minor .version>   (<minor .reason>)
+  major bump:  v<major .version>   (<major .reason>)
 ```
 
-For offline / unknown-host output, print a shorter block:
+A collision is two entries in `.claimed` with the same `version`. When
+`.claimed` is empty, print `Open PRs claiming versions on <.base>: none`.
+
+For offline output (`.offline` is `true`), print a shorter block:
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
 ║                   VIBESTACK LANDING REPORT                      ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║ Status:  OFFLINE — queue-awareness unavailable                   ║
-║ Reason:  <offline reason from warnings>                          ║
+║ Reason:  <.reason>                                               ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 Fallback: local VERSION bumps still work, but collisions cannot be detected.
@@ -162,9 +165,9 @@ After rendering the table, suggest ONE of:
    the first's CHANGELOG entry or land a duplicate. Consider asking one author
    to rerun /ship to pick up the next free slot."
 
-2. **If an active sibling outranks the user's branch version:**
-   "Sibling worktree <path> has v<X> committed <N>h ago and hasn't PR'd yet.
-   If that work ships first, your branch will need to rebump at land time."
+2. **If `.warnings` is non-empty:**
+   "Some open PRs' VERSION could not be read (listed above), so the queue may be
+   incomplete. Check those PRs before trusting the next slot."
 
 3. **If everything looks clean:**
    "Queue is clean. Next /ship will claim a slot without conflict."

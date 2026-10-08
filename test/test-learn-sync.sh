@@ -183,6 +183,12 @@ echo "$out" | grep -q "shared-trusted" && no "other project leaked without --cro
 out="$(SEARCH --query kiwi --cross-project 2>&1)"; rc=$?
 [ $rc -eq 0 ] && echo "$out" | grep -q "shared-trusted.*cross-project: otherproj" && ok "--cross-project returns trusted entries" || no "--cross-project: rc=$rc '$out'"
 echo "$out" | grep -q "shared-untrusted" && no "untrusted entry crossed projects" || ok "untrusted entry stays home"
+BROKEN="$VIBESTACK_HOME/projects/brokenproj"; mkdir -p "$BROKEN"
+printf '\377\376 not utf-8\n' > "$BROKEN/learnings.jsonl"
+out="$(SEARCH --query kiwi --cross-project 2>&1)"; rc=$?
+[ $rc -eq 0 ] && echo "$out" | grep -q "shared-trusted" && echo "$out" | grep -q "skipped .*brokenproj" \
+  && ok "an unreadable foreign store is skipped with a warning" || no "unreadable foreign store broke the search: rc=$rc '$out'"
+rm -rf "$BROKEN"
 
 # 22. Unknown flag and unreadable store fail loudly instead of reading as empty
 SEARCH --bogus >/dev/null 2>&1 && no "unknown flag accepted" || ok "unknown flag rejected"

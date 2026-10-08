@@ -4,7 +4,7 @@
 #
 # /document-release in a child agent edits docs and reports JSON; it never
 # commits or pushes, and it refuses to run at all unless the dispatch marks the
-# child with VIBE_SPAWNED=1. If /ship's Step 18 drifts from that contract, the
+# child with VIBE_SPAWNED=1. If /ship's Step 14.5 drifts from that contract, the
 # doc sync silently stops happening, so the step text is checked here.
 #
 # Usage: test-ship-doc-contract.sh [SKILL.md]   (default: skills/ship/SKILL.md)
@@ -24,9 +24,9 @@ if ! "$ROOT/bin/vibe-render-skill" "$SRC" "$SKILL" >/dev/null 2>&1; then
   echo "cannot render $SRC" >&2; exit 1
 fi
 
-STEP="$TMP/step18.md"
-awk '/^## Step 18:/ {on=1} /^## Step 19:/ {on=0} on' "$SKILL" > "$STEP"
-[ -s "$STEP" ] || { echo "Step 18 not found in $SRC" >&2; exit 1; }
+STEP="$TMP/step14_5.md"
+awk '/^## Step 14\.5:/ {on=1} /^## Step 15:/ {on=0} on' "$SKILL" > "$STEP"
+[ -s "$STEP" ] || { echo "Step 14.5 not found in $SRC" >&2; exit 1; }
 
 # The quoted prompt the child receives.
 PROMPT="$TMP/prompt.md"
@@ -52,9 +52,9 @@ echo "sibling skill path"
 # Codex reads skills from ~/.agents/skills, and Cursor and Kiro have their own
 # roots, so a hard-coded Claude path never resolves there.
 if grep -Eq '(~|\$HOME|\$\{HOME\})/\.claude' "$STEP"; then
-  no "Step 18 hard-codes a Claude install path: $(grep -Eo '(~|\$HOME|\$\{HOME\})/\.claude[^ `]*' "$STEP" | head -1)"
+  no "Step 14.5 hard-codes a Claude install path: $(grep -Eo '(~|\$HOME|\$\{HOME\})/\.claude[^ `]*' "$STEP" | head -1)"
 else
-  ok "Step 18 hard-codes no Claude install path"
+  ok "Step 14.5 hard-codes no Claude install path"
 fi
 has '\$\{CLAUDE_SKILL_DIR\}/\.\./document-release/SKILL\.md' "$STEP" \
   && ok "sibling resolved via \${CLAUDE_SKILL_DIR}/../document-release" || no "sibling not resolved via CLAUDE_SKILL_DIR"

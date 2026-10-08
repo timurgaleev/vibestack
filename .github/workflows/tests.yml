@@ -57,6 +57,13 @@ jobs:
           - test-cso-contract.sh
           - test-review-checklist.sh
           - test-ship-doc-contract.sh
+          - test-ship-release-gates.sh
+          - test-release-after-merge.sh
+          - test-review-log.sh
+          - test-test-value-bar.sh
+          - test-codex-verdict.sh
+          - test-context-provenance.sh
+          - test-learn-honest-read.sh
     steps:
       - uses: actions/checkout@v4
 
