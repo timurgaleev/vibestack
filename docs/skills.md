@@ -181,7 +181,7 @@ Triggers: `canary check`, `check canary`, `canary health`
 ### `/land-and-deploy`
 Merge a PR, monitor CI, verify production health after deploy.
 
-Merges on green CI, watches the deploy, queries error rates and latency, and surfaces any post-deploy regressions. Ends with a production health verdict.
+Merges only when every check on the approved head is green (optional ones included), pinned to that head so a late push cannot slip in. Watches the deploy, queries error rates and latency, and surfaces any post-deploy regressions. A deploy counts only on evidence tied to the merge commit; without it the verdict says `MERGED (UNVERIFIED)` or `DEPLOYED (UNVERIFIED)` instead of claiming success. A revert takes out exactly what landed — the merge commit, the squash, or the whole rebased range — and stops at `ROLLBACK PENDING` when it cannot tell which.
 
 Right after the merge it tags the merge commit with the VERSION it carries and publishes the release with that version's CHANGELOG section (the same step `/ship` defers). An existing tag elsewhere is refused, never moved; a repo with no VERSION file is skipped.
 
