@@ -186,7 +186,7 @@ These rules auto-answer every intermediate question:
 1. **Choose completeness** — Ship the whole thing. Pick the approach that covers more edge cases.
 2. **Boil lakes** — Fix everything in the blast radius (files modified by this plan + direct importers). Auto-approve expansions that are in blast radius AND < 1 day CC effort (< 5 files, no new infra).
 3. **Pragmatic** — If two options fix the same thing, pick the cleaner one. 5 seconds choosing, not 5 minutes.
-4. **DRY** — Duplicates existing functionality? Reject. Reuse what exists.
+4. **Reuse** — Duplicates existing functionality? Reuse what exists. Extract new shared code only when it passes the shared-code rubric (proven callers, net saving, compatible contracts).
 5. **Explicit over clever** — 10-line obvious fix > 200-line abstraction. Pick what a new contributor reads in 30 seconds.
 6. **Bias toward action** — Merge > review cycles > stale deliberation. Flag concerns but don't block.
 
@@ -551,6 +551,13 @@ Timeout: 10 minutes (shell-wrapper) + 12 minutes (Bash outer gate). On hang, aut
 When Codex is unavailable for the whole run, skip steps 3-4 and remove both files
 once the subagent has returned: `rm -f '<PLAN_INPUT>' '<PROMPT_FILE>'`.
 
+**Consensus counts only the two independent voices.** A consensus cell is
+CONFIRMED only when the Claude subagent AND Codex both completed and agree. Your
+own primary review is not a voice: it never fills in for a voice that timed out,
+failed or was skipped, and it never turns a one-voice finding into CONFIRMED.
+When either voice is missing for a phase, that phase's consensus cells are N/A and
+its voice log records the degraded source (see Completion: Write Review Logs).
+
 ---
 
 ## Phase 1: CEO Review (Strategy & Scope)
@@ -644,7 +651,7 @@ CEO DUAL VOICES — CONSENSUS TABLE:
   5. Competitive/market risks covered? —       —      —
   6. 6-month trajectory sound?         —       —      —
 ═══════════════════════════════════════════════════════════════
-CONFIRMED = both agree. DISAGREE = models differ (→ taste decision).
+CONFIRMED = both voices completed and agree. DISAGREE = models differ (→ taste decision).
 Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = flagged regardless.
 ```
 
@@ -839,7 +846,7 @@ DX DUAL VOICES — CONSENSUS TABLE:
   5. Upgrade path safe?                —       —      —
   6. Dev environment friction-free?    —       —      —
 ═══════════════════════════════════════════════════════════════
-CONFIRMED = both agree. DISAGREE = models differ (→ taste decision).
+CONFIRMED = both voices completed and agree. DISAGREE = models differ (→ taste decision).
 Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = flagged regardless.
 ```
 
@@ -929,14 +936,14 @@ ENG DUAL VOICES — CONSENSUS TABLE:
   5. Error paths handled?              —       —      —
   6. Deployment risk manageable?       —       —      —
 ═══════════════════════════════════════════════════════════════
-CONFIRMED = both agree. DISAGREE = models differ (→ taste decision).
+CONFIRMED = both voices completed and agree. DISAGREE = models differ (→ taste decision).
 Missing voice = N/A (not CONFIRMED). Single critical finding from one voice = flagged regardless.
 ```
 
 3. Section 1 (Architecture): Produce ASCII dependency graph showing new components
    and their relationships to existing ones. Evaluate coupling, scaling, security.
 
-4. Section 2 (Code Quality): Identify DRY violations, naming issues, complexity.
+4. Section 2 (Code Quality): Identify shared-code opportunities that pass the rubric, naming issues, complexity.
    Reference specific files and patterns. Auto-decide each finding.
 
 5. **Section 3 (Test Review) — NEVER SKIP OR COMPRESS.**
@@ -987,6 +994,27 @@ that table using Edit:
 
 Write one row per decision incrementally (via Edit). This keeps the audit on disk,
 not accumulated in conversation context.
+
+### Accepted obligations carry forward
+
+An **accepted obligation** is a requirement a phase or the user has accepted into
+the plan: a fix a phase auto-decided to adopt, an amendment written into the plan
+body, a User Challenge or gate override the user accepted, or a premise the user
+kept after it was challenged. When a phase closes, list the obligations it accepted
+in an `### Accepted obligations — <phase>` block below the decision-log marker (one
+line each, with its audit-trail row number), or `None` if that phase accepted none.
+
+Later phases and every re-run (options B, B2 and D at the gate) inherit all of
+them:
+- A later phase never drops, weakens or quietly reverses an earlier phase's
+  obligation, and a re-run never rewrites an earlier block to `None`. A re-run
+  appends to its phase's block; it does not replace it.
+- If a later phase finds an obligation is wrong, it does not edit it away. It logs
+  a row in the audit trail and surfaces the conflict at the Final Approval Gate as
+  a taste decision (or a User Challenge, when the obligation is the user's own
+  direction). The obligation stands until the user decides.
+- A rejected User Challenge keeps the user's original requirement as the
+  obligation — the models' alternative is not recorded as accepted.
 
 ---
 
@@ -1040,6 +1068,8 @@ produced. Check the plan file and conversation for each item.
 
 **Audit trail:**
 - [ ] Decision Audit Trail has at least one row per auto-decision (not empty)
+- [ ] Every phase that ran has an `Accepted obligations` block, and every obligation
+      an earlier phase accepted is still in the plan or surfaced at the gate
 
 If ANY checkbox above is missing, go back and produce the missing output. Max 2
 attempts — if still missing after retrying twice, proceed to the gate with a warning
@@ -1169,24 +1199,28 @@ If Phase 2.5 ran (DX scope):
 ~/.vibestack/bin/vibe-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
-Dual voice logs (one per phase that ran):
+Dual voice logs — one record for EVERY phase, including a Design or DX phase that
+was skipped, all sharing one `run_id` so the four records read as one run. A
+missing record is then never ambiguous: "skipped" means the phase was not needed,
+and no record at all means the run never got this far.
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"ceo","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
+RUN_ID="autoplan-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
-~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"eng","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"ceo","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+
+~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"eng","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
-If Phase 2 ran (UI scope), also log:
-```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
-```
-
-If Phase 2.5 ran (DX scope), also log:
-```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","status":"STATUS","source":"SOURCE","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
-```
-
-SOURCE = "codex+subagent", "codex-only", "subagent-only", or "unavailable".
+SOURCE = "codex+subagent", "codex-only", "subagent-only", or "unavailable" — the
+voices that actually completed in that phase, never the primary reviewer.
+For a phase that did not run (no UI scope, no DX scope): STATUS = "skipped",
+SOURCE = "none", and both consensus counts 0.
 Replace N values with actual consensus counts from the tables.
 
 Suggest next step: `/ship` when ready to create the PR.

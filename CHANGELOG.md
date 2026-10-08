@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.46.0 — 2026-10-09
+
+### Changed
+
+- **`/plan-ceo-review` asks before it cuts.** In scope reduction every proposed
+  deferral is its own question, accepted requirements and invariants cannot be
+  weakened without your approval, and the review gains an async-ordering pass
+  and a requirement-to-assertion check. The spec loop can propose fixes instead
+  of applying them, and a review or decision record that failed to save is
+  reported as not saved.
+- **`/plan-eng-review`** scores shared-code reuse with one rubric, and
+  **`/autoplan`** keeps a ledger of obligations across its review voices.
+- **`/plan-design-review`** gates on scope before it reviews.
+
+### Fixed
+
+- **Design mockups are never overwritten.** `vibe-design` saves every round
+  under a new name and prints `saved:` paths, and every design skill reads those
+  paths instead of assuming a file name, so an old mockup can no longer pass as
+  a new one. A failed write leaves no partial image, and a setup failure is
+  reported as `DESIGN_ERROR` with exit 2.
+- **Plan text is never shell source.** `/plan-design-review` writes briefs and
+  feedback to files with the Write tool, so a line in a plan or `DESIGN.md` can
+  no longer end a heredoc and run as a command.
+- `/design-shotgun` removes its staging directories on success, failure and
+  exhausted retries.
+
 ## 1.45.0 — 2026-10-08
 
 ### Changed

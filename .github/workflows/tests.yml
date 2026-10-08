@@ -64,6 +64,11 @@ jobs:
           - test-codex-verdict.sh
           - test-context-provenance.sh
           - test-learn-honest-read.sh
+          - test-plan-ceo-review.sh
+          - test-plan-eng-review-rubric.sh
+          - test-autoplan-ledger.sh
+          - test-plan-design-review.sh
+          - test-design-saved-paths.sh
     steps:
       - uses: actions/checkout@v4
 

@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
-# vibe-design — design-mockup generation via OpenAI's image model (the same
-# backend the reference design daemon uses). Detect-and-use: needs OPENAI_API_KEY
-# and curl, otherwise prints DESIGN_NOT_AVAILABLE so a skill degrades to text.
+# vibe-design — design-mockup generation via OpenAI's image model. Detect-and-use:
+# needs OPENAI_API_KEY and curl, otherwise prints DESIGN_NOT_AVAILABLE so a skill
+# degrades to text.
 #
 # Usage:
 #   vibe-design status
 #   vibe-design variants --brief "<prompt>" [--count N] [--output-dir <dir>] [--size WxH]
+#
+# variants never overwrites: when variant-A.png already exists (an earlier round,
+# an approved mockup) the image is saved as variant-A-2.png, -3, and so on. Every
+# run prints its own accounting, and a caller uses only the printed `saved:` paths:
+#
+#   requested: <N>
+#   saved: <path>                 one line per image written, in order
+#   failures: <count>
+#   failed: <variant>: <reason>   one line per requested image that was not saved
+#
+# Exit codes: 0 every requested image was saved; 2 nothing was saved (a
+# `DESIGN_ERROR: <reason>` line says why); 3 some were saved and some were not;
+# 1 usage error. DESIGN_NOT_AVAILABLE still exits 0.
 set -euo pipefail
 
 KEY="${OPENAI_API_KEY:-}"
 MODEL="${VIBE_DESIGN_MODEL:-gpt-image-1}"
+TIMEOUT="${VIBE_DESIGN_TIMEOUT:-180}"
 
 case "${1:-}" in
   status)
@@ -30,36 +44,152 @@ case "${1:-}" in
       esac
     done
     [ -n "$brief" ] || { echo "usage: vibe-design variants --brief <prompt> [--count N] [--output-dir <dir>]"; exit 1; }
-    mkdir -p "$outdir"
-    body="$(python3 -c 'import json,sys; print(json.dumps({"model":sys.argv[1],"prompt":sys.argv[2],"n":int(sys.argv[3]),"size":sys.argv[4]}))' "$MODEL" "$brief" "$count" "$size")"
-    resp="$(curl -s https://api.openai.com/v1/images/generations \
-      -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d "$body")"
-    python3 - "$resp" "$outdir" <<'PY'
-import json, sys, base64, os
-try:
-    resp = json.loads(sys.argv[1])
-except Exception:
-    print("DESIGN_ERROR: non-JSON response"); sys.exit(1)
-outdir = sys.argv[2]
-data = resp.get("data") or []
-if not data:
-    err = resp.get("error", resp)
-    print("DESIGN_ERROR:", (err.get("message") if isinstance(err, dict) else str(err))[:300]); sys.exit(1)
+    case "$count" in
+      [1-9]|10) ;;
+      *) echo "vibe-design: --count must be 1-10, got '$count'"; exit 1 ;;
+    esac
+    case "$TIMEOUT" in
+      ''|*[!0-9]*) TIMEOUT=180 ;;
+    esac
+    # A setup failure saves nothing, so it reports like any other empty round:
+    # DESIGN_ERROR, the accounting lines, exit 2. Exit 1 stays for usage errors.
+    setup_failed() {
+      echo "DESIGN_ERROR: $1"
+      echo "requested: $count"
+      echo "failures: $count"
+      for label in A B C D E F G H I J; do
+        [ "$count" -gt 0 ] || break
+        echo "failed: variant-$label: $1"
+        count=$((count - 1))
+      done
+      exit 2
+    }
+    mkdir -p "$outdir" 2>/dev/null || setup_failed "cannot create output dir $outdir"
+    # Private per-run staging: concurrent runs never share a request or response
+    # file, and the response never travels through argv (a base64 image batch
+    # exceeds ARG_MAX).
+    tmp_root="${TMPDIR:-/tmp}"
+    stage="$(mktemp -d "${tmp_root%/}/vibe-design.XXXXXX" 2>/dev/null)" \
+      || setup_failed "cannot create a staging dir under $tmp_root"
+    trap 'rm -rf "$stage"' EXIT
+    python3 -c 'import json,sys; json.dump({"model":sys.argv[1],"prompt":sys.argv[2],"n":int(sys.argv[3]),"size":sys.argv[4]}, open(sys.argv[5],"w"))' \
+      "$MODEL" "$brief" "$count" "$size" "$stage/request.json" 2>/dev/null \
+      || setup_failed "cannot write the request under $stage"
+    http_code=""; curl_rc=0
+    http_code="$(curl -sS --fail-with-body --max-time "$TIMEOUT" \
+      -o "$stage/response.json" -w '%{http_code}' \
+      https://api.openai.com/v1/images/generations \
+      -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+      -d @"$stage/request.json" 2>"$stage/curl.err")" || curl_rc=$?
+    python3 - "$stage" "$outdir" "$count" "$curl_rc" "$http_code" "$TIMEOUT" <<'PY'
+import base64, binascii, json, os, sys, tempfile
+
+stage, outdir, count, curl_rc, http_code, timeout = sys.argv[1:7]
+count, curl_rc = int(count), int(curl_rc)
 labels = "ABCDEFGHIJ"
-for i, d in enumerate(data):
-    b = d.get("b64_json")
-    if not b:
+
+
+def read(name):
+    try:
+        with open(os.path.join(stage, name), "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
+def api_message(resp):
+    err = resp.get("error", resp) if isinstance(resp, dict) else resp
+    msg = err.get("message") if isinstance(err, dict) else None
+    return str(msg if msg else err)[:300]
+
+
+resp, reason = None, None
+raw = read("response.json")
+try:
+    resp = json.loads(raw) if raw.strip() else None
+except ValueError:
+    resp = None
+
+if curl_rc == 28:
+    reason = f"request timed out after {timeout}s"
+elif curl_rc != 0:
+    detail = api_message(resp) if resp is not None else read("curl.err").decode("utf-8", "replace").strip()[:300]
+    status = f"HTTP {http_code}" if http_code and http_code != "000" else f"curl exit {curl_rc}"
+    reason = f"request failed ({status}): {detail}" if detail else f"request failed ({status})"
+    if curl_rc == 2:
+        reason += " (curl 7.76 or later is required for --fail-with-body)"
+elif resp is None:
+    reason = "non-JSON response"
+elif not isinstance(resp, dict) or not resp.get("data"):
+    reason = api_message(resp)
+
+
+def claim(label, png):
+    """Write png under the first free variant-<label>[-N].png; never overwrite.
+
+    The image is written in full to a private temp file first and then published
+    with link(), which fails rather than replace an existing name. A failed write
+    therefore leaves no variant file behind for a later run to step around.
+    """
+    fd, tmp = tempfile.mkstemp(prefix=f".variant-{label}.", suffix=".tmp", dir=outdir)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(png)
+        os.chmod(tmp, 0o644)
+        n = 1
+        while True:
+            name = f"variant-{label}.png" if n == 1 else f"variant-{label}-{n}.png"
+            path = os.path.join(outdir, name)
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                n += 1
+                continue
+            if n > 1:
+                sys.stderr.write(f"note: variant-{label}.png exists; saved to {name} (existing file kept)\n")
+            return path
+    finally:
+        os.unlink(tmp)
+
+
+saved, failures = [], []
+data = [] if reason else resp["data"]
+for i in range(count):
+    label = labels[i]
+    if reason:
+        failures.append((label, reason))
         continue
-    p = os.path.join(outdir, f"variant-{labels[i] if i < len(labels) else i}.png")
-    with open(p, "wb") as f:
-        f.write(base64.b64decode(b))
-    print("variant:", p)
+    if i >= len(data):
+        failures.append((label, f"API returned {len(data)} of {count} images"))
+        continue
+    b64 = data[i].get("b64_json") if isinstance(data[i], dict) else None
+    try:
+        png = base64.b64decode(b64, validate=True) if b64 else b""
+    except (binascii.Error, ValueError):
+        png = b""
+    if not png:
+        failures.append((label, "API returned an empty image"))
+        continue
+    try:
+        saved.append(claim(label, png))
+    except OSError as e:
+        failures.append((label, f"cannot write to {outdir}: {e.strerror or e}"))
+
+if not saved:
+    print("DESIGN_ERROR:", reason or failures[0][1])
+print(f"requested: {count}")
+for p in saved:
+    print(f"saved: {p}")
+print(f"failures: {len(failures)}")
+for label, why in failures:
+    print(f"failed: variant-{label}: {why}")
+sys.exit(0 if not failures else (2 if not saved else 3))
 PY
     ;;
   check | compare | serve | approve)
-    # The comparison-board / vision-critique verbs need the full reference design
-    # daemon; vibestack generates variants only. Skip gracefully (exit 0) so a
-    # skill degrades instead of crashing.
+    # The comparison-board / vision-critique verbs are not built into vibe-design,
+    # which generates variants only. Skip gracefully (exit 0) so a skill degrades
+    # instead of crashing.
     echo "DESIGN_${1}_NOT_SUPPORTED: vibestack generates design variants only"
     exit 0 ;;
   *)

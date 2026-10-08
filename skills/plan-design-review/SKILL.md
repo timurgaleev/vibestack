@@ -2,10 +2,11 @@
 name: plan-design-review
 interactive: true
 description: |
-  Designer's eye plan review — interactive, like CEO and Eng review. Rates each design dimension 0-10, explains what would make it a 10, then fixes the plan to get there. Works in plan mode. For live site visual audits, use /design-review.
+  Designer's eye plan review — interactive, like CEO and Eng review. Rates each design dimension 0-10, explains what would make it a 10, then proposes fixes and applies the ones you approve. Works in plan mode. For live site visual audits, use /design-review.
 allowed-tools:
   - Read
   - Edit
+  - Write
   - Grep
   - Glob
   - Bash
@@ -21,6 +22,14 @@ triggers:
 Use when asked to "review the design plan" or "design critique".
 
 Proactively suggest when the user has a plan with UI/UX components that should be reviewed before implementation.
+
+{{include lib/snippets/scope-gate.md}}
+
+Resolve the gate above before any tool call in this skill, including the
+Preamble and session-detection bash below and Step 0's base-branch detection.
+Their "run at skill start" wording is subordinate to the gate. Once it is
+resolved, run in order: Preamble → session detection → Step 0 (base branch) →
+pre-review audit → design Step 0 → Step 0.5 mockups.
 
 ## Preamble
 
@@ -45,8 +54,6 @@ fi
 {{include lib/snippets/working-protocols.md}}
 
 {{include lib/snippets/state-protocols.md}}
-
-{{include lib/snippets/scope-gate.md}}
 
 ## Step 0: Detect platform and base branch
 
@@ -99,8 +106,14 @@ The output of this skill is a better plan, not a document about the plan.
 You are not here to rubber-stamp this plan's UI. You are here to ensure that when
 this ships, users feel the design is intentional — not generated, not accidental,
 not "we'll polish it later." Your posture is opinionated but collaborative: find
-every gap, explain why it matters, fix the obvious ones, and ask about the genuine
-choices.
+every gap, explain why it matters, recommend a concrete fix, and get the user's
+decision on that gap before editing the plan. Even obvious fixes need approval;
+DESIGN.md supplies the recommendation, not the user's approval.
+
+When you first write the plan artifact, copy the existing requirements and record
+unapproved gaps as pending findings. A gap-to-token mapping is a proposed fix, not
+a decision: do not write it into the plan as accepted work, or raise a score for
+it, before the user has approved it.
 
 Do NOT make any code changes. Do NOT start implementation. Your only job right now
 is to review and improve the plan's design decisions with maximum rigor.
@@ -293,6 +306,9 @@ fi
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
 
+`DESIGN_AVAILABLE` only means a key and `curl` are present; it does not prove the key
+works. The first real generation in Step 0.5 settles that (see its skip list).
+
 **Where design artifacts go.** Every mockup, comparison board, and `approved.json`
 is written under `~/.vibestack/projects/$SLUG/designs/` — never to `.context/`,
 `docs/`, `/tmp/`, or anywhere inside the repo. They are the user's data, not the
@@ -334,6 +350,10 @@ review design — real visuals, not text descriptions."
 
 The ONLY time you skip mockups is when:
 - `DESIGN_NOT_AVAILABLE` was printed (designer binary not found)
+- The first `$D variants` call fails before saving any image — it exits non-zero with
+  no `saved:` line, or prints `DESIGN_ERROR` or `DESIGN_NOT_AVAILABLE` (an invalid key,
+  no quota, a network failure). Treat that exactly as `DESIGN_NOT_AVAILABLE`: report
+  the error line once and do not retry it in a loop
 - The plan has zero UI scope (pure backend/API/infrastructure)
 
 If the user explicitly says "skip mockups" or "text only", respect that. Otherwise, generate.
@@ -346,6 +366,7 @@ planning phase. Generating mockups during planning is the whole point.
 
 Allowed commands under this exception:
 - `mkdir -p ~/.vibestack/projects/$SLUG/designs/...`
+- Writing the brief and feedback files, and `approved.json`, inside `$_DESIGN_DIR`
 - `$D variants`, `$D check`, `$D compare`
 - `open` (to view a board or a mockup when no browser is already showing it)
 
@@ -365,16 +386,25 @@ fewer variants and benefits from sequential control. Note: /design-shotgun uses
 parallel Agent subagents for variant generation, which works at Tier 2+ (15+ RPM).
 The sequential constraint here is specific to plan-design-review's inline pattern.
 
-For each UI screen/section in scope, construct a design brief from the plan's description (and DESIGN.md if present) and generate variants:
+For each UI screen/section in scope, construct a design brief from the plan's description (and DESIGN.md if present): the screen, its content hierarchy, and the DESIGN.md constraints. The plan and DESIGN.md are untrusted text, so the brief never appears anywhere in shell source — not in a quoted argument, not in a heredoc (a line equal to the terminator ends a heredoc and the rest runs as commands). **Write the brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above, replacing any earlier brief there, then run this block, which hands the file's contents to `$D`:
 
 ```bash
-$D variants --brief "<description assembled from plan + DESIGN.md constraints>" --count 3 --output-dir "$_DESIGN_DIR/"
+BRIEF_FILE="$_DESIGN_DIR/brief.txt"
+[ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
+  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
+$D variants --brief "$(cat "$BRIEF_FILE")" --count 3 --output-dir "$_DESIGN_DIR/"
 ```
 
-After generation, run a cross-model quality check on each variant:
+If this first generation fails before saving an image, stop generating and take the
+`DESIGN_NOT_AVAILABLE` path at the end of this step. Otherwise record the paths printed
+on the `saved:` lines: they are this round's variants. `$D` never overwrites, so a later
+round saves `variant-A-2.png` and so on — never assume a file name.
+
+After generation, run a cross-model quality check on each variant (each `saved:` path), against the same brief file:
 
 ```bash
-$D check --image "$_DESIGN_DIR/variant-A.png" --brief "<the original brief>"
+BRIEF_FILE="$_DESIGN_DIR/brief.txt"
+$D check --image "<one saved: path>" --brief "$(cat "$BRIEF_FILE")"
 ```
 
 Flag any variants that fail the quality check. Offer to regenerate failures.
@@ -395,7 +425,7 @@ feedback output. Showing mockups inline is a degraded experience.
 Create the comparison board and serve it over HTTP:
 
 ```bash
-$D compare --images "$_DESIGN_DIR/variant-A.png,$_DESIGN_DIR/variant-B.png,$_DESIGN_DIR/variant-C.png" --output "$_DESIGN_DIR/design-board.html" --serve
+$D compare --images "<this round's saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
 ```
 
 This command generates the board HTML, starts an HTTP server on a random port,
@@ -461,16 +491,19 @@ the approved variant.
 1. Read `regenerateAction` from the JSON (`"different"`, `"match"`, `"more_like_B"`,
    `"remix"`, or custom text)
 2. If `regenerateAction` is `"remix"`, read `remixSpec` (e.g. `{"layout":"A","colors":"B"}`)
-3. Generate new variants with `$D variants`, folding the feedback into an updated brief
+3. Fold the feedback into an updated brief, rewrite `$_DESIGN_DIR/brief.txt` with
+   the Write tool, and rerun the `$D variants` block above. Board feedback
+   and anything the user typed reach a command only through that file — never
+   paste them into a command line
 4. Create new board: `$D compare --images "..." --output "$_DESIGN_DIR/design-board.html"`
 5. Reload the board in the user's browser (same tab):
-   `curl -s -X POST http://127.0.0.1:PORT/api/reload -H 'Content-Type: application/json' -d '{"html":"$_DESIGN_DIR/design-board.html"}'`
+   `curl -s -X POST http://127.0.0.1:PORT/api/reload -H 'Content-Type: application/json' -d "{\"html\":\"$_DESIGN_DIR/design-board.html\"}"`
 6. The board auto-refreshes. **AskUserQuestion again** with the same board URL to
    wait for the next round of feedback. Repeat until `feedback.json` appears.
 
 **If `NO_FEEDBACK_FILE`:** The user typed their preferences directly in the
 AskUserQuestion response instead of using the board. Use their text response
-as the feedback.
+as the feedback; it reaches a command only through the brief or feedback file.
 
 **INLINE FALLBACK:** Use this whenever no board is serving — either `$D compare`
 reported that boards are unsupported, or the server failed to start (no port
@@ -494,9 +527,29 @@ Is this right?"
 
 Use AskUserQuestion to verify before proceeding.
 
-**Save the approved choice:**
+**Save the approved choice.** The confirmed feedback reaches the shell the same way
+the brief does: **write the feedback summary the user just confirmed with the Write
+tool** to `approved-feedback.txt` inside DESIGN_DIR, then run this block, replacing
+`<V>` with the approved variant letter:
 ```bash
-echo '{"approved_variant":"<V>","feedback":"<FB>","date":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","screen":"<SCREEN>","branch":"'$(git branch --show-current 2>/dev/null)'"}' > "$_DESIGN_DIR/approved.json"
+_FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
+python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
+import datetime, json, os, re, sys
+d, fb_file, variant, branch = sys.argv[1:5]
+if not re.fullmatch(r"[A-J]", variant):
+    sys.exit("approved variant must be one letter A-J, got %r" % variant)
+screen = re.sub(r"-[0-9]{8}$", "", os.path.basename(os.path.normpath(d)))
+feedback = open(fb_file, encoding="utf-8").read().strip() if os.path.isfile(fb_file) else ""
+if not feedback:
+    sys.exit("write the confirmed feedback into %s with the Write tool first" % fb_file)
+rec = {"approved_variant": variant,
+       "feedback": feedback,
+       "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+       "screen": screen, "branch": branch}
+with open(os.path.join(d, "approved.json"), "w", encoding="utf-8") as f:
+    json.dump(rec, f)
+print("APPROVED_SAVED:", os.path.join(d, "approved.json"))
+VIBE_PY_EOF
 ```
 
 **Do NOT use AskUserQuestion to ask which variant the user picked.** Read `feedback.json` — it already contains their preferred variant, ratings, comments, and overall feedback. Only use AskUserQuestion to confirm you understood the feedback correctly, never to re-ask what they chose.
@@ -505,7 +558,7 @@ Note which direction was approved. This becomes the visual reference for all sub
 
 **Multiple variants/screens:** If the user asked for multiple variants (e.g., "5 versions of the homepage"), generate ALL as separate variant sets with their own comparison boards. Each screen/variant set gets its own subdirectory under `designs/`. Complete all mockup generation and user selection before starting review passes.
 
-**If `DESIGN_NOT_AVAILABLE`:** Tell the user: "The vibestack designer isn't set up yet — it needs `OPENAI_API_KEY` in your environment and `curl` on PATH. Proceeding with text-only review, but you're missing the best part." Then proceed to review passes with text-based review.
+**If `DESIGN_NOT_AVAILABLE`** (printed at setup, or the first generation failed before saving an image): Tell the user: "The vibestack designer isn't set up yet — it needs `OPENAI_API_KEY` in your environment and `curl` on PATH. Proceeding with text-only review, but you're missing the best part." When a failed generation brought you here, say that instead and quote its error line. Then proceed to review passes with text-based review. Do not substitute hand-built HTML/CSS wireframes, screenshots, or a comparison board of your own: they delay the first review question and are not designer output.
 
 ## Design Outside Voices (parallel)
 
@@ -607,7 +660,7 @@ Fill in each cell from the Codex and subagent outputs. CONFIRMED = both agree. D
 - Hard rejections → raised as the FIRST items in Pass 1, tagged `[HARD REJECTION]`
 - Litmus DISAGREE items → raised in the relevant pass with both perspectives
 - Litmus CONFIRMED failures → pre-loaded as known issues in the relevant pass
-- Passes can skip discovery and go straight to fixing for pre-identified issues
+- Passes can skip discovery for pre-identified issues and go straight to the per-issue question
 
 **Log the result:**
 ```bash
@@ -617,30 +670,52 @@ Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "co
 
 ## The 0-10 Rating Method
 
-For each design section, rate the plan 0-10 on that dimension. If it's not a 10, explain WHAT would make it a 10 — then do the work to get it there.
+For each design section, rate the plan 0-10 on that dimension. If it's not a 10, explain WHAT would make it a 10 — then resolve each gap with the user.
 
 Pattern:
 1. Rate: "Information Architecture: 4/10"
 2. Gap: "It's a 4 because the plan doesn't define content hierarchy. A 10 would have clear primary/secondary/tertiary for every screen."
-3. Fix: Edit the plan to add what's missing
-4. Re-rate: "Now 8/10 — still missing mobile nav hierarchy"
-5. AskUserQuestion if there's a genuine design choice to resolve
-6. Fix again → repeat until 10 or user says "good enough, move on"
+3. Recommend: the concrete fix, its alternatives, and why you recommend it
+4. AskUserQuestion once for this issue, and wait for the decision
+5. Apply only the selected fix — it authorizes no other change — then re-rate: "Now 8/10 — still missing mobile nav hierarchy"
+6. Repeat per unresolved issue until 10 or the user says "good enough, move on"
+
+Never edit the plan first and ask afterward. A gap the input plan already lists is
+still an unresolved finding, and knowing the matching DESIGN.md token does not
+approve the change. Ask about each such gap individually — never one "apply all
+fixes" question, never a silent fix in the initial plan write. A declined fix stays
+documented, and its gap keeps that pass below 10.
 
 Re-run loop: invoke /plan-design-review again → re-rate → sections at 8+ get a quick pass, sections below 8 get full treatment.
 
 ### "Show me what 10/10 looks like" (requires design binary)
 
 If `DESIGN_AVAILABLE` was printed during setup AND a dimension rates below 7/10,
-offer to generate a visual mockup showing what the improved version would look like:
+offer to generate a visual mockup showing what the improved version would look like.
+The description of what 10/10 looks like reaches `$D` through a file, as in Step 0.5.
+First create the directory:
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 _IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
-$D variants --brief "<description of what 10/10 looks like for this dimension>" --count 1 --output-dir "$_IDEAL_DIR"
+mkdir -p "$_IDEAL_DIR"
+echo "IDEAL_DIR: $_IDEAL_DIR"
 ```
 
-Show the mockup to the user via the Read tool. This makes the gap between
+Then **write the description with the Write tool** to `brief.txt` inside the IDEAL_DIR
+just printed, and run:
+
+```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+_IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
+BRIEF_FILE="$_IDEAL_DIR/brief.txt"
+[ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
+  || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
+$D variants --brief "$(cat "$BRIEF_FILE")" --count 1 --output-dir "$_IDEAL_DIR"
+```
+
+If it fails before saving an image, say so and continue text-only. Otherwise show
+the mockup to the user via the Read tool. This makes the gap between
 "what the plan describes" and "what it should look like" visceral, not abstract.
 
 If the design binary is not available, skip this and continue with text-based
@@ -651,6 +726,21 @@ descriptions of what 10/10 looks like.
 **Anti-skip rule:** Never condense, abbreviate, or skip any review pass (1-7) regardless of plan type (strategy, spec, code, infra). Every pass in this skill exists for a reason. "This is a strategy doc so design passes don't apply" is always wrong — design gaps are where implementation breaks down. If a pass genuinely has zero findings, say "No issues found" and move on — but you must evaluate it.
 
 **Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion defeats the review — you explored, found issues, and dumped them into a deliverable instead of walking the user through them. If you have ANY non-trivial finding in any review pass, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every pass is the only path to ExitPlanMode that bypasses AskUserQuestion. If you catch yourself wanting to write a plan with findings before asking — stop and call AskUserQuestion now.
+
+**Pass protocol (1-6):** Record the initial 0-10 score. Every `FIX TO 10` below is a
+proposal: ask about each issue, wait for the decision, then edit the plan and re-rate
+the pass with the reason the score moved. Never edit first and ask afterward. Scope,
+focus-area, mockup and next-step answers approve no fix.
+
+**Carry decisions across passes.** An issue is one unresolved design requirement or
+tradeoff, even when it shows up in several places in the plan. Before each pass,
+compare the plan and DESIGN.md with the decisions already made:
+- The exact fix already has the user's individual decision → reuse it. Apply it to
+  every affected plan reference and matching token; do not ask again.
+- A gap or DESIGN.md violation with no approved fix → ask, and keep the remedy
+  pending until the user answers, even when DESIGN.md prescribes the exact token.
+- New evidence exposes a new requirement, conflict or tradeoff → name it as a new
+  issue and get its own decision before changing the plan.
 
 {{include lib/snippets/prior-learnings.md}}
 ### Pass 1: Information Architecture
@@ -763,7 +853,8 @@ Source: [OpenAI "Designing Delightful Frontends with GPT-5.4"](https://developer
 - "Hero section" → what makes this hero feel like THIS product?
 - "Clean, modern UI" → meaningless. Replace with actual design decisions.
 - "Dashboard with widgets" → what makes this NOT every other dashboard?
-If visual mockups were generated in Step 0.5, evaluate them against the AI slop blacklist above. Read each mockup image using the Read tool. Does the mockup fall into generic patterns (3-column grid, centered hero, stock-photo feel)? If so, flag it and offer to regenerate via `$D variants` with a brief that names what to do instead.
+An unresolved `[HARD REJECTION]` caps Pass 4 below 8.
+If visual mockups were generated in Step 0.5, evaluate them against the AI slop blacklist above. Read each mockup image using the Read tool. Does the mockup fall into generic patterns (3-column grid, centered hero, stock-photo feel)? If so, flag it and offer to regenerate: rewrite the brief file to name what to do instead, then rerun the Step 0.5 `$D variants` block.
 **STOP.** AskUserQuestion once per issue. Do NOT batch. Recommend + WHY.
 
 ### Pass 5: Design System Alignment
@@ -795,7 +886,7 @@ If mockups were generated in Step 0.5 and review passes changed significant desi
 
 AskUserQuestion: "The review passes changed [list major design changes]. Want me to regenerate mockups to reflect the updated plan? This ensures the visual reference matches what we're actually building."
 
-If yes, use `$D variants` with a brief updated to carry the changes. Save to the same `$_DESIGN_DIR` directory.
+If yes, rewrite `$_DESIGN_DIR/brief.txt` with a brief updated to carry the changes and rerun the Step 0.5 `$D variants` block. Save to the same `$_DESIGN_DIR` directory.
 
 ## CRITICAL RULE — How to ask questions
 Follow the AskUserQuestion format from the Preamble above. Additional rules for plan design reviews:
@@ -804,7 +895,7 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * Present 2-3 options. For each: effort to specify now, risk if deferred.
 * **Map to Design Principles above.** One sentence connecting your recommendation to a specific principle.
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
-* **Escape hatch (tightened):** If a section has zero findings, state "No issues, moving on" and proceed. If it has findings, use AskUserQuestion for each — a gap with an "obvious fix" is still a gap and still needs user approval before any change lands in the plan. Only skip AskUserQuestion when the fix is genuinely trivial AND there are no meaningful design alternatives. When in doubt, ask.
+* **Escape hatch (tightened):** If a section has zero findings, state "No issues, moving on" and proceed. If it has findings, use AskUserQuestion for each — a gap with an "obvious fix" is still a gap and still needs user approval before any change lands in the plan. The only fix that skips the question is one the user already approved for that exact change in an earlier pass (see Carry decisions across passes).
 * **NEVER use AskUserQuestion to ask which variant the user prefers — unless the inline fallback fired and there is no board at all.** Always create a comparison board first (`$D compare --serve`) and open it in the browser. The board has rating controls, comments, remix/regenerate buttons, and structured feedback output. Use AskUserQuestion ONLY to notify the user the board is open and wait for them to finish — not to present variants inline and ask "which do you prefer?" That is a degraded experience.
 
 {{include lib/snippets/tasks-section-emit.md}}
@@ -831,6 +922,16 @@ For design debt: missing a11y, unresolved responsive behavior, deferred empty st
 Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
 
 ### Completion Summary
+
+**Overall design score** is the lowest of the six rated pass scores (Passes 1-6),
+taken separately before and after approved fixes — never an average. Pass 7 is the
+unscored decision register, and Step 0's initial impression keeps its own row. An
+overall 8+ therefore means every rated pass is 8+.
+
+**Decisions made** counts only decisions the user individually approved in this
+review. A proposed remedy, a token mapping, or a scope, focus or next-step answer
+counts zero.
+
 ```
   +====================================================================+
   |         DESIGN PLAN REVIEW — COMPLETION SUMMARY                    |
@@ -849,9 +950,9 @@ Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough
   | What already exists  | written                                     |
   | TODOS.md updates     | ___ items proposed                          |
   | Approved Mockups     | ___ generated, ___ approved                  |
-  | Decisions made       | ___ added to plan                           |
+  | Decisions made       | ___ approved by the user                    |
   | Decisions deferred   | ___ (listed below)                          |
-  | Overall design score | ___/10 → ___/10                             |
+  | Overall (min 1-6)    | ___/10 → ___/10                             |
   +====================================================================+
 ```
 
@@ -889,11 +990,11 @@ depends on this data. Skipping this command breaks the review readiness dashboar
 
 Substitute values from the Completion Summary:
 - **TIMESTAMP**: current ISO 8601 datetime
-- **STATUS**: "clean" if overall score 8+ AND 0 unresolved; otherwise "issues_open"
-- **initial_score**: initial overall design score before fixes (0-10)
-- **overall_score**: final overall design score after fixes (0-10)
-- **unresolved**: number of unresolved design decisions
-- **decisions_made**: number of design decisions added to the plan
+- **STATUS**: "clean" only if the after-fix overall score (lowest of Passes 1-6) is 8+ AND 0 unresolved; otherwise "issues_open"
+- **initial_score**: overall design score before fixes — the lowest initial score of Passes 1-6 (0-10)
+- **overall_score**: overall design score after fixes — the lowest final score of Passes 1-6 (0-10)
+- **unresolved**: number of unresolved design decisions, including deferred ones and unanswered questions
+- **decisions_made**: number of decisions the user individually approved (the Completion Summary's "Decisions made")
 - **COMMIT**: output of `git rev-parse --short HEAD`
 
 {{include lib/snippets/review-readiness-dashboard.md}}
