@@ -14,10 +14,10 @@ import * as path from 'path';
 import { spawn as nodeSpawn } from 'child_process';
 import { safeUnlink, safeUnlinkQuiet, safeKill, isProcessAlive } from './error-handling';
 import { writeSecureFile, mkdirSecure } from './file-permissions';
-import { resolveConfig, ensureStateDir, readVersionHash } from './config';
+import { resolveConfig, ensureStateDir, readVersionHash, isPairAgentEnabled, PAIR_AGENT_OFF_HINT } from './config';
 import { parseProxyConfig, computeConfigHash, ProxyConfigError } from './proxy-config';
 import { redactProxyUrl } from './proxy-redact';
-import { spawnTerminalAgent } from './terminal-agent-control';
+import { spawnTerminalAgent, BUN_CHILD_FLAGS } from './terminal-agent-control';
 
 const config = resolveConfig();
 const IS_WINDOWS = process.platform === 'win32';
@@ -212,6 +212,10 @@ function cleanupLegacyState(): void {
 }
 
 // ─── Chromium profile lock helpers (#1781) ─────────────────────
+// Only a headed daemon launches Chromium on the shared profile. A headless
+// daemon starting or stopping must never reap that profile's lock holder or
+// delete its locks: the holder is the user's open headed browser, possibly
+// driven from another project.
 /** Profile dir used by headed/connect Chromium sessions. */
 function chromiumProfileDir(): string {
   return path.join(process.env.HOME || '/tmp', '.vibestack', 'chromium-profile');
@@ -245,6 +249,17 @@ async function killOrphanChromium(profileDir: string = chromiumProfileDir()): Pr
   }
 }
 
+/**
+ * Prepare the shared profile for a launch: reap an orphan still holding its
+ * lock and clear the lock files, but only when the daemon being started is
+ * headed. Exported for tests.
+ */
+export async function prepareChromiumProfile(headed: boolean, profileDir: string = chromiumProfileDir()): Promise<void> {
+  if (!headed) return;
+  await killOrphanChromium(profileDir);
+  cleanChromiumProfileLocks(profileDir);
+}
+
 /** Bounded /health probe. Returns true if the server answers within `attempts`
  * tries spaced `backoffMs` apart — distinguishes a busy-but-alive daemon from a
  * dead one (#1781) so a slow server isn't killed and restarted into a crash-loop. */
@@ -254,6 +269,45 @@ async function probeHealthWithBackoff(port: number, attempts = 3, backoffMs = 25
     if (i < attempts - 1) await Bun.sleep(backoffMs);
   }
   return false;
+}
+
+export type DaemonRestartAction =
+  | 'retry-command'   // healthy after the bounded probe: keep the same daemon
+  | 'report-busy'     // alive but unresponsive: report and exit, daemon untouched
+  | 'force-restart'   // alive, and the user explicitly passed --force-restart
+  | 'restart-dead';   // process is gone: safe to clean up and restart
+
+/**
+ * Decide what to do about an existing daemon before replacing it.
+ *
+ * An alive pid is never killed on our own initiative: a kill loses the
+ * session's tabs, cookies and logins, which is strictly worse than a slow
+ * command. The only path that kills a live daemon is an explicit
+ * --force-restart. Pure and exported for tests.
+ */
+export function decideDaemonRestart(opts: {
+  pidAlive: boolean;
+  healthyAfterProbe: boolean;
+  forceRestart: boolean;
+}): DaemonRestartAction {
+  if (opts.pidAlive && opts.forceRestart) return 'force-restart';
+  if (opts.pidAlive && opts.healthyAfterProbe) return 'retry-command';
+  if (opts.pidAlive) return 'report-busy';
+  return 'restart-dead';
+}
+
+function refuseHeadedOverLiveDaemon(state: { pid: number; mode?: string }): never {
+  console.error(`[browse] A daemon is already running (PID ${state.pid}, ${state.mode || 'headless'} mode).`);
+  console.error('[browse] Connecting headed would kill it and lose its tabs, cookies and logins.');
+  console.error("[browse] Run 'browse disconnect' (or 'browse stop') first, or pass --force-restart to replace it.");
+  process.exit(1);
+}
+
+function reportDaemonBusyAndExit(pid: number): never {
+  console.error(`[browse] Daemon busy: process ${pid} is alive but did not answer /health.`);
+  console.error('[browse] Retry shortly, or force a restart, which LOSES tabs, cookies and logins:');
+  console.error('[browse]   browse --force-restart <command>');
+  process.exit(1);
 }
 
 /**
@@ -303,8 +357,7 @@ async function startServer(extraEnv?: Record<string, string>): Promise<ServerSta
   // holding it) before launch, so an auto-restart after an abrupt kill isn't
   // blocked by the previous Chromium's SingletonLock — the self-inflicted
   // crash-loop. Previously only the manual connect preamble did this.
-  await killOrphanChromium();
-  cleanChromiumProfileLocks();
+  await prepareChromiumProfile((extraEnv?.BROWSE_HEADED ?? process.env.BROWSE_HEADED) === '1');
 
   // Allow the caller to opt out of the parent-process watchdog by setting
   // BROWSE_PARENT_PID=0 in the environment. Useful for CI, non-interactive
@@ -338,7 +391,7 @@ async function startServer(extraEnv?: Record<string, string>): Promise<ServerSta
     // which calls setsid() so the server becomes its own session leader
     // (PPID=1, STAT=Ss) and survives the spawning shell's exit. Mirrors
     // the Windows path's rationale — same root cause, different OS API.
-    nodeSpawn('bun', ['run', SERVER_SCRIPT], {
+    nodeSpawn('bun', ['run', ...BUN_CHILD_FLAGS, SERVER_SCRIPT], {
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
       env: { ...process.env, BROWSE_STATE_FILE: config.stateFile, BROWSE_PARENT_PID: parentPid, ...extraEnv },
@@ -774,6 +827,9 @@ export interface GlobalFlags {
   configHash: string;
   /** Redacted form of proxyUrl, safe for logs. */
   redactedProxyUrl: string;
+  /** Whether --force-restart was passed: the only consent that lets a
+   * command replace a live daemon. */
+  forceRestart: boolean;
 }
 
 /**
@@ -787,9 +843,11 @@ export function extractGlobalFlags(rawArgs: string[], env: NodeJS.ProcessEnv): G
   const out: string[] = [];
   let proxyUrl: string | null = null;
   let headed = false;
+  let forceRestart = false;
 
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i];
+    if (arg === '--force-restart') { forceRestart = true; continue; }
     if (arg === '--proxy') {
       const value = rawArgs[i + 1];
       if (!value) {
@@ -832,6 +890,7 @@ export function extractGlobalFlags(rawArgs: string[], env: NodeJS.ProcessEnv): G
     headed,
     configHash: computeConfigHash({ proxyUrl: canonicalProxyUrl, headed }),
     redactedProxyUrl: redactProxyUrl(canonicalProxyUrl),
+    forceRestart,
   };
 }
 
@@ -898,9 +957,15 @@ async function handlePairAgent(state: ServerState, args: string[]): Promise<void
   if (pairData.tunnel_url) {
     serverUrl = pairData.tunnel_url;
   } else if (!localHost) {
-    // No tunnel active. Check if ngrok is available and auto-start.
-    const ngrokAvailable = isNgrokAvailable();
-    if (ngrokAvailable) {
+    // No tunnel active. Remote tunneling is opt-in: never auto-start it unless
+    // the user enabled pair_agent, even when ngrok is installed and authed.
+    const pairEnabled = isPairAgentEnabled();
+    const ngrokAvailable = pairEnabled && isNgrokAvailable();
+    if (!pairEnabled) {
+      console.warn(`[browse] No tunnel started: ${PAIR_AGENT_OFF_HINT}`);
+      console.warn('[browse] Instructions will use localhost (same-machine only).\n');
+      serverUrl = pairData.server_url;
+    } else if (ngrokAvailable) {
       console.log('[browse] ngrok detected. Starting tunnel...');
       try {
         const tunnelResp = await fetch(`http://127.0.0.1:${state.port}/tunnel/start`, {
@@ -1059,7 +1124,21 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
       }
     }
 
-    // Kill ANY existing server (SIGTERM → wait 2s → SIGKILL)
+    // A live daemon survives connect unless the user passed --force-restart:
+    // replacing it silently would destroy its tabs, cookies and logins.
+    if (existingState && existingState.pid) {
+      const pidAlive = isProcessAlive(existingState.pid);
+      const action = decideDaemonRestart({
+        pidAlive,
+        healthyAfterProbe: pidAlive && await probeHealthWithBackoff(existingState.port),
+        forceRestart: globalFlags.forceRestart,
+      });
+      if (action === 'retry-command') refuseHeadedOverLiveDaemon(existingState);
+      if (action === 'report-busy') reportDaemonBusyAndExit(existingState.pid);
+      if (action === 'force-restart') {
+        console.error('[browse] --force-restart: replacing live daemon (tabs/cookies/logins will be lost)...');
+      }
+    }
     if (existingState && isProcessAlive(existingState.pid)) {
       safeKill(existingState.pid, 'SIGTERM');
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1285,9 +1364,9 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
     }
     // #1781: killing the daemon can orphan its Chromium child tree, which keeps
     // holding the SingletonLock and makes the next `connect` fail to launch.
-    // Reap the orphan via the lock, then clear the lock files + state.
-    await killOrphanChromium();
-    cleanChromiumProfileLocks();
+    // Reap the orphan via the lock, then clear the lock files + state. Only a
+    // headed daemon owns that profile; a proxy-only one never touched it.
+    await prepareChromiumProfile(existingState.mode === 'headed');
     // Xvfb orphan cleanup: if the recorded PID still matches our Xvfb (by
     // cmdline AND start-time), kill it. PID-only would risk killing a
     // recycled PID belonging to an unrelated process.
@@ -1315,18 +1394,34 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
     commandArgs.push(stdin.trim());
   }
 
+  // pair-agent's headed switch replaces the daemon. Record whether a live
+  // daemon predates this invocation BEFORE ensureServer can start a fresh one:
+  // a pre-existing daemon holds the user's session and may only be replaced
+  // with --force-restart, while one booted just now holds nothing.
+  let pairAgentPreexistingDaemonAlive = false;
+  if (command === 'pair-agent') {
+    const preState = readState();
+    pairAgentPreexistingDaemonAlive = Boolean(preState?.pid && isProcessAlive(preState.pid));
+  }
+
   let state = await ensureServer(globalFlags);
 
   // ─── Pair-Agent (post-server, pre-dispatch) ──────────────
   if (command === 'pair-agent') {
     // Ensure headed mode — the user should see the browser window
     // when sharing it with another agent. Feels safer, more impressive.
-    if (state.mode !== 'headed' && !hasFlag(commandArgs, '--headless')) {
+    if (state.mode !== 'headed' && !hasFlag(commandArgs, '--headless') && pairAgentPreexistingDaemonAlive && !globalFlags.forceRestart) {
+      console.warn('[browse] A live headless daemon is running; pairing with it as is. Pass --force-restart to relaunch headed, losing its tabs and cookies.');
+    } else if (state.mode !== 'headed' && !hasFlag(commandArgs, '--headless')) {
       console.log('[browse] Opening vibestack Browser so you can see what the remote agent does...');
-      // In compiled binaries, process.argv[1] is /$bunfs/... (virtual).
-      // Use process.execPath which is the real binary on disk.
-      const browseBin = process.execPath;
-      const connectProc = Bun.spawn([browseBin, 'connect'], {
+      // Source runs execute cli.ts on bun; compiled binaries are the CLI
+      // themselves (process.argv[1] is a virtual /$bunfs path there).
+      const selfCommand = import.meta.path.endsWith('.ts')
+        ? [process.execPath, 'run', ...BUN_CHILD_FLAGS, import.meta.path]
+        : [process.execPath];
+      // --force-restart: either no live daemon predated this invocation, or
+      // the user passed --force-restart to pair-agent.
+      const connectProc = Bun.spawn([...selfCommand, 'connect', '--force-restart'], {
         cwd: process.cwd(),
         stdio: ['ignore', 'inherit', 'inherit'],
         // Disable parent-PID monitoring: pair-agent needs the server to outlive

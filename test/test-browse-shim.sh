@@ -105,6 +105,40 @@ else
   fail "chain-usage" "chain dispatch broken"
 fi
 
+# tunnel consent: ngrok never starts until pair_agent is on, and the env var wins
+echo "== tunnel consent =="
+TB="$WORK/tunnel-bin"; mkdir -p "$TB"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/ngrok.calls"\n' "$WORK" > "$TB/ngrok"
+printf '#!/usr/bin/env bash\necho "{\\"tunnels\\":[{\\"public_url\\":\\"https://abc.ngrok.app\\"}]}"\n' > "$TB/curl"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TB/sleep"
+chmod +x "$TB/ngrok" "$TB/curl" "$TB/sleep"
+tunnel() {  # tunnel <home-config-json|-> [env...]
+  local home="$WORK/th.$RANDOM"; mkdir -p "$home"
+  [ "$1" = - ] || printf '%s' "$1" > "$home/config.json"
+  shift
+  rm -f "$WORK/ngrok.calls"
+  env PATH="$TB:$PATH" VIBESTACK_HOME="$home" VIBE_BROWSE_FORCE_SHIM=1 "$@" bash "$LAUNCHER" tunnel 3000 2>&1
+}
+t_out="$(tunnel -)"; t_code=$?
+if [ "$t_code" -ne 0 ] && printf '%s' "$t_out" | grep -q TUNNEL_REFUSED && [ ! -f "$WORK/ngrok.calls" ]; then
+  pass "tunnel-no-config-refused"
+else
+  fail "tunnel-no-config-refused" "exit $t_code, ngrok started: $([ -f "$WORK/ngrok.calls" ] && echo yes || echo no) ($t_out)"
+fi
+t_out="$(tunnel '{"pair_agent":"off"}')"; t_code=$?
+[ "$t_code" -ne 0 ] && [ ! -f "$WORK/ngrok.calls" ] \
+  && pass "tunnel-off-refused" || fail "tunnel-off-refused" "exit $t_code ($t_out)"
+t_out="$(tunnel '{"pair_agent":"on"}' VIBESTACK_PAIR_AGENT=off)"; t_code=$?
+[ "$t_code" -ne 0 ] && [ ! -f "$WORK/ngrok.calls" ] \
+  && pass "tunnel-env-off-wins" || fail "tunnel-env-off-wins" "exit $t_code ($t_out)"
+t_out="$(tunnel '{"pair_agent":"on"}')"; t_code=$?
+sleep 0.2 2>/dev/null || true
+[ "$t_code" -eq 0 ] && printf '%s' "$t_out" | grep -q "TUNNEL: https://abc.ngrok.app" && [ -f "$WORK/ngrok.calls" ] \
+  && pass "tunnel-consented-starts" || fail "tunnel-consented-starts" "exit $t_code ($t_out)"
+t_out="$(tunnel '{"pair_agent":true}')"; t_code=$?
+[ "$t_code" -eq 0 ] && printf '%s' "$t_out" | grep -q "TUNNEL:" \
+  && pass "tunnel-bool-true-starts" || fail "tunnel-bool-true-starts" "exit $t_code ($t_out)"
+
 echo ""
 echo "== summary =="
 echo "  passed: $PASS"

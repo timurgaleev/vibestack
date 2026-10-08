@@ -218,3 +218,27 @@ export function cleanSingletonLocks(userDataDir: string): void {
     safeUnlinkQuiet(path.join(resolved, lockFile));
   }
 }
+
+/**
+ * Is the remote pair-agent (ngrok tunnel) surface enabled?
+ *
+ * Fail-closed: the tunnel exposes the local browser to the internet, so it
+ * stays off unless the user ran `vibe-config set pair_agent on` (the
+ * /pair-agent skill asks once and sets it). A missing or unreadable config
+ * resolves to off. `VIBESTACK_PAIR_AGENT=on|off` overrides the file.
+ */
+export function isPairAgentEnabled(): boolean {
+  const env = process.env.VIBESTACK_PAIR_AGENT;
+  if (env === 'on') return true;
+  if (env === 'off') return false;
+  try {
+    const raw = fs.readFileSync(path.join(resolvevibestackHome(), 'config.json'), 'utf-8');
+    const value = JSON.parse(raw)?.pair_agent;
+    return value === 'on' || value === true;
+  } catch {
+    return false;
+  }
+}
+
+export const PAIR_AGENT_OFF_HINT =
+  'pair-agent is off (a tunnel exposes this browser beyond the machine). Enable once with: vibe-config set pair_agent on — or run /pair-agent, which asks for consent and sets it.';

@@ -29,6 +29,7 @@ import {
   type TierPaths,
 } from './browser-skills';
 import { mintSkillToken, revokeSkillToken, generateSpawnId } from './skill-token';
+import { BUN_CHILD_FLAGS } from './terminal-agent-control';
 
 const DEFAULT_TIMEOUT_SECONDS = 60;
 const MAX_STDOUT_BYTES = 1024 * 1024; // 1 MB
@@ -185,7 +186,7 @@ async function handleTest(args: string[], ctx: SkillCommandContext): Promise<str
     throw new Error(`Skill "${name}" has no script.test.ts at ${testFile}`);
   }
 
-  const proc = Bun.spawn(['bun', 'test', testFile], {
+  const proc = Bun.spawn(['bun', 'test', ...BUN_CHILD_FLAGS, testFile], {
     cwd: skill.dir,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -263,7 +264,7 @@ export async function spawnSkill(opts: SpawnSkillOptions): Promise<SpawnSkillRes
       throw new Error(`Skill "${opts.skill.name}" missing script.ts at ${scriptPath}`);
     }
 
-    const proc = Bun.spawn(['bun', 'run', scriptPath, '--', ...opts.skillArgs], {
+    const proc = Bun.spawn(['bun', 'run', ...BUN_CHILD_FLAGS, scriptPath, '--', ...opts.skillArgs], {
       cwd: opts.skill.dir,
       env,
       stdout: 'pipe',
