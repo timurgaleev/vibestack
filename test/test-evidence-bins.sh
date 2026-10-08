@@ -346,5 +346,141 @@ OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h7" 
       VIBE_CODEX_PROBE_TIMEOUT=5 env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
 chk "a cached verdict does not cross credential contexts" "$OUT" "CODEX: unauthenticated"
 
+# Credentials present but refused: the round trip itself has to name it.
+printf '#!/bin/sh\necho "Error: Not logged in. Run codex login." >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h8" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "a logged-out round trip reports unauthenticated" "$OUT" "CODEX: unauthenticated"
+
+# A usage limit is its own verdict, relays Codex's reset line, and is cached --
+# but only briefly, because it lifts on its own.
+printf '#!/bin/sh\necho "ERROR: You have hit your usage limit. Try again at 4:05 PM." >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h9" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1); RC=$?
+chk "a usage-limit refusal reports quota_exhausted" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: quota_exhausted"
+chk "and exits nonzero" "$RC" "1"
+printf '%s\n' "$OUT" | grep -q '^DETAIL: .*Try again at 4:05 PM' \
+  && ok "Codex's reset line is relayed" || no "the reset line was dropped"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h9" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "a fresh quota verdict is replayed, not re-paid" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: quota_exhausted"
+printf '%s\n' "$OUT" | grep -q '^DETAIL: .*Try again at 4:05 PM' \
+  && ok "the replay still names the reset time" || no "the replay lost the reset line"
+# Older than the quota window but well inside the default hour: re-probed.
+read -r _qts _qv _qk < "$TMP/h9/codex-probe.txt"
+printf '%s %s %s\n' "$(( $(date +%s) - 1000 ))" "$_qv" "$_qk" > "$TMP/h9/codex-probe.txt"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h9" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "a quota verdict expires after 15 minutes, not an hour" "$OUT" "CODEX: usable"
+
+# A 429 body that names insufficient_quota is the quota, not a rate limit.
+printf '#!/bin/sh\necho "ERROR: 429 Too Many Requests: insufficient_quota" >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h10" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "insufficient_quota wins over the 429" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: quota_exhausted"
+
+# A plain rate limit is transient: named, never cached.
+printf '#!/bin/sh\necho "ERROR: stream error: 429 Too Many Requests (rate limit reached)" >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h11" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "a plain 429 reports rate_limited" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: rate_limited"
+[ -f "$TMP/h11/codex-probe.txt" ] && no "a rate-limited verdict was cached" \
+                                 || ok "a rate-limited verdict is not cached"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h11" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "the next probe after a rate limit sees the truth" "$OUT" "CODEX: usable"
+
+# codex echoes the prompt into the captured stream, and the prompt contains the
+# word. The echo alone, exit 0, is not a reply.
+printf '#!/bin/sh\necho user\necho "Reply with the single word OK."\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h12" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "the prompt echo alone is not a reply" "$OUT" "CODEX: error"
+
+# A timeout or an unclassified failure is cached briefly, not for the hour: one
+# network blip must not switch Codex off for every skill until it expires.
+read -r _ets _ev _ek < "$TMP/h12/codex-probe.txt"
+chk "an error verdict is cached" "$_ev" "error"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h12" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+chk "a fresh error verdict is replayed" "$OUT" "CODEX: error"
+for _v in error unresponsive; do
+  printf '%s %s %s\n' "$(( $(date +%s) - 1000 ))" "$_v" "$_ek" > "$TMP/h12/codex-probe.txt"
+  OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h12" \
+        VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
+  chk "an $_v verdict expires after 15 minutes, not an hour" "$OUT" "CODEX: usable"
+done
+
+# `codex login` writes auth.json. A cached `unauthenticated` recorded before
+# the login must not outlive it -- the preflight tells the user to log in, and
+# the very next run has to see that they did.
+CH="$TMP/loginhome"; mkdir -p "$CH"
+OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$CH" VIBESTACK_HOME="$TMP/h13" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
+chk "before login: unauthenticated" "$OUT" "CODEX: unauthenticated"
+printf '{}\n' > "$CH/auth.json"
+OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$CH" VIBESTACK_HOME="$TMP/h13" \
+      VIBE_CODEX_PROBE_TIMEOUT=5 env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
+chk "after login the cached unauthenticated is not replayed" "$OUT" "CODEX: usable"
+
+# The preflight every outside-voice skill shares has to ask the probe. A
+# `codex --version` check passes while logged out, which is the whole bug.
+PRE="$ROOT/lib/snippets/outside-voice-preflight.md"
+grep -q 'vibe-codex-probe' "$PRE" && ok "the outside-voice preflight runs the probe" \
+                                  || no "the outside-voice preflight does not run the probe"
+grep -v '^[[:space:]]*#' "$PRE" | grep -q 'codex --version' \
+  && no "the preflight still treats codex --version as auth" \
+  || ok "the preflight no longer trusts codex --version"
+
+# The verdict-to-mode mapping is what makes the preflight fail closed: anything
+# the probe cannot vouch for -- including no probe at all -- must route to the
+# Claude subagent, never to the Codex pass. Run the snippet's own bash block
+# against a stub probe that prints each verdict.
+echo "outside-voice preflight"
+PF="$TMP/preflight.sh"
+awk '/^```bash$/{f=1;next} /^```$/{f=0} f' "$PRE" > "$PF"
+[ -s "$PF" ] && ok "the preflight block extracts" || no "no bash block in the preflight snippet"
+PFH="$TMP/pfhome"; mkdir -p "$PFH/.vibestack/bin"
+printf '#!/bin/sh\nprintf "CODEX: %%s\\n" "$STUB_VERDICT"\n[ "$STUB_VERDICT" = usable ]\n' \
+  > "$PFH/.vibestack/bin/vibe-codex-probe"
+chmod +x "$PFH/.vibestack/bin/vibe-codex-probe"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+pf() { # pf VERDICT -> the preflight's full output
+  HOME="$PFH" PATH="$FAKE:/usr/bin:/bin" STUB_VERDICT="$1" \
+    env -u CODEX_THREAD_ID -u CODEX_SANDBOX -u VIBE_FORCE_CODEX_REVIEW bash "$PF" 2>&1
+}
+pfmode() { pf "$1" | sed -n 's/^CODEX_MODE: //p'; }
+chk "usable runs the Codex pass" "$(pfmode usable)" "ready"
+chk "rate_limited still runs it" "$(pfmode rate_limited)" "ready"
+printf '%s\n' "$(pf rate_limited)" | grep -q '^CODEX_NOTE: rate_limited' \
+  && ok "and says it is rate limited" || no "rate_limited ran without a CODEX_NOTE"
+chk "unauthenticated -> not_authed" "$(pfmode unauthenticated)" "not_authed"
+chk "missing -> not_installed" "$(pfmode missing)" "not_installed"
+chk "quota_exhausted keeps its own mode" "$(pfmode quota_exhausted)" "quota_exhausted"
+chk "error -> unavailable" "$(pfmode error)" "unavailable"
+chk "unresponsive -> unavailable" "$(pfmode unresponsive)" "unavailable"
+chk "an unknown verdict -> unavailable" "$(pfmode something_new)" "unavailable"
+printf '%s\n' "$(pf quota_exhausted)" | grep -q '^CODEX: quota_exhausted' \
+  && ok "the probe's verdict line is relayed" || no "the probe's output was swallowed"
+mv "$PFH/.vibestack/bin/vibe-codex-probe" "$PFH/.vibestack/bin/probe.off"
+chk "a missing probe -> unavailable, never ready" "$(pfmode usable)" "unavailable"
+mv "$PFH/.vibestack/bin/probe.off" "$PFH/.vibestack/bin/vibe-codex-probe"
+printf '#!/bin/sh\necho disabled\n' > "$PFH/.vibestack/bin/vibe-config"; chmod +x "$PFH/.vibestack/bin/vibe-config"
+chk "codex_reviews disabled wins over a usable probe" "$(pfmode usable)" "disabled"
+rm -f "$PFH/.vibestack/bin/vibe-config"
+chk "a Codex host is under_codex, not a nested pass" \
+  "$(HOME="$PFH" PATH="$FAKE:/usr/bin:/bin" STUB_VERDICT=usable CODEX_THREAD_ID=t \
+     env -u VIBE_FORCE_CODEX_REVIEW bash "$PF" 2>&1 | sed -n 's/^CODEX_MODE: //p')" "under_codex"
+if PATH="/usr/bin:/bin" command -v codex >/dev/null 2>&1; then
+  ok "SKIP no-binary preflight case (codex is installed inside /usr/bin:/bin)"
+else
+  chk "no codex binary -> not_installed without asking the probe" \
+    "$(HOME="$PFH" PATH="/usr/bin:/bin" STUB_VERDICT=usable \
+       env -u CODEX_THREAD_ID -u CODEX_SANDBOX bash "$PF" 2>&1 | sed -n 's/^CODEX_MODE: //p')" "not_installed"
+fi
+
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -12,12 +12,19 @@
 #   vibe-codex-probe --refresh  # ignore the cache
 #   vibe-codex-probe --ttl 600  # cache lifetime in seconds (default 3600)
 #
-# Prints exactly one verdict line and exits 0 ONLY for `usable`:
+# Prints one verdict line and exits 0 ONLY for `usable`:
 #   CODEX: usable          -- a real round trip returned successfully
 #   CODEX: missing         -- no codex binary on PATH
 #   CODEX: unauthenticated -- no credentials, or the round trip was refused
-#   CODEX: unresponsive    -- credentials present, no answer within the timeout
-#   CODEX: error           -- a round trip failed for some other reason
+#   CODEX: quota_exhausted -- the account hit its usage limit; cached 15 minutes
+#   CODEX: rate_limited    -- a transient 429; never cached, the review may run
+#   CODEX: unresponsive    -- credentials present, no answer within the timeout;
+#                             cached 15 minutes
+#   CODEX: error           -- a round trip failed for some other reason; cached
+#                             15 minutes
+#
+# quota_exhausted and rate_limited are followed by `DETAIL: <line>` lines that
+# relay Codex's own message, which for a usage limit names the reset time.
 #
 # The negatives are ordered cheapest-first, so the paid round trip only runs
 # when the answer could still be `usable`.
@@ -33,7 +40,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --refresh) REFRESH=1; shift ;;
     --ttl) TTL="${2:-3600}"; shift 2 ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "vibe-codex-probe: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -43,23 +50,45 @@ done
 # with that account's credentials removed -- the cached answer outlived the
 # thing it was an answer about. The key is a coarse fingerprint of what the
 # verdict depends on; it deliberately contains no secret material, only whether
-# each source is set and where the codex home points.
+# each source is set, where the codex home points, and when its auth.json last
+# changed. `codex login` rewrites that file, so logging in invalidates a cached
+# `unauthenticated` instead of leaving it standing for the rest of the hour.
 _CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+_auth_stamp() {
+  local f="$_CODEX_HOME/auth.json"
+  [ -f "$f" ] || { echo none; return; }
+  stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo present
+}
 _ctx_key() {
-  printf '%s|%s|%s|%s' \
+  printf '%s|%s|%s|%s|%s' \
     "$(command -v codex 2>/dev/null || echo none)" \
     "$_CODEX_HOME" \
+    "$(_auth_stamp)" \
     "${CODEX_API_KEY:+set}${CODEX_API_KEY:-unset}" \
     "${OPENAI_API_KEY:+set}${OPENAI_API_KEY:-unset}" \
     | { command -v shasum >/dev/null 2>&1 && shasum -a 256 || sha256sum; } | cut -c1-16
 }
 _KEY=$(_ctx_key)
 
-emit() { # emit VERDICT [skip-cache]
+# A usage limit lifts on its own, usually within the hour, and a timeout or an
+# unclassified failure is as likely a network blip as a lasting fault. Each is
+# cached only long enough to stop every skill in a session paying for the same
+# refusal, so one bad moment does not switch Codex off for the whole hour.
+SHORT_TTL=900
+
+emit() { # emit VERDICT [nocache] [DETAIL]
   printf 'CODEX: %s\n' "$1"
+  [ -n "${3:-}" ] && printf '%s\n' "$3" | sed 's/^/DETAIL: /'
   if [ "${2:-}" != "nocache" ]; then
     mkdir -p "$VIBESTACK_HOME" 2>/dev/null || true
     printf '%s %s %s\n' "$(date +%s)" "$1" "$_KEY" > "$CACHE" 2>/dev/null || true
+    # The detail is a separate file: the verdict line stays three fields, so a
+    # reader that predates it parses the cache exactly as before.
+    if [ -n "${3:-}" ]; then
+      printf '%s\n' "$3" > "$CACHE.detail" 2>/dev/null || true
+    else
+      rm -f "$CACHE.detail" 2>/dev/null || true
+    fi
   fi
   [ "$1" = usable ] && exit 0 || exit 1
 }
@@ -78,8 +107,16 @@ if [ "$REFRESH" -eq 0 ] && [ -f "$CACHE" ]; then
   [ "${_key:-}" = "$_KEY" ] || { _ts=""; _verdict=""; }
   if [ -n "$_ts" ] && [ -n "${_verdict:-}" ]; then
     _age=$(( $(date +%s) - _ts ))
-    if [ "$_age" -ge 0 ] && [ "$_age" -lt "$TTL" ]; then
+    _ttl="$TTL"
+    case "$_verdict" in
+      quota_exhausted|unresponsive|error)
+        [ "$_ttl" -gt "$SHORT_TTL" ] && _ttl="$SHORT_TTL" ;;
+    esac
+    if [ "$_age" -ge 0 ] && [ "$_age" -lt "$_ttl" ]; then
       printf 'CODEX: %s\n' "$_verdict"
+      if [ "$_verdict" = quota_exhausted ] && [ -f "$CACHE.detail" ]; then
+        sed 's/^/DETAIL: /' "$CACHE.detail" 2>/dev/null || true
+      fi
       [ "$_verdict" = usable ] && exit 0 || exit 1
     fi
   fi
@@ -119,18 +156,29 @@ wait "$_PID" 2>/dev/null
 _RC=$?
 
 # Exit 0 alone is not proof of a round trip: a wrapper on PATH that exits
-# without contacting anything produces it. The reply has to actually come back.
-if [ "$_RC" -eq 0 ] && grep -qi 'OK' "$_OUT" 2>/dev/null; then
+# without contacting anything produces it. The reply has to actually come back,
+# as a line of its own: codex echoes the prompt into the same stream, and the
+# prompt contains the word, so a substring match would accept the echo alone.
+if [ "$_RC" -eq 0 ] && grep -qiE '^[[:space:]]*OK[.!]?[[:space:]]*$' "$_OUT" 2>/dev/null; then
   emit usable
 fi
-if [ "$_RC" -eq 0 ]; then
-  emit error
-fi
 
-# A non-zero exit still has to be classified. Auth failures are the common one
-# and are worth naming separately, because the fix ("run codex login") differs
-# from every other failure's.
-if grep -qiE '401|unauthor|not logged in|invalid[_ ]api[_ ]key|authentication' "$_OUT" 2>/dev/null; then
+# Anything short of a reply still has to be classified, whatever the exit code.
+# A usage limit is the account, not the network: Codex says so plainly and names
+# when it resets, so it is relayed and cached briefly. It wins over a rate limit
+# because a 429 body that names insufficient_quota is the quota. A plain rate
+# limit is transient: it is never cached and does not stop the review, whose own
+# result still decides. Auth failures are named separately because their fix
+# ("run codex login") differs from every other failure's.
+_detail=$(grep -iE 'usage limit|insufficient_quota|exceeded your current quota|quota exceeded' "$_OUT" 2>/dev/null | head -3 | cut -c1-300)
+if [ -n "$_detail" ]; then
+  emit quota_exhausted "" "$_detail"
+fi
+_detail=$(grep -iE 'rate.?limit|too many requests|(^|[^0-9])429([^0-9]|$)' "$_OUT" 2>/dev/null | head -3 | cut -c1-300)
+if [ -n "$_detail" ]; then
+  emit rate_limited nocache "$_detail"
+fi
+if [ "$_RC" -ne 0 ] && grep -qiE '401|unauthor|not logged in|invalid[_ ]api[_ ]key|authentication' "$_OUT" 2>/dev/null; then
   emit unauthenticated
 fi
 emit error
