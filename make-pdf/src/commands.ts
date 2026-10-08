@@ -20,18 +20,21 @@ export const COMMANDS = new Map<string, {
     usage: "generate <input.md> [output.pdf] [options]",
     category: "Primary",
     flags: [
+      // Output format
+      "--to",
       // Page layout
       "--margins", "--margin-top", "--margin-right", "--margin-bottom", "--margin-left",
       "--page-size", "--format",
       // Structure
       "--cover", "--toc", "--no-chapter-breaks",
       // Branding
-      "--watermark", "--header-template", "--footer-template", "--no-confidential",
+      "--watermark", "--header-template", "--footer-template",
+      "--confidential", "--no-confidential",
       // Output
       "--page-numbers", "--no-page-numbers", "--tagged", "--no-tagged",
       "--outline", "--no-outline", "--quiet", "--verbose",
-      // Network
-      "--allow-network",
+      // Images + network
+      "--strict", "--allow-network",
       // Metadata
       "--title", "--author", "--date",
     ],
@@ -42,7 +45,7 @@ export const COMMANDS = new Map<string, {
     category: "Primary",
     flags: [
       "--cover", "--toc", "--no-chapter-breaks", "--watermark",
-      "--no-confidential", "--allow-network",
+      "--confidential", "--no-confidential", "--allow-network",
       "--title", "--author", "--date",
       "--quiet", "--verbose",
     ],

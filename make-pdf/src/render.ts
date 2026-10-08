@@ -122,17 +122,12 @@ export function render(opts: RenderOptions): RenderResult {
       })
     : "";
 
-  // TOC anchors must resolve: assign id="toc-N" to each H1-H3 in the same
-  // order buildTocBlock scans them, or every TOC link is a dead href (masked
-  // in PDFs by Chromium outline bookmarks, glaring in --to html). Headings
-  // that already carry an id keep it — the ids array records the ACTUAL id
-  // per heading so TOC entries always link to something real.
-  const anchored = opts.toc ? addHeadingIds(typographicHtml) : { html: typographicHtml, ids: [] };
+  // TOC labels and link targets come from one heading inventory, so an empty
+  // heading or a duplicate id cannot shift the links after it.
+  const anchored = opts.toc ? anchorHeadings(typographicHtml) : { html: typographicHtml, entries: [] };
   const anchoredHtml = anchored.html;
 
-  const tocBlock = opts.toc
-    ? buildTocBlock(anchoredHtml, anchored.ids)
-    : "";
+  const tocBlock = opts.toc ? buildTocBlock(anchored.entries) : "";
 
   // Wrap body in .chapter sections at H1 boundaries if chapter breaks are on.
   const chapterHtml = opts.noChapterBreaks
@@ -275,18 +270,24 @@ function buildCoverBlock(opts: {
   ].filter(Boolean).join("\n");
 }
 
-/**
- * Scan HTML for H1/H2/H3 headings and emit a TOC placeholder.
- * Page numbers are filled in by Paged.js (when --toc is passed and Paged.js
- * polyfill is injected).
- */
-function buildTocBlock(html: string, ids: string[] = []): string {
-  const headings = extractHeadings(html);
-  if (headings.length === 0) return "";
+export interface TocEntry {
+  level: number;
+  text: string;
+  /** The id the heading carries in the output (decoded text, not attribute-escaped). */
+  id: string;
+}
 
-  const items = headings.map((h, i) => {
+/**
+ * Emit the TOC. Each entry links to its heading's id; the empty `.toc-page`
+ * span is filled with the printed page number by toc-pages.ts once the PDF
+ * has been laid out (PDF output only).
+ */
+function buildTocBlock(entries: TocEntry[]): string {
+  if (entries.length === 0) return "";
+
+  const items = entries.map((h) => {
     const level = h.level >= 2 ? "level-2" : "level-1";
-    const id = ids[i] ?? `toc-${i}`;
+    const id = escapeHtml(h.id);
     return [
       `  <li class="${level}">`,
       `    <span class="toc-title"><a href="#${id}">${escapeHtml(h.text)}</a></span>`,
@@ -306,38 +307,61 @@ function buildTocBlock(html: string, ids: string[] = []): string {
   ].join("\n");
 }
 
+const ID_ATTR = /(\sid\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
+
 /**
- * Assign id="toc-N" to every H1-H3 in document order — the same order
- * extractHeadings/buildTocBlock use, so anchors and entries line up by index.
- * A heading that already carries an id keeps it, and the returned ids array
- * records the actual id for that slot so the TOC links to the real anchor
- * instead of a nonexistent toc-N.
+ * The single heading inventory behind the TOC. Every H1-H3 with visible text
+ * becomes one entry, in document order, and the entry's id is the id that
+ * heading owns in the output:
+ *   - a heading whose own id is the FIRST element with that id keeps it;
+ *   - a heading with no id, or with an id an earlier element already owns
+ *     (fragment links resolve to the first owner), gets a fresh `toc-N` that
+ *     no element in the document uses.
+ * Headings without text get no entry and no id, so they cannot shift the
+ * entries after them.
  */
-function addHeadingIds(html: string): { html: string; ids: string[] } {
-  const ids: string[] = [];
-  const out = html.replace(/<(h[1-3])([^>]*)>/gi, (full, tag: string, attrs: string) => {
-    const existing = attrs.match(/\bid\s*=\s*["']([^"']*)["']/i)?.[1];
-    if (existing) {
-      ids.push(existing);
-      return full;
-    }
-    const id = `toc-${ids.length}`;
-    ids.push(id);
-    return `<${tag}${attrs} id="${id}">`;
-  });
-  return { html: out, ids };
+export function anchorHeadings(html: string): { html: string; entries: TocEntry[] } {
+  const firstOwner = new Map<string, number>();
+  for (const m of html.matchAll(/<[a-zA-Z][^>]*>/g)) {
+    const id = attrId(m[0]);
+    if (id !== null && !firstOwner.has(id)) firstOwner.set(id, m.index!);
+  }
+  let next = 0;
+  const freshId = (): string => {
+    while (firstOwner.has(`toc-${next}`)) next++;
+    const id = `toc-${next++}`;
+    firstOwner.set(id, -1);
+    return id;
+  };
+
+  const entries: TocEntry[] = [];
+  const out = html.replace(
+    /<(h[1-3])\b([^>]*)>([\s\S]*?)<\/\1>/gi,
+    (full, tag: string, attrs: string, inner: string, offset: number) => {
+      const text = decodeTextEntities(stripTags(inner).trim());
+      if (!text) return full;
+      const level = parseInt(tag.slice(1), 10);
+      const existing = attrId(`<${tag}${attrs}>`);
+      if (existing !== null && firstOwner.get(existing) === offset) {
+        entries.push({ level, text, id: existing });
+        return full;
+      }
+      const id = freshId();
+      entries.push({ level, text, id });
+      const newAttrs = ID_ATTR.test(attrs)
+        ? attrs.replace(ID_ATTR, (_m, pre: string) => `${pre}"${id}"`)
+        : `${attrs} id="${id}"`;
+      return `<${tag}${newAttrs}>${inner}</${tag}>`;
+    },
+  );
+  return { html: out, entries };
 }
 
-function extractHeadings(html: string): Array<{ level: number; text: string }> {
-  const re = /<(h[1-3])[^>]*>([\s\S]*?)<\/\1>/gi;
-  const headings: Array<{ level: number; text: string }> = [];
-  let match;
-  while ((match = re.exec(html)) !== null) {
-    const level = parseInt(match[1].slice(1), 10);
-    const text = decodeTextEntities(stripTags(match[2]).trim());
-    if (text) headings.push({ level, text });
-  }
-  return headings;
+/** The decoded value of a tag's `id` attribute (not `data-id`), or null when absent or empty. */
+function attrId(tag: string): string | null {
+  const m = tag.match(ID_ATTR);
+  const id = m ? decodeTextEntities(m[2] ?? m[3] ?? m[4] ?? "") : "";
+  return id || null;
 }
 
 /**

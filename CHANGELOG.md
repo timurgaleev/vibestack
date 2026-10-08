@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.44.0 — 2026-10-08
+
+### Added
+
+- **`/document-release` runs as a contract-bound child of `/ship`.** Marked with
+  `VIBE_SPAWNED=1`, it edits authored docs only, never writes to git or the
+  hosting platform, asks nothing, and returns one JSON line. `/ship` validates
+  that line, stages the files it lists by name, commits and pushes them itself,
+  and asks you when the child is blocked instead of calling the docs current.
+  It finds the sibling skill in whichever runtime it is installed into.
+- **`/review` checks LLM agent wrappers.** The checklist now flags a tool
+  requirement stated only in prompt text, hidden second LLM passes that change
+  an answer, the agent's own output written to memory with the weight of a
+  user correction, and the same facts duplicated across prompt, history and
+  retrieval.
+
+### Fixed
+
+- **PR and MR bodies are never executed.** `/document-release` and
+  `/document-generate` hand the scanned body file to `glab` as one argument and
+  keep working copies in a private per-run directory.
+- **`/document-release` stays in its lane.** Discovery covers every tracked
+  doc, your own uncommitted edits are never staged, and CHANGELOG entries that
+  fail the sell test are flagged instead of rewritten.
+- **`/cso` is honest about partial runs.** A phase whose redaction did not run
+  is recorded as partial, `--recheck` runs phases 0-1, a secret separated from
+  its keyword by whitespace is masked, and a commit counts as remotely exposed
+  only when a remote branch or a pushed tag holds it.
+- **`/make-pdf`** handles CLI arguments, the table of contents and smart quotes
+  correctly, and its unit tests run in CI.
+
 ## 1.43.0 — 2026-10-08
 
 ### Fixed

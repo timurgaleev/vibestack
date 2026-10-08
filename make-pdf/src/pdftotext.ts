@@ -26,7 +26,7 @@
  * Only the CI gate and unit tests invoke pdftotext.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -125,7 +125,7 @@ export function resolvePdftotext(env: NodeJS.ProcessEnv = process.env): Pdftotex
  * cleanly rather than failing on a box without full poppler-utils.
  */
 export function resolvePopplerTool(
-  tool: "pdffonts" | "pdfimages" | "pdftoppm",
+  tool: "pdffonts" | "pdfimages" | "pdftoppm" | "pdfinfo" | "pdftotext",
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
   const override = resolveOverride(env[`VIBESTACK_${tool.toUpperCase()}_BIN`], env);
@@ -144,6 +144,8 @@ export function resolvePopplerTool(
 
 function isExecutable(p: string): boolean {
   try {
+    // access(X_OK) is true for directories (the traverse bit); only regular files count.
+    if (!fs.statSync(p).isFile()) return false;
     fs.accessSync(p, fs.constants.X_OK);
     return true;
   } catch {
@@ -154,19 +156,17 @@ function isExecutable(p: string): boolean {
 function describeBinary(bin: string): PdftotextInfo {
   let version = "unknown";
   let flavor: PdftotextInfo["flavor"] = "unknown";
-  try {
-    // pdftotext -v writes to stderr and exits 0 on poppler, 99 on some xpdf builds.
-    const result = execFileSync(bin, ["-v"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    version = (result || "").trim().split("\n")[0] || "unknown";
-  } catch (err: any) {
-    // Many pdftotext builds exit non-zero on -v but still write to stderr.
-    const stderr = err?.stderr?.toString?.() ?? "";
-    version = stderr.trim().split("\n")[0] || "unknown";
-  }
-  const v = version.toLowerCase();
+  // spawnSync, not execFileSync: poppler writes the -v banner to stderr and
+  // exits 0, so execFileSync returns the empty stdout and never reaches a catch.
+  // spawnSync hands back both streams whatever the exit status, which also
+  // covers xpdf builds that exit 99.
+  const res = spawnSync(bin, ["-v"], { encoding: "utf8" });
+  const raw = `${res.stdout ?? ""}\n${res.stderr ?? ""}`;
+  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+  version = lines.find((l) => /pdftotext\s+version/i.test(l)) ?? lines[0] ?? "unknown";
+  // Flavor comes from the whole banner: poppler names itself only on the
+  // copyright line, not on the version line.
+  const v = raw.toLowerCase();
   if (v.includes("poppler")) flavor = "poppler";
   else if (v.includes("xpdf")) flavor = "xpdf";
   return { bin, version, flavor };

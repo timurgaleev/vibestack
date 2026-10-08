@@ -92,7 +92,7 @@ new.
 | `vibe-learnings-sync-plan` | Plan `/learn sync` pushes: dedup, watermark, secret redaction |
 | `vibe-render-skill` | Render-at-install: expand `{{include}}` directives |
 | `vibe-skill-track` | Opt-in skill-usage analytics hook |
-| `vibe-session-kind` | Classify the session: spawned / headless / interactive |
+| `vibe-session-kind` | Classify the session: spawned / headless / interactive. `spawned` needs `OPENCLAW_SESSION` or an affirmative `VIBE_SPAWNED` (`0`/`false`/`no`/`off` do not count); the dispatching agent sets `VIBE_SPAWNED=1`, since an agent-tool child inherits no environment |
 | `vibe-repo-mode` | Emit `REPO_MODE=solo\|collaborative` from git history |
 | `vibe-telemetry-log` | Append a telemetry event — opt-in, no-op unless enabled |
 | `vibe-timeline-log` | Append a per-project timeline event |
