@@ -34,8 +34,6 @@ echo "REPO_MODE: $REPO_MODE"
 _VC=~/.vibestack/bin/vibe-config
 echo "PROACTIVE: $("$_VC" get proactive 2>/dev/null || echo true)"
 _EXPLAIN=$("$_VC" get explain_level 2>/dev/null || echo default); [ "$_EXPLAIN" = terse ] || _EXPLAIN=default; echo "EXPLAIN_LEVEL: $_EXPLAIN"
-echo "CHECKPOINT_MODE: $("$_VC" get checkpoint_mode 2>/dev/null || echo explicit)"
-echo "CHECKPOINT_PUSH: $("$_VC" get checkpoint_push 2>/dev/null || echo false)"
 echo "QUESTION_TUNING: $("$_VC" get question_tuning 2>/dev/null || echo false)"
 # Throttled best-effort update nag (once/day, never blocks).
 ~/.vibestack/bin/vibe-update-check 2>/dev/null || true

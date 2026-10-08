@@ -32,35 +32,6 @@ something that was chosen deliberately.
 Reliable and local; memory (memrain) is the broader semantic-recall layer, not the
 decision store.
 
-### Continuous checkpoint mode
-
-When `CHECKPOINT_MODE: continuous` (from the preamble), checkpoint progress with
-`WIP:` commits at natural boundaries so a long session survives interruption.
-Rules: stage only intentional files (NEVER `git add -A`), never commit broken
-tests or mid-edit state, and push only when `CHECKPOINT_PUSH: true`. Don't
-announce each WIP commit. When `CHECKPOINT_MODE: explicit` (the default), commit
-only when asked. `/ship` squashes `WIP:` commits into their logical commits before
-landing.
-
-A natural boundary is a test going green, a file finished, a phase of the skill
-completing, or the moment before something risky. Give each checkpoint a body,
-not just a subject — the subject says what changed, and a session picking the
-work back up needs to know where you were standing:
-
-```
-WIP: <short subject, what this checkpoint contains>
-
-[vibestack-context]
-Done: <what is finished and verified>
-Next: <the immediate next step>
-Uncertain: <the open question, or "none">
-```
-
-Keep the marker line and the three labels exactly as written. `/ship` harvests
-these blocks out of the commit bodies before it squashes them away, and a
-resuming session finds them with `git log --grep="^WIP:"` — free-form notes in
-their place survive the commit but not either reader.
-
 ### Skill routing
 
 If `HAS_ROUTING: yes` was echoed (the repo's `CLAUDE.md` has a `## Skill routing`
