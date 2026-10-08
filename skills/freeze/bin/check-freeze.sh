@@ -1,16 +1,35 @@
 #!/usr/bin/env bash
 # check-freeze.sh — PreToolUse hook for /freeze skill
-# Reads JSON from stdin, checks if file_path is within the freeze boundary.
+# Reads JSON from stdin, checks if the edited path is within the freeze
+# boundary: file_path for Edit/Write, notebook_path for NotebookEdit.
 # Returns a PreToolUse hookSpecificOutput with permissionDecision "deny" to block,
 # or {} to allow. The decision MUST be nested under hookSpecificOutput — Claude
 # Code ignores a top-level permissionDecision, which silently no-ops the block.
 #
 # Polarity: freeze is a DENY-tier hook, so an unreadable payload DENIES
-# (fail closed). A payload that parses but has no file_path is a non-file
-# tool — allow. This is the opposite edge-handling from careful's ask-tier
-# and intentionally so: /guard runs both, and a boundary that fails open is
-# not a boundary.
+# (fail closed), and so does a payload that parses but carries no path: the
+# hook is registered only on Edit, Write and NotebookEdit, so a pathless
+# payload is a schema it does not understand. Any unexpected death denies too
+# (the EXIT trap below). This is the opposite edge-handling from careful's
+# ask-tier and intentionally so: /guard runs both, and a boundary that fails
+# open is not a boundary.
 set -euo pipefail
+
+# Deny-tier backstop: any unexpected non-zero exit (a failing pipeline under
+# set -e, an unreadable state file, a deleted cwd) would otherwise end with no
+# decision JSON, which Claude Code treats as non-blocking — the edit proceeds.
+# Every deliberate output sets _FREEZE_DECIDED right after it is printed, so a
+# late failure never prints a second JSON object.
+_FREEZE_DECIDED=""
+_freeze_backstop() {
+  local rc=$?
+  if [ "$rc" -ne 0 ] && [ -z "$_FREEZE_DECIDED" ]; then
+    _FREEZE_DECIDED=1
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook failed unexpectedly (exit %s) - blocked, fail closed. Check ~/.vibestack/freeze-dir.txt or run /unfreeze."}}\n' "$rc"
+    exit 0
+  fi
+}
+trap _freeze_backstop EXIT
 
 # Opt-in debug logging. No-op unless VIBESTACK_DEBUG=1.
 # Subshell-isolated so logging errors never affect the hook decision.
@@ -80,6 +99,7 @@ _HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _HOOK_HELPER="$_HOOK_DIR/../../careful/bin/hook-extract.sh"
 if [ ! -f "$_HOOK_HELPER" ] || ! . "$_HOOK_HELPER" 2>/dev/null; then
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook helpers unavailable (broken install?) - blocked, fail closed. Reinstall vibestack or run /unfreeze."}}\n'
+  _FREEZE_DECIDED=1
   exit 0
 fi
 
@@ -89,14 +109,20 @@ FREEZE_FILE="$STATE_DIR/freeze-dir.txt"
 if [ ! -f "$FREEZE_FILE" ]; then
   _vibestack_log freeze allow no-freeze-state ""
   echo '{}'
+  _FREEZE_DECIDED=1
   exit 0
 fi
 
-# First line, trimmed of LEADING/TRAILING whitespace only. A blanket
-# `tr -d '[:space:]'` deletes INTERNAL spaces too, so a boundary like
-# "~/My Project/src" could never match anything — every edit denied (or the
-# mangled path accidentally allowed the wrong tree).
-FREEZE_DIR=$(head -n 1 "$FREEZE_FILE" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+# Line 1 is the boundary. freeze-state.sh writes it verbatim and stamps line 2
+# with its owner token, so that line is used as-is; a hand-written file gets
+# LEADING/TRAILING whitespace trimmed. A blanket `tr -d '[:space:]'` would
+# delete INTERNAL spaces too, so "~/My Project/src" could never match anything.
+# An unreadable file fails here and the backstop denies.
+FREEZE_DIR=$(sed -n '1p' "$FREEZE_FILE")
+case "$(sed -n '2p' "$FREEZE_FILE")" in
+  vibe-freeze-v1:*) ;;
+  *) FREEZE_DIR=$(printf '%s\n' "$FREEZE_DIR" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//') ;;
+esac
 # A literal leading ~ in the state file never matches absolute tool paths
 # (tilde is not expanded from variables) — expand it here.
 case "$FREEZE_DIR" in
@@ -107,13 +133,34 @@ esac
 if [ -z "$FREEZE_DIR" ]; then
   _vibestack_log freeze allow empty-freeze-dir ""
   echo '{}'
+  _FREEZE_DECIDED=1
   exit 0
 fi
 
-# Extract file_path from tool_input with the shared real-JSON parser.
+# A relative boundary means nothing without the cwd it was written from, and
+# the hook's cwd is not that. Deny instead of guessing; the state is kept.
+case "$FREEZE_DIR" in
+  /*) ;;
+  *)
+    _vibestack_log freeze deny relative-boundary ""
+    vibe_hook_decision deny "[freeze] The saved boundary '$FREEZE_DIR' is a relative path, which is ambiguous. Blocked (fail closed). Re-run /freeze with the directory, or run /unfreeze."
+    _FREEZE_DECIDED=1
+    exit 0
+    ;;
+esac
+
+# Extract the edited path with the shared real-JSON parser. Edit and Write
+# carry tool_input.file_path; NotebookEdit carries tool_input.notebook_path,
+# and reading file_path alone let every notebook edit through.
 set +e
+PATH_FIELD=file_path
 FILE_PATH=$(vibe_hook_extract_field "$INPUT" file_path)
 EXTRACT_RC=$?
+if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
+  PATH_FIELD=notebook_path
+  FILE_PATH=$(vibe_hook_extract_field "$INPUT" notebook_path)
+  EXTRACT_RC=$?
+fi
 set -e
 
 # Unparseable payload (or no parser available): DENY. A boundary hook that
@@ -123,13 +170,17 @@ if [ "$EXTRACT_RC" -ne 0 ]; then
   _vibestack_log freeze deny unparseable-payload ""
   _vibestack_analytics deny unparseable_payload
   vibe_hook_decision deny "[freeze] Could not parse the tool payload to check the freeze boundary. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
+  _FREEZE_DECIDED=1
   exit 0
 fi
 
-# Parsed fine but no file_path field: a non-file tool payload — allow.
+# Parsed fine but neither path field is present: the hook cannot tell what
+# the edit touches, so it cannot vouch for the boundary — deny.
 if [ -z "$FILE_PATH" ]; then
-  _vibestack_log freeze allow no-file-path ""
-  echo '{}'
+  _vibestack_log freeze deny no-file-path ""
+  _vibestack_analytics deny no_file_path
+  vibe_hook_decision deny "[freeze] The tool payload names no file_path or notebook_path, so the freeze boundary cannot be checked. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
+  _FREEZE_DECIDED=1
   exit 0
 fi
 
@@ -190,6 +241,7 @@ case "$_INSIDE" in
   1)
     _vibestack_log freeze allow inside-boundary "$FILE_PATH"
     echo '{}'
+    _FREEZE_DECIDED=1
     ;;
   *)
     _vibestack_log freeze deny outside-boundary "$FILE_PATH (boundary=$FREEZE_DIR)"
@@ -197,6 +249,7 @@ case "$_INSIDE" in
     # The reason is JSON-encoded by the shared helper. Never interpolate paths
     # into hand-built JSON: a path containing a quote or newline produces
     # malformed JSON, and the deny silently no-ops.
-    vibe_hook_decision deny "[freeze] Blocked: $FILE_PATH is outside the freeze boundary ($FREEZE_DIR). Only edits within the frozen directory are allowed."
+    vibe_hook_decision deny "[freeze] Blocked: $PATH_FIELD $FILE_PATH is outside the freeze boundary ($FREEZE_DIR). Only edits within the frozen directory are allowed; run /unfreeze to remove the boundary."
+    _FREEZE_DECIDED=1
     ;;
 esac

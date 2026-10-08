@@ -22,16 +22,13 @@ Use when you want to widen edit scope without ending the session. Use when asked
 Remove the edit restriction set by `/freeze`, allowing edits to all directories.
 
 ```bash
-STATE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
-if [ -f "$STATE_DIR/freeze-dir.txt" ]; then
-  PREV=$(cat "$STATE_DIR/freeze-dir.txt")
-  rm -f "$STATE_DIR/freeze-dir.txt"
-  echo "Freeze boundary cleared (was: $PREV). Edits are now allowed everywhere."
-else
-  echo "No freeze boundary was set."
-fi
+bash "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/unfreeze}/../freeze/bin/freeze-state.sh" clear
 ```
 
-Tell the user the result. Note that `/freeze` hooks remain registered for the
+The shared state writer removes the boundary under the same lock `/freeze`,
+`/guard` and `/investigate` use. This also clears a boundary `/investigate`
+acquired and could not release (a killed session). Tell the user the result.
+On `FREEZE_BUSY`, retry once the other writer finishes; never delete the state
+file directly. Note that `/freeze` hooks remain registered for the
 session — they will allow all paths since no state file exists. To re-freeze,
 run `/freeze` again.

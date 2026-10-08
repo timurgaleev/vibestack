@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.42.0 — 2026-10-08
+
+### Fixed
+
+- **`/ship` and `/review` stop calling a review that never happened a pass.**
+  The Codex gate now fails on a non-zero exit, empty output, auth or quota
+  text, a refusal, untagged review comments, and any output that carries
+  neither severity tags nor an explicit no-findings conclusion. Both skills
+  carry the same gate, and a fixture matrix grades it in bash and zsh.
+- **Test lanes report their own exit status.** `/ship` runs the command the
+  project's tests actually use, one lane per suite, without piping through
+  `tee`. It walks the lanes it launched, so a lane that never wrote its status
+  shows as `MISSING` instead of disappearing. A declared suite that cannot start
+  is a blocker.
+- **Subagents run in the foreground everywhere.** A background dispatch returns
+  before the subagent finishes, and the caller read the empty result as a clean
+  pass. A new test fails on any rendered Agent dispatch without
+  `run_in_background: false`, and it runs in CI.
+- **`/freeze`, `/guard` and `/investigate` fail closed.** A boundary that does
+  not resolve is refused instead of stored, an unexpected hook error denies,
+  `NotebookEdit` is covered, and one state helper (`freeze-state.sh`) writes the
+  boundary, so an `/investigate` run releases only the lock it took.
+- **`/codex` reports failures honestly.** The exit status survives the pipeline
+  in bash and zsh, `turn.failed` is graded as a failure, prompts travel through
+  a file on stdin instead of argv, and `vibe-codex-probe` tells quota exhaustion
+  and rate limiting apart from a logged-out CLI.
+- **Learnings search cannot be injected.** Query, file and limit reach Python
+  as arguments, not through an interpolated heredoc. Matching is any-term with
+  recency and confidence decay, an unavailable store is reported instead of
+  swallowed, and `vibe-learnings-log` validates what it writes.
+
+### Changed
+
+- `/ship` decides plan completion in the parent, publishes issue bodies from a
+  file, and adds commit or PR attribution only when `vibe-config set
+  ship_attribution on` asks for it. `/review` reads the review log in its real
+  format and gathers adversarial findings before one combined fix pass.
+
 ## 1.41.0 — 2026-09-30
 
 ### Added

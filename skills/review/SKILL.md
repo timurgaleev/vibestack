@@ -582,7 +582,7 @@ Based on the scope signals above, select which specialists to dispatch.
 1. **Testing** — read `~/.claude/skills/review/specialists/testing.md`
 2. **Maintainability** — read `~/.claude/skills/review/specialists/maintainability.md`
 
-**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to Step 5.
+**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to Step 4.8.
 
 **Conditional (dispatch if the matching scope signal is true):**
 3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `~/.claude/skills/review/specialists/security.md`
@@ -609,7 +609,7 @@ Note which specialists were selected, gated, and skipped. Print the selection:
 
 ### Dispatch specialists in parallel
 
-For each selected specialist, launch an independent subagent via the Agent tool.
+For each selected specialist, launch an independent subagent via the Agent tool with `run_in_background: false`.
 **Launch ALL selected specialists in a single message** (multiple Agent tool calls)
 so they run in parallel. Each subagent has fresh context — no prior review bias.
 
@@ -739,7 +739,7 @@ Remember these stats — you will need them for the review-log entry in Step 5.8
 
 **Activation:** Only if DIFF_LINES > 200 OR any specialist produced a CRITICAL finding.
 
-If activated, dispatch one more subagent via the Agent tool (foreground, not background).
+If activated, dispatch one more subagent via the Agent tool with `run_in_background: false` — the same foreground rule as the specialists above, for the same reason.
 
 The Red Team subagent receives:
 1. The red-team checklist from `~/.claude/skills/review/specialists/red-team.md`
@@ -761,9 +761,294 @@ If the Red Team subagent fails or times out, skip silently and continue.
 
 ---
 
+## Step 4.8: Adversarial review (always-on)
+
+Every diff gets adversarial review from both Claude and Codex. LOC is not a proxy for risk — a 5-line auth change can be critical.
+
+This step only **collects**. It runs before Step 5 so its findings reach the same
+Fix-First pass as the critical pass and the specialists: do not edit any file during
+Step 4.8. Every finding it produces — Claude FIXABLE items, Codex adversarial findings,
+structured-review P0/P1 findings — is queued for Step 5, which starts only after every
+pass here has returned (or been recorded as missing coverage).
+
+**Detect diff size and tool availability:**
+
+```bash
+DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
+echo "DIFF_SIZE: $DIFF_TOTAL"
+
+# Legacy opt-out — only gates Codex passes, Claude always runs
+OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
+
+# Resolve ONE mode rather than a bare "is the binary on PATH" check: installed,
+# nested, and unauthenticated are three different outcomes that need three
+# different messages.
+_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+if [ "$OLD_CFG" = "disabled" ]; then
+  CODEX_MODE="disabled"
+elif { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; } && [ -z "${VIBE_FORCE_CODEX_REVIEW:-}" ]; then
+  CODEX_MODE="under_codex"
+elif ! command -v codex >/dev/null 2>&1; then
+  CODEX_MODE="not_installed"
+elif [ -z "${CODEX_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ ! -f "$_CODEX_HOME/auth.json" ]; then
+  CODEX_MODE="not_authed"
+else
+  CODEX_MODE="ready"
+fi
+echo "CODEX_MODE: $CODEX_MODE"
+
+# Portable timeout binary, for visibility here and re-resolved in each Codex block
+# below (every Bash call is a fresh shell). Stock macOS ships none; Homebrew's
+# coreutils installs it as `gtimeout`. Empty means those calls run unwrapped.
+echo "TIMEOUT_BIN: $(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || echo none)"
+```
+
+Branch on `CODEX_MODE`. In every case except `ready`, the Claude adversarial
+subagent still runs — it is free, fast, and independent of Codex.
+
+- **`disabled`** — the user turned Codex passes off. Skip them without comment.
+- **`under_codex`** — this session is already running inside a Codex host, which
+  exports its own markers into every shell it spawns. Spawning `codex` again is the
+  same model reviewing its own work at multiplied token cost, so skip both Codex
+  passes and say: "Already running under Codex — cross-model passes skipped (set
+  `VIBE_FORCE_CODEX_REVIEW=1` to run them anyway)."
+- **`not_installed`** — say so with the install hint below.
+- **`not_authed`** — the binary is there but has no credential. Report it as
+  *unauthenticated*, not as unavailable: "Codex is installed but not authenticated —
+  run `codex login`, or set `$CODEX_API_KEY` / `$OPENAI_API_KEY`." Running the pass
+  anyway just burns a minute to reach the same conclusion.
+- **`ready`** — run both Codex sections below.
+
+Whichever branch fires, the review's coverage line must reflect it. A skipped or
+failed Codex pass is *missing coverage*, never a silent pass.
+
+**User override:** If the user explicitly requested "full review", "structured review", or "P1 gate", also run the Codex structured review regardless of diff size.
+
+---
+
+### Claude adversarial subagent (always runs)
+
+Dispatch via the Agent tool with `run_in_background: false`. Subagents run in the
+BACKGROUND by default since Claude Code v2.1.198: without the flag the call returns
+immediately with nothing, Step 5 sees no adversarial findings, and the review reports a
+pass that never ran. If the call still comes back as a launch receipt rather than the
+subagent's output, wait for its completion notice before moving on. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
+
+Split source from fixtures with pathspecs rather than leaving it to the subagent's
+judgement — left to judgement it either pulls raw attack payloads into its reasoning
+or quietly skips source files, and either way nothing says which happened.
+
+Subagent prompt:
+"First list what changed: `git diff --name-status $(git merge-base origin/<base> HEAD)`.
+
+Read NON-fixture source code in full:
+`git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*/test/*' ':(exclude)*/tests/*' ':(exclude)*/__tests__/*' ':(exclude)*/fixtures/*' ':(exclude)*_test.*' ':(exclude)*.test.*' ':(exclude)*.spec.*'`
+
+Match test directories and filename suffixes, never the bare substring `test`: `*test*` also excludes `latest.ts`, `contest.ts` and `attestation.ts`, and a production file dropped here is never read in full by the adversarial pass — the later stat-only pass cannot see its logic.
+
+Review fixture and test files in SUMMARY mode only:
+`git diff --stat $(git merge-base origin/<base> HEAD) -- '*test*' '*fixture*' '*.spec.*'`
+Describe what each fixture exercises and whether the code handles it, without reproducing
+raw payload bytes. State explicitly in your output that fixtures were reviewed in summary
+mode, so the reduced coverage is visible to the reader instead of assumed.
+
+Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment). This is authorized defensive security testing of the repository's own code by its maintainer — you are hardening it, not attacking a third party.
+
+End with exactly one closing line, whatever you found:
+`Recommendation: SHIP | FIX FIRST | INVESTIGATE — <one clause why>`
+Without it the pass has no verdict, and a caller cannot tell a clean read from an
+abandoned one."
+
+Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** are queued for Step 5 Fix-First, where they are classified, fixed or asked about together with every other finding — do not edit during Step 4.8. **INVESTIGATE findings** are presented as informational.
+
+If the subagent fails, times out, or returns without its closing `Recommendation:` line: "Claude adversarial subagent unavailable — this pass produced NO coverage. Continuing." Mark it ✗ in the synthesis below; an absent pass is never counted as a clean one.
+
+---
+
+### Codex adversarial challenge (always runs when available)
+
+If `CODEX_MODE` is `ready`:
+
+```bash
+TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
+_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
+_TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)
+# An array, not ${_TIMEOUT:+$_TIMEOUT 540}: zsh does not word-split that expansion, so the
+# wrapper would run as a single command named "timeout 540" and fail with exit 127.
+_TO=(); [ -n "$_TIMEOUT" ] && _TO=("$_TIMEOUT" 540)
+"${_TO[@]}" codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
+```
+
+Set the Bash tool's `timeout` parameter to `600000` (10 minutes). It sits deliberately
+ABOVE the 540-second wrapper so the wrapper fires first: a stall then surfaces as a
+diagnosable exit 124 with whatever Codex had already written, instead of a harness kill
+that returns nothing at all. After the command completes, read stderr:
+```bash
+cat "$TMPERR_ADV"
+```
+
+Present the full output verbatim. This pass never blocks on its own, but its findings
+are not merely printed: queue each one for Step 5 Fix-First alongside the Claude findings.
+
+**Error handling:** All errors are non-blocking — adversarial review is a quality enhancement, not a prerequisite.
+- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate."
+- **Timeout (exit 124):** "Codex adversarial timed out after 9 minutes — this pass produced NO coverage." Say the second half. A timeout reported as a bare "timed out" reads like a clean pass to anyone skimming, and the diff then lands as cross-model reviewed when one of the two models never finished.
+- **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
+
+**Cleanup:** Run `rm -f "$TMPERR_ADV"` after processing.
+
+If `CODEX_MODE` is `not_installed`: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
+
+---
+
+### Codex structured review (large diffs only, 200+ lines)
+
+If `DIFF_TOTAL >= 200` AND `CODEX_MODE` is `ready`:
+
+```bash
+_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
+cd "$_REPO_ROOT"
+_CX_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-codex-review.XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
+trap 'rm -rf "$_CX_DIR"' EXIT
+_CX_OUT="$_CX_DIR/out"
+_TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)
+# An array, not ${_TIMEOUT:+$_TIMEOUT 540}: zsh does not word-split that expansion, so the
+# wrapper would run as a single command named "timeout 540" and fail with exit 127.
+_TO=(); [ -n "$_TIMEOUT" ] && _TO=("$_TIMEOUT" 540)
+_CX_EXIT=0
+"${_TO[@]}" codex review --base <base> -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null >"$_CX_OUT" 2>"$_CX_DIR/err" || _CX_EXIT=$?
+cat "$_CX_OUT"
+echo "--- codex stderr (exit $_CX_EXIT) ---"
+cat "$_CX_DIR/err"
+
+# Codex gate: fail closed. PASS needs a clean exit, non-empty output, no P0/P1, and no
+# auth/CLI error or refusal. Findings arrive under a "Review comment(s):" heading with [Pn]
+# tags; a clean diff must say so in words. Output that is neither tagged nor an explicit
+# no-findings conclusion is unrecognized, and unrecognized is never clean.
+_CX_BLOCK='\[P[01]\]|^[[:space:]>*_#-]*P[01][*_]*:|VERDICT:[[:space:]]*findings'
+_CX_BROKEN='^[[:space:]>*_#-]*((error|fatal)[[:space:]]*:|unauthorized|not logged in|you.ve hit your usage limit)|invalid api key|insufficient_quota|^[[:space:]]*(I.m sorry|I am sorry|I.m unable|I am unable|I (cannot|can.t|won.t) (help|assist|review|comply))'
+_CX_COMMENTS='^[[:space:]>*_#-]*(full )?review comments?[*_]*:'
+_CX_CLEAN='NO_FINDINGS|(^|[^[:alnum:]_])no (discrete |actionable |significant |new |concrete )?(bugs?|issues?|findings?|problems?|regressions?)( (were |was )?(found|identified|detected))?([^[:alnum:]_]|$)|(did not|didn.t|could not|couldn.t) (find|identify|spot) any'
+if [ "$_CX_EXIT" -eq 124 ]; then
+  _CX_GATE="SKIPPED"; _CX_WHY="timed out after 540s, no coverage"
+elif [ "$_CX_EXIT" -ne 0 ]; then
+  _CX_GATE="FAIL"; _CX_WHY="codex exited $_CX_EXIT, no usable review"
+elif ! grep -q '[^[:space:]]' "$_CX_OUT" 2>/dev/null; then
+  _CX_GATE="FAIL"; _CX_WHY="empty output, no usable review"
+elif grep -Eq "$_CX_BLOCK" "$_CX_OUT"; then
+  _CX_GATE="FAIL"; _CX_WHY="$(grep -Ec "$_CX_BLOCK" "$_CX_OUT") P0/P1 finding(s)"
+elif grep -Eiq "$_CX_BROKEN" "$_CX_OUT"; then
+  _CX_GATE="FAIL"; _CX_WHY="auth, quota, CLI error or refusal text, no usable review"
+elif grep -Eq '\[P[23]\]|^[[:space:]>*_#-]*P[23][*_]*:' "$_CX_OUT"; then
+  _CX_GATE="PASS"; _CX_WHY="completed, P2/P3 findings only"
+elif grep -Eiq "$_CX_COMMENTS" "$_CX_OUT"; then
+  _CX_GATE="FAIL"; _CX_WHY="review comments without severity tags, no usable review"
+elif grep -Eiq "$_CX_CLEAN" "$_CX_OUT"; then
+  _CX_GATE="PASS"; _CX_WHY="completed, explicit no-findings conclusion"
+else
+  _CX_GATE="FAIL"; _CX_WHY="no severity tags and no no-findings conclusion, unrecognized output"
+fi
+echo "GATE: $_CX_GATE ($_CX_WHY)"
+```
+
+**Sandbox pinned read-only.** `codex review` has no `-s`/`--sandbox` flag, so without the
+config override it inherits `~/.codex/config.toml` — on a user who granted write access to
+trusted projects, that is Codex with write permission on the repo during what this step
+reports as a read-only review.
+
+**No prompt argument.** `--base` is what scopes the review, and the positional
+`[PROMPT]` is mutually exclusive with it — Codex CLI rejects the pair at argv
+parsing, so a call carrying both never runs — the gate block above records that
+non-zero exit as FAIL with no usable review. The filesystem-boundary preamble that used to ride in that prompt
+goes with it; `codex review` is internally diff-scoped, and the skill files under
+`.claude/` and `agents/` are public, so the cost is a few wasted tokens if the
+diff happens to touch them, not a safety gap. Do NOT "fix" a rejection by
+dropping `--base` and keeping the prompt: that reviews the uncommitted working
+tree instead of the branch diff, which is a different question with the same
+green checkmark.
+
+Set the Bash tool's `timeout` parameter to `600000` (10 minutes), above the 540-second
+wrapper for the same reason as the adversarial pass. Present output under
+`CODEX SAYS (code review):` header.
+
+The block prints the gate itself — use its `GATE:` line, never a judgement of your own
+from the text. The output and stderr are captured to a private per-run directory that
+the block removes on exit, so the gate is decided from the same bytes you were shown.
+
+- **`GATE: FAIL (N P0/P1 finding(s))`** — `[P0]`/`[P1]` tags, native `P0:`/`P1:` labels,
+  or `VERDICT: findings`. A P0 blocks exactly like a P1.
+- **`GATE: FAIL (... no usable review)`** — a non-zero exit, empty output, auth/quota/CLI
+  error text, a refusal, or a `Review comment(s):` section whose comments carry no
+  severity tag. The review did not happen, so it cannot pass. Relay the stderr cause
+  (same error handling as Codex adversarial above).
+- **`GATE: SKIPPED (timed out ...)`** — exit 124. The review never finished: record
+  `SKIPPED`, never `PASS`.
+- **`GATE: PASS`** — a clean exit with only `[P2]`/`[P3]` findings, or a completed run
+  with no `Review comment(s):` section at all. That second case is how `codex review`
+  reports a clean diff: a one-line summary such as "The change only adds an accurate
+  docstring and does not alter runtime behavior.", with no tag and no marker.
+
+If GATE is FAIL with P0/P1 findings, use AskUserQuestion:
+```
+Codex found N critical issues in the diff.
+
+A) Queue them for Step 5 Fix-First (recommended)
+B) Continue — review will still complete, gate stays FAIL
+```
+
+If A: queue the findings for Step 5 as ASK items the user already chose to fix. Do not
+edit here — Step 5 applies them together with every other finding, then re-runs this
+same block once to verify; report the re-run's `GATE:` line and persist the
+adversarial-review entry again with that gate.
+If B: keep the findings and the failed gate in the output; never report a clean review.
+
+If GATE is FAIL with no usable review, tell the user what failed (the `GATE:` reason and
+the stderr cause) and ask: A) re-run the structured review, B) continue with the gate
+recorded as FAIL. Never convert it to PASS.
+
+If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversarial passes provide sufficient coverage for smaller diffs.
+
+---
+
+### Persist the review result
+
+After all passes complete, persist:
+```bash
+~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+```
+Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
+
+---
+
+### Cross-model synthesis
+
+After all passes complete, synthesize findings across all sources:
+
+```
+ADVERSARIAL REVIEW SYNTHESIS (always-on, N lines):
+════════════════════════════════════════════════════════════
+  High confidence (found by multiple sources): [findings agreed on by >1 pass]
+  Unique to Claude structured review: [from earlier step]
+  Unique to Claude adversarial: [from subagent]
+  Unique to Codex: [from codex adversarial or code review, if ran]
+  Models used: Claude structured ✓  Claude adversarial ✓/✗  Codex ✓/✗
+════════════════════════════════════════════════════════════
+```
+
+High-confidence findings (agreed on by multiple sources) are prioritized when Step 5 classifies them.
+
+---
+
 ## Step 5: Fix-First Review
 
 **Every finding gets action — not just critical ones.**
+
+Start only after every reader has settled: the critical pass (Step 4), the specialists
+and Red Team (Steps 4.5-4.6), and every adversarial pass (Step 4.8). This is ONE combined
+Fix-First pass over all of their findings — no pass fixes on its own, and none is left
+printed but never classified.
 
 ### Step 5.0: Cross-review finding dedup
 
@@ -773,9 +1058,9 @@ Before classifying findings, check if any were previously skipped by the user in
 ~/.vibestack/bin/vibe-review-read --json 2>/dev/null
 ```
 
-Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
+`--json` returns one JSON array of review entries, oldest first — parse the whole output as JSON, not line by line, and expect no footer sections. `NO_REVIEWS` means this branch has no log yet: skip this step.
 
-For each JSONL entry that has a `findings` array:
+For each entry that has a `findings` array:
 1. Collect all fingerprints where `action: "skipped"`
 2. Note the `commit` field from that entry
 
@@ -785,7 +1070,7 @@ If skipped fingerprints exist, get the list of files changed since that review:
 git diff --name-only <prior-review-commit> HEAD
 ```
 
-For each current finding (from both Step 4 critical pass and Step 4.5-4.6 specialists), check:
+For each current finding (from the Step 4 critical pass, the Step 4.5-4.6 specialists and Red Team, and the Step 4.8 adversarial passes), check:
 - Does its fingerprint match a previously skipped finding?
 - Is the finding's file path NOT in the changed-files set?
 
@@ -913,216 +1198,6 @@ If no documentation files exist, skip this step silently.
 
 ---
 
-## Step 5.7: Adversarial review (always-on)
-
-Every diff gets adversarial review from both Claude and Codex. LOC is not a proxy for risk — a 5-line auth change can be critical.
-
-**Detect diff size and tool availability:**
-
-```bash
-DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
-DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
-DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
-echo "DIFF_SIZE: $DIFF_TOTAL"
-
-# Legacy opt-out — only gates Codex passes, Claude always runs
-OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
-
-# Resolve ONE mode rather than a bare "is the binary on PATH" check: installed,
-# nested, and unauthenticated are three different outcomes that need three
-# different messages.
-_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-if [ "$OLD_CFG" = "disabled" ]; then
-  CODEX_MODE="disabled"
-elif { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; } && [ -z "${VIBE_FORCE_CODEX_REVIEW:-}" ]; then
-  CODEX_MODE="under_codex"
-elif ! command -v codex >/dev/null 2>&1; then
-  CODEX_MODE="not_installed"
-elif [ -z "${CODEX_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ ! -f "$_CODEX_HOME/auth.json" ]; then
-  CODEX_MODE="not_authed"
-else
-  CODEX_MODE="ready"
-fi
-echo "CODEX_MODE: $CODEX_MODE"
-
-# Portable timeout binary, for visibility here and re-resolved in each Codex block
-# below (every Bash call is a fresh shell). Stock macOS ships none; Homebrew's
-# coreutils installs it as `gtimeout`. Empty means those calls run unwrapped.
-echo "TIMEOUT_BIN: $(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || echo none)"
-```
-
-Branch on `CODEX_MODE`. In every case except `ready`, the Claude adversarial
-subagent still runs — it is free, fast, and independent of Codex.
-
-- **`disabled`** — the user turned Codex passes off. Skip them without comment.
-- **`under_codex`** — this session is already running inside a Codex host, which
-  exports its own markers into every shell it spawns. Spawning `codex` again is the
-  same model reviewing its own work at multiplied token cost, so skip both Codex
-  passes and say: "Already running under Codex — cross-model passes skipped (set
-  `VIBE_FORCE_CODEX_REVIEW=1` to run them anyway)."
-- **`not_installed`** — say so with the install hint below.
-- **`not_authed`** — the binary is there but has no credential. Report it as
-  *unauthenticated*, not as unavailable: "Codex is installed but not authenticated —
-  run `codex login`, or set `$CODEX_API_KEY` / `$OPENAI_API_KEY`." Running the pass
-  anyway just burns a minute to reach the same conclusion.
-- **`ready`** — run both Codex sections below.
-
-Whichever branch fires, the review's coverage line must reflect it. A skipped or
-failed Codex pass is *missing coverage*, never a silent pass.
-
-**User override:** If the user explicitly requested "full review", "structured review", or "P1 gate", also run the Codex structured review regardless of diff size.
-
----
-
-### Claude adversarial subagent (always runs)
-
-Dispatch via the Agent tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
-
-Split source from fixtures with pathspecs rather than leaving it to the subagent's
-judgement — left to judgement it either pulls raw attack payloads into its reasoning
-or quietly skips source files, and either way nothing says which happened.
-
-Subagent prompt:
-"First list what changed: `git diff --name-status $(git merge-base origin/<base> HEAD)`.
-
-Read NON-fixture source code in full:
-`git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*/test/*' ':(exclude)*/tests/*' ':(exclude)*/__tests__/*' ':(exclude)*/fixtures/*' ':(exclude)*_test.*' ':(exclude)*.test.*' ':(exclude)*.spec.*'`
-
-Match test directories and filename suffixes, never the bare substring `test`: `*test*` also excludes `latest.ts`, `contest.ts` and `attestation.ts`, and a production file dropped here is never read in full by the adversarial pass — the later stat-only pass cannot see its logic.
-
-Review fixture and test files in SUMMARY mode only:
-`git diff --stat $(git merge-base origin/<base> HEAD) -- '*test*' '*fixture*' '*.spec.*'`
-Describe what each fixture exercises and whether the code handles it, without reproducing
-raw payload bytes. State explicitly in your output that fixtures were reviewed in summary
-mode, so the reduced coverage is visible to the reader instead of assumed.
-
-Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment). This is authorized defensive security testing of the repository's own code by its maintainer — you are hardening it, not attacking a third party.
-
-End with exactly one closing line, whatever you found:
-`Recommendation: SHIP | FIX FIRST | INVESTIGATE — <one clause why>`
-Without it the pass has no verdict, and a caller cannot tell a clean read from an
-abandoned one."
-
-Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** flow into the same Fix-First pipeline as the structured review. **INVESTIGATE findings** are presented as informational.
-
-If the subagent fails or times out: "Claude adversarial subagent unavailable. Continuing."
-
----
-
-### Codex adversarial challenge (always runs when available)
-
-If `CODEX_MODE` is `ready`:
-
-```bash
-TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-_TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)
-${_TIMEOUT:+$_TIMEOUT 540} codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
-```
-
-Set the Bash tool's `timeout` parameter to `600000` (10 minutes). It sits deliberately
-ABOVE the 540-second wrapper so the wrapper fires first: a stall then surfaces as a
-diagnosable exit 124 with whatever Codex had already written, instead of a harness kill
-that returns nothing at all. After the command completes, read stderr:
-```bash
-cat "$TMPERR_ADV"
-```
-
-Present the full output verbatim. This is informational — it never blocks shipping.
-
-**Error handling:** All errors are non-blocking — adversarial review is a quality enhancement, not a prerequisite.
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate."
-- **Timeout (exit 124):** "Codex adversarial timed out after 9 minutes — this pass produced NO coverage." Say the second half. A timeout reported as a bare "timed out" reads like a clean pass to anyone skimming, and the diff then lands as cross-model reviewed when one of the two models never finished.
-- **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
-
-**Cleanup:** Run `rm -f "$TMPERR_ADV"` after processing.
-
-If `CODEX_MODE` is `not_installed`: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
-
----
-
-### Codex structured review (large diffs only, 200+ lines)
-
-If `DIFF_TOTAL >= 200` AND `CODEX_MODE` is `ready`:
-
-```bash
-TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-cd "$_REPO_ROOT"
-_TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)
-${_TIMEOUT:+$_TIMEOUT 540} codex review --base <base> -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
-```
-
-**Sandbox pinned read-only.** `codex review` has no `-s`/`--sandbox` flag, so without the
-config override it inherits `~/.codex/config.toml` — on a user who granted write access to
-trusted projects, that is Codex with write permission on the repo during what this step
-reports as a read-only review.
-
-**No prompt argument.** `--base` is what scopes the review, and the positional
-`[PROMPT]` is mutually exclusive with it — Codex CLI rejects the pair at argv
-parsing, so a call carrying both never runs and the gate silently records a
-default PASS. The filesystem-boundary preamble that used to ride in that prompt
-goes with it; `codex review` is internally diff-scoped, and the skill files under
-`.claude/` and `agents/` are public, so the cost is a few wasted tokens if the
-diff happens to touch them, not a safety gap. Do NOT "fix" a rejection by
-dropping `--base` and keeping the prompt: that reviews the uncommitted working
-tree instead of the branch diff, which is a different question with the same
-green checkmark.
-
-Set the Bash tool's `timeout` parameter to `600000` (10 minutes), above the 540-second
-wrapper for the same reason as the adversarial pass. Present output under
-`CODEX SAYS (code review):` header.
-Check for `[P1]` markers: found → `GATE: FAIL`, not found → `GATE: PASS`. A pass that
-timed out or never ran records `GATE: SKIPPED`, never `PASS` — an absent review is not
-a clean one.
-
-If GATE is FAIL, use AskUserQuestion:
-```
-Codex found N critical issues in the diff.
-
-A) Investigate and fix now (recommended)
-B) Continue — review will still complete
-```
-
-If A: address the findings. Re-run `codex review` to verify.
-
-Read stderr for errors (same error handling as Codex adversarial above).
-
-After stderr: `rm -f "$TMPERR"`
-
-If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversarial passes provide sufficient coverage for smaller diffs.
-
----
-
-### Persist the review result
-
-After all passes complete, persist:
-```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
-```
-Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
-
----
-
-### Cross-model synthesis
-
-After all passes complete, synthesize findings across all sources:
-
-```
-ADVERSARIAL REVIEW SYNTHESIS (always-on, N lines):
-════════════════════════════════════════════════════════════
-  High confidence (found by multiple sources): [findings agreed on by >1 pass]
-  Unique to Claude structured review: [from earlier step]
-  Unique to Claude adversarial: [from subagent]
-  Unique to Codex: [from codex adversarial or code review, if ran]
-  Models used: Claude structured ✓  Claude adversarial ✓/✗  Codex ✓/✗
-════════════════════════════════════════════════════════════
-```
-
-High-confidence findings (agreed on by multiple sources) should be prioritized for fixes.
-
----
-
 ## Step 5.8: Persist Eng Review result
 
 After all review passes complete, persist the final `/review` outcome so `/ship` can
@@ -1142,7 +1217,7 @@ Substitute:
 - `informational` = remaining unresolved informational findings
 - `quality_score` = the PR Quality Score computed in Step 4.6 (e.g., 7.5). If specialists were skipped (small diff), use `10.0`
 - `specialists` = the per-specialist stats object compiled in Step 4.6. Each specialist that was considered gets an entry: `{"dispatched":true/false,"findings":N,"critical":N,"informational":N}` if dispatched, or `{"dispatched":false,"reason":"scope|gated"}` if skipped. Include Design specialist. Example: `{"testing":{"dispatched":true,"findings":2,"critical":0,"informational":2},"security":{"dispatched":false,"reason":"scope"}}`
-- `findings` = array of per-finding records from Step 5. For each finding (from critical pass and specialists), include: `{"fingerprint":"path:line:category","severity":"CRITICAL|INFORMATIONAL","action":"ACTION"}`. ACTION is `"auto-fixed"` (Step 5b), `"fixed"` (user approved in Step 5d), or `"skipped"` (user chose Skip in Step 5c). Suppressed findings from Step 5.0 are NOT included (they were already recorded in a prior review entry).
+- `findings` = array of per-finding records from Step 5. For each finding (from the critical pass, specialists, Red Team and adversarial passes), include: `{"fingerprint":"path:line:category","severity":"CRITICAL|INFORMATIONAL","action":"ACTION"}`. ACTION is `"auto-fixed"` (Step 5b), `"fixed"` (user approved in Step 5d), or `"skipped"` (user chose Skip in Step 5c). Suppressed findings from Step 5.0 are NOT included (they were already recorded in a prior review entry).
 - `COMMIT` = output of `git rev-parse --short HEAD`
 
 ## Capture Learnings

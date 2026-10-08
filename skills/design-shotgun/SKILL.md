@@ -404,6 +404,8 @@ If `BROWSE_NOT_AVAILABLE`, ask the user for a screenshot instead of skipping the
 tool with `subagent_type: "general-purpose"` for each variant. Each agent is independent
 and handles its own generation, verification, and retry.
 
+{{include lib/snippets/foreground-dispatch.md}}
+
 **Important: $D path propagation.** The `$D` variable from DESIGN SETUP is a shell
 variable that agents do NOT inherit. Substitute the resolved absolute path (the one
 DESIGN SETUP echoed) into each agent prompt.

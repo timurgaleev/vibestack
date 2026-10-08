@@ -38,6 +38,7 @@ jobs:
           - test-brand-audit.sh
           - test-browse-shim.sh
           - test-evidence-bins.sh
+          - test-dispatch-flags.sh
           - test-config-claude_md_preserve.sh
           - test-config-codex_agents.sh
           - test-config-deliberation.sh

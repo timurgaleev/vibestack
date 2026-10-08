@@ -35,7 +35,7 @@ TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # another, and the failure surfaced only as a traceback.
 ENTRY=$(VIBE_TS="$TS" VIBE_BRANCH="$BRANCH" VIBE_COMMIT="$COMMIT" \
   python3 - "$JSON" <<'PYEOF'
-import json, os, sys
+import json, os, re, sys
 
 try:
     entry = json.loads(sys.argv[1])
@@ -47,12 +47,73 @@ if not isinstance(entry, dict):
     sys.stderr.write("Error: payload must be a JSON object\n")
     sys.exit(1)
 
+def reject(msg):
+    sys.stderr.write(f"Error: {msg}; learning not recorded\n")
+    sys.exit(1)
+
+# Every logged insight is replayed into later sessions' context, so the store is
+# a standing prompt-injection surface. Fields are validated here and
+# instruction-shaped insights are refused rather than persisted.
+TYPES = ("pattern", "pitfall", "preference", "architecture", "tool",
+         "operational", "investigation", "taste")
+# design-shotgun records a user's approval or rejection of a variant.
+SOURCES = ("observed", "user-stated", "inferred", "cross-model", "design-shotgun")
+INJECTION = re.compile(
+    r"ignore\s+(all\s+)?(the\s+)?(previous|prior|above)\s+(instructions|context|rules)"
+    r"|disregard\s+(all\s+)?(the\s+)?(previous|prior|above)"
+    r"|\byou\s+are\s+now\b"
+    r"|\bfrom\s+now\s+on\b"
+    r"|\bnew\s+instructions?\b"
+    r"|\bsystem\s+prompt\b"
+    r"|\boverride\s+(all\s+)?(previous|prior|above|the\s+(rules|instructions))"
+    r"|\bskip\s+(all\s+)?(the\s+)?(security|review|checks|tests)\b"
+    r"|always\s+output\s+no\s+findings"
+    r"|\bdo\s+not\s+(report|flag|mention)\b"
+    r"|\bapprove\s+(all|every|this)\b"
+    r"|</?(system|assistant|user)>"
+    r"|^\s*(system|assistant|user|human)\s*:",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+etype = entry.get("type")
+if etype not in TYPES:
+    reject(f"type must be one of {', '.join(TYPES)} (got {etype!r})")
+
+key = entry.get("key")
+if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", key):
+    reject("key must be 1-80 characters of letters, digits, '.', '_' or '-'")
+
+insight = entry.get("insight")
+if not isinstance(insight, str) or not insight.strip():
+    reject("insight must be a non-empty string")
+m = INJECTION.search(insight)
+if m:
+    reject(f"insight reads as an instruction to the agent ({m.group(0).strip()!r})")
+
+conf = entry.get("confidence", 5)
+if isinstance(conf, str) and conf.strip().isdigit():
+    conf = int(conf.strip())
+if isinstance(conf, bool) or not isinstance(conf, int) or not 1 <= conf <= 10:
+    reject(f"confidence must be an integer 1-10 (got {entry.get('confidence')!r})")
+entry["confidence"] = conf
+
+source = entry.get("source", "inferred")
+if source not in SOURCES:
+    reject(f"source must be one of {', '.join(SOURCES)} (got {source!r})")
+entry["source"] = source
+
+files = entry.get("files", [])
+if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+    reject("files must be a list of path strings")
+
+# Trust is derived, never taken from the payload: only what the user said
+# outright may cross into other projects' searches.
+entry["trusted"] = source == "user-stated"
+
 entry.setdefault("ts", os.environ["VIBE_TS"])
 entry.setdefault("branch", os.environ["VIBE_BRANCH"])
 entry.setdefault("commit", os.environ["VIBE_COMMIT"])
-entry.setdefault("files", [])
-entry.setdefault("confidence", 5)
-entry.setdefault("source", "auto")
+entry["files"] = files
 
 # separators keep the entry on one line -- the store is JSONL, and a pretty
 # printed entry would break every reader that splits on newlines.

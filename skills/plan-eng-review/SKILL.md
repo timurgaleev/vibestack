@@ -540,9 +540,11 @@ CODEX SAYS (plan review — outside voice):
 
 On any Codex error, fall back to the Claude adversarial subagent.
 
-**If `CODEX_MODE` is `not_installed` or `not_authed` (or Codex errored):**
+**If `CODEX_MODE` is `under_codex`, `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored):**
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
+
+{{include lib/snippets/foreground-dispatch.md}}
 
 Subagent prompt: same plan review prompt as above.
 

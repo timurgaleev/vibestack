@@ -1,102 +1,201 @@
 #!/usr/bin/env bash
 # vibe-learnings-search — search/list project learnings
 # Usage:
-#   vibe-learnings-search [--limit N] [--query TERMS] [--type TYPE]
+#   vibe-learnings-search [--limit N] [--query TERMS] [--type TYPE] [--cross-project]
+#
+# Ranking: an entry matches when ANY query term appears in its key, insight or
+# files; entries matching more distinct terms rank first, then higher effective
+# confidence, then the newest. observed/inferred entries lose one confidence
+# point per 30 days, so stale guesses sink below fresh ones.
+#
+# --cross-project also reads other projects' stores on this machine, but only
+# entries the log marked trusted (source user-stated): an AI-written learning
+# from one codebase must not steer work in another.
+#
+# Exit status: 0 for a result, including "nothing recorded" and "no match".
+# A store that could not be read exits non-zero with the reason on stderr, so a
+# broken lookup never reads as an empty shelf.
 set -euo pipefail
 
 LIMIT=20
 QUERY=""
 FILTER_TYPE=""
+CROSS_PROJECT=0
+
+usage_error() {
+  echo "vibe-learnings-search: $1" >&2
+  echo "Usage: vibe-learnings-search [--limit N] [--query TERMS] [--type TYPE] [--cross-project]" >&2
+  exit 2
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --limit) LIMIT="$2"; shift 2 ;;
-    --query) QUERY="$2"; shift 2 ;;
-    --type)  FILTER_TYPE="$2"; shift 2 ;;
-    *) shift ;;
+    --limit)         [ $# -ge 2 ] || usage_error "--limit needs a value"; LIMIT="$2"; shift 2 ;;
+    --query)         [ $# -ge 2 ] || usage_error "--query needs a value"; QUERY="$2"; shift 2 ;;
+    --type)          [ $# -ge 2 ] || usage_error "--type needs a value"; FILTER_TYPE="$2"; shift 2 ;;
+    --cross-project) CROSS_PROJECT=1; shift ;;
+    *) usage_error "unknown argument: $1" ;;
   esac
 done
+
+case "$LIMIT" in
+  ''|*[!0-9]*) usage_error "--limit must be a positive integer, got '$LIMIT'" ;;
+esac
+[ "$LIMIT" -gt 0 ] || usage_error "--limit must be a positive integer, got '$LIMIT'"
 
 # Derive SLUG
 eval "$(bash "$(dirname "$0")/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 
 VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
-LEARN_FILE="$VIBESTACK_HOME/projects/$SLUG/learnings.jsonl"
+PROJECTS_DIR="$VIBESTACK_HOME/projects"
+LEARN_FILE="$PROJECTS_DIR/$SLUG/learnings.jsonl"
 
-if [ ! -f "$LEARN_FILE" ]; then
+if [ ! -f "$LEARN_FILE" ] && [ "$CROSS_PROJECT" -eq 0 ]; then
   echo "No learnings yet for project: $SLUG"
   exit 0
 fi
 
-python3 - <<PYEOF
-import json, sys
+command -v python3 >/dev/null 2>&1 || {
+  echo "vibe-learnings-search: python3 not found on PATH, so learnings could not be read" >&2
+  exit 127
+}
 
-learn_file = "$LEARN_FILE"
-limit = int("$LIMIT")
-query = "$QUERY".lower()
-filter_type = "$FILTER_TYPE".lower()
+# Every value reaches python through the environment and the program text is a
+# quoted heredoc: nothing the caller passes can become code.
+VIBE_LS_FILE="$LEARN_FILE" VIBE_LS_PROJECTS="$PROJECTS_DIR" VIBE_LS_SLUG="$SLUG" \
+VIBE_LS_LIMIT="$LIMIT" VIBE_LS_QUERY="$QUERY" VIBE_LS_TYPE="$FILTER_TYPE" \
+VIBE_LS_CROSS="$CROSS_PROJECT" python3 - <<'PYEOF'
+import json, os, sys, time
+from datetime import datetime, timezone
 
-lines = []
-try:
-    with open(learn_file) as f:
-        for line in f:
-            line = line.strip()
-            if line:
+learn_file = os.environ["VIBE_LS_FILE"]
+projects_dir = os.environ["VIBE_LS_PROJECTS"]
+slug = os.environ["VIBE_LS_SLUG"]
+limit = int(os.environ["VIBE_LS_LIMIT"])
+terms = list(dict.fromkeys(os.environ["VIBE_LS_QUERY"].lower().split()))
+filter_type = os.environ["VIBE_LS_TYPE"].lower()
+cross = os.environ["VIBE_LS_CROSS"] == "1"
+
+DECAY_SOURCES = ("observed", "inferred")
+now = time.time()
+
+
+def epoch(ts):
+    if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+        return float(ts)
+    if isinstance(ts, str) and ts:
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            return 0.0
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    return 0.0
+
+
+def day(ts):
+    t = epoch(ts)
+    if not t:
+        return "?"
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d")
+
+
+def confidence(e):
+    try:
+        conf = int(e.get("confidence", 5))
+    except (TypeError, ValueError):
+        conf = 5
+    if e.get("source") in DECAY_SOURCES:
+        t = epoch(e.get("ts"))
+        if t:
+            conf -= max(0, int((now - t) // 86400)) // 30
+    return max(0, conf)
+
+
+def read_store(path, project):
+    rows = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
-                    lines.append(json.loads(line))
+                    e = json.loads(line)
                 except json.JSONDecodeError:
-                    pass
-except FileNotFoundError:
-    print("No learnings file found.")
-    sys.exit(0)
+                    continue
+                if isinstance(e, dict):
+                    rows.append((project, e))
+    except OSError as exc:
+        sys.stderr.write(f"vibe-learnings-search: cannot read {path}: {exc.strerror}\n")
+        sys.exit(1)
+    return rows
 
-# Dedup: last entry for each (key, type) pair wins
+
+rows = []
+if os.path.isfile(learn_file):
+    rows += read_store(learn_file, slug)
+if cross and os.path.isdir(projects_dir):
+    for name in sorted(os.listdir(projects_dir)):
+        path = os.path.join(projects_dir, name, "learnings.jsonl")
+        if name == slug or not os.path.isfile(path):
+            continue
+        rows += [r for r in read_store(path, name) if r[1].get("trusted") is True]
+
+# Dedup: the newest entry for each (project, key, type) wins.
 seen = {}
-for e in lines:
-    dk = (e.get("key",""), e.get("type",""))
+for project, e in rows:
+    dk = (project, str(e.get("key", "")), str(e.get("type", "")))
     existing = seen.get(dk)
-    if not existing or e.get("ts","") >= existing.get("ts",""):
-        seen[dk] = e
+    if existing is None or epoch(e.get("ts")) >= epoch(existing[1].get("ts")):
+        seen[dk] = (project, e)
 
 entries = list(seen.values())
 
-# Filter by type
 if filter_type:
-    entries = [e for e in entries if e.get("type","").lower() == filter_type]
+    entries = [r for r in entries if str(r[1].get("type", "")).lower() == filter_type]
 
-# Filter by query (search key + insight)
-if query:
-    terms = query.split()
-    def matches(e):
-        text = (e.get("key","") + " " + e.get("insight","")).lower()
-        return all(t in text for t in terms)
-    entries = [e for e in entries if matches(e)]
+# Token-OR: count the distinct terms each entry matches across key, insight and
+# files. The count stays in this map, never on the entry, so a field stored on
+# disk cannot become a sort key.
+hits = {}
+for r in entries:
+    e = r[1]
+    files = e.get("files") if isinstance(e.get("files"), list) else []
+    hay = [str(e.get("key", "")).lower(), str(e.get("insight", "")).lower()]
+    hay += [str(f).lower() for f in files]
+    hits[id(r)] = sum(1 for t in terms if any(t in h for h in hay))
+if terms:
+    entries = [r for r in entries if hits[id(r)] > 0]
 
-# Sort by confidence desc, then ts desc
-entries.sort(key=lambda e: (-(e.get("confidence",0)), e.get("ts","")), reverse=False)
+entries.sort(key=lambda r: (-hits[id(r)], -confidence(r[1]), -epoch(r[1].get("ts"))))
+
+total_matched = len(entries)
 entries = entries[:limit]
 
 if not entries:
     print("No matching learnings.")
     sys.exit(0)
 
-# Group by type
+# Group by type, groups in order of their best-ranked entry.
 groups = {}
-for e in entries:
-    t = e.get("type", "general")
-    groups.setdefault(t, []).append(e)
+for r in entries:
+    groups.setdefault(str(r[1].get("type") or "general"), []).append(r)
 
-for gtype, items in sorted(groups.items()):
+for gtype, items in groups.items():
     print(f"\n### {gtype.title()}")
-    for e in items:
-        conf = e.get("confidence", "?")
-        key = e.get("key","?")
-        insight = e.get("insight","?")
-        src = e.get("source","?")
-        ts = e.get("ts","?")[:10]
-        print(f"  [{conf}/10] **{key}**: {insight}  _(source: {src}, {ts})_")
-        if e.get("files"):
-            print(f"    files: {', '.join(e['files'][:3])}")
+    for project, e in items:
+        key = e.get("key", "?")
+        insight = e.get("insight", "?")
+        src = e.get("source", "?")
+        tag = f" [cross-project: {project}]" if project != slug else ""
+        print(f"  [{confidence(e)}/10] **{key}**: {insight}  _(source: {src}, {day(e.get('ts'))})_{tag}")
+        files = e.get("files")
+        if isinstance(files, list) and files:
+            print(f"    files: {', '.join(str(f) for f in files[:3])}")
 
-print(f"\n_Total: {len(entries)} learnings (project: $SLUG)_")
+more = total_matched - len(entries)
+notice = f" -- {more} more matched, raise --limit to see them" if more > 0 else ""
+print(f"\n_Total: {len(entries)} learnings (project: {slug}){notice}_")
 PYEOF

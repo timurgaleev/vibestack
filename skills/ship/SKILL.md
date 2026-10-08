@@ -301,7 +301,7 @@ Map the markers to the command you will OFFER — never to one you run on a gues
 | `package.json` with a `test` script | Node | that script, run with the package manager the lockfile names |
 | `Makefile` with a `test:` target | any | `make test` |
 
-**If ANY existing-test evidence appears** (a config file, a declared test script or make target, a nonzero `TESTFILES:` count, or `TESTS:rust in-source`): the project has tests. **Do NOT bootstrap.** Print "Existing tests detected: {the evidence}." Then get the command the same way Step 5 does — CLAUDE.md/TESTING.md if documented, otherwise AskUserQuestion offering the candidates from the table above plus "Other", and persist the answer to CLAUDE.md's `## Testing` section so it is never asked again. When the ecosystem ships a runner (Django, Go, Rust, Elixir, Maven/Gradle), that runner is the candidate — never install a second framework beside a working one.
+**If ANY existing-test evidence appears** (a config file, a declared test script or make target, a nonzero `TESTFILES:` count, or `TESTS:rust in-source`): the project has tests. **Do NOT bootstrap.** Print "Existing tests detected: {the evidence}." Then settle the command Step 5 will run — CLAUDE.md/TESTING.md if documented, otherwise AskUserQuestion offering the candidates from the table above plus "Other", and persist the answer to CLAUDE.md's `## Testing` section so it is never asked again. When the ecosystem ships a runner (Django, Go, Rust, Elixir, Maven/Gradle), that runner is the candidate — never install a second framework beside a working one.
 Read 2-3 existing test files to learn conventions (naming, imports, assertion style, setup patterns).
 Store conventions as prose context for use in Phase 8e.5 or Step 7. **Skip the rest of bootstrap.**
 
@@ -437,23 +437,66 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 
 ## Step 5: Run tests (on merged code)
 
-**Do NOT run `RAILS_ENV=test bin/rails db:migrate`** — `bin/test-lane` already calls
+Run the test command(s) Step 4 settled on: the one documented in CLAUDE.md's
+`## Testing` section or TESTING.md, or the one the user picked in Step 4 and
+persisted there. Run every suite the project declares (a repo can have more than
+one — for example a unit lane and a browser lane). **Never assume a stack:** do
+not run `bin/test-lane`, `npm run test` or any other command the project did not
+name. A command that does not exist "fails" with exit 127 and the triage below
+then chases a failure the branch never caused.
+
+**If no test command exists** (Step 4 recorded `BOOTSTRAP_DECLINED`, or the user
+picked "This project doesn't need tests"): name the untested scope and use
+AskUserQuestion:
+
+> This project has no test suite, so nothing verifies the changes on this branch: <scope>.
+>
+> RECOMMENDATION: Choose A — Completeness: 9/10.
+> A) Add tests now — run Step 4's bootstrap, then come back here (Completeness: 10/10)
+> B) Ship with this testing gap — the PR body records "No test suite: <scope>" instead of a pass (Completeness: 4/10)
+> C) Stop (Completeness: 10/10)
+
+B is recorded as a named gap, never as passing tests. **A declared but unavailable
+suite is a blocker, not an absent one:** when the documented command exits 127
+(command not found) or cannot start because its runner is missing, STOP and report
+it — do not offer B for it.
+
+**Rails projects that use `bin/test-lane` only:** do NOT run
+`RAILS_ENV=test bin/rails db:migrate` — `bin/test-lane` already calls
 `db:test:prepare` internally, which loads the schema into the correct lane database.
 Running bare test migrations without INSTANCE hits an orphan DB and corrupts structure.sql.
 
-Run both test suites in parallel:
+Run independent suites in parallel, one lane per suite. Substitute each lane's
+label and exact command; a single-suite project has one lane:
 
 ```bash
 # Keyed to the branch, not a fixed name: two /ship runs in sibling worktrees
-# would otherwise tee into the same file and each read the other's results.
+# would otherwise write into the same file and each read the other's results.
 _SHIP_LOG="/tmp/vibestack-ship-$(git branch --show-current | tr '/' '-')"
-bin/test-lane 2>&1 | tee "$_SHIP_LOG-tests.txt" &
-npm run test 2>&1 | tee "$_SHIP_LOG-vitest.txt" &
+# Each lane writes its log and its OWN exit status to separate files. Piping the
+# runner through `tee` would report tee's status, so a red suite reads as green.
+setopt +o nomatch 2>/dev/null || true  # zsh compat
+rm -f "$_SHIP_LOG"-*.exit  # an earlier run's lane must not report for this one
+{ ( <test command for lane 1> ) > "$_SHIP_LOG-<lane1>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane1>.exit"; } &
+{ ( <test command for lane 2> ) > "$_SHIP_LOG-<lane2>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane2>.exit"; } &
 wait
-echo "TEST_LOGS: $_SHIP_LOG-tests.txt $_SHIP_LOG-vitest.txt"
+# Walk the lanes that were LAUNCHED, not the exit files that happen to exist: a
+# lane killed before its status write leaves no file, and globbing would skip it.
+for _lane in <lane1> <lane2>; do
+  _f="$_SHIP_LOG-$_lane.exit"
+  if [ -s "$_f" ]; then _st=$(cat "$_f"); else _st=MISSING; fi
+  echo "LANE: $_lane exit=$_st log=$_SHIP_LOG-$_lane.txt"
+done
 ```
 
-After both complete, read the two files named on the `TEST_LOGS:` line and check pass/fail.
+Keep the braces: `{ …; echo $? > exit; } &` backgrounds the run and the status
+write together. Without them, `a; b &` runs the suite in the foreground and only
+the `echo` in the background, so the lanes stop running in parallel.
+
+After all lanes complete, read each `LANE:` line. **A lane passes only when its
+`exit=` is `0`.** A missing exit file, an empty one, or any non-zero value is a
+failure, whatever the log text says. Read the log files for failure detail. Use
+the same lane labels and exact commands again in Step 16.
 
 **If any test fails:** Do NOT immediately stop. Apply the Test Failure Ownership Triage:
 
@@ -539,20 +582,49 @@ Use AskUserQuestion:
   git log --format="%an (%ae)" -1 -- <source-file-under-test>
   ```
   If these are different people, prefer the production code author — they likely introduced the regression.
-- Create an issue assigned to that person (use the platform detected in Step 0):
+- Write the issue body to a private temp file. **Never put it on the command line.**
+  The body quotes test output, and inside shell double quotes every backtick span
+  and `$(…)` in that output runs on this machine:
+  ```bash
+  ISSUE_BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/vibestack-ship-issue-XXXXXXXX")
+  echo "ISSUE_BODY_FILE: $ISSUE_BODY_FILE"
+  ```
+  Write the body to the printed path with the Write tool (not `echo`, `printf` or a
+  heredoc in the shell):
+  ````markdown
+  Found failing on branch <current-branch>. Failure is pre-existing.
+
+  **Error:**
+  ```
+  <first 10 lines>
+  ```
+
+  **Last modified by:** <author>
+  **Noticed by:** vibestack /ship on <date>
+  ````
+  Read the file back and scan it for high-confidence secrets with the same patterns
+  as Step 19's secret scan. On a match, stop and tell the user to redact + rotate
+  before continuing — do not publish.
+- Create an issue assigned to that person (use the platform detected in Step 0).
+  Substitute the printed path. The title carries only the test name: drop any
+  `'`, `` ` ``, `$` or `\` from it before placing it inside the single quotes.
   - **If GitHub:**
     ```bash
     gh issue create \
-      --title "Pre-existing test failure: <test-name>" \
-      --body "Found failing on branch <current-branch>. Failure is pre-existing.\n\n**Error:**\n```\n<first 10 lines>\n```\n\n**Last modified by:** <author>\n**Noticed by:** vibestack /ship on <date>" \
-      --assignee "<github-username>"
+      --title 'Pre-existing test failure: <test-name>' \
+      --body-file "<ISSUE_BODY_FILE>" \
+      --assignee '<github-username>'
+    rm -f "<ISSUE_BODY_FILE>"
     ```
   - **If GitLab:**
     ```bash
+    # "$(cat …)" passes the file's bytes as one argument; the shell does not
+    # re-evaluate them, unlike text typed inside the double quotes.
     glab issue create \
-      -t "Pre-existing test failure: <test-name>" \
-      -d "Found failing on branch <current-branch>. Failure is pre-existing.\n\n**Error:**\n```\n<first 10 lines>\n```\n\n**Last modified by:** <author>\n**Noticed by:** vibestack /ship on <date>" \
-      -a "<gitlab-username>"
+      -t 'Pre-existing test failure: <test-name>' \
+      -d "$(cat "<ISSUE_BODY_FILE>")" \
+      -a '<gitlab-username>'
+    rm -f "<ISSUE_BODY_FILE>"
     ```
 - If neither CLI is available or `--assignee`/`-a` fails (user not in org, etc.), create the issue without assignee and note who should look at it in the body.
 - Continue with the workflow.
@@ -632,7 +704,14 @@ If multiple suites need to run, run them sequentially (each needs a test lane). 
 
 ## Step 7: Test Coverage Audit
 
-**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"`. The subagent runs the coverage audit in a fresh context window — the parent only sees the conclusion, not intermediate file reads. This is context-rot defense.
+**Foreground dispatch (Steps 7, 8, 10, 11 and 18).** Every subagent in this skill is
+dispatched with `run_in_background: false`. Since Claude Code v2.1.198 an Agent call
+without the flag runs in the background and returns immediately with nothing; the
+step then reads an empty result and /ship carries on as if the audit had passed.
+Wait for each subagent's final output before applying that step's gate, and do not
+run the work inline instead unless the step's own failure fallback says so.
+
+**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent runs the coverage audit in a fresh context window — the parent only sees the conclusion, not intermediate file reads. This is context-rot defense.
 
 **Subagent prompt:** Pass the following instructions to the subagent, with `<base>` substituted with the base branch:
 
@@ -899,7 +978,7 @@ Repo: {owner/repo}
 
 ## Step 8: Plan Completion Audit
 
-**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"`. The subagent reads the plan file and every referenced code file in its own fresh context. Parent gets only the conclusion.
+**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent reads the plan file and every referenced code file in its own fresh context. Parent gets only the conclusion.
 
 **Subagent prompt:** Pass these instructions to the subagent:
 
@@ -913,7 +992,9 @@ Repo: {owner/repo}
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
+# BRANCH is interpolated into a grep pattern below, so strip anything that would
+# read as a regex metacharacter rather than a literal branch name.
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' | tr -cd 'a-zA-Z0-9._-')
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 # Compute project slug for ~/.vibestack/projects/ lookup
 _PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
@@ -923,7 +1004,9 @@ for PLAN_DIR in "$HOME/.vibestack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$
   [ -d "$PLAN_DIR" ] || continue
   PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$BRANCH" 2>/dev/null | head -1)
   [ -z "$PLAN" ] && PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$REPO" 2>/dev/null | head -1)
-  [ -z "$PLAN" ] && PLAN=$(find "$PLAN_DIR" -name '*.md' -mmin -1440 -maxdepth 1 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
+  # -r matters: GNU xargs runs `ls -t` even on empty input, which lists the working
+  # directory and hands PLAN an arbitrary repo file that was never a plan.
+  [ -z "$PLAN" ] && PLAN=$(find "$PLAN_DIR" -name '*.md' -mmin -1440 -maxdepth 1 2>/dev/null | xargs -r ls -t 2>/dev/null | head -1)
   [ -n "$PLAN" ] && break
 done
 [ -n "$PLAN" ] && echo "PLAN_FILE: $PLAN" || echo "NO_PLAN_FILE"
@@ -1026,42 +1109,53 @@ COMPLETION: 5/9 DONE, 1 PARTIAL, 1 NOT DONE, 1 CHANGED, 1 UNVERIFIABLE
 ─────────────────────────────────
 ```
 
+**Classify only.** Do not apply any gate, do not ask the user anything and never
+report an item as "deferred" — you cannot ask, so a deferral would be a decision
+nobody made. The parent applies the gates below to your counts.
+
+**No plan file found:** output the JSON below with every count `0`, `"plan_file":null`
+and `"summary":"No plan file detected."`, then stop.
+>
+> After your analysis, output a single JSON object on the LAST LINE of your response (no other text after it). It has exactly these fields, and the five status counts must sum to `total_items`:
+> `{"plan_file":"<path or null>","total_items":N,"done":N,"changed":N,"partial":N,"not_done":N,"unverifiable":N,"not_done_items":["<item>",...],"unverifiable_items":[{"item":"<item>","check":"<the specific manual check>"},...],"summary":"<markdown checklist for PR body>"}`
+
+**Parent processing:**
+
+1. Parse the LAST line of the subagent's output as JSON. **Validate it:** every field
+   above is present, the counts are non-negative integers, `done + changed + partial +
+   not_done + unverifiable == total_items`, `not_done_items` has `not_done` entries and
+   `unverifiable_items` has `unverifiable` entries. A record that fails any check is
+   invalid JSON — take the failure path below, never a partial read of it.
+2. `plan_file` is null → print "No plan file detected — skipping plan completion audit." and continue.
+3. Apply the **Gate Logic** below, here in the parent. The subagent cannot ask the
+   user anything, so a gate left inside its prompt never fires and NOT DONE plan
+   items ship without a question.
+4. Store `total_items` and `done + changed` for Step 20 metrics, plus any items the
+   user deferred in the NOT DONE gate (Step 14 turns them into TODOs).
+5. Embed `summary` in PR body's `## Plan Completion` section (Step 19), plus the
+   manual verifications, deferred items and dropped items the gates produced.
+
 ### Gate Logic
 
-After producing the completion checklist:
+Applied by the parent to the validated counts:
 
 - **All DONE or CHANGED:** Pass. "Plan completion: PASS — all items addressed." Continue.
 - **Only PARTIAL items (no NOT DONE):** Continue with a note in the PR body. Not blocking.
-- **UNVERIFIABLE items present (no NOT DONE):** Blocking confirmation, per item. Never silently treat UNVERIFIABLE as DONE, and never blanket-confirm them with one question (that is the failure shape where the user picks "yes" without opening a single file).
+- **UNVERIFIABLE items present:** Blocking confirmation, per item, using `unverifiable_items`. Never silently treat UNVERIFIABLE as DONE, and never blanket-confirm them with one question (that is the failure shape where the user picks "yes" without opening a single file).
   - For each UNVERIFIABLE item, use AskUserQuestion with that item's *specific* manual check — "Confirm: does `~/Development/other-repo/docs/dashboard.md` exist?", not "Have you checked all items?".
   - **Cap:** if there are more than 5, present them as a numbered list first and ask whether to (1) confirm each individually (default, recommended), (2) stop and reduce scope, or (3) explicitly accept blanket-confirmation with a note that this skips real verification.
-  - Items the user confirms → treat as DONE and embed under `## Plan Completion — Manual Verifications` in the PR body. Items they answer "not done" → reclassify as NOT DONE and re-enter the NOT DONE gate below; a deliverable the user just told you is missing must not ship as a line in the PR body. Items they genuinely cannot check right now → carry as still-open manual checks in the PR body.
-- **Any NOT DONE items:** Use AskUserQuestion:
-  - Show the completion checklist above
+  - Items the user confirms → treat as DONE and embed under `## Plan Completion — Manual Verifications` in the PR body. Items they answer "not done" → reclassify as NOT DONE and add them to the NOT DONE gate below; a deliverable the user just told you is missing must not ship as a line in the PR body. Items they genuinely cannot check right now → carry as still-open manual checks in the PR body.
+- **Any NOT DONE items** (`not_done > 0`, or reclassified above): Use AskUserQuestion:
+  - Show the completion checklist (`summary`) and list `not_done_items`
   - "{N} items from the plan are NOT DONE. These were part of the original plan but are missing from the implementation."
   - RECOMMENDATION: depends on item count and severity. If 1-2 minor items (docs, config), recommend B. If core functionality is missing, recommend A.
   - Options:
     A) Stop — implement the missing items before shipping
-    B) Ship anyway — defer these to a follow-up (will create P1 TODOs in Step 5.5)
+    B) Ship anyway — defer these to a follow-up (will create P1 TODOs in Step 14)
     C) These items were intentionally dropped — remove from scope
   - If A: STOP. List the missing items for the user to implement.
-  - If B: Continue. For each NOT DONE item, create a P1 TODO in Step 5.5 with "Deferred from plan: {plan file path}".
+  - If B: Continue. Record each NOT DONE item as deferred; Step 14 creates a P1 TODO for each with "Deferred from plan: {plan file path}".
   - If C: Continue. Note in PR body: "Plan items intentionally dropped: {list}."
-
-**No plan file found:** Skip entirely. "No plan file detected — skipping plan completion audit."
-
-**Include in PR body (Step 8):** Add a `## Plan Completion` section with the checklist summary.
->
-> After your analysis, output a single JSON object on the LAST LINE of your response (no other text after it):
-> `{"total_items":N,"done":N,"changed":N,"deferred":N,"unverifiable":N,"summary":"<markdown checklist for PR body>"}`
-
-**Parent processing:**
-
-1. Parse the LAST line of the subagent's output as JSON.
-2. Store `done`, `deferred` for Step 20 metrics; use `summary` in PR body.
-3. If `deferred > 0` and no user override, present the deferred items via AskUserQuestion before continuing.
-4. If `unverifiable > 0`, run the per-item UNVERIFIABLE gate above here in the parent — the subagent cannot ask the user anything, so without this count the gate is never entered and external-state deliverables sail through unconfirmed.
-5. Embed `summary` in PR body's `## Plan Completion` section (Step 19).
 
 **If the subagent fails or returns invalid JSON:** Fall back to running the audit inline (parent runs the same plan-extraction + classification). **If the inline fallback ALSO fails** (plan file unreadable, parser error): do NOT silently pass. Surface it as an explicit AskUserQuestion — "Plan Completion audit could not run ({reason}). A) Skip audit and ship anyway (record 'audit skipped' in the PR body + Step 20 metrics), B) Stop and fix the audit." Default and recommended: B. A silent fail-open here is exactly how a missed deliverable ships unnoticed.
 
@@ -1193,8 +1287,10 @@ Review the diff for structural issues that tests don't catch.
 2. Run `git diff $(git merge-base origin/<base> HEAD)` to get the full diff (scoped to feature changes against the freshly-fetched base branch).
 
 3. Apply the review checklist in two passes:
-   - **Pass 1 (CRITICAL):** SQL & Data Safety, LLM Output Trust Boundary
+   - **Pass 1 (CRITICAL):** SQL & Data Safety, Race Conditions & Concurrency, LLM Output Trust Boundary, Shell Injection, Enum & Value Completeness
    - **Pass 2 (INFORMATIONAL):** All remaining categories
+
+   **Enum & Value Completeness requires reading code OUTSIDE the diff.** When the diff introduces a new enum value, status, tier, or type constant, use Grep to find all files that reference sibling values, then Read those files to check if the new value is handled.
 
 ## Confidence Calibration
 
@@ -1390,8 +1486,8 @@ Note which specialists were selected, gated, and skipped. Print the selection:
 
 ### Dispatch specialists in parallel
 
-For each selected specialist, launch an independent subagent via the Agent tool.
-**Launch ALL selected specialists in a single message** (multiple Agent tool calls)
+For each selected specialist, launch an independent subagent via the Agent tool with `run_in_background: false`.
+**Launch ALL selected specialists in a single message** (multiple Agent tool calls, each with `run_in_background: false`)
 so they run in parallel. Each subagent has fresh context — no prior review bias.
 
 **Each specialist subagent prompt:**
@@ -1510,7 +1606,7 @@ Remember these stats — you will need them for the review-log entry in Step 5.8
 
 **Activation:** Only if DIFF_LINES > 200 OR any specialist produced a CRITICAL finding.
 
-If activated, dispatch one more subagent via the Agent tool (foreground, not background).
+If activated, dispatch one more subagent via the Agent tool with `run_in_background: false` (foreground, not background).
 
 The Red Team subagent receives:
 1. The red-team checklist from `~/.claude/skills/review/specialists/red-team.md`
@@ -1600,7 +1696,7 @@ Save the review output — it goes into the PR body in Step 19.
 
 ## Step 10: Address Greptile review comments (if PR exists)
 
-**Dispatch the fetch + classification as a subagent** using the Agent tool with `subagent_type: "general-purpose"`. The subagent pulls every Greptile comment, runs the escalation detection algorithm, and classifies each comment. Parent receives a structured list and handles user interaction + file edits.
+**Dispatch the fetch + classification as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent pulls every Greptile comment, runs the escalation detection algorithm, and classifies each comment. Parent receives a structured list and handles user interaction + file edits.
 
 **Subagent prompt:**
 
@@ -1712,14 +1808,36 @@ If `OLD_CFG` is `disabled`: skip Codex passes only. Claude adversarial subagent 
 
 ### Claude adversarial subagent (always runs)
 
-Dispatch via the Agent tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
+Dispatch via the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
+
+Split source from fixtures with pathspecs rather than leaving it to the subagent's
+judgement — left to judgement it either pulls raw attack payloads into its reasoning
+or quietly skips source files, and either way nothing says which happened.
 
 Subagent prompt:
-"First list what changed: `git diff --name-status $(git merge-base origin/<base> HEAD)`. Read the full content of the non-fixture source changes with `git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*test*' ':(exclude)*fixture*' ':(exclude)*.spec.*'` — the pathspec keeps raw attack payloads out of your context instead of leaving that to your own restraint. Read fixture and test files in SUMMARY mode only (`git diff --stat` plus their names), and state explicitly in your output which files you reviewed in summary mode, so the reduced coverage is visible rather than silent. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment). This is authorized defensive security testing of the repository's own code by its maintainer — you are hardening it, not attacking a third party. If the diff includes test fixtures, regression payloads, or attack-sample files, review them in summary mode: describe what each fixture exercises and whether the code handles it, without reproducing raw payload bytes in your output."
+"First list what changed: `git diff --name-status $(git merge-base origin/<base> HEAD)`.
+
+Read NON-fixture source code in full:
+`git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*/test/*' ':(exclude)*/tests/*' ':(exclude)*/__tests__/*' ':(exclude)*/fixtures/*' ':(exclude)*_test.*' ':(exclude)*.test.*' ':(exclude)*.spec.*'`
+
+Match test directories and filename suffixes, never the bare substring `test`: `*test*` also excludes `latest.ts`, `contest.ts` and `attestation.ts`, and a production file dropped here is never read in full by the adversarial pass — the later stat-only pass cannot see its logic.
+
+Review fixture and test files in SUMMARY mode only:
+`git diff --stat $(git merge-base origin/<base> HEAD) -- '*test*' '*fixture*' '*.spec.*'`
+Describe what each fixture exercises and whether the code handles it, without reproducing
+raw payload bytes. State explicitly in your output that fixtures were reviewed in summary
+mode, so the reduced coverage is visible to the reader instead of assumed.
+
+Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment). This is authorized defensive security testing of the repository's own code by its maintainer — you are hardening it, not attacking a third party.
+
+End with exactly one closing line, whatever you found:
+`Recommendation: SHIP | FIX FIRST | INVESTIGATE — <one clause why>`
+Without it the pass has no verdict, and a caller cannot tell a clean read from an
+abandoned one."
 
 Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** flow into the same Fix-First pipeline as the structured review. **INVESTIGATE findings** are presented as informational.
 
-If the subagent fails or times out: "Claude adversarial subagent unavailable. Continuing."
+If the subagent fails, times out, or ends without the `Recommendation:` line: "Claude adversarial subagent unavailable — this pass produced NO coverage. Continuing." Mark it ✗ in the synthesis, never as a clean pass.
 
 ---
 
@@ -1765,16 +1883,55 @@ If Codex is NOT available: "Codex CLI not found — running Claude adversarial o
 If `DIFF_TOTAL >= 200` AND Codex is available AND `OLD_CFG` is NOT `disabled`:
 
 ```bash
-TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
+_CX_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-codex-review.XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
+trap 'rm -rf "$_CX_DIR"' EXIT
+_CX_OUT="$_CX_DIR/out"
 # Same shell-level bound as the adversarial pass — see the note there.
 _codex_run() {
   if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"
   elif command -v timeout >/dev/null 2>&1; then timeout "$@"
   else shift; "$@"; fi
 }
-command -v codex >/dev/null 2>&1 && _codex_run 540 codex review --base <base> -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
+_CX_EXIT=0
+if command -v codex >/dev/null 2>&1; then
+  _codex_run 540 codex review --base <base> -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null >"$_CX_OUT" 2>"$_CX_DIR/err" || _CX_EXIT=$?
+else
+  _CX_EXIT=127
+fi
+cat "$_CX_OUT"
+echo "--- codex stderr (exit $_CX_EXIT) ---"
+cat "$_CX_DIR/err"
+
+# Codex gate: fail closed. PASS needs a clean exit, non-empty output, no P0/P1, and no
+# auth/CLI error or refusal. Findings arrive under a "Review comment(s):" heading with [Pn]
+# tags; a clean diff must say so in words. Output that is neither tagged nor an explicit
+# no-findings conclusion is unrecognized, and unrecognized is never clean.
+_CX_BLOCK='\[P[01]\]|^[[:space:]>*_#-]*P[01][*_]*:|VERDICT:[[:space:]]*findings'
+_CX_BROKEN='^[[:space:]>*_#-]*((error|fatal)[[:space:]]*:|unauthorized|not logged in|you.ve hit your usage limit)|invalid api key|insufficient_quota|^[[:space:]]*(I.m sorry|I am sorry|I.m unable|I am unable|I (cannot|can.t|won.t) (help|assist|review|comply))'
+_CX_COMMENTS='^[[:space:]>*_#-]*(full )?review comments?[*_]*:'
+_CX_CLEAN='NO_FINDINGS|(^|[^[:alnum:]_])no (discrete |actionable |significant |new |concrete )?(bugs?|issues?|findings?|problems?|regressions?)( (were |was )?(found|identified|detected))?([^[:alnum:]_]|$)|(did not|didn.t|could not|couldn.t) (find|identify|spot) any'
+if [ "$_CX_EXIT" -eq 124 ]; then
+  _CX_GATE="SKIPPED"; _CX_WHY="timed out after 540s, no coverage"
+elif [ "$_CX_EXIT" -ne 0 ]; then
+  _CX_GATE="FAIL"; _CX_WHY="codex exited $_CX_EXIT, no usable review"
+elif ! grep -q '[^[:space:]]' "$_CX_OUT" 2>/dev/null; then
+  _CX_GATE="FAIL"; _CX_WHY="empty output, no usable review"
+elif grep -Eq "$_CX_BLOCK" "$_CX_OUT"; then
+  _CX_GATE="FAIL"; _CX_WHY="$(grep -Ec "$_CX_BLOCK" "$_CX_OUT") P0/P1 finding(s)"
+elif grep -Eiq "$_CX_BROKEN" "$_CX_OUT"; then
+  _CX_GATE="FAIL"; _CX_WHY="auth, quota, CLI error or refusal text, no usable review"
+elif grep -Eq '\[P[23]\]|^[[:space:]>*_#-]*P[23][*_]*:' "$_CX_OUT"; then
+  _CX_GATE="PASS"; _CX_WHY="completed, P2/P3 findings only"
+elif grep -Eiq "$_CX_COMMENTS" "$_CX_OUT"; then
+  _CX_GATE="FAIL"; _CX_WHY="review comments without severity tags, no usable review"
+elif grep -Eiq "$_CX_CLEAN" "$_CX_OUT"; then
+  _CX_GATE="PASS"; _CX_WHY="completed, explicit no-findings conclusion"
+else
+  _CX_GATE="FAIL"; _CX_WHY="no severity tags and no no-findings conclusion, unrecognized output"
+fi
+echo "GATE: $_CX_GATE ($_CX_WHY)"
 ```
 
 **Sandbox pinned read-only.** `codex review` has no `-s`/`--sandbox` flag, so without the
@@ -1784,8 +1941,8 @@ reports as a read-only review.
 
 **No prompt argument.** `--base` is what scopes the review, and the positional
 `[PROMPT]` is mutually exclusive with it — Codex CLI rejects the pair at argv
-parsing, so a call carrying both never runs and the gate silently records a
-default PASS. The filesystem-boundary preamble that used to ride in that prompt
+parsing, so a call carrying both never runs and the gate records a FAIL with
+no review behind it. The filesystem-boundary preamble that used to ride in that prompt
 goes with it; `codex review` is internally diff-scoped, and the skill files under
 `.claude/` and `agents/` are public, so the cost is a few wasted tokens if the
 diff happens to touch them, not a safety gap. Do NOT "fix" a rejection by
@@ -1794,9 +1951,21 @@ tree instead of the branch diff, which is a different question with the same
 green checkmark.
 
 Set the Bash tool's `timeout` parameter to `600000` (10 minutes), above the 540s shell bound. Present output under `CODEX SAYS (code review):` header.
-Check for `[P1]` markers: found → `GATE: FAIL`, not found → `GATE: PASS`. On exit 124 the review never ran — record `GATE: SKIPPED (timed out)`, never `PASS`.
+The block prints the gate itself — use its `GATE:` line, never a judgement of your own
+from the text. Output and stderr go to a private per-run directory the block removes
+on exit, so the gate is decided from the same bytes you were shown.
 
-If GATE is FAIL, use AskUserQuestion:
+- **`GATE: FAIL (N P0/P1 finding(s))`** — `[P0]`/`[P1]` tags, native `P0:`/`P1:` labels,
+  or `VERDICT: findings`. A P0 blocks exactly like a P1.
+- **`GATE: FAIL (... no usable review)`** — a non-zero exit, empty output, auth/quota/CLI
+  error text, a refusal, or prose with neither severity tags nor an explicit
+  no-findings conclusion. The review did not happen, so it cannot pass.
+- **`GATE: SKIPPED (timed out ...)`** — exit 124. The review never finished: record
+  `SKIPPED`, never `PASS`.
+- **`GATE: PASS`** — a clean exit with only `[P2]`/`[P3]` findings, or an explicit
+  no-findings conclusion (`NO_FINDINGS`, "no issues found", "did not find any ...").
+
+If GATE is FAIL with P0/P1 findings, use AskUserQuestion:
 ```
 Codex found N critical issues in the diff.
 
@@ -1804,11 +1973,23 @@ A) Investigate and fix now (recommended)
 B) Continue — review will still complete
 ```
 
-If A: address the findings. After fixing, re-run tests (Step 5) since code has changed. Re-run `codex review` to verify.
+If A: address the findings. After fixing, re-run tests (Step 5) since code has changed. Re-run the same block once to verify, and use the re-run's `GATE:` line.
 
-Read stderr for errors (same error handling as Codex adversarial above).
+If GATE is FAIL with no usable review (non-zero exit, empty output, error text, no
+markers), the review did not complete — there are no findings to fix. Show the reason and the stderr, then use
+AskUserQuestion:
+```
+Codex structured review did not complete (<reason>). The diff has NO Codex gate coverage.
 
-After stderr: `rm -f "$TMPERR"`
+A) Fix the cause (e.g. `codex login`) and re-run the review (recommended)
+B) Continue without the Codex gate — recorded as missing coverage
+```
+
+With B, persist the gate as `fail` (below) and say "Codex gate: missing coverage" in
+the PR body's `## Pre-Landing Review` section. Never record it as `pass`.
+
+Read the stderr the block printed for the cause (same error handling as Codex adversarial
+above). No cleanup step: the block's `trap` removes its temp directory on exit.
 
 If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversarial passes provide sufficient coverage for smaller diffs.
 
@@ -1820,7 +2001,7 @@ After all passes complete, persist:
 ```bash
 ~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
-Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
+Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
 ---
 
@@ -2101,6 +2282,12 @@ For each TODO item, check if the changes in this PR complete it by:
 
 **4. Move completed items** to the `## Completed` section at the bottom. Append: `**Completed:** vX.Y.Z (YYYY-MM-DD)`
 
+**4.5. Add deferred plan items.** If the user chose "Ship anyway — defer" in Step 8's
+NOT DONE gate, add each deferred item as a P1 TODO with "Deferred from plan: {plan
+file path}". If TODOS.md was skipped in step 1, list them in the PR body's
+`## Plan Completion` section instead — a deferral must land somewhere a person will
+read it.
+
 **5. Output summary:**
 - `TODOS.md: N items marked complete (item1, item2, ...). M items remaining.`
 - Or: `TODOS.md: No completed items detected. M items remaining.`
@@ -2204,16 +2391,35 @@ user via AskUserQuestion rather than destroying non-WIP commits.
 5. Compose each commit message:
    - First line: `<type>: <summary>` (type = feat/fix/chore/refactor/docs)
    - Body: brief description of what this commit contains
-   - Only the **final commit** (VERSION + CHANGELOG) gets the version tag and co-author trailer:
+   - Only the **final commit** (VERSION + CHANGELOG) gets the version tag.
+
+6. **Attribution is opt-in.** Commits and the PR go out under the user's name, so
+   no assistant trailer or footer is added unless the user turned it on:
+
+```bash
+_ATTR=$(~/.vibestack/bin/vibe-config get ship_attribution 2>/dev/null || true)
+echo "SHIP_ATTRIBUTION: ${_ATTR:-off}"
+```
+
+   - `off` or unset (the default): no `Co-Authored-By` trailer on any commit and no
+     "Generated with" footer in the PR body (Step 19).
+   - `on`: append to the final commit the co-author trailer your host's own
+     instructions prescribe, and to the PR body the footer they prescribe. Never
+     write a model name or version from memory — if the host prescribes nothing,
+     add nothing.
+   - A user or project rule that forbids attribution (CLAUDE.md, AGENTS.md) wins
+     over `on`.
+
+   Turn it on with `~/.vibestack/bin/vibe-config set ship_attribution on`.
 
 ```bash
 git commit -m "$(cat <<'EOF'
 chore: bump version and changelog (v<NEW_VERSION>)
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
 )"
 ```
+
+   With `SHIP_ATTRIBUTION: on`, add a blank line and the host's trailer before `EOF`.
 
 ---
 
@@ -2361,7 +2567,7 @@ git push origin "$TAG_NAME" 2>/dev/null || true
 
 ## Step 18: Documentation sync (via subagent, before PR creation)
 
-**Dispatch /document-release as a subagent** using the Agent tool with `subagent_type: "general-purpose"`. The subagent gets a fresh context window — zero rot from the preceding 17 steps. It also runs the **full** `/document-release` workflow (with CHANGELOG clobber protection, doc exclusions, risky-change gates, named staging, race-safe PR body editing) rather than a weaker reimplementation.
+**Dispatch /document-release as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent gets a fresh context window — zero rot from the preceding 17 steps. It also runs the **full** `/document-release` workflow (with CHANGELOG clobber protection, doc exclusions, risky-change gates, named staging, race-safe PR body editing) rather than a weaker reimplementation.
 
 **Sequencing:** This step runs AFTER Step 17 (Push) and BEFORE Step 19 (Create PR). The PR is created once from final HEAD with the `## Documentation` section baked into the initial body. No create-then-re-edit dance.
 
@@ -2491,10 +2697,13 @@ you missed it.>
 <If Step 18 returned `documentation_section: null` (no docs updated), omit this section entirely.>
 
 ## Test plan
-- [x] All Rails tests pass (N runs, 0 failures)
-- [x] All Vitest tests pass (N tests)
+- [x] <lane label>: `<exact test command>` — exit 0 (N tests)
+<One line per Step 5 lane, as it ran. A lane that did not exit 0 is never ticked.
+If Step 5 recorded the no-test-suite gap (option B), write
+"- [ ] No test suite: <scope>" instead of a pass.>
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+<If SHIP_ATTRIBUTION is `on` (Step 15): the PR footer line your host's own
+instructions prescribe. Otherwise nothing — no footer line at all.>
 ```
 
 **Secret scan before external write.** Write the composed body to a file first,
@@ -2658,7 +2867,7 @@ aside, not a prompt, and it never asks anything.
 - **Never skip tests.** If tests fail, stop.
 - **Never skip the pre-landing review.** If checklist.md is unreadable, stop.
 - **Never force push.** Use regular `git push` only.
-- **Never ask for trivial confirmations** (e.g., "ready to push?", "create PR?"). DO stop for: version bumps (MINOR/MAJOR), pre-landing review findings (ASK items), and Codex structured review [P1] findings (large diffs only).
+- **Never ask for trivial confirmations** (e.g., "ready to push?", "create PR?"). DO stop for: version bumps (MINOR/MAJOR), pre-landing review findings (ASK items), and Codex structured review gate failures — [P0]/[P1] findings or a review that did not complete (large diffs only).
 - **Always use the version format the VERSION file already uses** — never add or drop a component.
 - **Date format in CHANGELOG:** `YYYY-MM-DD`
 - **Split commits for bisectability** — each commit = one logical change.

@@ -358,7 +358,7 @@ Triggers: `careful mode`, `risky operation`, `be careful`, `extra caution`
 ### `/freeze`
 Restrict file edits to a specific directory.
 
-Writes the directory path to `~/.vibestack/freeze-dir.txt`. A PreToolUse hook then blocks any Edit or Write targeting a file outside that path. Prevents "fixing" unrelated code while debugging.
+Records the directory in `~/.vibestack/freeze-dir.txt` through `freeze-state.sh`, which refuses a path that does not resolve and never stores `/`. A PreToolUse hook then blocks any Edit, Write or NotebookEdit targeting a file outside that path, and denies when the payload or the state file cannot be read. Prevents "fixing" unrelated code while debugging.
 
 Read and Bash operations are unaffected.
 
@@ -369,7 +369,7 @@ Triggers: `freeze edits to directory`, `lock editing scope`, `restrict file chan
 ### `/unfreeze`
 Clear the freeze boundary.
 
-Removes `~/.vibestack/freeze-dir.txt`. Edits are allowed everywhere again. The hook remains registered for the session but allows all paths since no state file exists.
+Clears the boundary through `freeze-state.sh clear`. Edits are allowed everywhere again. A boundary that `/investigate` set for its own run is released by that run, without touching one you set yourself. The hook remains registered for the session but allows all paths since no state file exists.
 
 Triggers: `unfreeze edits`, `unlock all directories`, `remove edit restrictions`, `allow all edits`
 

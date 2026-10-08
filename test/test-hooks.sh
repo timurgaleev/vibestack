@@ -10,6 +10,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAREFUL="$ROOT/skills/careful/bin/check-careful.sh"
 FREEZE="$ROOT/skills/freeze/bin/check-freeze.sh"
+FREEZE_STATE="$ROOT/skills/freeze/bin/freeze-state.sh"
 
 PASS=0
 FAIL=0
@@ -164,10 +165,110 @@ assert_decision "outside boundary denied"       "$FREEZE" "{\"tool_input\":{\"fi
 # directory judged this in-boundary while the write landed outside.
 assert_decision "escaping symlink denied"       "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/link.txt\"}}" deny
 assert_decision "parent traversal denied"       "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/../out/target.txt\"}}" deny
-assert_decision "non-file payload allowed"      "$FREEZE" '{"tool_input":{"command":"ls"}}' allow
+# The hook only runs on Edit/Write/NotebookEdit, so a payload with no path is a
+# schema it cannot check — deny rather than wave it through.
+assert_decision "payload with no path denied"   "$FREEZE" '{"tool_input":{"command":"ls"}}' deny
 # Deny tier: unreadable input must block, the opposite of careful's ask.
 assert_decision "unparseable payload denied"    "$FREEZE" 'this is not json' deny
 assert_decision "empty stdin denied"            "$FREEZE" '' deny
+
+echo "freeze — NotebookEdit carries notebook_path"
+# Reading file_path alone parsed a notebook edit as "no path" and allowed it.
+assert_decision "notebook outside denied"       "$FREEZE" "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"notebook_path\":\"$FZ/out/x.ipynb\",\"new_source\":\"x\"}}" deny
+assert_decision "notebook inside allowed"       "$FREEZE" "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"notebook_path\":\"$FZ/in/x.ipynb\",\"new_source\":\"x\"}}" allow
+for _skill in freeze guard investigate; do
+  if grep -q 'matcher: "NotebookEdit"' "$ROOT/skills/$_skill/SKILL.md"; then
+    ok "$_skill registers a NotebookEdit matcher"
+  else
+    bad "$_skill registers a NotebookEdit matcher" 'matcher: "NotebookEdit"' "missing"
+  fi
+done
+
+echo "freeze — unexpected failures deny (EXIT backstop)"
+# An unreadable state file made the read pipeline fail under set -e: exit 1, no
+# JSON, which Claude Code treats as non-blocking — the edit went through.
+if [ "$(id -u)" -ne 0 ]; then
+  chmod 000 "$VIBESTACK_HOME/freeze-dir.txt"
+  assert_decision "unreadable state file denied"  "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" deny
+  assert_valid_json "unreadable state: one JSON object" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}"
+  chmod 644 "$VIBESTACK_HOME/freeze-dir.txt"
+else
+  echo "  skip unreadable state file (running as root)"
+fi
+
+echo "freeze — relative saved boundary is ambiguous"
+printf 'src/auth/\n' > "$VIBESTACK_HOME/freeze-dir.txt"
+assert_decision "relative boundary denied"      "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/a.txt\"}}" deny
+
+echo "freeze-state — the shared writer"
+rm -f "$VIBESTACK_HOME/freeze-dir.txt"
+# A mistyped path used to resolve to "" and then to "/", which contains every
+# path: the boundary was announced as set while allowing every edit.
+if bash "$FREEZE_STATE" set "$FZ/no-such-dir" >/dev/null 2>&1; then
+  bad "typo path refused" "non-zero exit" "exit 0"
+else
+  ok "typo path refused"
+fi
+[ ! -e "$VIBESTACK_HOME/freeze-dir.txt" ] && ok "typo path writes no state" || bad "typo path writes no state" "no state file" "$(cat "$VIBESTACK_HOME/freeze-dir.txt")"
+if bash "$FREEZE_STATE" set / >/dev/null 2>&1; then
+  bad "root refused as a boundary" "non-zero exit" "exit 0"
+else
+  ok "root refused as a boundary"
+fi
+[ ! -e "$VIBESTACK_HOME/freeze-dir.txt" ] && ok "root refusal writes no state" || bad "root refusal writes no state" "no state file" "$(cat "$VIBESTACK_HOME/freeze-dir.txt")"
+
+# set: relative input lands as an absolute physical path, and the hook enforces it.
+_out=$(cd "$FZ" && bash "$FREEZE_STATE" set in 2>&1)
+_want="$(cd "$FZ/in" && pwd -P)"
+[ "$(sed -n 1p "$VIBESTACK_HOME/freeze-dir.txt")" = "$_want" ] && ok "set writes the absolute physical path" || bad "set writes the absolute physical path" "$_want" "$(sed -n 1p "$VIBESTACK_HOME/freeze-dir.txt")"
+case "$_out" in *"FREEZE_DIR=$_want"*) ok "set reports FREEZE_DIR" ;; *) bad "set reports FREEZE_DIR" "FREEZE_DIR=$_want" "$_out" ;; esac
+assert_decision "set boundary: inside allowed"  "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/a.txt\"}}" allow
+assert_decision "set boundary: outside denied"  "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" deny
+# A failed set must leave the existing boundary exactly as it was.
+_before=$(cat "$VIBESTACK_HOME/freeze-dir.txt")
+bash "$FREEZE_STATE" set "$FZ/typo" >/dev/null 2>&1 || true
+[ "$(cat "$VIBESTACK_HOME/freeze-dir.txt")" = "$_before" ] && ok "failed set keeps the boundary" || bad "failed set keeps the boundary" "$_before" "$(cat "$VIBESTACK_HOME/freeze-dir.txt")"
+
+# acquire over a user boundary: preserved, and the user's boundary survives.
+_out=$(bash "$FREEZE_STATE" acquire "$FZ/out" 2>&1)
+case "$_out" in FREEZE_PRESERVED*) ok "acquire preserves a user boundary" ;; *) bad "acquire preserves a user boundary" "FREEZE_PRESERVED" "$_out" ;; esac
+[ "$(cat "$VIBESTACK_HOME/freeze-dir.txt")" = "$_before" ] && ok "user boundary intact after acquire" || bad "user boundary intact after acquire" "$_before" "$(cat "$VIBESTACK_HOME/freeze-dir.txt")"
+_out=$(bash "$FREEZE_STATE" release 0123456789abcdef0123456789abcdef 2>&1)
+[ "$(cat "$VIBESTACK_HOME/freeze-dir.txt")" = "$_before" ] && ok "foreign release keeps the user boundary" || bad "foreign release keeps the user boundary" "$_before" "$_out"
+
+# acquire with no boundary: owned lock, released by its own token only.
+bash "$FREEZE_STATE" clear >/dev/null
+_out=$(bash "$FREEZE_STATE" acquire "$FZ/in" 2>&1)
+_owner=$(printf '%s\n' "$_out" | sed -n 's/^FREEZE_OWNER=//p')
+[ "${#_owner}" -eq 32 ] && ok "acquire returns a 32-hex owner token" || bad "acquire returns a 32-hex owner token" "FREEZE_OWNER=<32 hex>" "$_out"
+assert_decision "acquired boundary enforced"    "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" deny
+bash "$FREEZE_STATE" release ffffffffffffffffffffffffffffffff >/dev/null 2>&1
+[ -f "$VIBESTACK_HOME/freeze-dir.txt" ] && ok "wrong token does not release" || bad "wrong token does not release" "state kept" "state removed"
+_out=$(bash "$FREEZE_STATE" release "$_owner" 2>&1)
+[ ! -e "$VIBESTACK_HOME/freeze-dir.txt" ] && ok "owner token releases its lock" || bad "owner token releases its lock" "state removed" "$_out"
+# The user replaced the lock mid-investigation: the stale token must not remove it.
+_out=$(bash "$FREEZE_STATE" acquire "$FZ/in" 2>&1)
+_owner=$(printf '%s\n' "$_out" | sed -n 's/^FREEZE_OWNER=//p')
+bash "$FREEZE_STATE" set "$FZ/out" >/dev/null
+bash "$FREEZE_STATE" release "$_owner" >/dev/null 2>&1
+[ -f "$VIBESTACK_HOME/freeze-dir.txt" ] && ok "release spares a replacement boundary" || bad "release spares a replacement boundary" "state kept" "state removed"
+if bash "$FREEZE_STATE" release 'not-a-token' >/dev/null 2>&1; then
+  bad "malformed token rejected" "non-zero exit" "exit 0"
+else
+  ok "malformed token rejected"
+fi
+bash "$FREEZE_STATE" clear >/dev/null
+[ ! -e "$VIBESTACK_HOME/freeze-dir.txt" ] && ok "clear removes the boundary" || bad "clear removes the boundary" "no state file" "state kept"
+[ ! -e "$VIBESTACK_HOME/.freeze-mutation.lock" ] && ok "writer releases its mutex" || bad "writer releases its mutex" "no lock dir" "lock left behind"
+
+# Every skill that sets or clears a boundary goes through the writer.
+for _skill in freeze guard investigate unfreeze; do
+  if grep -Eq '(>|rm -f).*freeze-dir\.txt' "$ROOT/skills/$_skill/SKILL.md"; then
+    bad "$_skill writes state only via freeze-state.sh" "no direct write" "$(grep -E '(>|rm -f).*freeze-dir\.txt' "$ROOT/skills/$_skill/SKILL.md")"
+  else
+    ok "$_skill writes state only via freeze-state.sh"
+  fi
+done
 
 echo "freeze — boundary paths that broke the old parser"
 mkdir -p "$FZ/My Project"
