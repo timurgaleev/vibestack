@@ -6,7 +6,8 @@ base); leave it empty to use the current branch's PR.
 
 The version and the release notes are read from the merge commit itself, not the working
 tree, so a stale or switched checkout cannot tag the wrong version. A repo with no
-`VERSION` file at the merge commit has nothing to tag and is skipped.
+`VERSION` file at the merge commit has nothing to tag and is skipped; that is decided
+only once the merge commit is known, never from the checkout.
 
 ```bash
 BASE="<base>"
@@ -25,13 +26,16 @@ STATE=$(printf '%s' "$PR_STATE" | awk '{print $1}')
 MERGE_SHA=$(printf '%s' "$PR_STATE" | awk '{print $2}')
 [ -n "$STATE" ] || STATE="UNKNOWN"
 
-if [ "$STATE" != "MERGED" ] || [ -z "$MERGE_SHA" ]; then
-  if [ ! -f VERSION ]; then
-    echo "RELEASE: SKIPPED — no VERSION file, nothing to tag."
-  elif [ "$STATE" = "UNKNOWN" ]; then
-    echo "Release deferred: could not read the PR state (platform: ${PLATFORM:-unknown}). No tag, no release."
-  else
+# Unknown first: without the PR state or the merge commit nothing is decided yet.
+if [ "$STATE" = "UNKNOWN" ] || { [ "$STATE" = "MERGED" ] && [ -z "$MERGE_SHA" ]; }; then
+  echo "Release deferred: could not read the PR state or merge commit (platform: ${PLATFORM:-unknown}, state: $STATE). Not a final outcome — nothing was tagged; re-run this step once gh/glab can read the PR (check auth and network, or set PR_REF)."
+  exit 0
+fi
+if [ "$STATE" != "MERGED" ]; then
+  if [ -f VERSION ]; then
     echo "Release deferred: v$(tr -d '[:space:]' < VERSION) is tagged and released after the PR merges (PR state: $STATE)."
+  else
+    echo "Release deferred: the version at the merge commit is tagged and released after the PR merges (PR state: $STATE)."
   fi
   exit 0
 fi
@@ -106,10 +110,11 @@ rm -f "$TMPNOTES"
 
 Report the outcome line as printed:
 
-- `Release deferred: …` — the PR is not merged (or its state could not be read). Nothing
-  was tagged. Run this step again once it merges: `/land-and-deploy` runs it right after
-  its merge, and re-running `/ship` on the merged branch goes straight to it.
-- `RELEASE: SKIPPED …` — no `VERSION` file; there is no version to tag.
+- `Release deferred: …` — the PR is not merged, or its state or merge commit could not be
+  read. Nothing was tagged and nothing is final. Run this step again once it merges (or,
+  for an unreadable state, once `gh`/`glab` can read the PR): `/land-and-deploy` runs it
+  right after its merge, and re-running `/ship` on the merged branch goes straight to it.
+- `RELEASE: SKIPPED …` — no `VERSION` file at the merge commit; there is no version to tag.
 - `BLOCKED: …` — stop here and report the line verbatim with what the user must resolve.
   Never `git tag -f`, never `git push --force` a tag, never delete a published tag to
   make room.

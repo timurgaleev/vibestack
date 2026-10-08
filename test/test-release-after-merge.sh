@@ -12,8 +12,9 @@
 #   - a re-run updates the existing release instead of creating a second one;
 #   - a tag that already exists elsewhere (remote or local) is refused and left
 #     where it is;
-#   - a repo with no VERSION file is skipped; a merge commit that is not on the
-#     base branch is refused.
+#   - a repo with no VERSION file at the merge commit is skipped; an unreadable
+#     PR state defers with retry guidance and is never reported as skipped;
+#   - a merge commit that is not on the base branch is refused.
 #
 # Usage: test-release-after-merge.sh   (SHIP_SKILL / LAND_SKILL override the sources)
 set -uo pipefail
@@ -195,6 +196,26 @@ for s in land ship; do
   [ "$rc" = 0 ] && ok "$s: skip exits 0" || no "$s: skip exit $rc"
   [ -z "$(git -C "$d" ls-remote --tags origin)" ] && [ "$(creates "$d")" = 0 ] \
     && ok "$s: no VERSION -> no tag, no release" || no "$s: versionless repo got a tag or release"
+
+  # A failed PR-state lookup decides nothing, even where the checkout has no VERSION.
+  d=$(fixture "$s-unknown" ""); rm -f "$d.stub/pr.json"
+  out=$(run "$d" "$B"); rc=$?
+  case "$out" in
+    *SKIPPED*) no "$s: unreadable PR state reported as SKIPPED: $out" ;;
+    *"Release deferred: could not read the PR state"*"re-run"*) ok "$s: unreadable PR state defers with retry guidance, not SKIPPED" ;;
+    *) no "$s: unreadable PR state not deferred: $out" ;;
+  esac
+  [ "$rc" = 0 ] && ok "$s: unreadable PR state exits 0" || no "$s: unreadable PR state exit $rc"
+  [ -z "$(git -C "$d" ls-remote --tags origin)" ] && [ "$(creates "$d")" = 0 ] \
+    && ok "$s: unreadable PR state -> no tag, no release" || no "$s: unreadable PR state got a tag or release"
+
+  d=$(fixture "$s-open-nover" ""); pr "$d" OPEN null
+  out=$(run "$d" "$B")
+  case "$out" in
+    *SKIPPED*) no "$s: open PR without a checkout VERSION reported as SKIPPED: $out" ;;
+    *"Release deferred"*) ok "$s: open PR without a checkout VERSION defers (no-VERSION is decided at the merge commit)" ;;
+    *) no "$s: open PR without a checkout VERSION not deferred: $out" ;;
+  esac
 
   d=$(fixture "$s-offbase" 1.2.0); git -C "$d" commit -q --allow-empty -m unmerged; FS=$(git -C "$d" rev-parse feature)
   pr "$d" MERGED "{\"oid\":\"$FS\"}"
