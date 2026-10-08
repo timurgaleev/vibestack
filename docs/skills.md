@@ -96,6 +96,8 @@ Full ship workflow from working branch to merged PR.
 
 Steps: establish merge base, run tests, code review, version bump if needed, create PR. Stops at each gate — does not proceed on failure. The ship command is a checklist, not a one-click deploy.
 
+No tag or release is cut before the PR merges: the version tag goes on the merge commit, and the release follows, only once the PR is merged. Re-running `/ship` on a branch whose PR already merged opens no new PR and bumps nothing — it only tags and releases the merge.
+
 Triggers: `ship this`, `ship it`, `ready to ship`
 
 ---
@@ -180,6 +182,8 @@ Triggers: `canary check`, `check canary`, `canary health`
 Merge a PR, monitor CI, verify production health after deploy.
 
 Merges on green CI, watches the deploy, queries error rates and latency, and surfaces any post-deploy regressions. Ends with a production health verdict.
+
+Right after the merge it tags the merge commit with the VERSION it carries and publishes the release with that version's CHANGELOG section (the same step `/ship` defers). An existing tag elsewhere is refused, never moved; a repo with no VERSION file is skipped.
 
 Triggers: `land and deploy`, `merge and deploy`, `deploy this PR`
 
@@ -298,11 +302,11 @@ Triggers: `benchmark`, `performance check`, `measure performance`
 ---
 
 ### `/landing-report`
-PR queue dashboard.
+VERSION queue dashboard.
 
-Lists: PRs with CI status, which are merge-ready, which are blocked, and recent merges. Gives a snapshot of what's in flight without opening GitHub.
+Lists which VERSION slots open PRs against the same base branch already claim (each read from the VERSION file at the PR's head), flags collisions, and shows the slot `/ship` would pick next at each bump level. Read-only.
 
-Triggers: `landing report`, `pr queue`, `what's ready to merge`
+Triggers: `landing report`, `version queue`, `ship queue`, `what version comes next`
 
 ---
 

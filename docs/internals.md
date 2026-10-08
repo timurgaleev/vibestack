@@ -107,7 +107,7 @@ new.
 | `vibe-question-check` | Classify a question one-way vs two-way, so a preference can never suppress a destructive confirmation |
 | `vibe-untrusted` | Wrap externally-authored text (PR/issue bodies) in a labelled envelope and flag instruction-shaped lines |
 | `vibe-review-log` / `vibe-review-read` | Append / read the per-branch review ledger the plan-* dashboards summarise |
-| `vibe-next-version` | Next free VERSION slot, skipping versions already claimed by open PRs (`--exclude-pr` drops your own) |
+| `vibe-next-version` | Next free VERSION slot, skipping versions claimed by open PRs against the same base — each PR's claim is the VERSION file at its head (`--exclude-pr` drops your own) |
 | `vibe-diff-scope` | Classify a diff as frontend / backend / docs / config, so QA and canary depth match the change |
 | `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it |
 | `vibe-design` | Design-asset generation; reports `DESIGN_NOT_AVAILABLE` without an API key |
@@ -186,14 +186,14 @@ Skills compose from snippets via `{{include lib/snippets/<name>.md}}`, expanded 
 install time by `vibe-render-skill`. Preamble/protocol snippets, in load order:
 
 1. **`session-host.md`** — session-kind + Conductor detection, `REPO_MODE`, the
-   `vibe-config` behavior flags (`PROACTIVE`, `EXPLAIN_LEVEL`, `CHECKPOINT_MODE`,
+   `vibe-config` behavior flags (`PROACTIVE`, `EXPLAIN_LEVEL`,
    `QUESTION_TUNING`), `MODEL_OVERLAY`, and the update nag.
 2. **`decision-brief.md`** — how to ask: the decision-brief format, host MCP vs
    native tool resolution, the failure/unavailable and interactive prose
    fallbacks, one-way/destructive hardening.
 3. **`working-protocols.md`** — completion status, confusion protocol, context
    health + recovery, completeness mindset, search-before-building, repo ownership.
-4. **`state-protocols.md`** — cross-session decisions, continuous checkpoint,
+4. **`state-protocols.md`** — cross-session decisions,
    skill routing, question tuning, voice, model overlay, opt-in telemetry.
 
 Plus the focused snippets: `capture-learnings`, `prior-learnings`,
@@ -201,6 +201,8 @@ Plus the focused snippets: `capture-learnings`, `prior-learnings`,
 `exit-plan-mode-gate`, `unresolved-decisions-status`, `review-readiness-dashboard`,
 `tasks-section-emit` / `-aggregate`, `browse-setup`,
 `plan-file-review-report`, `spec-review-loop`,
+`plan-binding` (how `/ship` and `/review` bind the plan a branch was built from),
+`release-after-merge` (the tag-and-release step `/ship` and `/land-and-deploy` share),
 `outside-voice-preflight` — the `CODEX_MODE` resolution the three plan reviews
 share: config switch, running-under-Codex probe, install and auth checks, and
 the branch bullets they act on.
@@ -217,7 +219,6 @@ The preamble echoes flags the skill body reads. All come from the environment or
 | `REPO_MODE` | git | `solo` (own everything) / `collaborative` (flag, don't fix) |
 | `PROACTIVE` | config | `false` → don't auto-invoke skills |
 | `EXPLAIN_LEVEL` | config | `terse` → skip optional explanation |
-| `CHECKPOINT_MODE` / `CHECKPOINT_PUSH` | config | continuous WIP commits vs explicit |
 | `QUESTION_TUNING` | config | honor recorded question preferences (`/plan-tune`) |
 | `MODEL_OVERLAY` | env | model family for self-adjustment (default `claude`) |
 | `VIBE_FORCE_CODEX_REVIEW` | env | `1` → spawn the Codex outside voice even when the host IS Codex (a live session exports `CODEX_THREAD_ID` / `CODEX_SANDBOX`, and nesting means one model reviewing itself) |
