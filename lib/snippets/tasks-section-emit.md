@@ -23,7 +23,10 @@ Rules:
 - P1 blocks ship; P2 should land same branch; P3 is a follow-up TODO.
 - If a finding produced no actionable task, do not invent one.
 - If a section had zero findings, emit `_No new tasks from <section>._`
-- Effort uses the AI-compression table from CLAUDE.md.
+- Effort shows both a human-team and a CC estimate. Derive CC time from the
+  human estimate with these default ratios (human ÷ CC): scaffolding ~100x,
+  tests ~50x, features ~30x, bug fix with regression test ~20x, architecture
+  ~5x, research ~3x. Adjust to the actual work and state the ratio you assumed.
 
 ### JSONL artifact (always write, even if zero tasks)
 
