@@ -648,14 +648,12 @@ Use AskUserQuestion:
       --assignee '<github-username>'
     rm -f "<ISSUE_BODY_FILE>"
     ```
-  - **If GitLab:**
+  - **If GitLab:** `glab issue create` has no body-file flag, so Python reads the
+    file and hands its bytes to `glab` as one argument — the body never passes
+    through shell text:
     ```bash
-    # "$(cat …)" passes the file's bytes as one argument; the shell does not
-    # re-evaluate them, unlike text typed inside the double quotes.
-    glab issue create \
-      -t 'Pre-existing test failure: <test-name>' \
-      -d "$(cat "<ISSUE_BODY_FILE>")" \
-      -a '<gitlab-username>'
+    python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","issue","create","-t",sys.argv[2],"-d",pathlib.Path(sys.argv[1]).read_text(),"-a",sys.argv[3]]).returncode)' \
+      "<ISSUE_BODY_FILE>" 'Pre-existing test failure: <test-name>' '<gitlab-username>'
     rm -f "<ISSUE_BODY_FILE>"
     ```
 - If neither CLI is available or `--assignee`/`-a` fails (user not in org, etc.), create the issue without assignee and note who should look at it in the body.
@@ -2668,7 +2666,7 @@ already landed. Print the merged PR's URL and go straight to Step 19.5, which ta
 merge commit and publishes the release. Only a `CLOSED`-without-merge PR reads as
 `NO_PR`/`NO_MR` and gets a fresh one.
 
-If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (recompute `PR_BODY_FILE` the same way in the publishing command): `gh pr edit --body-file "$PR_BODY_FILE"` (GitHub) or `glab mr update -d "$(cat "$PR_BODY_FILE")"` (GitLab). Editing is the common path on a re-run, so an unscanned edit means most ships publish unscanned.
+If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file. Editing is the common path on a re-run, so an unscanned edit means most ships publish unscanned.
 
 **Also update the PR title** if the version changed on rerun (never under NO_VERSION — there is no version to put in it). PR titles use the workspace-aware format `v<NEW_VERSION> <type>: <summary>` — version ALWAYS first. If the current title's version prefix doesn't match `NEW_VERSION`, run `gh pr edit --title "v$NEW_VERSION <type>: <summary>"` (or the `glab mr update -t ...` equivalent). This keeps the title truthful when Step 12's queue-drift detection rebumps a stale version. If the title has no `v<version>` prefix (a custom title kept intentionally), leave the title alone — only rewrite titles that already follow the format.
 
@@ -2773,16 +2771,22 @@ instructions prescribe. Otherwise nothing — no footer line at all.>
 scan that file, then publish the same file. Scanning a draft and re-rendering the
 text into the command means the bytes you checked are not the bytes you send.
 
+The body quotes test output, review findings and Codex output, so it never
+appears in shell source — not in a quoted argument, and not in a heredoc either: a
+pasted line equal to the terminator ends the heredoc and everything after it runs
+as shell. Create a private file for it:
+
 ```bash
-# Deterministic name, so the later publish block recomputes the same path —
-# shell variables do not survive from one command to the next.
-PR_BODY_FILE="/tmp/vibestack-ship-body-$(git branch --show-current | tr '/' '-').md"
-cat > "$PR_BODY_FILE" <<'EOF'
-<PR body from above>
-EOF
+PR_BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/vibestack-ship-body-XXXXXXXX")
+echo "PR_BODY_FILE: $PR_BODY_FILE"
 ```
 
-Read `$PR_BODY_FILE` and scan its exact contents — **and the title string** — for
+Read the empty file, then **Write the composed body into the printed
+`PR_BODY_FILE` with the Write tool** — never `echo`, `printf` or a heredoc. Shell
+variables do not survive from one command to the next, so the publish blocks
+below take that printed path in place of `<PR_BODY_FILE>`.
+
+Read `PR_BODY_FILE` and scan its exact contents — **and the title string** — for
 high-confidence secrets. Quote any pasted tool output (test logs, Codex output,
 stack traces) inside a fenced block in the body, so a credential-shaped string in
 someone else's output can't be mistaken for prose. On a match, stop and tell the
@@ -2792,7 +2796,8 @@ user to redact + rotate before continuing — do not publish.
 **If GitHub:**
 
 ```bash
-PR_BODY_FILE="/tmp/vibestack-ship-body-$(git branch --show-current | tr '/' '-').md"
+PR_BODY_FILE='<PR_BODY_FILE>'
+[ -s "$PR_BODY_FILE" ] || { echo "ABORT: $PR_BODY_FILE is empty — write the body with the Write tool first" >&2; exit 1; }
 # NO_VERSION: drop the "v$NEW_VERSION " prefix — the title is "<type>: <summary>".
 gh pr create --base <base> --title "v$NEW_VERSION <type>: <summary>" --body-file "$PR_BODY_FILE"
 rm -f "$PR_BODY_FILE"
@@ -2801,9 +2806,12 @@ rm -f "$PR_BODY_FILE"
 **If GitLab:**
 
 ```bash
-PR_BODY_FILE="/tmp/vibestack-ship-body-$(git branch --show-current | tr '/' '-').md"
+PR_BODY_FILE='<PR_BODY_FILE>'
+[ -s "$PR_BODY_FILE" ] || { echo "ABORT: $PR_BODY_FILE is empty — write the body with the Write tool first" >&2; exit 1; }
 # NO_VERSION: drop the "v$NEW_VERSION " prefix — the title is "<type>: <summary>".
-glab mr create -b <base> -t "v$NEW_VERSION <type>: <summary>" -d "$(cat "$PR_BODY_FILE")"
+# glab has no body-file flag: Python reads the file and passes its bytes as one argument.
+python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","create","-b",sys.argv[2],"-t",sys.argv[3],"-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' \
+  "$PR_BODY_FILE" "<base>" "v$NEW_VERSION <type>: <summary>"
 rm -f "$PR_BODY_FILE"
 ```
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # pr-thread-reply.sh <thread_id> <body> [--resolve]
+# pr-thread-reply.sh <thread_id> --body-file <path> [--resolve]
 #
 # Reply to one review thread on the current PR; with --resolve, also mark
 # the thread resolved. Prints the URL of the new comment.
@@ -16,20 +17,31 @@
 # checks that the thread belongs to it — a stale id left over from an earlier
 # round would otherwise post a reply on a different PR without a word.
 #
+# --body-file reads the reply from a file, so reply text — which quotes code and
+# reviewer comments — never has to appear in shell source.
+#
 # Exit 0 on success, 1 on bad arguments or API failure.
 # Exit 2 when the branch has no PR, or when gh cannot see the repo.
 set -euo pipefail
 
 usage() {
-  echo "usage: pr-thread-reply.sh <thread_id> <body> [--resolve]" >&2
+  echo "usage: pr-thread-reply.sh <thread_id> <body>|--body-file <path> [--resolve]" >&2
   exit 1
 }
 
 [ $# -ge 2 ] || usage
 THREAD_ID="$1"
-BODY="$2"
+shift
+if [ "$1" = "--body-file" ]; then
+  [ $# -ge 2 ] || usage
+  { [ -f "$2" ] && [ -r "$2" ]; } || { echo "pr-thread-reply: cannot read body file '$2'" >&2; exit 1; }
+  BODY=$(cat "$2")
+  shift 2
+else
+  BODY="$1"
+  shift
+fi
 RESOLVE=0
-shift 2
 while [ $# -gt 0 ]; do
   case "$1" in
     --resolve) RESOLVE=1 ;;

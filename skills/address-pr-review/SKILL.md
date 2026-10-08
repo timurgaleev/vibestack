@@ -251,12 +251,27 @@ and say so; Step 6 still runs.
 ## Step 6: Reply on every thread
 
 Use the reply script once per thread. One invocation posts the reply and, with
-`--resolve`, marks the thread resolved:
+`--resolve`, marks the thread resolved.
+
+A reply quotes code and the reviewer's own words, so it never appears in shell
+source — inside double quotes its backticks and `$(...)` would run on this
+machine. Create a private file per reply:
 
 ```bash
-bash "${CLAUDE_SKILL_DIR}/bin/pr-thread-reply.sh" "<thread_id>" "<reply text>" --resolve
-bash "${CLAUDE_SKILL_DIR}/bin/pr-thread-reply.sh" "<thread_id>" "<reply text>"
+REPLY_FILE=$(mktemp "${TMPDIR:-/tmp}/vibe-pr-reply-XXXXXXXX")
+echo "REPLY_FILE: $REPLY_FILE"
 ```
+
+Read the empty file, Write the reply into the printed path with the Write tool, then
+post it, substituting the thread id and that path:
+
+```bash
+bash "${CLAUDE_SKILL_DIR}/bin/pr-thread-reply.sh" "<thread_id>" --body-file '<REPLY_FILE>' --resolve
+bash "${CLAUDE_SKILL_DIR}/bin/pr-thread-reply.sh" "<thread_id>" --body-file '<REPLY_FILE>'
+```
+
+Remove the file once the script has printed the comment URL. A retry after a
+partial success reuses the same file, so keep it until then.
 
 It prints the URL of the new comment; keep it for the report.
 
