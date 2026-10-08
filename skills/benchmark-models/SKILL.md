@@ -10,6 +10,7 @@ triggers:
 allowed-tools:
   - Bash
   - Read
+  - Write
   - AskUserQuestion
 ---
 
@@ -83,7 +84,10 @@ echo "PROMPT_FILE: $PROMPT_FILE"
 ```
 
 Read the empty file, then Write the prompt into the printed path verbatim with the
-Write tool, and use that path as the positional argument, exactly as in C.
+Write tool, and use that path as the positional argument, exactly as in C. The file holds
+the user's text, so remove it once the benchmark finishes or stops early — run
+`rm -f "<PROMPT_FILE>"` with the printed path before the final report, including after
+an error or a cancelled run.
 
 If C: ask for the path. Verify it exists. Use as positional argument.
 

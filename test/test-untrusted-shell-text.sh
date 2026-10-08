@@ -517,6 +517,20 @@ else
   no "office-hours approve: $(cat "$TMP/err")"
 fi
 
+# The file-based pattern only works when the skill may write: a skill that tells
+# the model to use the Write tool must grant it in allowed-tools.
+echo "Write tool granted where it is required"
+for s in "$SRC"/skills/*/SKILL.md; do
+  n="$(basename "$(dirname "$s")")"
+  grep -q 'Write tool' "$s" || continue
+  fm="$(awk 'NR==1 && /^---$/ {on=1; next} on && /^---$/ {exit} on' "$s")"
+  if printf '%s\n' "$fm" | grep -Eq '^allowed-tools:.*(^|[ ,])Write([ ,]|$)|^[[:space:]]*-[[:space:]]*Write[[:space:]]*$'; then
+    ok "$n grants Write"
+  else
+    no "$n tells the model to use the Write tool but allowed-tools does not grant Write"
+  fi
+done
+
 echo
 echo "untrusted-shell-text: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -1,7 +1,7 @@
 ---
 name: pr-summary
 description: Analyze all PR changes and update PR description with accurate summary.
-allowed-tools: Read, Bash, Grep, Glob
+allowed-tools: Read, Write, Bash, Grep, Glob
 ---
 
 ## Preamble

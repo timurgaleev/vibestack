@@ -9,6 +9,7 @@ triggers:
 allowed-tools:
   - Bash
   - Read
+  - Write
   - AskUserQuestion
 ---
 

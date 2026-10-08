@@ -5,6 +5,7 @@ description: |
   CEO/founder-mode plan review. Rethink the problem, find the 10-star product, challenge premises, expand scope when it creates a better product. Four modes: SCOPE EXPANSION (dream big), SELECTIVE EXPANSION (hold scope + cherry-pick expansions), HOLD SCOPE (maximum rigor), SCOPE REDUCTION (strip to essentials).
 allowed-tools:
   - Read
+  - Write
   - Grep
   - Glob
   - Bash
