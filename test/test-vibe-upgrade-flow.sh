@@ -100,6 +100,18 @@ mkdir -p "$H/.local/state/vibekit"; : > "$H/.local/state/vibekit/manifest_claude
 replay_block "$T/co" >/dev/null 2>&1
 grep -q -- "--only=config --target=claude" "$R" 2>/dev/null && ok "a config manifest adds a config replay" \
                                                         || no "no config replay for a config manifest"
+# RTK follows the first install, never PATH: an rtk binary on PATH must not
+# re-enable it for a config installed with --no-rtk, and its hook keeps it on.
+mkdir -p "$T/rtkbin"; printf '#!/bin/sh\n' > "$T/rtkbin/rtk"; chmod +x "$T/rtkbin/rtk"
+mkdir -p "$H/.claude"; echo '{}' > "$H/.claude/settings.json"
+PATH="$T/rtkbin:$PATH" replay_block "$T/co" >/dev/null 2>&1
+grep -q -- "--only=config.*--no-rtk" "$R" 2>/dev/null && ok "rtk on PATH does not override an install without RTK" \
+                                                     || no "replay re-enables RTK because rtk is on PATH"
+echo '{"hooks":{"PreToolUse":[{"hooks":[{"command":"rtk hook"}]}]}}' > "$H/.claude/settings.json"
+replay_block "$T/co" >/dev/null 2>&1
+grep -q -- "--only=config" "$R" && ! grep -q -- "--no-rtk" "$R" && ok "an installed RTK hook keeps RTK in the replay" \
+                                                              || no "RTK hook present but replay passes --no-rtk"
+rm -f "$H/.claude/settings.json"
 
 setup; out="$(replay_block "$T/co" 2>&1)"; rc=$?
 if [ $rc -ne 0 ] && case "$out" in REPLAY_UNKNOWN*) true ;; *) false ;; esac; then

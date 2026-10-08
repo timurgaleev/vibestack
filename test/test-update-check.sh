@@ -66,6 +66,15 @@ fi
 echo 1.1.0 > "$TMP/seed/VERSION"; $G -C "$TMP/seed" commit -qam back
 git -C "$TMP/seed" push -q "$TMP/remote.git" main
 
+echo "pulled but not installed"
+git -C "$TMP/co" pull -q 2>/dev/null
+rm -f "$H/.vibestack/.update-check-stamp"
+out="$(run --force)"
+case "$out" in
+  "UPDATE: vibestack 1.1.0 is available (you have 1.0.0)"*) ok "compares the installed version, not the pulled checkout" ;;
+  *) no "checkout pulled, install pending: got '$out'" ;;
+esac
+
 echo "failed fetch"
 rm -f "$H/.vibestack/.update-check-stamp"
 git -C "$TMP/co" remote set-url origin "$TMP/missing.git"
@@ -81,6 +90,16 @@ esac
                                             || no "no failure stamp after a failed check"
 out="$(run)"
 [ -z "$out" ] && ok "preamble mode stays quiet on failure" || no "preamble mode printed '$out'"
+
+echo "credentials in the remote URL"
+rm -f "$H/.vibestack/.update-check-failed"
+git -C "$TMP/co" remote set-url origin "https://user:s3cr3tT0ken@127.0.0.1:9/x.git"
+out="$(run --force)"
+case "$out" in
+  CHECK_FAILED*s3cr3tT0ken*) no "CHECK_FAILED leaks the token: '$out'" ;;
+  CHECK_FAILED*) ok "CHECK_FAILED names the remote without its credentials" ;;
+  *) no "credentialed remote: got '$out'" ;;
+esac
 
 echo "no checkout"
 H2="$TMP/h2"

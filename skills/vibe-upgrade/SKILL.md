@@ -211,7 +211,9 @@ if [ -z "$_USER_T$_PROJ_T$_CFG_T" ]; then
   echo "REPLAY_UNKNOWN — no install manifest found; cannot tell which runtimes to refresh"
   exit 1
 fi
-_RTK=""; command -v rtk >/dev/null 2>&1 || _RTK=" --no-rtk"
+# RTK follows what the first install did, not what is on PATH: the config phase
+# leaves its hook in Claude's settings, and --no-rtk leaves none.
+_RTK=" --no-rtk"; grep -q 'rtk' "$HOME/.claude/settings.json" 2>/dev/null && _RTK=""
 mkdir -p "$_VH" || { echo "REPLAY_UNWRITABLE $_VH"; exit 1; }
 {
   echo '#!/usr/bin/env bash'
