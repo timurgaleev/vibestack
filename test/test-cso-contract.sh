@@ -10,6 +10,8 @@
 #   - Phase 2 never prints secret-bearing patches, and its redaction filter
 #     hides quoted, multi-word, short and bare credentials both in git-history
 #     hits and in CI-config matches (run against fixture repos);
+#   - a secret commit reachable only from a local, unpushed tag is not remote
+#     exposure, and the same tag pushed is (run against fixture repos);
 #   - the incident playbook does not advise rewriting or force-pushing history;
 #   - OWASP Top 10:2025, API Security Top 10:2023 and ASVS 5.0.0 labels;
 #   - agentic and MCP coverage in Phase 7;
@@ -167,6 +169,44 @@ printf '%s\n' "$INSPECT" > "$TMP/inspect-nofilter.sh"
 NOF="$(cd "$REPO" && SHA="$SHA" FILE=app.env bash "$TMP/inspect-nofilter.sh" 2>&1 || true)"
 case "$NOF" in *"nothing was inspected"*) ok "inspect reports a missing filter";; *) no "inspect reports a missing filter (got: $NOF)";; esac
 case "$NOF" in *"$FAKE_AWS"*) no "inspect without filter leaked";; *) ok "inspect without filter prints no secret";; esac
+
+echo "remote exposure"
+# A tag that only exists locally is not remote exposure; the same tag pushed is.
+hasnt "local tags alone are not exposure"  '`git tag --contains <sha>` both empty'
+EXPOSE="$(extract '**Remote exposure of a commit.**' 2>/dev/null || true)"
+printf '%s\n' "$EXPOSE" > "$TMP/expose.sh"
+case "$EXPOSE" in *'EXPOSURE:'*) ok "exposure block present";; *) no "exposure block present";; esac
+G() { git -C "$1" -c user.name=t -c user.email=t@example.invalid "${@:2}"; }
+XR="$TMP/xrepo"; XB="$TMP/xremote.git"
+git init -q --bare "$XB"
+git init -q "$XR"
+G "$XR" commit -q --allow-empty -m base
+G "$XR" remote add origin "$XB"
+G "$XR" push -q origin HEAD:refs/heads/main
+G "$XR" fetch -q origin
+G "$XR" checkout -q -b leak
+printf 'API_KEY=%s\n' "$FAKE_GH" > "$XR/leak.env"
+G "$XR" add leak.env
+G "$XR" commit -qm leak
+XSHA="$(git -C "$XR" rev-parse HEAD)"
+G "$XR" tag -a v-leak -m leak
+G "$XR" tag v-light
+G "$XR" checkout -q --detach HEAD~1
+G "$XR" branch -q -D leak
+expose() { (cd "$XR" && SHA="$XSHA" bash "$TMP/expose.sh" 2>&1 | grep '^EXPOSURE:' || true); }
+X="$(expose)"
+[ "$X" = "EXPOSURE: local only" ] && ok "local-only tags are not remote exposure" || no "local-only tags are not remote exposure (got: ${X:-nothing})"
+G "$XR" push -q origin v-light
+X="$(expose)"
+[ "$X" = "EXPOSURE: remote" ] && ok "pushed lightweight tag is remote exposure" || no "pushed lightweight tag is remote exposure (got: ${X:-nothing})"
+git -C "$XB" tag -d v-light >/dev/null
+G "$XR" push -q origin v-leak
+X="$(expose)"
+[ "$X" = "EXPOSURE: remote" ] && ok "pushed annotated tag is remote exposure" || no "pushed annotated tag is remote exposure (got: ${X:-nothing})"
+git -C "$XB" tag -d v-leak >/dev/null
+G "$XR" remote set-url origin "$TMP/no-such-remote.git"
+X="$(expose)"
+[ "$X" = "EXPOSURE: unknown" ] && ok "unreachable remote is unknown, not local only" || no "unreachable remote is unknown, not local only (got: ${X:-nothing})"
 
 echo "recheck scope"
 has   "recheck runs Phase 1 (rule 6)"      "(Phases 0-1, the finding's own phase, 12-14)"

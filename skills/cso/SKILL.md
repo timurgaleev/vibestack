@@ -225,7 +225,34 @@ git show <sha> -- <file> 2>/dev/null \
 ```
 That excerpt is enough to judge the prefix, the variable name and the context. Do not open the file at that commit without the filter, and do not echo the value into a finding, the report, a learning, or a command line. A finding cites the commit, file and line plus the redacted excerpt.
 
-Whether a remote ever held the commit decides exposure: `git branch -r --contains <sha>` and `git tag --contains <sha>`.
+**Remote exposure of a commit.** Whether a remote ever held the commit decides exposure. A remote-tracking branch that contains it is remote evidence. A tag that contains it is evidence only if the remote has that tag too: `git tag --contains` also lists tags that were created locally and never pushed, so each one is checked against the remote's own tag refs before it counts:
+```bash
+SHA=<sha>
+exposure="local only"
+for b in $(git branch -r --contains "$SHA" 2>/dev/null | grep -v ' -> '); do echo "remote branch: $b"; exposure=remote; done
+for t in $(git tag --contains "$SHA" 2>/dev/null); do
+  where="local only"
+  for r in $(git remote); do
+    if ! refs=$(git ls-remote --tags "$r" "refs/tags/$t" 2>/dev/null); then
+      [ "$where" = "local only" ] && where="unknown ($r unreachable)"; continue
+    fi
+    oid=$(printf '%s\n' "$refs" | awk -v p="refs/tags/$t^{}" '$2 == p {print $1}')
+    [ -n "$oid" ] || oid=$(printf '%s\n' "$refs" | awk -v p="refs/tags/$t" '$2 == p {print $1}')
+    [ -n "$oid" ] || continue
+    if ! git cat-file -e "$oid^{commit}" 2>/dev/null; then
+      [ "$where" = "local only" ] && where="unknown ($r tag points at a commit not fetched)"; continue
+    fi
+    if git merge-base --is-ancestor "$SHA" "$oid" 2>/dev/null; then where="remote ($r)"; break; fi
+  done
+  echo "tag $t: $where"
+  case "$where" in
+    remote*) exposure=remote ;;
+    unknown*) [ "$exposure" = remote ] || exposure=unknown ;;
+  esac
+done
+echo "EXPOSURE: $exposure"
+```
+`EXPOSURE: remote` means a remote held the commit, so the secret is a finding even if a later commit removed it. `EXPOSURE: unknown` is not evidence of safety — a remote could not be asked — so treat it like `remote` and say in the finding which remote could not be checked. Only `EXPOSURE: local only` with no PR ref qualifies for exclusion 18.
 
 **.env files tracked by git:**
 ```bash
@@ -579,7 +606,7 @@ Before producing findings, run every candidate through this filter.
 15. Security concerns in documentation files (*.md) — **EXCEPTION:** SKILL.md files are NOT documentation. They are executable prompt code (skill definitions) that control AI agent behavior. Findings from Phase 8 (Skill Supply Chain) in SKILL.md files must NEVER be excluded under this rule.
 16. Missing audit logs — absence of logging is not a vulnerability — **EXCEPTION:** the Phase 5b CloudTrail check asks whether a live account has tamper-evident coverage of its own control plane (multi-region, log file validation on, actually logging), which is the account's forensic record of an intrusion, not application logging. Do not discard it under this rule.
 17. Insecure randomness in non-security contexts (e.g., UI element IDs)
-18. Git history secrets in commits no remote ever held (`git branch -r --contains <sha>` and `git tag --contains <sha>` both empty, no PR ref) — once pushed, a secret is a finding even if the same PR removed it
+18. Git history secrets in commits no remote ever held (the Phase 2 remote exposure check prints `EXPOSURE: local only`, no PR ref) — a tag that exists only locally is not exposure. Once pushed, a secret is a finding even if the same PR removed it
 19. Dependency CVEs with CVSS < 4.0 and no known exploit
 20. Docker issues in files named `Dockerfile.dev` or `Dockerfile.local` unless referenced in prod deploy configs
 21. CI/CD findings on archived or disabled workflows
