@@ -125,7 +125,21 @@ You are running the `/review` workflow. Analyze the current branch's diff agains
 
 1. Run `git branch --show-current` to get the current branch.
 2. If on the base branch, output: **"Nothing to review — you're on the base branch or have no changes against it."** and stop.
-3. Run `git fetch origin <base> --quiet && git diff $(git merge-base origin/<base> HEAD) --stat` to check if there's a diff. If no diff, output the same message and stop.
+3. Refresh the base and check for a diff. The fetch and the diff are separate: a failed
+   fetch (offline, VPN drop, read-only `.git` in a sandbox) must not read as an empty diff.
+
+   ```bash
+   if git fetch origin <base> --quiet; then echo "BASE_REFRESH: fresh"
+   else echo "BASE_REFRESH: stale $(git rev-parse --short origin/<base> 2>/dev/null || echo missing)"; fi
+   DIFF_BASE=$(git merge-base origin/<base> HEAD 2>/dev/null) || DIFF_BASE=""
+   echo "DIFF_BASE: ${DIFF_BASE:-none}"
+   [ -n "$DIFF_BASE" ] && git diff "$DIFF_BASE" --stat
+   echo "UNTRACKED:"; git ls-files --others --exclude-standard
+   ```
+
+   - `DIFF_BASE: none` → output **"Cannot review — no merge base with `origin/<base>`: either the base is not available locally (the fetch failed) or the branch shares no history with it. Fetch the base, or check the branch was cut from `<base>`, and re-run."** and stop. This is never "Nothing to review".
+   - `BASE_REFRESH: stale <rev>` → continue against the local base, and put `Base coverage: stale at <rev> (fetch failed)` in the review output.
+   - Only when the stat is empty AND `UNTRACKED:` lists nothing, output the "Nothing to review" message above and stop.
 
 ---
 
@@ -179,37 +193,15 @@ Before reviewing code quality, check: **did they build what was requested — no
 
 ### Plan File Discovery
 
-1. **Conversation context (primary):** Check if there is an active plan file in this conversation. The host agent's system messages include plan file paths when in plan mode. If found, use it directly — this is the most reliable signal.
+{{include lib/snippets/plan-binding.md}}
 
-2. **Content-based search (fallback):** If no plan file is referenced in conversation context, search by content:
+4. **No binding and no chosen candidate:** print exactly this line and skip the plan completion audit (scope drift still runs from the fallback intent sources below):
+   `Plan completion audit: not run (no plan is bound to this branch). Fix: add "Plan: <path>" to the PR body, or run /autoplan.`
+   Not run is not PASS — never report the plan as complete when nothing was audited.
 
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-# BRANCH is interpolated into a grep pattern below, so strip anything that would
-# read as a regex metacharacter rather than a literal branch name.
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' | tr -cd 'a-zA-Z0-9._-')
-REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
-# Compute project slug for ~/.vibestack/projects/ lookup
-_PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
-_PLAN_SLUG="${_PLAN_SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
-# Search common plan file locations (project designs first, then personal/local)
-for PLAN_DIR in "$HOME/.vibestack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".vibestack/plans"; do
-  [ -d "$PLAN_DIR" ] || continue
-  PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$BRANCH" 2>/dev/null | head -1)
-  [ -z "$PLAN" ] && PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$REPO" 2>/dev/null | head -1)
-  # -r matters: GNU xargs runs `ls -t` even on empty input, which lists the working
-  # directory and hands PLAN an arbitrary repo file that was never a plan.
-  [ -z "$PLAN" ] && PLAN=$(find "$PLAN_DIR" -name '*.md' -mmin -1440 -maxdepth 1 2>/dev/null | xargs -r ls -t 2>/dev/null | head -1)
-  [ -n "$PLAN" ] && break
-done
-[ -n "$PLAN" ] && echo "PLAN_FILE: $PLAN" || echo "NO_PLAN_FILE"
-```
-
-3. **Validation:** If a plan file was found via content-based search (not conversation context), read the first 20 lines and verify it is relevant to the current branch's work. If it appears to be from a different project or feature, treat as "no plan file found."
-
-**Error handling:**
-- No plan file found → skip with "No plan file detected — skipping."
-- Plan file found but unreadable (permissions, encoding) → skip with "Plan file found but unreadable — skipping."
+**Error handling:** a bound or chosen plan file that is unreadable (permissions,
+encoding) is reported as `Plan completion audit: error (<path> unreadable: <reason>)`,
+not as "no plan" and not as zero counts.
 
 ### Actionable Item Extraction
 
@@ -406,10 +398,23 @@ Read `.claude/skills/review/greptile-triage.md` and follow the fetch, filter, cl
 Fetch the latest base branch to avoid false positives from stale local state:
 
 ```bash
-git fetch origin <base> --quiet
+git fetch origin <base> --quiet || echo "BASE_REFRESH: stale $(git rev-parse --short origin/<base>)"
+~/.vibestack/bin/vibe-review-log --snapshot || echo "START_TREE: unknown"
 ```
 
+Record the printed snapshot as `START_TREE` **before** reading the diff — Step 5.8 passes
+it to the logger, which refuses a `clean` record if the tree moved after this point. On a
+re-review pass (Step 5e) capture a new one here; never reuse an earlier pass's value. If
+the snapshot printed `unknown`, omit `start_tree` from the record. A stale fetch is
+reported as in Step 1, not treated as no diff.
+
 Run `git diff $(git merge-base origin/<base> HEAD)` to get the full diff. This includes both committed and uncommitted changes against the latest base branch.
+
+**Untracked files are part of the change.** `git diff` does not show a new file that has
+not been `git add`-ed, and before `/ship` commits anything that is the common case for
+new code. Run `git ls-files --others --exclude-standard` and read every listed source file
+in full, as if it were an all-added hunk. Skip only binaries and generated output, and
+name what you skipped. Every reviewer prompt below gets the same instruction.
 
 ## Step 3.4: Workspace-aware queue status (advisory)
 
@@ -551,7 +556,9 @@ STACK=""
 echo "STACK: ${STACK:-unknown}"
 DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
 DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
-DIFF_LINES=$((DIFF_INS + DIFF_DEL))
+# New files not yet added are invisible to git diff --stat; count their lines too.
+UNTRACKED_LINES=$(git ls-files -z --others --exclude-standard | xargs -0 cat 2>/dev/null | wc -l | tr -d ' ')
+DIFF_LINES=$((DIFF_INS + DIFF_DEL + ${UNTRACKED_LINES:-0}))
 echo "DIFF_LINES: $DIFF_LINES"
 # Detect test framework for specialist test stub generation
 TEST_FW=""
@@ -630,7 +637,7 @@ If learnings are found, include them: "Past learnings for this domain: {learning
 4. Instructions:
 
 "You are a specialist code reviewer. Read the checklist below, then run
-`git diff $(git merge-base origin/<base> HEAD)` to get the full diff. Apply the checklist against the diff.
+`git diff $(git merge-base origin/<base> HEAD)` to get the full diff. Then run `git ls-files --others --exclude-standard` and read each listed source file in full — new files not yet added are part of the change and git diff does not show them. Apply the checklist against the diff and those files.
 
 For each finding, output a JSON object on its own line:
 {\"severity\":\"CRITICAL|INFORMATIONAL\",\"confidence\":N,\"path\":\"file\",\"line\":N,\"category\":\"category\",\"summary\":\"description\",\"fix\":\"recommended fix\",\"fingerprint\":\"path:line:category\",\"specialist\":\"name\"}
@@ -659,7 +666,12 @@ CHECKLIST:
   flag no longer produces a foreground run: the calls return immediately with
   nothing, the merge sees an empty set, and the run reports a clean review it
   never performed.
-- If any specialist subagent fails or times out, log the failure and continue with results from successful specialists. Specialists are additive — partial results are better than no results.
+- If any specialist subagent fails, times out, or returns output that is neither JSON
+  findings nor `NO FINDINGS`, keep the findings from the specialists that did finish, but
+  name the failed specialist in the output (`Specialist <name>: NO COVERAGE — <reason>`)
+  and mark the run **incomplete**: its `specialists` entry gets `"completed":false` and
+  Step 5.8 records `completed:false`. Missing or unusable output is incomplete coverage,
+  never an empty success.
 
 ---
 
@@ -725,7 +737,7 @@ The Fix-First heuristic applies identically — specialist findings follow the s
 **Compile per-specialist stats:**
 After merging findings, compile a `specialists` object for the review-log entry in Step 5.8.
 For each specialist (testing, maintainability, security, performance, data-migration, api-contract, design, simplification, red-team):
-- If dispatched: `{"dispatched": true, "findings": N, "critical": N, "informational": N}`
+- If dispatched: `{"dispatched": true, "completed": true, "findings": N, "critical": N, "informational": N}` — `"completed": false` when it failed, timed out or returned unusable output (its counts are then 0 and mean nothing)
 - If skipped by scope: `{"dispatched": false, "reason": "scope"}`
 - If skipped by gating: `{"dispatched": false, "reason": "gated"}`
 - If not applicable (e.g., red-team not activated): omit from the object
@@ -748,7 +760,8 @@ The Red Team subagent receives:
 
 Prompt: "You are a red team reviewer. The code has already been reviewed by N specialists
 who found the following issues: {merged findings summary}. Your job is to find what they
-MISSED. Read the checklist, run `git diff $(git merge-base origin/<base> HEAD)`, and look for gaps.
+MISSED. Read the checklist, run `git diff $(git merge-base origin/<base> HEAD)`, read the
+untracked files listed by `git ls-files --others --exclude-standard`, and look for gaps.
 Output findings as JSON objects (same schema as the specialists). Focus on cross-cutting
 concerns, integration boundary issues, and failure modes that specialist checklists
 don't cover."
@@ -757,7 +770,10 @@ If the Red Team finds additional issues, merge them into the findings list befor
 Step 5 Fix-First. Red Team findings are tagged with `"specialist":"red-team"`.
 
 If the Red Team returns NO FINDINGS, note: "Red Team review: no additional issues found."
-If the Red Team subagent fails or times out, skip silently and continue.
+If the Red Team subagent fails, times out, or returns unusable output, say so —
+`Red Team: NO COVERAGE — <reason>` — and continue. An activated Red Team that did not
+finish makes the run incomplete (Step 5.8 `completed:false`); it is never reported as
+"no additional issues found".
 
 ---
 
@@ -776,7 +792,9 @@ pass here has returned (or been recorded as missing coverage).
 ```bash
 DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
 DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
-DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
+# New files not yet added are invisible to git diff --stat; count their lines too.
+UNTRACKED_LINES=$(git ls-files -z --others --exclude-standard | xargs -0 cat 2>/dev/null | wc -l | tr -d ' ')
+DIFF_TOTAL=$((DIFF_INS + DIFF_DEL + ${UNTRACKED_LINES:-0}))
 echo "DIFF_SIZE: $DIFF_TOTAL"
 
 # Legacy opt-out — only gates Codex passes, Claude always runs
@@ -846,6 +864,10 @@ Subagent prompt:
 Read NON-fixture source code in full:
 `git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*/test/*' ':(exclude)*/tests/*' ':(exclude)*/__tests__/*' ':(exclude)*/fixtures/*' ':(exclude)*_test.*' ':(exclude)*.test.*' ':(exclude)*.spec.*'`
 
+Then list new files that are not yet added — `git diff` does not show them:
+`git ls-files --others --exclude-standard`. Read each non-fixture source file there in
+full too; fixture and test files among them follow the summary-mode rule below.
+
 Match test directories and filename suffixes, never the bare substring `test`: `*test*` also excludes `latest.ts`, `contest.ts` and `attestation.ts`, and a production file dropped here is never read in full by the adversarial pass — the later stat-only pass cannot see its logic.
 
 Review fixture and test files in SUMMARY mode only:
@@ -863,7 +885,7 @@ abandoned one."
 
 Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** are queued for Step 5 Fix-First, where they are classified, fixed or asked about together with every other finding — do not edit during Step 4.8. **INVESTIGATE findings** are presented as informational.
 
-If the subagent fails, times out, or returns without its closing `Recommendation:` line: "Claude adversarial subagent unavailable — this pass produced NO coverage. Continuing." Mark it ✗ in the synthesis below; an absent pass is never counted as a clean one.
+If the subagent fails, times out, or returns without its closing `Recommendation:` line: "Claude adversarial subagent unavailable — this pass produced NO coverage. Continuing." Mark it ✗ in the synthesis below; an absent pass is never counted as a clean one, and the run is recorded `completed:false` (Step 5.8).
 
 ---
 
@@ -878,7 +900,7 @@ _TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || 
 # An array, not ${_TIMEOUT:+$_TIMEOUT 540}: zsh does not word-split that expansion, so the
 # wrapper would run as a single command named "timeout 540" and fail with exit 127.
 _TO=(); [ -n "$_TIMEOUT" ] && _TO=("$_TIMEOUT" 540)
-"${_TO[@]}" codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
+"${_TO[@]}" codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff, then read every file listed by git ls-files --others --exclude-standard: new files not yet added are part of the change. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
 ```
 
 Set the Bash tool's `timeout` parameter to `600000` (10 minutes). It sits deliberately
@@ -953,6 +975,8 @@ fi
 echo "GATE: $_CX_GATE ($_CX_WHY)"
 ```
 
+**Untracked files are outside this gate.** `codex review --base` reads the git diff only, so new files not yet added are invisible to it. Its PASS never covers them; the core review and the adversarial passes, which do include untracked files, are what cover them.
+
 **Sandbox pinned read-only.** `codex review` has no `-s`/`--sandbox` flag, so without the
 config override it inherits `~/.codex/config.toml` — on a user who granted write access to
 trusted projects, that is Codex with write permission on the repo during what this step
@@ -1016,9 +1040,18 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
-Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
+Substitute: COMPLETED = `true` only if the Claude adversarial subagent finished with its
+closing `Recommendation:` line AND every Codex pass that was started (adversarial
+challenge, structured review) finished with usable output; otherwise `false`. Codex that
+is not installed or not authenticated was never started and does not make this `false` —
+SOURCE records it. STATUS = "issues_found" if any pass found issues; otherwise "clean"
+only when COMPLETED is `true`, and "incomplete" when it is `false` — a pass that did not
+finish found nothing because it read nothing. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If every pass failed, still persist — with
+STATUS "incomplete" and COMPLETED `false` — so the dashboard sees a review that did not
+run instead of no record at all. On a re-review pass (Step 5e) persist again; the latest
+entry supersedes.
 
 ---
 
@@ -1034,6 +1067,7 @@ ADVERSARIAL REVIEW SYNTHESIS (always-on, N lines):
   Unique to Claude adversarial: [from subagent]
   Unique to Codex: [from codex adversarial or code review, if ran]
   Models used: Claude structured ✓  Claude adversarial ✓/✗  Codex ✓/✗
+  Coverage: complete | INCOMPLETE — <each specialist, Red Team or adversarial pass that did not finish, with reason>
 ════════════════════════════════════════════════════════════
 ```
 
@@ -1134,6 +1168,24 @@ Apply fixes for items where the user chose "Fix." Output what was fixed.
 
 If no ASK items exist (everything was AUTO-FIX), skip the question entirely.
 
+### Step 5e: Re-review the fixes (bounded)
+
+Fixes from Step 5b and 5d — and any test files written with them — are new code that no
+reviewer has read. Keep a count, `CYCLES`, of passes that edited files (it starts at 0).
+
+- **This pass changed no file:** the review has converged. Continue to the next step.
+- **This pass changed files and `CYCLES` (after adding one) is below 3:** repeat Steps 3
+  through 5 on the current tree — a new `START_TREE` in Step 3, the critical pass, the
+  same specialists the first pass dispatched (no re-gating), the Red Team if it was
+  activated, and every Step 4.8 adversarial pass — against the full diff, not only the
+  fix hunks. Steps 3.4 and 3.5 are advisory and may be skipped on a repeat. A finding the
+  user already chose Skip for in this invocation is carried as `skipped`, not asked again;
+  a problem a fix introduced is a new finding.
+- **This pass changed files and `CYCLES` reaches 3:** do not start another pass. Step 5.8
+  records `converged:false` and status `issues_found`. Report
+  `Review did not converge after 3 fix cycles — these edits are unreviewed:` followed by
+  the files the last cycle changed. Never present this run as clean.
+
 ### Verification of claims
 
 Before producing the final review output:
@@ -1163,6 +1215,8 @@ Before replying to any comment, run the **Escalation Detection** algorithm from 
      - C) Ignore — don't reply, don't fix
 
    If the user chooses A, reply using the **False Positive reply template** from greptile-triage.md (include evidence + suggested re-rank), save to both per-project and global greptile-history.
+
+   A Greptile fix (1-A, or 2-B) edits files after Step 5e, and nothing has reviewed it. Run it through Step 5e as another fix pass; if the cycle bound is already spent, Step 5.8 records `converged:false` and status `issues_found`, naming the Greptile-fixed files as unreviewed.
 
 3. **VALID BUT ALREADY FIXED comments:** Reply using the **Already Fixed reply template** from greptile-triage.md — no AskUserQuestion needed:
    - Include what was done and the fixing commit SHA
@@ -1206,17 +1260,27 @@ recognize that Eng Review was run on this branch.
 Run:
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"COMMIT"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"completed":COMPLETED,"converged":CONVERGED,"cycles":CYCLES,"start_tree":"START_TREE","commit":"COMMIT"}'
 ```
+
+The logger stamps the entry with `tree`, the snapshot of the working tree it was
+written against (untracked files included), and refuses a `clean` status when
+`start_tree` differs from it, when `completed` is false, or when `converged` is false.
+A refusal means the record you were about to write was not true: fix the record, do not
+drop the fields to get it through.
 
 Substitute:
 - `TIMESTAMP` = ISO 8601 datetime
-- `STATUS` = `"clean"` if there are no remaining unresolved findings after Fix-First handling and adversarial review, otherwise `"issues_found"`
+- `STATUS` = `"clean"` only if COMPLETED and CONVERGED are both `true` and there are no remaining unresolved findings after Fix-First handling and adversarial review; `"issues_found"` if unresolved findings remain or the review did not converge; otherwise `"incomplete"` (no findings, but a reviewer did not finish — say which in the output)
+- `COMPLETED` = `true` only if the checklist was read, every specialist that ran and an activated Red Team returned usable output, and the Claude adversarial subagent finished with its `Recommendation:` line — on the final pass. Any of them failing, timing out or returning unusable output makes it `false`, whatever the finding count
+- `CONVERGED` = `true` if the final pass changed no file (Step 5e), `false` if the fix-cycle bound was reached with edits
+- `CYCLES` = the Step 5e count of passes that edited files
+- `START_TREE` = the snapshot captured in Step 3 of the final pass; if it printed `unknown`, drop the `start_tree` field
 - `issues_found` = total remaining unresolved findings
 - `critical` = remaining unresolved critical findings
 - `informational` = remaining unresolved informational findings
 - `quality_score` = the PR Quality Score computed in Step 4.6 (e.g., 7.5). If specialists were skipped (small diff), use `10.0`
-- `specialists` = the per-specialist stats object compiled in Step 4.6. Each specialist that was considered gets an entry: `{"dispatched":true/false,"findings":N,"critical":N,"informational":N}` if dispatched, or `{"dispatched":false,"reason":"scope|gated"}` if skipped. Include Design specialist. Example: `{"testing":{"dispatched":true,"findings":2,"critical":0,"informational":2},"security":{"dispatched":false,"reason":"scope"}}`
+- `specialists` = the per-specialist stats object compiled in Step 4.6. Each specialist that was considered gets an entry: `{"dispatched":true,"completed":true/false,"findings":N,"critical":N,"informational":N}` if dispatched, or `{"dispatched":false,"reason":"scope|gated"}` if skipped. Include Design specialist. Example: `{"testing":{"dispatched":true,"completed":true,"findings":2,"critical":0,"informational":2},"security":{"dispatched":false,"reason":"scope"}}`
 - `findings` = array of per-finding records from Step 5. For each finding (from the critical pass, specialists, Red Team and adversarial passes), include: `{"fingerprint":"path:line:category","severity":"CRITICAL|INFORMATIONAL","action":"ACTION"}`. ACTION is `"auto-fixed"` (Step 5b), `"fixed"` (user approved in Step 5d), or `"skipped"` (user chose Skip in Step 5c). Suppressed findings from Step 5.0 are NOT included (they were already recorded in a prior review entry).
 - `COMMIT` = output of `git rev-parse --short HEAD`
 
