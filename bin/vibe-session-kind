@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
 # vibe-session-kind — classify the current session: spawned | headless | interactive
 # Best-effort from the environment; defaults to interactive (the safe default).
+#
+# A subagent started through an agent tool inherits none of its parent's
+# environment, so nothing here can notice one on its own. The dispatching agent
+# marks the child by having it run this helper with VIBE_SPAWNED=1 in front.
+# Only an affirmative value marks the session: VIBE_SPAWNED=0 (or false/no/off)
+# is an explicit "not spawned", never the opposite of what it says.
 set -euo pipefail
 
-if [ -n "${OPENCLAW_SESSION:-}" ] || [ -n "${VIBE_SPAWNED:-}" ]; then
+_spawned_flag() {
+  case "$(printf '%s' "${VIBE_SPAWNED:-}" | tr '[:upper:]' '[:lower:]')" in
+    ""|0|false|no|off) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+if [ -n "${OPENCLAW_SESSION:-}" ] || _spawned_flag; then
   echo "spawned"
 elif [ -n "${VIBESTACK_HEADLESS:-}" ] || [ -n "${CI:-}" ]; then
   echo "headless"
