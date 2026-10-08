@@ -340,6 +340,14 @@ EXECUTION_FAILURE = re.compile(
     r"|sandbox (?:was |is )?not started"
     r"|sandbox (?:could not|couldn't|failed to|did not|didn't) (?:be )?(?:start|initiali[sz]e)\w*)\b",
     re.I)
+# A review that says it never saw the diff reviewed nothing, however many other
+# commands succeeded: an `ls` that ran says nothing about the diff.
+DIFF_FAILURE = re.compile(
+    r"\b(?:(?:could not|couldn't|cannot|can't|was unable to|am unable to|unable to|failed to) (?:read|access|inspect|load|obtain|retrieve|get|see|view) the (?:branch |PR |pull request )?diff"
+    r"|the diff could not be (?:read|inspected|accessed|loaded|obtained|retrieved)"
+    r"|git diff (?:command )?(?:failed|errored|returned an error|exited (?:with|non-zero))"
+    r"|(?:could not|couldn't|cannot|can't|was unable to|am unable to|unable to|failed to) run git\b)",
+    re.I)
 REFUSAL = re.compile(
     r"\b(?:(?:I (?:cannot|can't|won't|will not|am unable to)|I'm unable to)\s+(?:review|analy[sz]e|evaluate|assess|inspect|access|complete|perform|provide|assist|help|proceed)"
     r"|unable to (?:review|analy[sz]e)|I must (?:decline|refuse))\b",
@@ -413,6 +421,10 @@ def execution(text, stderr, exit_code, events, mode, blocking=False):
             return 'commands_failed', 'all %d commands failed' % attempted
     if not text.strip():
         return 'empty_response', 'Codex wrote no final message'
+    if mode == 'review' and not blocking:
+        phrase = first_match(DIFF_FAILURE, plain(text))
+        if phrase:
+            return 'commands_failed', 'the response says "%s"' % phrase
     if not executed and not blocking:
         # A review must have read the diff, so the admission counts anywhere in
         # it. An answer may discuss sandboxes, so there only its opening counts.
@@ -496,7 +508,8 @@ The validator prints `VERDICT:` (`clean`, `findings`, `unverified` or
 `unavailable` in review mode; `answered` or `unavailable` for Challenge and
 Consult), `FINDINGS:` and, for every non-clean verdict, `REASON:`. `unavailable`
 covers a non-zero exit, a sandbox that never started, every command failing, a
-response saying it could not read the diff, a refusal, and an empty final message.
+review saying it could not read the diff (even when other commands succeeded,
+unless it also carries a P0/P1 finding), a refusal, and an empty final message.
 
 ---
 

@@ -13,7 +13,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SKILL="$ROOT/skills/codex/SKILL.md"
+SKILL="${CODEX_SKILL:-$ROOT/skills/codex/SKILL.md}"  # CODEX_SKILL overrides the source
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -70,6 +70,20 @@ expect "refusal -> unavailable" unavailable \
   "$(verdict answer 0 "I cannot review this request." '' "$OK_CMD")"
 expect "refusal opening a review -> unavailable" unavailable \
   "$(verdict review 0 "I'm sorry, but I can't assist with that." '' "$OK_CMD")"
+
+# An incidental command succeeding is not evidence the diff was read.
+LS_OK='{"type":"item.completed","item":{"type":"command_execution","command":"ls","status":"completed","exit_code":0,"aggregated_output":"README.md"}}'
+DIFF_BAD='{"type":"item.completed","item":{"type":"command_execution","command":"git diff main...HEAD","status":"failed","exit_code":128,"aggregated_output":"fatal: ambiguous argument"}}'
+expect "ls ran, git diff failed, answer ends NO_FINDINGS -> unavailable" unavailable \
+  "$(verdict review 0 $'I could not read the diff because `git diff` failed.\nNO_FINDINGS' '' "$LS_OK"$'\n'"$DIFF_BAD")"
+expect "'git diff failed' after a successful command -> unavailable" unavailable \
+  "$(verdict review 0 $'The git diff failed with an ambiguous argument, so I looked at the files.\nNO_FINDINGS' '' "$LS_OK"$'\n'"$DIFF_BAD")"
+expect "'unable to run git' after a successful command -> unavailable" unavailable \
+  "$(verdict review 0 $'[P3] typo in README\nI was unable to run git in this sandbox.' '' "$LS_OK")"
+expect "transcript success does not mask a could-not-access-the-diff admission" unavailable \
+  "$(verdict review 0 $'Could not access the diff.\nNO_FINDINGS' $'exec ls\n succeeded in 3ms:' '')"
+expect "[P1] beside a diff-read failure after a successful command keeps the findings" findings \
+  "$(verdict review 0 $'[P1] SQL injection at a.rb:3\nI could not read the diff for the rest.' '' "$LS_OK"$'\n'"$DIFF_BAD")"
 
 echo "validator: hedges are not refusals"
 expect "mid-answer 'I cannot access' hedge -> answered" answered \
