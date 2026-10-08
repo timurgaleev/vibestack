@@ -2,7 +2,9 @@
 # vibe-update-check — print a one-line nag if the installed pack is behind origin.
 # Best-effort and throttled to once/day (a stamp file); never blocks, never errors out.
 # Pass --force to bypass the throttle, the update_check gate, and any active snooze
-# (used by /vibe-upgrade for a fresh check).
+# (used by /vibe-upgrade for a fresh check). With --force a check that cannot reach
+# a verdict prints `CHECK_FAILED <reason>` instead of staying silent, so "no output"
+# always means "up to date". Without --force failures stay quiet (skill preambles).
 set -euo pipefail
 
 FORCE=0
@@ -10,9 +12,46 @@ FORCE=0
 
 HOME_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}"
 STAMP="$HOME_DIR/.update-check-stamp"
+FAILED_STAMP="$HOME_DIR/.update-check-failed"
 SNOOZE="$HOME_DIR/update-snoozed"
-ROOT="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd || true)"
-[ -n "$ROOT" ] && [ -f "$ROOT/VERSION" ] || exit 0
+
+check_failed() {
+  # A failed check is retried after an hour rather than a day; it never writes
+  # the success stamp, so one offline session cannot hide a release for 24h.
+  mkdir -p "$HOME_DIR" 2>/dev/null && : > "$FAILED_STAMP" 2>/dev/null || true
+  [ "$FORCE" -eq 1 ] && echo "CHECK_FAILED $1"
+  exit 0
+}
+
+file_age() {
+  # GNU form first: GNU `stat -f` is --file-system, which prints filesystem data
+  # for the file and fails on `%m`, so the BSD form cannot go first.
+  echo $(( $(date +%s) - $(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0) ))
+}
+
+is_checkout() {
+  # `.git` is required: ~/.vibestack holds a lowercase `version` file, which a
+  # case-insensitive filesystem reports as VERSION.
+  [ -n "$1" ] && [ -f "$1/install" ] && [ -f "$1/VERSION" ] && [ -e "$1/.git" ]
+}
+
+# Locate the git checkout the pack was installed from. Run from the repo, this
+# script sits in <checkout>/bin. Installed, it is a copy in ~/.vibestack/bin, so
+# follow the skill directories' bin symlinks, which point back into the checkout.
+resolve_root() {
+  local own link target cand
+  own="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd || true)"
+  if is_checkout "$own"; then echo "$own"; return 0; fi
+  for link in "$HOME"/.claude/skills/*/bin "$HOME"/.cursor/skills/*/bin \
+              "$HOME"/.kiro/skills/*/bin "$HOME"/.agents/skills/*/bin; do
+    [ -L "$link" ] || continue
+    target="$(readlink "$link" 2>/dev/null || true)"
+    cand="${target%/skills/*/bin}"
+    [ "$cand" != "$target" ] || continue
+    if is_checkout "$cand"; then echo "$cand"; return 0; fi
+  done
+  return 1
+}
 
 # "Never ask again" gate — user disabled update checks (bypassed by --force).
 if [ "$FORCE" -eq 0 ]; then
@@ -20,18 +59,42 @@ if [ "$FORCE" -eq 0 ]; then
   [ -x "$_CFG" ] && [ "$("$_CFG" get update_check 2>/dev/null || true)" = "false" ] && exit 0
 fi
 
-# Throttle: skip if checked within the last 24h (bypassed by --force).
-if [ "$FORCE" -eq 0 ] && [ -f "$STAMP" ]; then
-  _age=$(( $(date +%s) - $(stat -f %m "$STAMP" 2>/dev/null || stat -c %Y "$STAMP" 2>/dev/null || echo 0) ))
-  [ "$_age" -lt 86400 ] 2>/dev/null && exit 0
+# Throttle: skip if checked within the last 24h, or failed within the last hour
+# (both bypassed by --force).
+if [ "$FORCE" -eq 0 ]; then
+  [ -f "$STAMP" ] && [ "$(file_age "$STAMP")" -lt 86400 ] 2>/dev/null && exit 0
+  [ -f "$FAILED_STAMP" ] && [ "$(file_age "$FAILED_STAMP")" -lt 3600 ] 2>/dev/null && exit 0
 fi
-mkdir -p "$HOME_DIR"; : > "$STAMP" 2>/dev/null || true
 
-local_v="$(tr -d '[:space:]' < "$ROOT/VERSION")"
-git -C "$ROOT" fetch --quiet origin 2>/dev/null || exit 0
+ROOT="$(resolve_root || true)"
+[ -n "$ROOT" ] || check_failed "no vibestack git checkout found (looked beside this script and behind the installed skills' bin links)"
+
+# Compare what is INSTALLED, not what the checkout holds: a pull whose install
+# failed leaves a newer VERSION in the checkout and an older pack in use.
+if [ -s "$HOME_DIR/version" ]; then
+  local_v="$(tr -d '[:space:]' < "$HOME_DIR/version")"
+else
+  local_v="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+fi
+
+# Bound the fetch: no credential prompt, and give up on a stalled connection
+# instead of hanging every skill preamble.
+export GIT_TERMINAL_PROMPT=0
+if [ -z "${GIT_SSH_COMMAND:-}" ] && [ -z "$(git -C "$ROOT" config --get core.sshCommand 2>/dev/null || true)" ]; then
+  export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=10"
+fi
+# Strip userinfo so a token embedded in an HTTPS remote never reaches a message.
+_remote_url="$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@]*@#\1#' || true)"
+_remote_url="${_remote_url:-origin}"
+git -C "$ROOT" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=15 fetch --quiet origin 2>/dev/null \
+  || check_failed "git fetch from $_remote_url failed (offline, auth, or no origin remote) in $ROOT"
 remote_v="$(git -C "$ROOT" show origin/HEAD:VERSION 2>/dev/null | tr -d '[:space:]' \
   || git -C "$ROOT" show origin/main:VERSION 2>/dev/null | tr -d '[:space:]' || true)"
-[ -n "$remote_v" ] || exit 0
+[ -n "$remote_v" ] || check_failed "could not read VERSION from origin/HEAD or origin/main of $_remote_url"
+
+# The remote version was read: only now does the check count as done for the day.
+mkdir -p "$HOME_DIR"; : > "$STAMP" 2>/dev/null || true
+rm -f "$FAILED_STAMP" 2>/dev/null || true
 
 if [ "$local_v" != "$remote_v" ]; then
   # Only nag when remote is strictly newer (sort -V puts the larger last).

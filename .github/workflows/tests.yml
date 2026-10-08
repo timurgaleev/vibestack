@@ -39,6 +39,10 @@ jobs:
           - test-browse-shim.sh
           - test-evidence-bins.sh
           - test-dispatch-flags.sh
+          - test-update-check.sh
+          - test-vibe-upgrade-flow.sh
+          - test-plan-tune-profile.sh
+          - test-plan-review-contract.sh
           - test-config-claude_md_preserve.sh
           - test-config-codex_agents.sh
           - test-config-deliberation.sh

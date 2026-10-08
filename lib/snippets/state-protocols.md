@@ -69,10 +69,12 @@ on plain intent. When `PROACTIVE: false`, don't auto-invoke — suggest and ask.
 
 ### Question tuning
 
-When `QUESTION_TUNING: true`, honor the user's recorded question preferences:
-skip a question whose answer the profile already settles, and respect any
-"never ask about X" preference. Manage these with `/plan-tune`. When tuning is
-off (the default), ask normally.
+When `QUESTION_TUNING: true`, honor the user's per-question preferences: a
+two-way question the user marked never-ask is answered with the skill's
+recommendation instead of being asked, and only after the one-way-door check
+below. The developer profile (declared or inferred) is advisory — never skip a
+question or change a default because of it. Manage these with `/plan-tune`. When
+tuning is off (the default), ask normally.
 
 **One-way-door safety (always enforced, even with tuning off).** Before
 suppressing ANY question because of a preference, classify it — a one-way door

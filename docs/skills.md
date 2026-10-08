@@ -63,9 +63,9 @@ Triggers: `autoplan`, `run all reviews`, `full plan review`
 ---
 
 ### `/plan-tune`
-Adjust skill behavior — reduce confirmations, set defaults, enable terse mode.
+Tune which questions the skills ask you — reduce confirmations with per-question preferences.
 
-Reviews which questions the skills actually asked you — from a local question log — with counts and how often you took the recommendation. Set a per-question policy (never-ask, always-ask, ask-only-for-one-way), and inspect the dual-track profile: what you declared about your preferences versus what your choices suggest. A one-way door (anything destructive or irreversible) is always asked, whatever the policy says.
+Reviews which questions the skills actually asked you — from a local question log — with counts and how often you took the recommendation. Set a per-question policy (never-ask, always-ask, ask-only-for-one-way): a never-ask two-way question is answered with the skill's recommendation instead of being asked. Inspect the dual-track profile: what you declared about your preferences versus what your choices suggest. The profile is advisory — no skill skips a question or changes a default because of it. A one-way door (anything destructive or irreversible) is always asked, whatever the policy says.
 
 Triggers: `tune plan`, `reduce confirmations`, `terse mode`
 

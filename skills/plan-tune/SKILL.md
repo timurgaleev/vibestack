@@ -1,7 +1,7 @@
 ---
 name: plan-tune
 description: |
-  Self-tuning question sensitivity + developer psychographic for vibestack (v1: observational). Review which AskUserQuestion prompts fire across vibestack skills, set per-question preferences (never-ask / always-ask / ask-only-for-one-way), inspect the dual-track profile (what you declared vs what your behavior suggests), and enable/disable question tuning. Conversational interface — no CLI syntax required.
+  Self-tuning question sensitivity + developer psychographic for vibestack. Never-ask preferences auto-decide two-way questions (one-way doors always ask); the declared/inferred profile is shown to you and never changes a skill's defaults. Review which AskUserQuestion prompts fire across vibestack skills, set per-question preferences (never-ask / always-ask / ask-only-for-one-way), inspect the dual-track profile (what you declared vs what your behavior suggests), and enable/disable question tuning. Conversational interface — no CLI syntax required.
 triggers:
   - tune questions
   - stop asking me that
@@ -55,7 +55,7 @@ fi
 Before routing on intent, check two implicit gates — they fire first:
 
 - **Consent gate.** If `question_tuning` is not `true` AND `${VIBESTACK_HOME:-$HOME/.vibestack}/.question-tuning-prompted` does not exist → run `Enable + setup`. The marker is written whichever way the user answers (even a decline), so someone who said "not now" is never re-prompted on later invocations.
-- **Setup gate.** If `question_tuning` is `true` AND `developer-profile.json`'s `declared` object is empty AND `${VIBESTACK_HOME:-$HOME/.vibestack}/.declared-setup-prompted` does not exist → run the 5-question declaration (the Q1–Q5 block under `Enable + setup`), then write that marker. This backfills the declared profile for anyone who enabled tuning directly (route 8 below) without the wizard.
+- **Setup gate.** If `question_tuning` is `true` AND `developer-profile.json`'s `declared` object is empty AND `${VIBESTACK_HOME:-$HOME/.vibestack}/.declared-setup-prompted` does not exist → run the 5-question declaration (the Q1–Q5 block under `Enable + setup`), then write that marker (not after a failed save — see step 5 there). This backfills the declared profile for anyone who enabled tuning directly (route 8 below) without the wizard.
 
 Guard both marker reads with `[ -f … ]`, per the `~/.vibestack/` session-state convention.
 
@@ -100,11 +100,12 @@ Power-user shortcuts (one-word invocations) — handle these too:
 
 2. If `false`, use AskUserQuestion:
 
-   > Question tuning is off. vibestack can learn which of its prompts you find
-   > valuable vs noisy — so over time, vibestack stops asking questions you've
-   > already answered the same way. It takes about 2 minutes to set up your
-   > initial profile. v1 is observational: vibestack tracks your preferences
-   > and shows you a profile, but doesn't silently change skill behavior yet.
+   > Question tuning is off. vibestack can record which of its prompts you find
+   > valuable vs noisy, and you decide which ones it stops asking. It takes about 2 minutes to set up your
+   > initial profile. Questions you mark never-ask are answered with
+   > vibestack's recommendation instead of being asked (one-way doors —
+   > destructive or irreversible steps — always ask). Your profile is shown
+   > to you, not used to change any skill's defaults.
    >
    > RECOMMENDATION: Enable and set up your profile. Completeness: A=9/10.
    >
@@ -154,36 +155,52 @@ Power-user shortcuts (one-word invocations) — handle these too:
    Options: A) Ship now (low ≈ 0.25) / B) Balanced /
    C) Get the design right (high ≈ 0.85)
 
-   After each answer, map A/B/C to the numeric value and save the declared
-   dimension. Write each declaration directly into
-   `~/.vibestack/developer-profile.json` under `declared.{dimension}`:
+   After **each** answer — not once at the end — map A/B/C to its number
+   (A = 0.25, B = 0.5, C = 0.85) and save that one dimension into
+   `${VIBESTACK_HOME:-$HOME/.vibestack}/developer-profile.json` under
+   `declared.{dimension}`. Run this block once per answer, substituting `<DIM>`
+   with the dimension key (`scope_appetite`, `risk_tolerance`,
+   `detail_preference`, `autonomy`, `architecture_care`) and `<VALUE>` with the
+   number. The path and both values travel as argv, so nothing is interpolated
+   into the Python source, and a user who stops after Q2 keeps Q1 and Q2:
 
    ```bash
-   # Ensure profile exists
-   true  # profile read not needed in vibestack
-   # Update declared dimensions atomically
-   _PROFILE="${VIBESTACK_HOME:-$HOME/.vibestack}/developer-profile.json"
-   python3 - <<'PYEOF'
+   _STATE_ROOT="${VIBESTACK_HOME:-$HOME/.vibestack}"
+   mkdir -p "$_STATE_ROOT" || { echo "cannot create $_STATE_ROOT — profile not saved" >&2; exit 1; }
+   python3 - "$_STATE_ROOT/developer-profile.json" '<DIM>' '<VALUE>' <<'PYEOF'
 import json, os, sys
-profile_path = os.path.expanduser("$_PROFILE")
+from datetime import datetime, timezone
+
+profile_path, dim, value = sys.argv[1], sys.argv[2], sys.argv[3]
+
+VALID = {"scope_appetite", "risk_tolerance", "detail_preference", "autonomy", "architecture_care"}
+if dim not in VALID:
+    sys.exit("unknown dimension: %s" % dim)
+try:
+    number = float(value)
+except ValueError:
+    sys.exit("not a number: %r" % value)
+
 try:
     p = json.load(open(profile_path))
 except (FileNotFoundError, json.JSONDecodeError):
     p = {}
 p.setdefault("declared", {})
-p["declared"]["scope_appetite"]    = "<Q1_VALUE>"
-p["declared"]["risk_tolerance"]    = "<Q2_VALUE>"
-p["declared"]["detail_preference"] = "<Q3_VALUE>"
-p["declared"]["autonomy"]          = "<Q4_VALUE>"
-p["declared"]["architecture_care"] = "<Q5_VALUE>"
-from datetime import datetime, timezone
+p["declared"][dim] = round(min(1.0, max(0.0, number)), 2)
 p["declared_at"] = datetime.now(timezone.utc).isoformat()
+
 tmp = profile_path + ".tmp"
 with open(tmp, "w") as f:
     json.dump(p, f, indent=2)
 os.replace(tmp, profile_path)
+print("declared.%s = %s" % (dim, p["declared"][dim]))
 PYEOF
    ```
+
+   If the block fails, tell the user the answer was not saved and stop rather
+   than continuing to the next question. Skip step 5 entirely: do not say
+   "Profile set" and do not write the setup marker, so the Setup gate offers
+   the questions again on the next invocation.
 
 5. Tell the user: "Profile set. Question tuning is now on. Use `/plan-tune`
    again any time to inspect, adjust, or turn it off."
@@ -192,9 +209,11 @@ PYEOF
    ```bash
    touch "${VIBESTACK_HOME:-$HOME/.vibestack}/.declared-setup-prompted"
    ```
-   Write it even if the user bails out partway through the questions — they
-   were asked; an abandoned setup is honored, not retried. They can re-run the
-   wizard any time with `/plan-tune setup`.
+   Write it when every answer was saved, or when the user chooses to bail out
+   partway through the questions — they were asked; an abandoned setup is
+   honored, not retried (say which dimensions were saved instead of "Profile
+   set"). Never write it after a failed save. They can re-run the wizard any
+   time with `/plan-tune setup`.
 
 6. Show the profile inline as a confirmation (see `Inspect profile` below).
 
@@ -236,8 +255,8 @@ Parse the JSON. Present in **plain English**, not raw floats:
   affordance. Shipping behavior-adapting defaults based on the profile is
   consequential and needs a far higher bar (durable stability over a long
   window across several skills). Do NOT read "the observed profile is now
-  displayable" as a green light to start adapting skill behavior — that stays
-  out of scope while tuning is observational.
+  displayable" as a green light to start adapting skill behavior — the profile
+  never changes a skill's defaults.
 
 ---
 
@@ -337,8 +356,8 @@ scope expansion comes up", etc).
    To register a new one-way question or reclassify one, edit the `registry`
    map in `skills/plan-tune/questions.json` (`"one-way"` / `"two-way"`); the
    destructive-keyword and skill-category fallbacks catch anything not yet
-   listed. This turns question tuning from observational into enforcing: the
-   preference store can never quietly auto-approve a destructive action.
+   listed. The check runs before any preference applies, so the preference
+   store can never quietly auto-approve a destructive action.
 
 6. **Never write `never-ask` against a split-chain id.** Split chains use ids of
    the form `<skill>-split-<option-slug>`, one call per option. Suppressing one of
@@ -423,7 +442,7 @@ Parse the JSON. For each dimension where both declared and inferred exist:
   Consider updating your declared value, or reflect on whether your behavior
   is actually what you want."
 
-Never auto-update declared based on the gap. In v1 the gap is reporting only —
+Never auto-update declared based on the gap. The gap is reporting only —
 the user decides whether declared is wrong or behavior is wrong.
 
 ---
@@ -514,9 +533,11 @@ wait.
 - **One-way doors override never-ask.** Even with a never-ask preference, the
   binary returns ASK_NORMALLY for destructive/architectural/security questions.
   Surface the safety note to the user whenever it fires.
-- **No behavior adaptation in v1.** This skill INSPECTS and CONFIGURES. No
-  skills currently read the profile to change defaults. That's v2 work, gated
-  on the registry proving durable.
+- **Preferences act; the profile does not.** This skill inspects and
+  configures. A `never-ask` preference auto-decides a two-way question with
+  the skill's recommendation — that skipping is explicit, set by the user, and
+  one-way doors still ask. The declared/inferred profile is advisory only: no
+  skill skips a question or changes a default because of it.
 - **Completion status:**
   - DONE — did what the user asked (enable/inspect/set/update/disable)
   - DONE_WITH_CONCERNS — action taken but flagging something (e.g., "your
