@@ -96,7 +96,9 @@ If the browse server is not running, start it:
 $B goto about:blank
 ```
 
-This ensures the server is up and healthy before pairing.
+This ensures the server is up and healthy before pairing. Note whether a daemon
+was already answering before this step: one you just started holds no tabs or
+logins, so Step 4's live-daemon question does not apply to it.
 
 ## Step 2: Ask what they want
 
@@ -139,6 +141,41 @@ Options:
 
 ## Step 4: Execute pairing
 
+**Live-daemon consent (one-way door).** Pairing can relaunch the browse daemon,
+and a relaunch KILLS the running headless daemon: its open tabs, cookies and
+signed-in sessions die with it. The CLI never kills a live daemon unless it is
+given `--force-restart`, so check first:
+
+```bash
+BROWSE_NO_AUTOSTART=1 $B status 2>/dev/null | head -5
+```
+
+- No status output, it shows `Mode: headed`, or Step 1 started the daemon
+  itself: nothing to lose — continue without asking. A daemon Step 1 started
+  may be relaunched, so pass `--force-restart` if the CLI asks for it.
+- A live daemon without `Mode: headed`, and `SESSION_KIND` is `spawned` or
+  `headless`: do not ask and do not pass `--force-restart`. Pair against the
+  live daemon as-is; if the CLI refuses without a relaunch, show its output and
+  stop.
+- A live daemon without `Mode: headed` in an interactive session: ask via
+  AskUserQuestion — lost tabs, cookies and logins cannot be recovered:
+
+> "A headless browse daemon is live (tabs and logins may be active). Pairing a
+> visible browser means relaunching it, and everything in the current daemon is
+> lost.
+>
+> RECOMMENDATION: Choose B unless the other agent specifically needs a visible
+> browser window; pairing works against the existing daemon."
+
+Options:
+- A) Relaunch (pass `--force-restart`; current tabs, cookies and logins are lost)
+- B) Keep the live daemon (pair against it as-is)
+
+Only add `--force-restart` to the `pair-agent` commands below after an explicit
+A. Never default to A on a vague reply — this is a destructive confirmation. If
+the CLI refuses on B because it needs a relaunch, show its output and stop;
+never retry with `--force-restart` on your own.
+
 ### If same machine (option A):
 
 Run pair-agent with --local flag:
@@ -159,7 +196,12 @@ using the generic remote flow instead.
 ### If different machine (option B):
 
 **Consent gate (once per machine).** The tunnel exposes this browser beyond the
-machine, so it stays off until the user opts in. Check the standing consent:
+machine, so it stays off until the user opts in. The daemon enforces the same
+flag: with `pair_agent` not `on` it refuses `/tunnel/start` and ignores
+`BROWSE_TUNNEL=1`, so a remote pairing fails closed rather than opening a tunnel
+nobody agreed to. Never set the flag yourself to get past that refusal — not
+`pair_agent` in the config and not `VIBESTACK_PAIR_AGENT=on` in the environment,
+which overrides it. Only the user's answer below turns it on. Check the standing consent:
 
 ```bash
 ~/.vibestack/bin/vibe-config get pair_agent 2>/dev/null || echo "unset"
