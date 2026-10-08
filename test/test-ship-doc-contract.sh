@@ -48,6 +48,21 @@ fi
 has '"schema_version":1' "$PROMPT" \
   && ok "prompt asks for the schema_version 1 result" || no "prompt does not name the result schema"
 
+echo "sibling skill path"
+# Codex reads skills from ~/.agents/skills, and Cursor and Kiro have their own
+# roots, so a hard-coded Claude path never resolves there.
+if grep -Eq '(~|\$HOME|\$\{HOME\})/\.claude' "$STEP"; then
+  no "Step 18 hard-codes a Claude install path: $(grep -Eo '(~|\$HOME|\$\{HOME\})/\.claude[^ `]*' "$STEP" | head -1)"
+else
+  ok "Step 18 hard-codes no Claude install path"
+fi
+has '\$\{CLAUDE_SKILL_DIR\}/\.\./document-release/SKILL\.md' "$STEP" \
+  && ok "sibling resolved via \${CLAUDE_SKILL_DIR}/../document-release" || no "sibling not resolved via CLAUDE_SKILL_DIR"
+has 'DOC_RELEASE_SKILL_MISSING' "$STEP" \
+  && ok "missing sibling skill is detected" || no "no check that the sibling skill is readable"
+has 'WARNING: /document-release is not installed' "$STEP" \
+  && ok "missing sibling skill warns instead of continuing silently" || no "missing sibling skill has no warning"
+
 echo "parent"
 has '`schema_version` is `1`' "$STEP" \
   && ok "parent validates schema_version" || no "schema_version check missing"

@@ -2572,9 +2572,18 @@ git push origin "$TAG_NAME" 2>/dev/null || true
 
 **Sequencing:** This step runs AFTER Step 17 (Push) and BEFORE Step 19 (Create PR). The PR is created once from final HEAD with the `## Documentation` section baked into the initial body. No create-then-re-edit dance.
 
+**Locate the sibling skill first.** /document-release is installed next to this skill, in whichever root this runtime loads skills from (Claude Code, Codex, Cursor and Kiro each have their own). Check it is readable before dispatching:
+
+```bash
+DOC_RELEASE_SKILL="${CLAUDE_SKILL_DIR}/../document-release/SKILL.md"
+if [ -r "$DOC_RELEASE_SKILL" ]; then echo "DOC_RELEASE_SKILL: $DOC_RELEASE_SKILL"; else echo "DOC_RELEASE_SKILL_MISSING: $DOC_RELEASE_SKILL"; fi
+```
+
+If it prints `DOC_RELEASE_SKILL_MISSING`, do not dispatch and do not continue silently: print `WARNING: /document-release is not installed next to /ship (<path>) — skipping the doc sync; the PR goes out without a Documentation section.`, keep no `documentation_section`, and continue to Step 19. Otherwise substitute the printed path for `<doc-release-skill>` below.
+
 **Subagent prompt:**
 
-> Run the /document-release workflow in spawned mode. Read the full skill file `${HOME}/.claude/skills/document-release/SKILL.md` and follow its "Spawned mode" contract. Start the session detection block with `export VIBE_SPAWNED=1` on its own line, so the block prints `SESSION_KIND: spawned`. Branch: `<branch>`, base: `<base>`.
+> Run the /document-release workflow in spawned mode. Read the full skill file `<doc-release-skill>` and follow its "Spawned mode" contract. If that file cannot be read, stop and report the read error instead of improvising the workflow. Start the session detection block with `export VIBE_SPAWNED=1` on its own line, so the block prints `SESSION_KIND: spawned`. Branch: `<branch>`, base: `<base>`.
 >
 > Edit authored documentation files only. Do not ask questions; every decision that needs the user is a `blockers` entry. End with the contract's single JSON object on the LAST non-empty line, with nothing after it:
 > `{"schema_version":1,"status":"updated|current|blocked","files_updated":[...],"files_reviewed":[...],"blockers":[...],"decisions":[...],"documentation_section":"..."}`
