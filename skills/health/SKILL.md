@@ -117,22 +117,59 @@ section in CLAUDE.md:
 Run each detected tool. For each tool:
 
 1. Record the start time
-2. Run the command, capturing both stdout and stderr
-3. Record the exit code
+2. Run the command, capturing complete stdout and stderr in a private temporary log
+3. Record the checker's own exit code, before any parser or display command runs
 4. Record the end time
-5. Capture the last 50 lines of output for the report
+5. Count findings from the complete log, then show its last 50 lines for the report
 
 ```bash
-# Example for each tool — run each independently
-START=$(date +%s)
-tsc --noEmit 2>&1 | tail -50
-EXIT_CODE=$?
-END=$(date +%s)
-echo "TOOL:typecheck EXIT:$EXIT_CODE DURATION:$((END-START))s"
+# Capture one tool. Per tool, set health_tool, the command line and the count pattern.
+(
+  umask 077
+  health_tool=typecheck
+  health_pattern='error TS'
+  health_capture_error() {
+    printf 'TOOL:%s ERROR:capture-%s\n' "$health_tool" "$1"
+    exit 125
+  }
+  health_log=$(mktemp "${TMPDIR:-/tmp}/vibe-health.XXXXXX") || health_capture_error log
+  trap 'rm -f -- "$health_log"' EXIT
+  health_start=$(date +%s) || health_capture_error timing
+  # Open the log first, so a redirection failure cannot pass for a checker result.
+  exec 3>"$health_log" || health_capture_error redirection
+  if tsc --noEmit >&3 2>&1; then
+    health_status=0
+  else
+    health_status=$?
+  fi
+  exec 3>&-
+  health_end=$(date +%s) || health_capture_error timing
+  # awk prints 0 for no matches, so an empty log still yields a count.
+  health_count=$(awk -v p="$health_pattern" 'index($0, p) { n++ } END { print n+0 }' "$health_log") || health_capture_error parsing
+  tail -50 "$health_log" || health_capture_error display
+  printf 'TOOL:%s EXIT:%s DURATION:%ss COUNT:%s\n' "$health_tool" "$health_status" "$((health_end-health_start))" "$health_count"
+)
 ```
 
-Run tools sequentially (some may share resources or lock files). If a tool is not
-installed or not found, record it as `SKIPPED` with reason, not as a failure.
+`EXIT` is the checker's status, never that of `tail`, `awk` or a pipe. `COUNT` comes
+from the whole log, not the 50 lines shown. Swap in the tool's command and the fixed
+string that marks one finding (`error TS` for tsc; Step 3 lists the others); for a
+tool whose summary line carries the count, read it from the same log.
+
+Run tools sequentially, one block per tool (some share resources or lock files). A
+failing checker does not stop the later ones.
+
+**SKIPPED, FAILED or ERROR — decide before and after running:**
+- **SKIPPED** — decided *before* running: the tool's binary is absent
+  (`command -v <binary>` finds nothing, no local `node_modules/.bin` entry) and no
+  `## Health Stack` entry names it. Record the reason. Only a skip redistributes weight.
+- **FAILED** — the command ran and could not execute the check: exit 126 or 127
+  (typo, missing binary in a configured `## Health Stack` command, no permission).
+  It scores 0. A configured command that does not run is a broken check, not a
+  missing one, and must never raise the score.
+- **ERROR** — the capture itself broke (`TOOL:<name> ERROR:capture-...`: log,
+  redirection, timing, parsing or display). The category gets no score, the composite
+  is `N/A — capture failed`, and no history row is written.
 
 ---
 
@@ -148,19 +185,55 @@ Score each category on a 0-10 scale using this rubric:
 | Dead code | 15% | Clean (exit 0) | <5 unused exports | <20 unused | >=20 unused |
 | Shell lint | 10% | Clean (exit 0) | <5 issues | >=5 issues | N/A (skip) |
 
-**Parsing tool output for counts:**
+**Parsing tool output for counts:** use the complete captured log (`COUNT` above),
+never the displayed tail. A non-zero exit is never `CLEAN` and never 10. Exit 126 or
+127 is `FAILED` and scores 0, whatever the log says. Any other non-zero exit whose
+full log yields no count scores 4 (as for a test runner that reports only its exit
+code); keep its output for the details section.
+
 - **tsc:** Count lines matching `error TS` in output.
 - **biome/eslint/ruff:** Count lines matching error/warning patterns. Parse the summary line if available.
-- **Tests:** Parse pass/fail counts from the test runner output. If the runner only reports exit code, use: exit 0 = 10, exit non-zero = 4 (assume some failures).
+- **Tests:** Parse pass/fail counts from the test runner output. If the runner only reports exit code, use: exit 0 = 10, any other non-zero exit except 126/127 = 4 (assume some failures).
 - **knip:** Count lines reporting unused exports, files, or dependencies.
 - **shellcheck:** Count distinct findings (lines starting with "In ... line").
 
-**Composite score:**
-```
-composite = (typecheck_score * 0.25) + (lint_score * 0.20) + (test_score * 0.30) + (deadcode_score * 0.15) + (shell_score * 0.10)
+**Composite score:** compute it in code, never by hand. Pass every category once as
+`name=<score>`, where the score is an integer 0-10, `null` for SKIPPED, or `error`
+for a capture ERROR. Skipped weight is redistributed proportionally among the
+scored categories; the weights are typecheck 25%, lint 20%, test 30%, deadcode 15%,
+shell 10%.
+
+```bash
+python3 -I -c '
+import sys
+w = {"typecheck": 0.25, "lint": 0.20, "test": 0.30, "deadcode": 0.15, "shell": 0.10}
+s = {}
+for a in sys.argv[1:]:
+    k, sep, v = a.partition("=")
+    if not sep or k not in w or k in s:
+        sys.exit("bad argument: " + a)
+    if v not in ("null", "error") and not (v.isdigit() and int(v) <= 10):
+        sys.exit("bad score for " + k + ": " + v)
+    s[k] = v
+if set(s) != set(w):
+    sys.exit("pass every category: " + " ".join(w))
+scored = [k for k in w if s[k] not in ("null", "error")]
+errors = [k for k in w if s[k] == "error"]
+print("CHECKED: " + (" ".join(scored) or "none"))
+print("UNAVAILABLE: " + (" ".join(k for k in w if s[k] == "null") or "none"))
+print("COVERAGE: %d/%d" % (len(scored), len(w)))
+if errors:
+    print("COMPOSITE: N/A - capture failed (" + " ".join(errors) + ")")
+elif not scored:
+    print("COMPOSITE: N/A - no checks ran")
+else:
+    c = sum(int(s[k]) * w[k] for k in scored) / sum(w[k] for k in scored)
+    print("COMPOSITE: %.1f" % c + ("" if len(scored) == len(w) else " (partial coverage)"))
+' typecheck=10 lint=8 test=10 deadcode=7 shell=null
 ```
 
-If a category is skipped (tool not available), redistribute its weight proportionally among the remaining categories.
+Replace the example values with this run's results. Report the `COMPOSITE` line as
+printed; a numeric composite exists only when it prints a number.
 
 ---
 
@@ -184,7 +257,10 @@ Tests         bun test          10/10   CLEAN      12s        47/47 passed
 Dead code     knip               7/10   WARNING    5s         4 unused exports
 Shell lint    shellcheck        10/10   CLEAN      1s         0 issues
 
-COMPOSITE SCORE: 9.1 / 10
+COMPOSITE SCORE: 9.2 / 10
+Coverage: 5/5 categories checked
+Checked: typecheck, lint, test, deadcode, shell
+Unavailable: none
 
 Duration: 23s total
 ```
@@ -194,6 +270,15 @@ Use these status labels:
 - 7-9: `WARNING`
 - 4-6: `NEEDS WORK`
 - 0-3: `CRITICAL`
+- Command could not run (exit 126/127): `FAILED` (scores 0)
+- Tool not available: `SKIPPED` (no score)
+- Capture broke: `ERROR` (no score; composite is N/A)
+
+Always show the coverage lines. With skipped categories, label the score
+`— partial coverage` (e.g. `COMPOSITE SCORE: 8.0 / 10 — partial coverage`,
+`Coverage: 2/5 categories checked`) and list each unavailable category with its
+reason. When no check ran, show `COMPOSITE SCORE: N/A — no checks ran` and say which
+tools need installing or configuring; never show 10/10 for an empty run.
 
 If any category scored below 7, list the top issues from that tool's output:
 
@@ -213,10 +298,12 @@ DETAILS: Lint (3 warnings)
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
 ```
 
-Append one JSONL line to `~/.vibestack/projects/$SLUG/health-history.jsonl`:
+Only when the composite is numeric, append one JSONL line to
+`~/.vibestack/projects/$SLUG/health-history.jsonl`. A run with no checks or a capture
+ERROR writes nothing and leaves the existing history as it is:
 
 ```json
-{"ts":"2026-03-31T14:30:00Z","branch":"main","score":9.1,"typecheck":10,"lint":8,"test":10,"deadcode":7,"shell":10,"duration_s":23}
+{"ts":"2026-03-31T14:30:00Z","branch":"main","score":9.2,"typecheck":10,"lint":8,"test":10,"deadcode":7,"shell":10,"duration_s":23}
 ```
 
 Fields:
@@ -240,7 +327,14 @@ eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projec
 tail -10 ~/.vibestack/projects/$SLUG/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
 ```
 
-**If prior entries exist, show the trend:**
+**Compare like-for-like coverage only.** For each history row, the scored set is the
+categories with a non-null value (a missing field counts as null). Report a delta,
+`IMPROVING` or `REGRESSIONS DETECTED` only against rows whose scored set equals this
+run's exactly. If the previous run's set differs, say **Coverage changed — scores are
+not comparable** and label nothing an improvement or a regression; older rows may
+still be listed with their unavailable categories marked. An N/A run has no trend.
+
+**If comparable prior entries exist, show the trend:**
 
 ```
 HEALTH TREND (last 5 runs)
@@ -250,12 +344,12 @@ Date          Branch         Score   TC   Lint  Test  Dead  Shell
 2026-03-28    main           9.4     10   9     10    8     10
 2026-03-29    feat/auth      8.8     10   7     10    7     10
 2026-03-30    feat/auth      8.2     10   6     9     7     10
-2026-03-31    feat/auth      9.1     10   8     10    7     10
+2026-03-31    feat/auth      9.2     10   8     10    7     10
 
-Trend: IMPROVING (+0.9 since last run)
+Trend: IMPROVING (+1.0 since last run)
 ```
 
-**If score dropped vs the previous run:**
+**If score dropped vs the previous run with identical coverage:**
 1. Identify WHICH categories declined
 2. Show the delta for each declining category
 3. Correlate with tool output -- what specific errors/warnings appeared?
@@ -301,7 +395,7 @@ on a quick pass.
 1. **Wrap, don't replace.** Run the project's own tools. Never substitute your own analysis for what the tool reports.
 2. **Read-only.** Never fix issues. Present the dashboard and let the user decide.
 3. **Respect CLAUDE.md.** If `## Health Stack` is configured, use those exact commands. Do not second-guess.
-4. **Skipped is not failed.** If a tool isn't available, skip it gracefully and redistribute weight. Do not penalize the score.
+4. **Skipped is not failed.** Skip only a tool whose absence was established before running, show coverage, and redistribute weight among scored categories only. A command that ran and failed — including exit 127 — is FAILED, never SKIPPED.
 5. **Show raw output for failures.** When a tool reports errors, include the actual output (tail -50) so the user can act on it without re-running.
-6. **Trends require history.** On first run, say "First health check -- no trend data yet. Run /health again after making changes to track progress."
+6. **Trends require comparable history.** On the first scored run, say "First health check -- no trend data yet. Run /health again after making changes to track progress." A changed coverage set or an N/A run has no score delta.
 7. **Be honest about scores.** A codebase with 100 type errors and all tests passing is not healthy. The composite score should reflect reality.
