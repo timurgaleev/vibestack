@@ -5,13 +5,16 @@ Before presenting the document to the user for approval, run an adversarial revi
 **Step 1: Dispatch reviewer subagent**
 
 Use the Agent tool to dispatch an independent reviewer. The reviewer has fresh context
-and cannot see the brainstorming conversation — only the document. This ensures genuine
+and cannot see the brainstorming conversation — only the documents named below. This ensures genuine
 adversarial independence. Pass `run_in_background: false` on the Agent call (wherever the
 tool accepts it) and wait for the reviewer to return — a backgrounded reviewer hands back
 control before its score exists, and the loop would read that silence as a PASS.
 
 Prompt the subagent with:
 - The file path of the document just written
+- The path of every source document the calling skill names for this review (for
+  example, the plan the document summarizes). The reviewer judges the document against
+  those sources, not only against itself.
 - "Read this document and review it on 5 dimensions. For each dimension, note PASS or
   list specific issues with suggested fixes. At the end, output a quality score (1-10)
   across all dimensions."
@@ -29,8 +32,16 @@ The subagent should return:
 
 **Step 2: Fix and re-dispatch**
 
+How a fix lands is set by the calling skill's **fix policy**, stated just before this
+section. With no stated policy it is `auto-fix`.
+- `auto-fix` — fix each issue in the document on disk (use Edit tool).
+- `propose` — edit nothing on your own. Present each issue and its suggested fix as its
+  own AskUserQuestion: **A)** Apply this fix **B)** Leave it as is (record it as a
+  Reviewer Concern). Apply only the approved fixes. An issue the user declines is not
+  re-raised on later iterations.
+
 If the reviewer returns issues:
-1. Fix each issue in the document on disk (use Edit tool)
+1. Resolve each issue under the fix policy above
 2. Re-dispatch the reviewer subagent with the updated document, again with
    `run_in_background: false`
 3. Maximum 3 iterations total
@@ -51,6 +62,7 @@ After the loop completes (PASS, max iterations, or convergence guard):
 1. Tell the user the result — summary by default:
    "Your doc survived N rounds of adversarial review. M issues caught and fixed.
    Quality score: X/10."
+   If the reviewer never returned a score, say so ("no score") rather than inventing one.
    If they ask "what did the reviewer find?", show the full reviewer output.
 
 2. If issues remain after max iterations or convergence, add a "## Reviewer Concerns"
@@ -59,6 +71,10 @@ After the loop completes (PASS, max iterations, or convergence guard):
 3. Append metrics:
 ```bash
 mkdir -p ~/.vibestack/analytics
-echo '{"skill":"{SKILL_NAME}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.vibestack/analytics/spec-review.jsonl 2>/dev/null || true
+echo '{"skill":"{SKILL_NAME}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.vibestack/analytics/spec-review.jsonl \
+  || echo "SPEC_REVIEW_METRICS_NOT_PERSISTED (exit $?)"
 ```
-Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review.
+Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review;
+SCORE is `null` when the reviewer returned no score. If the block prints
+`SPEC_REVIEW_METRICS_NOT_PERSISTED`, tell the user the metrics were not saved and why —
+never report them as recorded.
