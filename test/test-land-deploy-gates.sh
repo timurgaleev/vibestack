@@ -153,6 +153,12 @@ SH
 printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/bin/sleep"
 chmod +x "$TMP/bin/gh" "$TMP/bin/sleep"
 export PATH="$TMP/bin:$PATH"
+# The skill calls helpers under ~/.vibestack/bin; point HOME at a fixture that
+# serves this checkout's bin/, so the result never depends on what the machine
+# running the test happens to have installed.
+mkdir -p "$TMP/home/.vibestack"
+ln -s "$ROOT/bin" "$TMP/home/.vibestack/bin"
+export HOME="$TMP/home"
 
 SHELLS="bash"
 command -v zsh >/dev/null 2>&1 && SHELLS="bash zsh"
