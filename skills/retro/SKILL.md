@@ -293,7 +293,7 @@ git show origin/<default>:VERSION 2>/dev/null
 RETRO_PLATFORM='<PLATFORM>'
 case "$RETRO_PLATFORM" in
   github)
-    gh pr list --state merged --base <default> --search "merged:<start-date>..<end-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE ;;
+    gh pr list --state merged --base <default> --search "merged:<start-date>..<end-date>" --json number,title,mergedAt --limit 1000 2>/dev/null || echo PRS_UNAVAILABLE ;;
   gitlab)
     python3 -I -c 'import json, subprocess, sys
 base, start, end = sys.argv[1:4]
