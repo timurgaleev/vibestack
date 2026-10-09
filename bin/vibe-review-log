@@ -31,6 +31,11 @@ A caller that captured ``--snapshot`` before reading the diff passes it as
     the run has incomplete coverage, not zero findings;
   - ``converged`` is false: the fix/re-review loop hit its bound with edits
     still unreviewed.
+
+A ``clean`` status with no ``start_tree`` when the tree cannot be snapshotted
+is recorded as ``unverified`` (``requested_status: clean``), never as clean: an
+entry with ``tree: null`` cannot be compared with anything, so it must not
+clear a gate.
 """
 import json
 import os
@@ -46,7 +51,11 @@ HOME = os.environ.get("VIBESTACK_HOME", os.path.expanduser("~/.vibestack"))
 
 SECRETS = [
     re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"gh[posr]_[A-Za-z0-9]{36}"),
+    re.compile(r"gh[posur]_[A-Za-z0-9]{36}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{22,}"),
+    re.compile(r"xox[abpr]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"(sk|rk)_live_[A-Za-z0-9]{20,}"),
+    re.compile(r"AIza[0-9A-Za-z_\-]{35}"),
     re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
     re.compile(r"sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}"),
     re.compile(r"sk-[A-Za-z0-9]{48}"),
@@ -63,7 +72,8 @@ def _run(cmd):
 
 def slug() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    out = _run([os.path.join(here, "vibe-slug")])
+    # A one-time bucket migration must never run under the 5s timeout.
+    out = _run(["env", "VIBESTACK_SLUG_NO_MIGRATE=1", os.path.join(here, "vibe-slug")])
     m = re.search(r"SLUG=([^\s]+)", out)
     return m.group(1) if m else "unknown"
 
@@ -170,6 +180,11 @@ def main() -> int:
         if why:
             print(f"error: clean status rejected — {why}", file=sys.stderr)
             return 1
+        if not body["tree"]:
+            body["status"] = "unverified"
+            body["requested_status"] = "clean"
+            print("warning: the working tree cannot be snapshotted, so this review is logged "
+                  "as unverified, not clean — freshness cannot be proven.", file=sys.stderr)
 
     path = os.path.join(HOME, "projects", slug(), f"{branch()}-reviews.jsonl")
     os.makedirs(os.path.dirname(path), exist_ok=True)

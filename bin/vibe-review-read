@@ -28,7 +28,8 @@ def _run(cmd):
 
 def slug() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    m = re.search(r"SLUG=([^\s]+)", _run([os.path.join(here, "vibe-slug")]))
+    # A one-time bucket migration must never run under the 5s timeout.
+    m = re.search(r"SLUG=([^\s]+)", _run(["env", "VIBESTACK_SLUG_NO_MIGRATE=1", os.path.join(here, "vibe-slug")]))
     return m.group(1) if m else "unknown"
 
 

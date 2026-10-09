@@ -37,10 +37,10 @@ cp "$ROOT/bin/vibe-slug" "$FAKE_HOME/.vibestack/bin/vibe-slug"
 
 REPO="$TMP/work/api"
 mkdir -p "$REPO" && git -C "$REPO" init -q && git -C "$REPO" remote add origin git@github.com:alice/api.git
-CK="$FAKE_HOME/.vibestack/projects/alice-api/checkpoints"
-mkdir -p "$CK"
-
 in_repo() { ( cd "$REPO" && HOME="$FAKE_HOME" VIBESTACK_HOME="$FAKE_HOME/.vibestack" CURRENT_BRANCH=main "$@" ); }
+SLUG_NOW=$(in_repo "$FAKE_HOME/.vibestack/bin/vibe-slug" --identity | sed -n 's/^SLUG=//p')
+CK="$FAKE_HOME/.vibestack/projects/$SLUG_NOW/checkpoints"
+mkdir -p "$CK"
 first_path() { grep -m1 '^/.*\.md$'; }
 
 # --- save: the stamp block -------------------------------------------------
@@ -83,16 +83,29 @@ printf '%s\n' "$OUT" | grep -q '^NO_CHECKPOINTS' && printf '%s\n' "$OUT" | grep 
   && ok "only foreign saves: NO_CHECKPOINTS plus the mismatch" || no "only-foreign case wrong: $OUT"
 
 echo "restore with a slug bin that cannot classify"
-cat > "$FAKE_HOME/.vibestack/bin/vibe-slug" <<'EOF'
-#!/usr/bin/env bash
-echo "SLUG=alice-api"
-EOF
+printf '#!/usr/bin/env bash\necho "SLUG=%s"\n' "$SLUG_NOW" > "$FAKE_HOME/.vibestack/bin/vibe-slug"
 chmod +x "$FAKE_HOME/.vibestack/bin/vibe-slug"
 OUT=$(in_repo bash "$TMP/restore.sh" 2>/dev/null)
 printf '%s\n' "$OUT" | grep -q '^IDENTITY_CHECK_UNAVAILABLE' \
   && ok "an old bin is announced, not mistaken for an empty bucket" || no "IDENTITY_CHECK_UNAVAILABLE missing: $OUT"
 printf '%s\n' "$OUT" | grep -qx "$BOB" \
   && ok "without classification every save stays listed" || no "candidates lost without classification: $OUT"
+
+# --- restore after a migration from the old name-only bucket ----------------
+
+echo "restore after migrating the old bucket"
+cp "$ROOT/bin/vibe-slug" "$FAKE_HOME/.vibestack/bin/vibe-slug"
+REPO="$TMP/work2/web"
+mkdir -p "$REPO" && git -C "$REPO" init -q && git -C "$REPO" remote add origin git@github.com:carol/web.git
+OLDCK="$FAKE_HOME/.vibestack/projects/web/checkpoints"
+mkdir -p "$OLDCK"
+printf -- '---\nstatus: in-progress\nbranch: main\nremote: github.com/carol/web\nproject_root: /elsewhere/web\n---\n\n## Working on: carol\n' > "$OLDCK/20260103-090000-carol.md"
+printf -- '---\nstatus: in-progress\nbranch: main\n---\n\n## Working on: whose\n' > "$OLDCK/20260104-090000-whose.md"
+OUT=$(in_repo bash "$TMP/restore.sh" 2>/dev/null)
+printf '%s\n' "$OUT" | grep -q '20260103-090000-carol.md$' \
+  && ok "the stamped checkpoint comes across and is offered" || no "stamped checkpoint missing after migration: $OUT"
+printf '%s\n' "$OUT" | grep -q '20260104-090000-whose.md' \
+  && no "an unstamped checkpoint from the shared old bucket is offered as this project's" || ok "an unstamped checkpoint from the old bucket is not offered"
 
 # --- prose contract -------------------------------------------------------
 

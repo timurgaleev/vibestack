@@ -5,32 +5,43 @@
 #   vibe-slug --identity                 prints SLUG, PROJECT_REMOTE, PROJECT_ROOT, LEGACY_SLUG (eval-safe)
 #   vibe-slug --stamp-checkpoint <file>  writes remote:/project_root: into a checkpoint's frontmatter
 #   vibe-slug --classify-checkpoints     reads checkpoint paths on stdin, prints "<match|unstamped|foreign>\t<path>"
-#   vibe-slug --migrate                  copies the old bucket without ownership evidence (see below), prints SLUG
+#   vibe-slug --migrate [--include-unstamped]
+#                                        copies the old bucket on request (see below), prints SLUG
 #
 # The slug names the state bucket ~/.vibestack/projects/<slug>/. It is derived
 # from the origin remote, so two repositories never share a bucket because they
 # happen to have the same name:
-#   github.com/alice/api        -> alice-api
-#   gitlab.com/grp/sub/api      -> sub-api-<8 hex of the canonical remote>
+#   github.com/alice/api        -> alice--api
+#   github.com/My.Org/my_repo   -> my-org--my-repo-<8 hex of the canonical remote>
+#   gitlab.com/grp/sub/api      -> sub--api-<8 hex of the canonical remote>
 #   /srv/git/api.git (local)    -> api-<8 hex of the path>
-#   no remote                   -> basename of the repository root (or cwd)
+#   no remote                   -> <folder>-<8 hex of the absolute git common dir>
+# Owner and repo are joined by a double hyphen, which sanitizing never
+# produces inside either part, so a-b/c and a/b-c stay apart, and no new slug
+# equals an old one (old slugs never held "--"). When sanitizing changed the
+# owner or the repo (my.repo and my_repo both become my-repo) the hash of the
+# canonical remote is appended, so those stay apart too.
 # VIBESTACK_PROJECT_SLUG overrides all of it.
 #
-# Buckets used to be keyed by the remote's last path segment alone (`api`). The
-# first time a repository resolves to its new slug, the durable files listed in
-# MIGRATE_FILES, MIGRATE_DIRS and MIGRATE_TREES are copied from that old
-# bucket — never moved, never overwritten. A shared name is not proof of
-# ownership (alice/api and bob/api both used `api`), so the copy runs only when
-# the old bucket shows evidence of this repository: a review-log commit that
-# exists here, or a checkpoint stamped with this remote. Without evidence it
-# prints a notice once and copies nothing; `vibe-slug --migrate` copies anyway.
-# The old bucket records which remote claimed it; a different remote that maps
-# to the same old name is warned instead of copied.
+# Buckets used to be keyed by the remote's last path segment alone (`api`), or
+# by the folder name without a remote. The first time a repository resolves to
+# its new slug, the durable files listed in MIGRATE_FILES, MIGRATE_DIRS and
+# MIGRATE_TREES are copied from that old bucket — never moved, never
+# overwritten. A shared name is not proof of ownership (alice/api and bob/api
+# both used `api`), and neither is a shared commit (a fork carries the same
+# history), so the copy runs on its own only when the old bucket holds a
+# checkpoint stamped with this exact project. Anything less prints a notice
+# once and copies nothing; `vibe-slug --migrate` copies on request. Unstamped
+# checkpoints are copied only with --include-unstamped, since nothing says
+# whose they are. The old bucket records which project claimed it and on what
+# evidence; another project is warned instead of copied, unless the claim was
+# unproven and this project holds a stamped checkpoint there, in which case
+# the proven owner takes it over. VIBESTACK_SLUG_NO_MIGRATE=1 skips the copy
+# (for callers on a short timeout). A copy that fails partway leaves no
+# marker, so the next run retries it.
 #
-# Limits: without a remote the slug is the directory basename, so two unrelated
-# remote-less repositories with one folder name still share a bucket (only
-# checkpoints are told apart, by project_root). The same owner/repo on two
-# hosts shares one bucket too. VIBESTACK_PROJECT_SLUG separates either case.
+# Limits: the same owner/repo on two hosts shares one bucket.
+# VIBESTACK_PROJECT_SLUG separates that case.
 set -euo pipefail
 
 STATE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
@@ -94,23 +105,40 @@ _canonical_remote() {
 }
 
 _slug_from_canon() {
-  local n last prev
+  local n last prev owner repo slug
   if [ "$HOSTED" = 1 ]; then
     n=$(printf '%s\n' "$SEGS" | awk '{print NF}')
     last=$(printf '%s\n' "$SEGS" | awk '{print $NF}')
     prev=$(printf '%s\n' "$SEGS" | awk 'NF > 1 {print $(NF-1)}')
     if [ "$n" -eq 0 ]; then
       echo ""
-    elif [ "$n" -eq 2 ]; then
-      _sanitize "$prev-$last"
-    elif [ "$n" -ge 3 ]; then
-      _sanitize "$prev-$last-$(_hash8 "$CANON")"
+    elif [ "$n" -eq 1 ]; then
+      repo=$(_sanitize "$last")
+      echo "${repo:-x}--$(_hash8 "$CANON")"
     else
-      _sanitize "$last-$(_hash8 "$CANON")"
+      owner=$(_sanitize "$prev"); repo=$(_sanitize "$last")
+      slug="${owner:-x}--${repo:-x}"
+      # Dropped segments (nested groups) or a lossy sanitize: add the hash.
+      if [ "$n" -ge 3 ] || [ "$owner" != "$(_lower "$prev")" ] || [ "$repo" != "$(_lower "$last")" ]; then
+        slug="$slug-$(_hash8 "$CANON")"
+      fi
+      echo "$slug"
     fi
   else
     last=$(basename "${CANON%.git}")
     _sanitize "$last-$(_hash8 "$CANON")"
+  fi
+}
+
+# Absolute, symlink-free git common dir (shared by every worktree of a clone),
+# or the physical cwd outside a repository.
+_common_dir() {
+  local d
+  d=$(git rev-parse --git-common-dir 2>/dev/null) || d=""
+  if [ -n "$d" ] && [ -d "$d" ]; then
+    (cd "$d" && pwd -P)
+  else
+    pwd -P
   fi
 }
 
@@ -131,16 +159,25 @@ if [ -n "${VIBESTACK_PROJECT_SLUG:-}" ]; then
 elif [ -n "$CANON" ]; then
   SLUG=$(_slug_from_canon)
 else
-  SLUG=$(_sanitize "$(basename "$PROJECT_ROOT")")
+  _base=$(_sanitize "$(basename "$PROJECT_ROOT")")
+  SLUG="${_base:-project}-$(_hash8 "$(_common_dir)")"
 fi
 [ -n "$SLUG" ] || SLUG="unknown"
 
 if [ -n "$REMOTE_URL" ]; then
   LEGACY_SLUG=$(_legacy_slug "$REMOTE_URL")
 else
-  LEGACY_SLUG="$SLUG"
+  LEGACY_SLUG=$(_sanitize "$(basename "$PROJECT_ROOT")")
 fi
 [ -n "$LEGACY_SLUG" ] || LEGACY_SLUG="unknown"
+
+# Who claims an old bucket: the canonical remote, or the clone itself when
+# there is no remote.
+if [ -n "$CANON" ]; then
+  OWNER_ID="$CANON"
+else
+  OWNER_ID="local:$(_common_dir)"
+fi
 
 # Read one frontmatter field (first `---` block only).
 _fm_field() {
@@ -176,53 +213,80 @@ MIGRATE_DIRS="specs ceo-plans"
 # Copied whole (any depth, any file type): design boards and approved mockups.
 MIGRATE_TREES="designs"
 
+# Copies when the target is absent. Counts a failed copy in FAILED, so a
+# partial migration is never recorded as done.
 _copy_if_absent() {
   [ -f "$1" ] || return 0
   [ -e "$2" ] && return 0
-  mkdir -p "$(dirname "$2")"
-  cp -p "$1" "$2"
-  COPIED=$((COPIED + 1))
+  if mkdir -p "$(dirname "$2")" 2>/dev/null && cp -p "$1" "$2" 2>/dev/null; then
+    COPIED=$((COPIED + 1))
+  else
+    FAILED=$((FAILED + 1))
+    echo "vibe-slug: could not copy $1 to $2" >&2
+  fi
+  return 0
 }
 
-# Evidence that this repository wrote the old bucket: a checkpoint stamped with
-# this remote, or a commit a review log recorded that exists in this clone.
-_owns_legacy() {
+# What the old bucket proves about this project:
+#   stamped  a checkpoint stamped with this exact project (proof)
+#   commits  a full commit id a review log recorded exists in this clone
+#            (not proof: a fork shares that history)
+#   none     nothing
+_legacy_evidence() {
   local old="$1" f sha
   if [ -d "$old/checkpoints" ]; then
     for f in "$old/checkpoints"/*.md; do
-      [ -f "$f" ] && [ "$(_classify "$f")" = match ] && return 0
+      [ -f "$f" ] && [ "$(_classify "$f")" = match ] && { echo stamped; return 0; }
     done
   fi
   for sha in $(cat "$old"/*.jsonl 2>/dev/null \
-      | grep -oE '"(commit|commit_full|merge_sha|head_sha|base_sha)"[[:space:]]*:[[:space:]]*"[0-9a-f]{7,40}"' \
-      | grep -oE '[0-9a-f]{7,40}"$' | tr -d '"' | sort -u | head -n 50); do
-    git cat-file -e "$sha^{commit}" 2>/dev/null && return 0
+      | grep -oE '"(commit|commit_full|merge_sha|head_sha|base_sha)"[[:space:]]*:[[:space:]]*"[0-9a-f]{40}"' \
+      | grep -oE '[0-9a-f]{40}"$' | tr -d '"' | sort -u | head -n 50); do
+    git cat-file -e "$sha^{commit}" 2>/dev/null && { echo commits; return 0; }
   done
-  return 1
+  echo none
 }
 
 _migrate_legacy() {
-  local force="${1:-0}"
-  [ -n "$CANON" ] || return 0
+  local force="${1:-0}" unstamped="${2:-0}"
   [ -z "${VIBESTACK_PROJECT_SLUG:-}" ] || return 0
   [ "$LEGACY_SLUG" != "$SLUG" ] || return 0
   local old="$STATE_HOME/projects/$LEGACY_SLUG" new="$STATE_HOME/projects/$SLUG"
-  local marker="$new/.slug-migration" claim f name
-  [ "$force" = 1 ] || [ ! -e "$marker" ] || return 0
+  local marker="$new/.slug-migration" claim="$old/.claimed-by"
+  local evidence claimant="" claim_kind="" kind f name cls left=0
   [ -d "$old" ] || return 0
+  if [ "$force" != 1 ] && [ -e "$marker" ]; then
+    # Done, or skipped. A skip is revisited only when a checkpoint landed in
+    # the old bucket since, which may be the proof that was missing.
+    case "$(head -1 "$marker" 2>/dev/null)" in skipped*) ;; *) return 0 ;; esac
+    [ -d "$old/checkpoints" ] && [ "$old/checkpoints" -nt "$marker" ] || return 0
+  fi
+  evidence=$(_legacy_evidence "$old")
+  if [ -f "$claim" ]; then
+    claimant=$(sed -n 1p "$claim")
+    claim_kind=$(sed -n 's/^evidence: //p' "$claim" | head -1)
+  fi
   mkdir -p "$new"
-  claim="$old/.claimed-by"
-  if [ -f "$claim" ] && [ "$(cat "$claim")" != "$CANON" ]; then
-    printf 'skipped %s: claimed by %s\n' "$LEGACY_SLUG" "$(cat "$claim")" > "$marker"
-    echo "vibe-slug: old bucket projects/$LEGACY_SLUG belongs to $(cat "$claim"); nothing copied to projects/$SLUG" >&2
+  if [ -n "$claimant" ] && [ "$claimant" != "$OWNER_ID" ]; then
+    if [ "$evidence" = stamped ] && [ "$claim_kind" != stamped ]; then
+      echo "vibe-slug: projects/$LEGACY_SLUG was claimed by $claimant without proof; a checkpoint stamped for $OWNER_ID proves it belongs here, so this project takes the claim over" >&2
+    else
+      printf 'skipped %s: claimed by %s\n' "$LEGACY_SLUG" "$claimant" > "$marker"
+      echo "vibe-slug: old bucket projects/$LEGACY_SLUG belongs to $claimant; nothing copied to projects/$SLUG" >&2
+      return 0
+    fi
+  elif [ "$force" != 1 ] && [ "$claimant" != "$OWNER_ID" ] && [ "$evidence" != stamped ]; then
+    if [ "$evidence" = commits ]; then
+      printf 'skipped %s: ambiguous evidence (shared commits) for %s\n' "$LEGACY_SLUG" "$OWNER_ID" > "$marker"
+      echo "vibe-slug: projects/$LEGACY_SLUG records commits that also exist here, but a fork shares that history, so it may belong to another repository named $LEGACY_SLUG; nothing copied to projects/$SLUG. If it holds this repository's state, run: vibe-slug --migrate" >&2
+    else
+      printf 'skipped %s: no evidence it belongs to %s\n' "$LEGACY_SLUG" "$OWNER_ID" > "$marker"
+      echo "vibe-slug: projects/$LEGACY_SLUG may belong to another repository named $LEGACY_SLUG; nothing copied to projects/$SLUG. If it holds this repository's state, run: vibe-slug --migrate" >&2
+    fi
     return 0
   fi
-  if [ "$force" != 1 ] && [ ! -f "$claim" ] && ! _owns_legacy "$old"; then
-    printf 'skipped %s: no evidence it belongs to %s\n' "$LEGACY_SLUG" "$CANON" > "$marker"
-    echo "vibe-slug: projects/$LEGACY_SLUG may belong to another repository named $LEGACY_SLUG; nothing copied to projects/$SLUG. If it holds this repository's state, run: vibe-slug --migrate" >&2
-    return 0
-  fi
-  COPIED=0
+  if [ "$evidence" = stamped ]; then kind=stamped; else kind=manual; fi
+  COPIED=0; FAILED=0
   for name in $MIGRATE_FILES; do
     _copy_if_absent "$old/$name" "$new/$name"
   done
@@ -244,13 +308,29 @@ _migrate_legacy() {
   if [ -d "$old/checkpoints" ]; then
     for f in "$old/checkpoints"/*.md; do
       [ -f "$f" ] || continue
-      [ "$(_classify "$f")" = foreign ] && continue
+      cls=$(_classify "$f")
+      [ "$cls" = foreign ] && continue
+      # Nothing says whose an unstamped checkpoint is; restore would offer it
+      # as this project's, so it comes across only when asked for.
+      if [ "$cls" = unstamped ] && [ "$unstamped" != 1 ]; then
+        left=$((left + 1))
+        continue
+      fi
       _copy_if_absent "$f" "$new/checkpoints/$(basename "$f")"
     done
   fi
-  printf '%s\n' "$CANON" > "$claim"
-  printf 'copied %s files from %s\n' "$COPIED" "$LEGACY_SLUG" > "$marker"
+  if [ "$FAILED" -gt 0 ]; then
+    echo "vibe-slug: $FAILED of $((COPIED + FAILED)) copies from projects/$LEGACY_SLUG failed; the migration is not marked done and will be retried" >&2
+    return 1
+  fi
+  if ! printf '%s\nevidence: %s\n' "$OWNER_ID" "$kind" > "$claim" 2>/dev/null \
+     || ! printf 'copied %s files from %s (%s)\n' "$COPIED" "$LEGACY_SLUG" "$kind" > "$marker" 2>/dev/null; then
+    echo "vibe-slug: could not record the migration from projects/$LEGACY_SLUG; it will be retried" >&2
+    return 1
+  fi
   [ "$COPIED" -eq 0 ] || echo "vibe-slug: copied $COPIED files from projects/$LEGACY_SLUG to projects/$SLUG (the old bucket is left in place)" >&2
+  [ "$left" -eq 0 ] || echo "vibe-slug: left $left unstamped checkpoint(s) in projects/$LEGACY_SLUG; nothing records whose they are. To copy them: vibe-slug --migrate --include-unstamped" >&2
+  return 0
 }
 
 # Single-quoted, so a path with spaces or quotes survives eval.
@@ -259,11 +339,15 @@ _q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 case "${1:-}" in
   "")
     # A migration failure (read-only home, full disk) must never cost the caller its slug.
-    _migrate_legacy || true
+    [ "${VIBESTACK_SLUG_NO_MIGRATE:-0}" = 1 ] || _migrate_legacy || true
     echo "SLUG=$SLUG"
     ;;
   --migrate)
-    _migrate_legacy 1
+    case "${2:-}" in
+      "") _migrate_legacy 1 0 ;;
+      --include-unstamped) _migrate_legacy 1 1 ;;
+      *) echo "usage: vibe-slug --migrate [--include-unstamped]" >&2; exit 2 ;;
+    esac
     echo "SLUG=$SLUG"
     ;;
   --identity)
@@ -277,12 +361,21 @@ case "${1:-}" in
     [ -n "$f" ] && [ -f "$f" ] || { echo "usage: vibe-slug --stamp-checkpoint <file>" >&2; exit 2; }
     [ "$(head -1 "$f")" = "---" ] || { echo "vibe-slug: $f has no frontmatter" >&2; exit 1; }
     tmp="$f.stamp.$$"
-    awk -v remote="${CANON:-none}" -v root="$PROJECT_ROOT" '
+    # Values go through ENVIRON: awk -v would turn the backslashes in a
+    # Windows-style root into escape sequences.
+    if VS_REMOTE="${CANON:-none}" VS_ROOT="$PROJECT_ROOT" awk '
       NR == 1 { print; next }
       !done && /^(remote|project_root):/ { next }
-      !done && $0 == "---" { print "remote: " remote; print "project_root: " root; done = 1 }
+      !done && $0 == "---" { print "remote: " ENVIRON["VS_REMOTE"]; print "project_root: " ENVIRON["VS_ROOT"]; done = 1 }
       { print }
-    ' "$f" > "$tmp" && mv "$tmp" "$f"
+      END { exit done ? 0 : 3 }
+    ' "$f" > "$tmp"; then
+      mv "$tmp" "$f"
+    else
+      rm -f "$tmp"
+      echo "vibe-slug: $f has no closing --- after its frontmatter; nothing stamped" >&2
+      exit 1
+    fi
     ;;
   --classify-checkpoints)
     while IFS= read -r f; do
@@ -291,7 +384,7 @@ case "${1:-}" in
     done
     ;;
   *)
-    echo "usage: vibe-slug [--migrate | --identity | --stamp-checkpoint <file> | --classify-checkpoints]" >&2
+    echo "usage: vibe-slug [--migrate [--include-unstamped] | --identity | --stamp-checkpoint <file> | --classify-checkpoints]" >&2
     exit 2
     ;;
 esac

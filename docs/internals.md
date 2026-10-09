@@ -86,7 +86,7 @@ new.
 
 | Binary | Purpose |
 |--------|---------|
-| `vibe-slug` | Project slug from the origin remote, as `owner-repo` (`github.com/alice/api` → `alice-api`; nested groups and local-path remotes add an 8-hex hash; no remote falls back to the folder name; `VIBESTACK_PROJECT_SLUG` overrides). The first run under the new name copies durable state (learnings, decisions, specs, design boards, unstamped and own checkpoints) from the old name-only bucket — copied, never moved — but only when that bucket shows evidence of this repository (a review-log commit that exists here, or a checkpoint stamped with this remote); otherwise it prints a notice and `vibe-slug --migrate` copies on request. Review logs and deploy confirmations are never carried over, so the readiness dashboard starts empty for branches that were open. `--identity`, `--stamp-checkpoint` and `--classify-checkpoints` let `/context-save` stamp and `/context-restore` filter checkpoints by project. Limits: two remote-less repos with one folder name, or one owner/repo on two hosts, still share a bucket — set `VIBESTACK_PROJECT_SLUG` |
+| `vibe-slug` | Project slug from the origin remote, as `owner--repo` (`github.com/alice/api` → `alice--api`). The double hyphen never occurs inside a sanitized part, so `a-b/c` and `a/b-c` stay apart and no new slug equals an old one; when sanitizing changed the owner or repo (`my.repo` and `my_repo`), and for nested groups and local-path remotes, an 8-hex hash of the canonical remote is appended. Without a remote the slug is the folder name plus a hash of the clone's absolute git common dir, so two remote-less repos with one folder name stay apart. `VIBESTACK_PROJECT_SLUG` overrides. The first run under the new name copies durable state (learnings, decisions, specs, design boards, the project's own stamped checkpoints) from the old name-only bucket — copied, never moved — only when that bucket holds a checkpoint stamped with this exact project. A review-log commit that also exists here is not proof (a fork shares history): it, like no evidence at all, prints a notice once and `vibe-slug --migrate` copies on request. Unstamped checkpoints come across only with `--migrate --include-unstamped`. The old bucket's `.claimed-by` records the claiming project and its evidence; an unproven claim gives way to a later project that holds a stamped checkpoint there. A copy that fails partway leaves no marker or claim and is retried. `VIBESTACK_SLUG_NO_MIGRATE=1` skips the copy; `vibe-evidence`, `vibe-review-log` and `vibe-review-read` set it because they call `vibe-slug` under a 5s timeout. Review logs and deploy confirmations are never carried over, so the readiness dashboard starts empty for branches that were open. `--identity`, `--stamp-checkpoint` and `--classify-checkpoints` let `/context-save` stamp and `/context-restore` filter checkpoints by project; a checkpoint without a closing `---` is refused. Limit: one owner/repo on two hosts shares a bucket — set `VIBESTACK_PROJECT_SLUG` |
 | `vibe-config` | Get/set project config (`config.json`) |
 | `vibe-learnings-log` / `vibe-learnings-search` | Append / search per-project learnings |
 | `vibe-learnings-sync-plan` | Plan `/learn sync` pushes: dedup, watermark, secret redaction |
@@ -265,7 +265,13 @@ legs `brew install bash` first. Three jobs run beyond the matrix:
 `session-runner.ts` spawns a real `claude -p` session in a throwaway sandbox:
 skills render from repo sources into the sandbox's project-level
 `.claude/skills/` (the path real installs resolve), `VIBESTACK_HOME` points
-into the sandbox, and the child gets zero MCP servers. The runner streams
+into the sandbox, and the child gets zero MCP servers. Sessions run with
+`--dangerously-skip-permissions`, so the child's working directory is the
+sandbox and its `HOME` (with `CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME`) is a
+fresh directory inside it — never your HOME or this repository. The same holds
+for every session and judge call of `bun run test:compliance`, which keeps its
+USD cap (`--max-usd`, default $1.00). Authenticate with `ANTHROPIC_API_KEY` or
+`CLAUDE_CODE_OAUTH_TOKEN`; nothing under the real HOME is read. The runner streams
 NDJSON and survives timed-out children that leave pipe-holding orphans —
 regression-locked by `session-runner-timeout.test.ts`, which runs offline in
 the default suite.
