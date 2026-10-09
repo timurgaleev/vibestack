@@ -121,6 +121,18 @@ chk "though HEAD has not moved" "$(git -C "$REPO" rev-parse HEAD)" "$HEAD1"
 has_snip() { if grep -qF -- "$2" "$SNIP"; then ok "$1"; else no "$1 (missing: $2)"; fi; }
 has_snip "the verdict binds to the tree" "tree changed since review"
 has_snip "staleness compares trees first" 'compare it with `TREE_NOW`'
+has_snip "a null tree never clears" 'CLEAN (freshness unknown)'
+has_snip "an unverified entry is never clean" 'status `unverified`'
+grep -qF 'CLEAN (freshness unknown)' "$SRC/skills/ship/SKILL.md" && ok "ship: a null tree never clears" || no "ship: null-tree rule missing"
+
+echo "review log: clean without a tree fingerprint"
+NOGIT="$TMP/nogit"; mkdir -p "$NOGIT"
+OUT=$(cd "$NOGIT" && "$BIN/vibe-review-log" '{"skill":"review","status":"clean","completed":true,"converged":true}' 2>&1); RC=$?
+chk "a clean entry with no snapshot is still logged" "$RC" "0"
+NLOG=$(find "$VIBESTACK_HOME/projects" -name 'unknown-reviews.jsonl' | head -1)
+NREC=$(python3 -I -c 'import json,sys; r=json.loads(open(sys.argv[1]).readlines()[-1]); print(r["status"], r.get("requested_status"), r["tree"])' "$NLOG" 2>/dev/null)
+chk "it is recorded as unverified, never clean" "$NREC" "unverified clean None"
+case "$OUT" in *unverified*) ok "and the logger says so" ;; *) no "no unverified warning: $OUT" ;; esac
 
 echo "ship: Step 5 records lanes, Step 16 reuses them"
 SHIP="$SRC/skills/ship/SKILL.md"
