@@ -226,7 +226,7 @@ git log origin/<default> --since="<window>" --format="%H|%aN|%ae|%ai|%s" --short
 #    Test files: paths matching '(^|/)(tests?|specs?|__tests__)/|\.(test|spec)\.|_(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.rb$|Tests?\.swift$|\.tftest\.hcl$|\.bats$'.
 #    Generated/build paths matching '(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/'
 #    count toward neither test LOC nor logical SLOC, and are dropped from hotspots
-#    (commands 4, 10, 12 and 13 apply the same exclusion).
+#    (commands 4, 10, 13 and 14 apply the same exclusion).
 git log origin/<default> --since="<window>" --format="COMMIT:%H|%aN" --numstat
 
 # 3. Commit timestamps for session detection and hourly distribution (with author)
@@ -262,12 +262,12 @@ git log origin/<default> --since="<window>" --oneline --grep="test(qa):" --grep=
 # 12. vibestack skill usage telemetry (if available)
 cat "${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl" 2>/dev/null || true
 
-# 12. Test files changed in window
+# 13. Test files changed in window
 git log origin/<default> --since="<window>" --format="" --name-only | grep -v '^$' \
   | grep -vE '(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/' \
   | grep -E '(^|/)(tests?|specs?|__tests__)/|\.(test|spec)\.|_(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.rb$|Tests?\.swift$|\.tftest\.hcl$|\.bats$' | sort -u | wc -l
 
-# 13. Logical SLOC added: added lines minus blanks and comment-only lines.
+# 14. Logical SLOC added: added lines minus blanks and comment-only lines.
 #     Leader matching is a heuristic, not a parser — good enough to keep the
 #     headline number from counting whitespace and license headers as shipping.
 #     The awk drops hunks of generated/build files (same pattern as command 4).
@@ -277,15 +277,15 @@ git log origin/<default> --since="<window>" --no-merges -p --unified=0 --no-colo
   | grep -vE '^[[:space:]]*$' \
   | grep -vE '^[[:space:]]*(#|//|/\*|\*|--|<!--)' | wc -l
 
-# 14. VERSION file at both ends of the window (skip both lines if no VERSION file)
+# 15. VERSION file at both ends of the window (skip both lines if no VERSION file)
 _FIRST=$(git log origin/<default> --since="<window>" --format=%H | tail -1)
 git show "${_FIRST}^:VERSION" 2>/dev/null || git show "${_FIRST}:VERSION" 2>/dev/null
 git show origin/<default>:VERSION 2>/dev/null
 
-# 15. Merged PRs in window (hosting data)
+# 16. Merged PRs in window (hosting data)
 gh pr list --state merged --base <default> --search "merged:>=<start-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE
 
-# 16. CHANGELOG entries added in window
+# 17. CHANGELOG entries added in window
 git log origin/<default> --since="<window>" --format= -p -- CHANGELOG.md | grep '^+' | grep -v '^+++' || true
 ```
 
@@ -320,11 +320,11 @@ new functionality. Raw LOC is demoted to context because AI inflates it; ten
 lines of a good fix is not less shipping than ten thousand lines of scaffold.
 See docs/designs/PLAN_TUNING_V1.md §Workstream C.
 
-Logical SLOC comes from command 13, version range from command 14. PRs merged
-comes from command 15; on `PRS_UNAVAILABLE` the row reads "unavailable (no gh)" —
+Logical SLOC comes from command 14, version range from command 15. PRs merged
+comes from command 16; on `PRS_UNAVAILABLE` the row reads "unavailable (no gh)" —
 never infer it from `#NNN` in subjects, which is what PRs referenced (command 5)
-counts. Features shipped is the deduplicated CHANGELOG entry lines from command 16
-plus the merged PR titles from command 15; when both sources are empty or
+counts. Features shipped is the deduplicated CHANGELOG entry lines from command 17
+plus the merged PR titles from command 16; when both sources are empty or
 unavailable it reads "unavailable", not 0. **Every row traces to a Step 1 command.** If a row has no data source in this repo — no
 VERSION file, no CHANGELOG, no Greptile history — drop the row. Never fill a
 cell from your own estimate: an estimated number sitting in a table of measured
@@ -585,6 +585,8 @@ Use the Write tool to save the JSON file with this schema:
 }
 ```
 
+When command 16 printed `PRS_UNAVAILABLE`, write `"prs_merged": null`, never `0`: a zero reads as a window with no merges, and a later trend comparison would count it as a real drop.
+
 **Note:** Only include the `greptile` field if `~/.vibestack/greptile-history.md` exists and has entries within the time window. Only include the `backlog` field if `TODOS.md` exists. Only include the `test_health` field if test files were found (command 10 returns > 0). If any has no data, omit the field entirely.
 
 Include test health data in the JSON when test files exist:
@@ -651,7 +653,7 @@ Narrative covering:
 
 ### Test Health
 - Total test files: N (from command 10)
-- Test files changed this period: M (from command 12)
+- Test files changed this period: M (from command 13)
 - Regression test commits: list `test(qa):` and `test(design):` and `test: coverage` commits from command 11
 - If prior retro exists and has `test_health`: show delta "Test files: {last} → {now} (+{delta})"
 - If test ratio < 20%: flag as growth area — "100% test coverage is the goal. Tests make vibe coding safe."
