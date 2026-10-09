@@ -86,6 +86,7 @@ with per-item fields). If it's ambiguous, ask once with AskUserQuestion.
 ### 2. Navigate and inspect
 
 ```bash
+B='<BROWSE_BIN>'
 "$B" goto <url>
 "$B" text          # full visible text — orient yourself
 ```
@@ -94,6 +95,7 @@ For structured values, pull them by selector with `js` (the stateless shim
 evaluates against a fresh load) — e.g. a list of prices:
 
 ```bash
+B='<BROWSE_BIN>'
 "$B" js "Array.from(document.querySelectorAll('.price')).map(e => e.textContent.trim())"
 ```
 

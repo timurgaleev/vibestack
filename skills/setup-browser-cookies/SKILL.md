@@ -48,6 +48,8 @@ Import logged-in sessions from your real Chromium browser into the headless brow
 
 First, check if browse is already connected to the user's real browser:
 ```bash
+B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/setup-browser-cookies}/../browse/bin/vibe-browse"
+[ -x "$B" ] || B="$(command -v vibe-browse || true)"
 $B status 2>/dev/null | grep -q "Mode: cdp" && echo "CDP_MODE=true" || echo "CDP_MODE=false"
 ```
 If `CDP_MODE=true`: tell the user "Not needed — you're connected to your real browser via CDP. Your cookies and sessions are already available." and stop. No cookie import needed.
@@ -68,10 +70,15 @@ B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/setup-browser-cookies}/../browse/bin
 [ -x "$B" ] || B="$(command -v vibe-browse || true)"
 if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
   echo "READY: $B"
+  echo "BROWSE_BIN: $B"
 else
   echo "NEEDS_SETUP"
 fi
 ```
+
+Every Bash call starts a fresh shell, so `$B` is unset in every later block.
+A block that runs a browse command starts with `B='<BROWSE_BIN>'`: replace
+`<BROWSE_BIN>` with the path printed on the `BROWSE_BIN:` line.
 
 If `NEEDS_SETUP`, stop and tell the user the browse binary could not be found or
 could not start — node is missing, or first-run setup was declined.
@@ -85,6 +92,7 @@ half-import that never occurred.
 ### 2. Open the cookie picker
 
 ```bash
+B='<BROWSE_BIN>'
 $B cookie-import-browser
 ```
 
@@ -111,6 +119,7 @@ Arc, Brave, Edge, Comet) and let the user answer; never fill one in yourself. Th
 so navigate to the domain first:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto https://github.com
 $B cookie-import-browser <browser> --domain github.com
 ```

@@ -56,8 +56,12 @@ B=""
 [ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/browse/bin/vibe-browse" ] && B="$_ROOT/.claude/skills/browse/bin/vibe-browse"
 [ -z "$B" ] && [ -x "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/open-browser}/../browse/bin/vibe-browse" ] && B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/open-browser}/../browse/bin/vibe-browse"
 [ -z "$B" ] && B="$(command -v vibe-browse || true)"
-if [ -x "$B" ]; then echo "READY: $B"; else echo "NEEDS_SETUP"; fi
+if [ -x "$B" ]; then echo "READY: $B"; echo "BROWSE_BIN: $B"; else echo "NEEDS_SETUP"; fi
 ```
+
+Every Bash call starts a fresh shell, so `$B` is unset in every later block.
+A block that runs a browse command starts with `B='<BROWSE_BIN>'`: replace
+`<BROWSE_BIN>` with the path printed on the `BROWSE_BIN:` line.
 
 If `NEEDS_SETUP`, stop and tell the user:
 "The browse daemon is required for this skill but is not installed. **vibestack does not bundle the browse daemon** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon) for current options."
@@ -73,6 +77,7 @@ delete its state file, to get it out of the way. Probe without starting one
 (`BROWSE_NO_AUTOSTART=1` keeps `status` from booting a daemon):
 
 ```bash
+B='<BROWSE_BIN>'
 _STATUS=$(BROWSE_NO_AUTOSTART=1 $B status 2>&1); _STATUS_RC=$?
 printf '%s\n' "$_STATUS" | head -5
 if [ "$_STATUS_RC" -ne 0 ]; then echo "DAEMON: none"
@@ -96,6 +101,7 @@ else echo "DAEMON: live"; fi
   stop:
 
   ```bash
+  B='<BROWSE_BIN>'
   printf 'Live browse daemon left running. Run %s stop, then re-run /open-browser to replace it.\n' "$B"
   ```
 
@@ -118,12 +124,14 @@ else echo "DAEMON: live"; fi
 ## Step 1: Connect
 
 ```bash
+B='<BROWSE_BIN>'
 $B connect
 ```
 
 After an explicit A in Step 0, and only then:
 
 ```bash
+B='<BROWSE_BIN>'
 $B connect --force-restart
 ```
 
@@ -146,6 +154,7 @@ share the output with the user before proceeding.
 ## Step 2: Verify
 
 ```bash
+B='<BROWSE_BIN>'
 $B status
 ```
 
@@ -228,12 +237,14 @@ If C:
 After the user confirms the Side Panel is working, run a quick demo:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto https://github.com
 ```
 
 Wait 2 seconds, then:
 
 ```bash
+B='<BROWSE_BIN>'
 $B snapshot -i
 ```
 

@@ -121,6 +121,7 @@ If the user passed `--baseline`, capture the current state BEFORE deploying.
 For each page (either from `--pages` or the homepage):
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto <page-url>
 $B snapshot -i -a -o ".vibestack/canary-reports/baselines/<page-name>.png"
 $B console --errors
@@ -154,6 +155,7 @@ Then STOP and tell the user: "Baseline captured. Deploy your changes, then run `
 If no `--pages` were specified, auto-discover pages to monitor:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto <url>
 $B links
 $B snapshot -i
@@ -175,6 +177,7 @@ If no `baseline.json` exists, take a quick snapshot now as a reference point.
 For each page to monitor:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto <page-url>
 $B snapshot -i -a -o ".vibestack/canary-reports/screenshots/pre-<page-name>.png"
 $B console --errors
@@ -188,6 +191,7 @@ Record the console error count and load time for each page. These become the ref
 Monitor for the specified duration. Every 60 seconds, check each page:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto <page-url>
 $B snapshot -i -a -o ".vibestack/canary-reports/screenshots/<page-name>-<check-number>.png"
 $B console --errors

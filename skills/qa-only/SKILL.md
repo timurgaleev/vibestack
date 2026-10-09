@@ -77,7 +77,11 @@ Every instruction that follows describes how to observe and record. Nothing belo
 ```bash
 REPORT_DIR=".vibestack/qa-reports"
 mkdir -p "$REPORT_DIR/screenshots"
+echo "REPORT_DIR: $REPORT_DIR"
 ```
+
+Later blocks that write screenshots start with `REPORT_DIR='<REPORT_DIR>'`:
+replace `<REPORT_DIR>` with the path printed on the `REPORT_DIR:` line.
 
 If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
 
@@ -121,6 +125,7 @@ This is the **primary mode** for developers verifying their work. When the user 
 
 3. **Detect the running app** — check common local dev ports:
    ```bash
+   B='<BROWSE_BIN>'
    $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \
    $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \
    $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
@@ -170,6 +175,7 @@ Run full mode, then load `baseline.json` from a previous run. Diff: which issues
 **If the user specified auth credentials:**
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto <login-url>
 $B snapshot -i                    # find the login form
 $B fill @e3 "user@example.com"
@@ -181,6 +187,7 @@ $B snapshot -D                    # verify login succeeded
 **If the user provided a cookie file:**
 
 ```bash
+B='<BROWSE_BIN>'
 $B cookie-import cookies.json
 $B goto <target-url>
 ```
@@ -194,6 +201,8 @@ $B goto <target-url>
 Get a map of the application:
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B goto <target-url>
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/initial.png"
 $B links                          # map navigation structure
@@ -213,6 +222,8 @@ $B console --errors               # any errors on landing?
 Visit pages systematically. At each page:
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B goto <page-url>
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
 $B console --errors
@@ -228,6 +239,8 @@ Then follow the **per-page exploration checklist** (see `qa/references/issue-tax
 6. **Console** — Any new JS errors after interactions?
 7. **Responsiveness** — Check mobile viewport if relevant:
    ```bash
+   B='<BROWSE_BIN>'
+   REPORT_DIR='<REPORT_DIR>'
    $B viewport 375x812
    $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
    $B viewport 1280x720
@@ -251,6 +264,8 @@ Document each issue **immediately when found** — don't batch them.
 5. Write repro steps referencing screenshots
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B screenshot "$REPORT_DIR/screenshots/issue-001-step-1.png"
 $B click @e5
 $B screenshot "$REPORT_DIR/screenshots/issue-001-result.png"
@@ -262,6 +277,8 @@ $B snapshot -D
 2. Describe what's wrong
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 ```
 

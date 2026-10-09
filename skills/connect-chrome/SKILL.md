@@ -45,6 +45,7 @@ the user to confirm the launch flag and port.
 ### 2. Start the daemon and import the cookies
 
 ```bash
+B='<BROWSE_BIN>'
 "$B" daemon >/dev/null 2>&1 &        # persistent session (skip if already running)
 sleep 1
 "$B" cookies import-cdp http://127.0.0.1:9222
@@ -55,6 +56,7 @@ sleep 1
 Navigate to a page that requires login and confirm you're signed in:
 
 ```bash
+B='<BROWSE_BIN>'
 "$B" goto <authenticated-url>
 "$B" snapshot          # look for signed-in markers (account name, logout link)
 ```

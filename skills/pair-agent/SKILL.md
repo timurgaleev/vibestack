@@ -71,10 +71,15 @@ B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/pair-agent}/../browse/bin/vibe-brows
 [ -x "$B" ] || B="$(command -v vibe-browse || true)"
 if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
   echo "READY: $B"
+  echo "BROWSE_BIN: $B"
 else
   echo "NEEDS_SETUP"
 fi
 ```
+
+Every Bash call starts a fresh shell, so `$B` is unset in every later block.
+A block that runs a browse command starts with `B='<BROWSE_BIN>'`: replace
+`<BROWSE_BIN>` with the path printed on the `BROWSE_BIN:` line.
 
 If `NEEDS_SETUP`, stop and tell the user the browse binary could not be found or
 could not start — node is missing, or first-run setup was declined.
@@ -87,12 +92,14 @@ pairing that did not happen.
 ## Step 1: Check prerequisites
 
 ```bash
+B='<BROWSE_BIN>'
 $B status 2>/dev/null
 ```
 
 If the browse server is not running, start it:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto about:blank
 ```
 
@@ -147,6 +154,7 @@ signed-in sessions die with it. The CLI never kills a live daemon unless it is
 given `--force-restart`, so check first:
 
 ```bash
+B='<BROWSE_BIN>'
 BROWSE_NO_AUTOSTART=1 $B status 2>/dev/null | head -5
 ```
 
@@ -181,6 +189,7 @@ never retry with `--force-restart` on your own.
 Run pair-agent with --local flag:
 
 ```bash
+B='<BROWSE_BIN>'
 $B pair-agent --local TARGET_HOST
 ```
 
@@ -235,6 +244,7 @@ ngrok config check 2>/dev/null && echo "NGROK_AUTHED" || echo "NGROK_NOT_AUTHED"
 ngrok, start the tunnel, and print the instruction block with the tunnel URL:
 
 ```bash
+B='<BROWSE_BIN>'
 $B pair-agent --client TARGET_HOST
 ```
 
@@ -249,6 +259,7 @@ names suggest.
 If the user also needs the control commands (stop, restart, disconnect):
 
 ```bash
+B='<BROWSE_BIN>'
 $B pair-agent --control --client TARGET_HOST
 ```
 
@@ -311,6 +322,7 @@ STOP here. Wait for the user to install ngrok and re-invoke.
 After the user pastes the instructions into the other agent, wait a moment then check:
 
 ```bash
+B='<BROWSE_BIN>'
 $B status
 ```
 
@@ -406,6 +418,7 @@ with a new root token and every previously issued token — session tokens and
 unexchanged setup keys alike — is dead:
 
 ```bash
+B='<BROWSE_BIN>'
 $B stop
 ```
 

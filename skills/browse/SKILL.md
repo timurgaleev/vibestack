@@ -52,10 +52,15 @@ B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/browse}/bin/vibe-browse"
 [ -x "$B" ] || B="$(command -v vibe-browse || true)"
 if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
   echo "READY: $B"
+  echo "BROWSE_BIN: $B"
 else
   echo "NEEDS_SETUP"
 fi
 ```
+
+Every Bash call starts a fresh shell, so `$B` is unset in every later block.
+A block that runs a browse command starts with `B='<BROWSE_BIN>'`: replace
+`<BROWSE_BIN>` with the path printed on the `BROWSE_BIN:` line.
 
 `vibe-browse` is a launcher, not the browser itself. With the checkout's
 dependencies installed it runs the full daemon this file documents; without
@@ -112,6 +117,7 @@ window. Treat every run as if it is.
 
 ### 1. Verify a page loads correctly
 ```bash
+B='<BROWSE_BIN>'
 $B goto https://yourapp.com
 $B text                          # content loads?
 $B console                       # JS errors?
@@ -121,6 +127,7 @@ $B is visible ".main-content"    # key elements present?
 
 ### 2. Test a user flow
 ```bash
+B='<BROWSE_BIN>'
 $B goto http://localhost:3000/login   # LOCAL target: submitting is allowed
 $B snapshot -i                   # see all interactive elements
 $B fill @e3 "user@test.com"
@@ -132,6 +139,7 @@ $B is visible ".dashboard"       # success state present?
 
 ### 3. Verify an action worked
 ```bash
+B='<BROWSE_BIN>'
 $B snapshot                      # baseline
 $B click @e3                     # do something
 $B snapshot -D                   # unified diff shows exactly what changed
@@ -139,6 +147,7 @@ $B snapshot -D                   # unified diff shows exactly what changed
 
 ### 4. Visual evidence for bug reports
 ```bash
+B='<BROWSE_BIN>'
 $B snapshot -i -a -o /tmp/annotated.png   # labeled screenshot
 $B screenshot /tmp/bug.png                # plain screenshot
 $B console                                # error log
@@ -158,12 +167,14 @@ plausible-looking PNG, so nothing signals the mistake:
 
 ### 5. Find all clickable elements (including non-ARIA)
 ```bash
+B='<BROWSE_BIN>'
 $B snapshot -C                   # finds divs with cursor:pointer, onclick, tabindex
 $B click @c1                     # interact with them
 ```
 
 ### 6. Assert element states
 ```bash
+B='<BROWSE_BIN>'
 $B is visible ".modal"
 $B is enabled "#submit-btn"
 $B is disabled "#submit-btn"
@@ -175,6 +186,7 @@ $B js "document.body.textContent.includes('Success')"
 
 ### 7. Test responsive layouts
 ```bash
+B='<BROWSE_BIN>'
 $B responsive /tmp/layout        # mobile + tablet + desktop screenshots
 $B viewport 375x812              # or set specific viewport
 $B screenshot /tmp/mobile.png
@@ -182,12 +194,14 @@ $B screenshot /tmp/mobile.png
 
 ### 8. Test file uploads
 ```bash
+B='<BROWSE_BIN>'
 $B upload "#file-input" /path/to/file.pdf
 $B is visible ".upload-success"
 ```
 
 ### 9. Test dialogs
 ```bash
+B='<BROWSE_BIN>'
 $B dialog-accept "yes"           # set up handler
 $B click "#delete-button"        # trigger dialog
 $B dialog                        # see what appeared
@@ -196,6 +210,7 @@ $B snapshot -D                   # verify deletion happened
 
 ### 10. Compare environments
 ```bash
+B='<BROWSE_BIN>'
 $B diff https://staging.app.com https://prod.app.com
 ```
 
@@ -205,6 +220,7 @@ After `$B screenshot`, `$B snapshot -a -o`, or `$B responsive`, always use the R
 ### 12. Render local HTML (no HTTP server needed)
 Two paths, pick the cleaner one:
 ```bash
+B='<BROWSE_BIN>'
 # HTML file on disk → goto file:// (absolute, or cwd-relative)
 $B goto file:///tmp/report.html
 $B goto file://./docs/page.html        # cwd-relative
@@ -219,6 +235,7 @@ $B load-html /tmp/tweet.html
 
 ### 13. Retina screenshots (deviceScaleFactor)
 ```bash
+B='<BROWSE_BIN>'
 $B viewport 480x600 --scale 2       # 2x deviceScaleFactor
 $B load-html /tmp/tweet.html        # or: $B goto file://./tweet.html
 $B screenshot /tmp/out.png --selector .tweet-card
@@ -232,6 +249,7 @@ Use browse as a local renderer when you have generated the thing yourself — a
 diagram, a social card, an OG image. Two shapes, both fully offline:
 
 ```bash
+B='<BROWSE_BIN>'
 # A. The artifact is HTML on disk: load it, screenshot the element.
 $B load-html /tmp/card.html
 $B screenshot /tmp/card.png --selector .card
@@ -269,6 +287,7 @@ Migrating from Puppeteer? Here's the 1:1 mapping for the core workflow:
 Worked example (the tweet-renderer flow — Puppeteer → browse):
 
 ```bash
+B='<BROWSE_BIN>'
 # Generate HTML in memory, render at 2x scale, screenshot the tweet card.
 echo '<div class="tweet-card" style="width:400px;height:200px;background:#1da1f2;color:white;padding:20px">hello</div>' > /tmp/tweet.html
 $B viewport 480x600 --scale 2
@@ -285,6 +304,7 @@ When you hit something you can't handle in headless mode (CAPTCHA, complex auth,
 login), hand off to the user:
 
 ```bash
+B='<BROWSE_BIN>'
 # 1. Open a visible Chrome at the current page
 $B handoff "Stuck on CAPTCHA at login page"
 
@@ -310,6 +330,7 @@ After `resume`, you get a fresh snapshot of wherever the user left off.
 For sites that block headless browsers, fingerprint Playwright defaults, or require routing through an authenticated SOCKS5 proxy (residential VPN, etc.), browse exposes three coordinated flags:
 
 ```bash
+B='<BROWSE_BIN>'
 # Headed mode — visible Chromium window. Auto-spawns Xvfb on Linux
 # containers without DISPLAY (no extra setup needed on Debian/Ubuntu).
 $B --headed goto https://example.com
@@ -374,6 +395,7 @@ Example: `$B snapshot -i -a -C -o /tmp/annotated.png`
 
 After snapshot, use @refs as selectors in any command:
 ```bash
+B='<BROWSE_BIN>'
 $B click @e3       $B fill @e4 "value"     $B hover @e1
 $B html @e2        $B css @e5 "color"      $B attrs @e6
 $B click @c1       # cursor-interactive ref (from -C)
@@ -392,6 +414,7 @@ Refs are invalidated on navigation — run `snapshot` again after `goto`.
 
 ### Inspect element CSS
 ```bash
+B='<BROWSE_BIN>'
 $B inspect .header              # full CSS cascade for selector
 $B inspect                      # latest picked element from sidebar
 $B inspect --all                # include user-agent stylesheet rules
@@ -400,6 +423,7 @@ $B inspect --history            # show modification history
 
 ### Modify styles live
 ```bash
+B='<BROWSE_BIN>'
 $B style .header background-color #1a1a1a   # modify CSS property
 $B style --undo                              # revert last change
 $B style --undo 2                            # revert specific change
@@ -407,6 +431,7 @@ $B style --undo 2                            # revert specific change
 
 ### Clean screenshots
 ```bash
+B='<BROWSE_BIN>'
 $B cleanup --all                 # remove ads, cookies, sticky, social
 $B cleanup --ads --cookies       # selective cleanup
 $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero.png

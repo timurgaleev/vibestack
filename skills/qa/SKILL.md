@@ -116,6 +116,8 @@ You are a QA engineer AND a bug-fix engineer. Test web applications like a real 
 
 **CDP mode detection:** Before starting, check if the browse server is connected to the user's real browser:
 ```bash
+B="${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse"
+[ -x "$B" ] || B="$(command -v vibe-browse || true)"
 $B status 2>/dev/null | grep -q "Mode: cdp" && echo "CDP_MODE=true" || echo "CDP_MODE=false"
 ```
 If `CDP_MODE=true`: skip cookie import prompts (the real browser already has cookies), skip user-agent overrides (real browser has real user-agent), and skip headless detection workarounds. The user's real auth sessions are already available.
@@ -332,8 +334,13 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 **Create output directories:**
 
 ```bash
-mkdir -p .vibestack/qa-reports/screenshots
+REPORT_DIR=".vibestack/qa-reports"
+mkdir -p "$REPORT_DIR/screenshots"
+echo "REPORT_DIR: $REPORT_DIR"
 ```
+
+Later blocks that write screenshots start with `REPORT_DIR='<REPORT_DIR>'`:
+replace `<REPORT_DIR>` with the path printed on the `REPORT_DIR:` line.
 
 ---
 
@@ -379,6 +386,7 @@ This is the **primary mode** for developers verifying their work. When the user 
 
 3. **Detect the running app** — check common local dev ports:
    ```bash
+   B='<BROWSE_BIN>'
    $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \
    $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \
    $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
@@ -428,6 +436,7 @@ Run full mode, then load `baseline.json` from a previous run. Diff: which issues
 **If the user specified auth credentials:**
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto <login-url>
 $B snapshot -i                    # find the login form
 $B fill @e3 "user@example.com"
@@ -439,6 +448,7 @@ $B snapshot -D                    # verify login succeeded
 **If the user provided a cookie file:**
 
 ```bash
+B='<BROWSE_BIN>'
 $B cookie-import cookies.json
 $B goto <target-url>
 ```
@@ -452,6 +462,8 @@ $B goto <target-url>
 Get a map of the application:
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B goto <target-url>
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/initial.png"
 $B links                          # map navigation structure
@@ -471,6 +483,8 @@ $B console --errors               # any errors on landing?
 Visit pages systematically. At each page:
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B goto <page-url>
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
 $B console --errors
@@ -486,6 +500,8 @@ Then follow the **per-page exploration checklist** (see `qa/references/issue-tax
 6. **Console** — Any new JS errors after interactions?
 7. **Responsiveness** — Check mobile viewport if relevant:
    ```bash
+   B='<BROWSE_BIN>'
+   REPORT_DIR='<REPORT_DIR>'
    $B viewport 375x812
    $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
    $B viewport 1280x720
@@ -509,6 +525,8 @@ Document each issue **immediately when found** — don't batch them.
 5. Write repro steps referencing screenshots
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B screenshot "$REPORT_DIR/screenshots/issue-001-step-1.png"
 $B click @e5
 $B screenshot "$REPORT_DIR/screenshots/issue-001-result.png"
@@ -520,6 +538,8 @@ $B snapshot -D
 2. Describe what's wrong
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 ```
 
@@ -720,6 +740,8 @@ git commit -m "fix(qa): ISSUE-NNN — short description"
 - Use `snapshot -D` to verify the change had the expected effect
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B goto <affected-url>
 $B screenshot "$REPORT_DIR/screenshots/issue-NNN-after.png"
 $B console --errors

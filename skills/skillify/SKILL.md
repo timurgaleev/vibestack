@@ -71,10 +71,15 @@ Find the vibestack repo (the `vibe-*` binaries are symlinks into it):
 
 ```bash
 REPO="$(cd "$(dirname "$(readlink "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" 2>/dev/null)")/.." 2>/dev/null && pwd || true)"
-[ -f "$REPO/install" ] || { echo "REPO_NOT_FOUND"; }
+[ -f "$REPO/install" ] && echo "REPO: $REPO" || echo "REPO_NOT_FOUND"
 ```
 
 If `REPO_NOT_FOUND`, ask the user where they cloned vibestack.
+
+Every Bash call starts a fresh shell, so the blocks below begin by restating
+the paths they use: replace `<REPO>`, `<STAGE_ROOT>` and `<STAGE>` with the
+values printed on the `REPO:`, `STAGE_ROOT:` and `STAGE:` lines (or the clone
+path the user gave).
 
 **Draft outside the repo.** Nothing reaches `skills/` until it has rendered,
 passed the brand audit, and re-run clean, so the draft lives in a staging dir
@@ -85,6 +90,8 @@ disk:
 STAGE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/skillify-XXXXXX")"
 STAGE="$STAGE_ROOT/<name>"
 mkdir -p "$STAGE"
+echo "STAGE_ROOT: $STAGE_ROOT"
+echo "STAGE: $STAGE"
 ```
 
 The staging directory is named after the skill because the renderer takes the
@@ -95,6 +102,7 @@ expands to the wrong value.
 overwrite an existing one:
 
 ```bash
+REPO='<REPO>'
 [ -e "$REPO/skills/<name>" ] && echo "NAME_TAKEN" || echo "NAME_FREE"
 ```
 
@@ -105,6 +113,8 @@ an explicit overwrite, copy the existing skill aside first — the user agreed t
 replace a working skill, not to lose one if the new draft fails validation:
 
 ```bash
+REPO='<REPO>'
+STAGE_ROOT='<STAGE_ROOT>'
 cp -R "$REPO/skills/<name>" "$STAGE_ROOT/backup-<name>"
 ```
 
@@ -122,6 +132,8 @@ All three checks run against the staged file. Any failure stops here with the
 repo untouched — there is no half-installed state to clean up:
 
 ```bash
+REPO='<REPO>'
+STAGE='<STAGE>'
 cd "$REPO"
 bin/vibe-render-skill "$STAGE/SKILL.md" /tmp/_skillify_check.md && echo "RENDER_OK" || echo "RENDER_FAIL"
 bin/vibe-brand-audit --text "$STAGE/SKILL.md"   # exit 0 clean, 1 = BRAND_HIT
@@ -149,6 +161,8 @@ the skill for real — this gate is the only thing that catches it before then.
 **Move into the repo once all three pass:**
 
 ```bash
+REPO='<REPO>'
+STAGE='<STAGE>'
 rm -rf "$REPO/skills/<name>"   # only on the explicit-overwrite path
 mv "$STAGE" "$REPO/skills/<name>"
 bin/vibe-lint-sources
