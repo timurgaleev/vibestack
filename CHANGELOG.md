@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.49.0 — 2026-10-09
+
+### Changed
+
+- **Project state is keyed by owner and repo.** `github.com/alice/api` and
+  `github.com/bob/api` used to share `~/.vibestack/projects/api`, so
+  checkpoints, learnings and review logs leaked between them. Folders are now
+  named `owner--repo` (with a short hash when a name had to be changed, and for
+  remote-less repos), every spelling of one remote maps to one folder, and
+  `VIBESTACK_PROJECT_SLUG` overrides the name. Files from the old folder are
+  copied, never moved, and only automatically when a checkpoint stamped for
+  this exact project proves ownership; otherwise you see a notice and can run
+  `vibe-slug --migrate`. Review logs and deploy confirmations are not carried
+  over. Checkpoints record their remote and project root, and
+  `/context-restore` refuses one stamped for another project.
+- **Review freshness follows the reviewed tree.** A review recorded for a
+  different tree, or one whose tree could not be fingerprinted, no longer
+  clears the readiness gate.
+
+### Added
+
+- **`vibe-context-budget`** measures the fixed context cost of every skill
+  description and rule file and lists the heaviest items. CI reports it.
+- **Compliance evals** run a rule or safety skill under supportive, neutral and
+  competing prompts and report how often each required step is followed, with
+  a list of steps worth turning into hooks. They spend tokens, so they run on
+  demand with a USD cap, always inside a throwaway home and directory.
+- **`vibe-redact scan --file|--stdin`** applies the pre-push matcher to anything
+  about to leave the machine and fails closed on a hit or a matcher error.
+
+### Fixed
+
+- **`/careful` catches PowerShell deletes** such as
+  `pwsh -c "Remove-Item C:\x -Recurse"`, dash variants, module-qualified names,
+  `Start-Process` launching a shell and scriptblock creation.
+- Secret scans cover fine-grained GitHub tokens, Slack, Stripe and Google keys.
+- Install, uninstall and upgrade guard their own state; the router names every
+  skill; memory rules cover code navigation; outside voices route correctly
+  when a plan review runs under Codex.
+
 ## 1.48.0 — 2026-10-09
 
 ### Fixed
