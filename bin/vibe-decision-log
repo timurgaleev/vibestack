@@ -29,7 +29,11 @@ HOME = os.environ.get("VIBESTACK_HOME", os.path.expanduser("~/.vibestack"))
 # user/agent text that can travel). Mirrors lib/snippets/secret-scan-patterns.
 SECRETS = [
     re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"gh[posr]_[A-Za-z0-9]{36}"),
+    re.compile(r"gh[posur]_[A-Za-z0-9]{36}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{22,}"),
+    re.compile(r"xox[abpr]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"(sk|rk)_live_[A-Za-z0-9]{20,}"),
+    re.compile(r"AIza[0-9A-Za-z_\-]{35}"),
     re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
     re.compile(r"sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}"),
     re.compile(r"sk-[A-Za-z0-9]{48}"),

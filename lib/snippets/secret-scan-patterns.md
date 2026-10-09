@@ -2,7 +2,11 @@ High-confidence secret patterns — scan the exact bytes about to leave for an e
 
 - `AWS access key`: `AKIA[0-9A-Z]{16}`
 - `AWS secret key` style: 40-char base64 with `aws_secret_access_key` nearby
-- `GitHub token`: `ghp_[A-Za-z0-9]{36}`, `gho_[A-Za-z0-9]{36}`, `ghs_[A-Za-z0-9]{36}`
+- `GitHub token`: `gh(p|o|s|u|r)_[A-Za-z0-9]{36}` — personal (`ghp_`), OAuth (`gho_`), app installation (`ghs_`), app user-to-server (`ghu_`) and refresh (`ghr_`) tokens
+- `GitHub fine-grained token`: `github_pat_[A-Za-z0-9_]{22,}`
+- `Slack token`: `xox[abpr]-[A-Za-z0-9-]{10,}`
+- `Stripe live key`: `(sk|rk)_live_[A-Za-z0-9]{20,}` — secret and restricted live keys
+- `Google API key`: `AIza[0-9A-Za-z_-]{35}`
 - `Anthropic key`: `sk-ant-[A-Za-z0-9_\-]{20,}`
 - `OpenAI key`: classic `sk-[A-Za-z0-9]{48}`, and modern prefixed keys `sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}`. Match the WHOLE token — a contiguous-alphanumeric pattern stops at the first `-`/`_` and misses the modern shapes, failing open.
 - `GitLab token`: `gl(pat|ptt|dt)-[A-Za-z0-9_\-]{20,}` — the `glpat-` (personal), `glptt-` (pipeline-trigger), and `gldt-` (deploy-token) shapes.

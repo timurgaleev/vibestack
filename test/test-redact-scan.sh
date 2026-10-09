@@ -78,6 +78,23 @@ f="$TMP/bearer.md"; printf 'Authorization: %s\n' "$BEARER" > "$f"
 scan --file "$f" >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && ok "high-entropy bearer blocks" || no "bearer exit=$rc"
 
+# 7b. Credential shapes the list once missed: GitHub user-to-server, refresh
+#     and fine-grained tokens, Slack, Stripe live keys, Google API keys. Each
+#     blocks the scan, the pre-push list carries it, and the shared snippet
+#     documents it so the two copies cannot drift apart.
+B36="$(printf 'aB3%.0s' $(seq 1 12))"
+for tok in "ghu_$B36" "ghr_$B36" "github_pat_""11ABCDEFG0123456789_abcdefghijklmnop" \
+           "xoxb-""1234567890-abcdefABCDEF" "sk_live_""Zx81Qw7Lm2Pz0Rt5Yu9Io3Kj" \
+           "rk_live_""Zx81Qw7Lm2Pz0Rt5Yu9Io3Kj" "AIza""SyD0123456789abcdefghijklmnopqrstuv"; do
+  f="$TMP/shape.md"; printf 'value: %s\n' "$tok" > "$f"
+  scan --file "$f" >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 1 ] && ok "${tok:0:5}... credential blocks" || no "${tok:0:5}... credential exit=$rc"
+done
+for pat in 'gh(p|o|s|u|r)_' 'github_pat_' 'xox[abpr]-' '(sk|rk)_live_' 'AIza[0-9A-Za-z_-]{35}'; do
+  grep -qF -- "$pat" "$BIN/vibe-redact-prepush" && grep -qF -- "$pat" "$ROOT/lib/snippets/secret-scan-patterns.md" \
+    && ok "pattern $pat is in the pre-push list and the snippet" || no "pattern $pat missing from the list or the snippet"
+done
+
 # 8. Several files: the dirty one is named, exit 1; spaces in a path are fine.
 f="$TMP/with space.md"; printf 'x\ny\n%s\n' "$AWS_KEY" > "$f"
 out=$(scan --file "$TMP/clean.md" --file "$f" 2>&1); rc=$?
