@@ -294,6 +294,15 @@ assert_decision "outside boundary denied"       "$FREEZE" "{\"tool_input\":{\"fi
 # directory judged this in-boundary while the write landed outside.
 assert_decision "escaping symlink denied"       "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/link.txt\"}}" deny
 assert_decision "parent traversal denied"       "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/../out/target.txt\"}}" deny
+# Write creates missing parent directories, so a path whose parent does not
+# exist yet must still be resolved: an unresolved ".." or an in-boundary
+# directory symlink in front of the missing part let the write land outside.
+# Physical paths, so a /var -> /private/var mismatch cannot decide these cases.
+FZP=$(cd "$FZ" && pwd -P)
+ln -sfn "$FZP/out" "$FZP/in/dirlink"
+assert_decision "traversal through missing dir denied" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZP/in/nope/../../out/x.txt\"}}" deny
+assert_decision "dir symlink + missing dir denied"     "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZP/in/dirlink/newdir/x.txt\"}}" deny
+assert_decision "new nested dir inside allowed"        "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/newdir/sub/x.txt\"}}" allow
 # The hook only runs on Edit/Write/NotebookEdit, so a payload with no path is a
 # schema it cannot check — deny rather than wave it through.
 assert_decision "payload with no path denied"   "$FREEZE" '{"tool_input":{"command":"ls"}}' deny
