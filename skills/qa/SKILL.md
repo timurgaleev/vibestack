@@ -725,6 +725,14 @@ For each fixable issue, in severity order:
 - Find the source file(s) responsible for the bug
 - ONLY modify files directly related to the issue
 
+Before touching them, check that no earlier fix left uncommitted work in those files — a best-effort fix or a kept red test (8e). Name every source file and any existing test file you plan to extend:
+
+```bash
+git status --porcelain -- <source files this fix will touch> <existing test file to extend, if any>
+```
+
+Empty output → continue to 8b. Any line → defer this issue with the reason "file holds an uncommitted earlier fix (ISSUE-NNN)", and do not edit those files. 8d's `git restore` and 8e's `git add` work on whole files, so sharing a file would either wipe the earlier fix or commit it under this issue.
+
 ### 8b. Regression test (before the fix)
 
 Write the regression test first, at the boundary where the bug lived, and prove it red before touching the source.

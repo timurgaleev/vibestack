@@ -175,6 +175,12 @@ else
   no "qa: regression test (line ${test_line:-none}) must precede the commit (line ${commit_line:-none})"
 fi
 refute "qa: never reverts blindly with git revert HEAD" 'git revert HEAD' "$Q"
+# A best-effort fix stays uncommitted, and 8d/8e restore and stage whole files,
+# so a later fix sharing a file would wipe or commit it. 8a must check first.
+LOCATE="$TMP/qa-8a.md"
+section "$Q" '^### 8a\. ' '^### 8b\. ' > "$LOCATE"
+check "qa: 8a checks the fix's files for uncommitted changes" 'git status --porcelain --' "$LOCATE"
+check "qa: 8a defers a fix whose file holds an earlier uncommitted change" 'defer this issue' "$LOCATE"
 
 # ── /scrape ──────────────────────────────────────────────────────────────────
 # A browser-skill script runs with a read+write daemon token (it can click, fill
