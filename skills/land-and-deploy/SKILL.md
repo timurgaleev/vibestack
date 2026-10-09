@@ -1508,6 +1508,7 @@ the `BROWSE_BIN:` path SETUP printed:
 
 ```bash
 B='<BROWSE_BIN>'
+$B console --clear
 $B goto <url>
 ```
 
