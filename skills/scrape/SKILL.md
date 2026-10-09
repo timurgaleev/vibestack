@@ -69,13 +69,27 @@ is a different job, and the cost of guessing wrong is not recoverable.
 ### 0. Match — is this already a skill?
 
 Before prototyping a new scrape, check whether a codified skill already covers
-this target:
+this target. List every runtime's skill roots — the user's words never go into
+a shell pattern; you match the site against the names yourself:
 
 ```bash
-ls ~/.claude/skills/ 2>/dev/null | grep -iE '<site-or-domain-keyword>' || echo "NO_MATCH"
+ls -1 ~/.claude/skills ~/.agents/skills ~/.cursor/skills ~/.kiro/skills .claude/skills .agents/skills 2>/dev/null
 ```
 
-If a matching skill exists, suggest running it (`/that-skill`) instead of
+Then ask the browse daemon for its browser-skills (a meta verb only the full
+daemon has):
+
+```bash
+B='<BROWSE_BIN>'
+"$B" skill list
+```
+
+`NOT_SUPPORTED:skill` means the stateless shim is running — skip this check.
+When a listed browser-skill confidently matches the target host, read it with
+`"$B" skill show <name>`, run it with `"$B" skill run <name> --arg k=v` (one
+`--arg` per input it declares), and return its JSON as the result.
+
+If a matching slash skill exists, suggest running it (`/that-skill`) instead of
 re-deriving the flow. Only prototype when there's no match.
 
 ### 1. Pin the target
@@ -99,8 +113,15 @@ B='<BROWSE_BIN>'
 "$B" js "Array.from(document.querySelectorAll('.price')).map(e => e.textContent.trim())"
 ```
 
-If the page is interactive (needs a click to reveal data), start the daemon and
-use a chain or refs: `"$B" daemon &` then `"$B" chain "goto <url>" "click <sel>" "text"`.
+If the page is interactive (needs a click to reveal data), use chain. The
+stateless shim takes one argument per step:
+`"$B" chain "goto <url>" "click <sel>" "text"`; it needs its daemon
+(`"$B" daemon &`) only for element refs across separate calls. The full daemon
+takes the steps as one pipe-separated argument:
+`"$B" chain 'goto <url> | click <sel> | text'`.
+
+**Login wall:** if the page asks the user to sign in, stop. Tell the user to
+sign in through `/setup-browser-cookies` and re-run — never type credentials.
 
 ### 3. Extract to JSON
 
@@ -114,15 +135,27 @@ selectors exactly — never guess a value that isn't on the page.
 surrounding prose, no markdown fences, so the output can be piped into `jq` or a
 file. Name any requested field that couldn't be found (as `null` with a short
 note in a `_missing` array) rather than fabricating it. If JS-heavy content is
-missing, retry once via the daemon with a short wait
-(`"$B" chain "goto <url>" "wait 1500" "text"`).
+missing, retry once with a short wait in one chain
+(shim: `"$B" chain "goto <url>" "wait 1500" "text"`; full daemon:
+`"$B" chain 'goto <url> | wait --networkidle | text'`).
+
+Before reporting an empty or missing result as "no data", check the page's
+errors:
+
+```bash
+B='<BROWSE_BIN>'
+"$B" console --errors
+```
+
+A JS app that crashed on load is an error, not an empty page: report the
+console error instead of an empty result.
 
 ### Failure protocol
 
 Scraping fails in known ways (selector drift, JS-gated content, anti-bot walls).
 Handle them, don't paper over them:
 
-- **Attempt budget: 3.** Stateless pass → daemon + wait → daemon + interaction.
+- **Attempt budget: 3.** Plain pass → chain + wait → chain + interaction.
   After the third failed attempt, STOP.
 - **No partial results as success.** If some requested fields are unreachable,
   return what you have with an explicit `_missing` list — never present a partial

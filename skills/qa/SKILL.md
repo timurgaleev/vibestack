@@ -1,7 +1,7 @@
 ---
 name: qa
 description: |
-  Systematically QA test a web application and fix bugs found. Runs QA testing, then iteratively fixes bugs in source code, committing each fix atomically and re-verifying.
+  QA a web app and fix what it finds: test in the browser, fix bugs in source, commit each fix, re-verify.
 allowed-tools:
   - Bash
   - Read
@@ -28,13 +28,13 @@ Voice triggers (speech-to-text aliases): "quality check", "test the app", "run Q
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -251,12 +251,20 @@ If multiple runtimes detected (monorepo) → ask which runtime to set up first, 
 
 ### B4. Install and configure
 
+Before touching anything, record the pre-bootstrap state:
+
+```bash
+git status --porcelain
+```
+
+Then write down the bootstrap file list: every file the install and setup will touch (the manifest and lockfile, e.g. `package.json` and `package-lock.json`, the config file, the test directory, the example test). Mark each one **edited** (it exists now) or **created** (it does not). A file already listed as dirty in the pre-bootstrap state is the user's work in progress — never revert it.
+
 1. Install the chosen packages (npm/bun/gem/pip/etc.)
 2. Create minimal config file
 3. Create directory structure (test/, spec/, etc.)
 4. Create one example test matching the project's code to verify setup works
 
-If package installation fails → debug once. If still failing → revert with `git checkout -- package.json package-lock.json` (or equivalent for the runtime). Warn user and continue without tests.
+If package installation fails → debug once. If still failing → undo only the bootstrap's own changes: `git checkout -- <file>` for each **edited** file that was clean before, and delete each **created** file or directory. Never run a blanket `git checkout -- .`, and never check out a file that was dirty before the bootstrap. Warn user and continue without tests.
 
 ### B4.5. First real tests
 
@@ -277,7 +285,7 @@ Never import secrets, API keys, or credentials in test files. Use environment va
 {detected test command}
 ```
 
-If tests fail → debug once. If still failing → revert all bootstrap changes and warn user. A valid red test kept in B4.5 is a recorded finding, not a bootstrap failure.
+If tests fail → debug once. If still failing → undo the bootstrap's own changes exactly as in B4 (clean-before **edited** files checked out, **created** files deleted, nothing else touched) and warn user. A valid red test kept in B4.5 is a recorded finding, not a bootstrap failure.
 
 ### B5.5. CI/CD pipeline
 
@@ -288,7 +296,7 @@ ls .gitlab-ci.yml .circleci/ bitrise.yml 2>/dev/null
 ```
 
 If `.github/` exists (or no CI detected — default to GitHub Actions):
-Create `.github/workflows/test.yml` with:
+If `.github/workflows/test.yml` already exists, do not overwrite it: tell the user, and offer via AskUserQuestion to add the verified test step to that workflow instead. Otherwise create `.github/workflows/test.yml` (add it to the bootstrap file list as **created**) with:
 - `runs-on: ubuntu-latest`
 - Appropriate setup action for the runtime (setup-node, setup-ruby, setup-python, etc.)
 - The same test command verified in B5
@@ -328,7 +336,14 @@ Append a `## Testing` section:
 git status --porcelain
 ```
 
-Only commit if there are changes. Stage all bootstrap files (config, test directory, TESTING.md, CLAUDE.md, .github/workflows/test.yml if created):
+Only commit if there are changes. Stage the bootstrap files by name — the B4 list plus TESTING.md, CLAUDE.md, and `.github/workflows/test.yml` if B5.5 created it. Never `git add -A` or `git add .`:
+
+```bash
+git add -- '<bootstrap file>' '<bootstrap file>'
+git diff --cached --name-only
+```
+
+If `git diff --cached --name-only` shows any path outside that list, stop: tell the user which staged paths the bootstrap did not create, and do not commit. Otherwise:
 `git commit -m "chore: bootstrap test framework ({framework name})"`
 
 ---
@@ -341,8 +356,8 @@ Before falling back to git diff heuristics, check for richer test plan sources:
 1. **Project-scoped test plans:** Check `~/.vibestack/projects/` for recent `*-test-plan-*.md` files for this repo
    ```bash
    setopt +o nomatch 2>/dev/null || true  # zsh compat
-   eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-   ls -t ~/.vibestack/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+   ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
    ```
 2. **Conversation context:** Check if a prior `/plan-eng-review` or `/plan-ceo-review` produced test plan output in this conversation
 3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
@@ -373,14 +388,11 @@ This is the **primary mode** for developers verifying their work. When the user 
 
    **If no obvious pages/routes are identified from the diff:** Do not skip browser testing. The user invoked /qa because they want browser-based verification. Fall back to Quick mode — navigate to the homepage, follow the top 5 navigation targets, check console for errors, and test any interactive elements found. Backend, config, and infrastructure changes affect app behavior — always verify the app still works.
 
-3. **Detect the running app** — check common local dev ports:
+3. **Detect the running app** — probe common local dev ports for a real HTTP answer (a browse `goto` is not a liveness check: it can exit 0 on a refused connection):
    ```bash
-   B='<BROWSE_BIN>'
-   $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \
-   $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \
-   $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
+   for p in 3000 4000 8080; do curl -sI --max-time 3 "http://localhost:$p" >/dev/null 2>&1 && echo "APP_PORT: $p"; done; echo PORT_SCAN_DONE
    ```
-   If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
+   Use the port on the first `APP_PORT:` line. No `APP_PORT:` line before `PORT_SCAN_DONE` means no local app is running. If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
 
 4. **Test each affected page/route:**
    - Navigate to the page
@@ -639,7 +651,7 @@ Minimum 0 per category.
 2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Never read source code.** Test as a user, not a developer.
+5. **Find bugs black-box.** Discovery and probing go through the browser, as a user, not a developer. Read source only to map a diff to pages (diff-aware mode) and inside the Phase 8 fix loop.
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
 7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
@@ -692,7 +704,7 @@ For each component you are about to fix, pick ONE keyword: the component or page
 Worked examples: good keywords are `checkout-button`, `signup-form`, `payment`. Bad: `tests are failing`, `<failing-test>`, `app/views/checkout.erb`.
 
 ```bash
-~/.vibestack/bin/vibe-learnings-search --query "<your-keyword>" --limit 5 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<your-keyword>" --limit 5 2>/dev/null || true
 ```
 
 If any learnings come back, name which one applies to the fix in one sentence before writing it. If none come back, continue — the absence of a prior learning for this component is itself worth knowing.
@@ -838,6 +850,8 @@ WTF-LIKELIHOOD:
 
 **If WTF > 20%:** STOP immediately. Show the user what you've done so far. Ask whether to continue.
 
+**Hard stops, no computation:** STOP immediately — same report, same question — after ONE edit to a file unrelated to the finding being fixed, or after the second revert. These do not wait for the 5-fix check.
+
 **Hard cap: 50 fixes.** After 50 fixes, stop regardless of remaining issues.
 
 ---
@@ -860,7 +874,7 @@ Write the report to both local and project-scoped locations:
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 ```
 Write to `~/.vibestack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
 

@@ -1,7 +1,7 @@
 ---
 name: diagram
 description: |
-  Render a Mermaid diagram to a self-contained HTML file and a PNG, using the browse shim as the renderer — no heavy diagram toolchain to install.
+  Render a Mermaid diagram to self-contained HTML, SVG and PNG with the browse shim; no diagram toolchain.
 allowed-tools:
   - Bash
   - Read
@@ -82,8 +82,15 @@ if [ -z "$BUNDLE" ] || [ -z "${B:-}" ] || [ "$("$B" status 2>/dev/null)" = "BROW
   echo "RENDER_UNAVAILABLE"
 else
   SHA=$(shasum -a 256 "$BUNDLE" | cut -c1-16)
-  STAGED="${TMPDIR:-/tmp}/vibestack-diagram-render-$SHA.html"
-  [ -f "$STAGED" ] || { cp "$BUNDLE" "$STAGED.$$" && mv "$STAGED.$$" "$STAGED"; }
+  # A shared temp dir is writable by others: stage in a dir only this user owns,
+  # and reuse a staged copy only when its hash still matches the bundle.
+  STAGE_DIR="${TMPDIR:-/tmp}/vibestack-diagram-$(id -u)"
+  mkdir -p -m 700 "$STAGE_DIR" 2>/dev/null
+  { [ -O "$STAGE_DIR" ] && [ ! -L "$STAGE_DIR" ] && chmod 700 "$STAGE_DIR"; } || STAGE_DIR=$(mktemp -d)
+  STAGED="$STAGE_DIR/diagram-render-$SHA.html"
+  if [ ! -f "$STAGED" ] || [ "$(shasum -a 256 "$STAGED" | cut -c1-16)" != "$SHA" ]; then
+    (umask 077; cp "$BUNDLE" "$STAGED.$$") && mv -f "$STAGED.$$" "$STAGED"
+  fi
   TAB=$("$B" newtab --json | sed -n 's/.*"tabId":[[:space:]]*\([0-9]*\).*/\1/p')
   [ -z "$TAB" ] && { echo "TAB_OPEN_FAILED — daemon busy? check browse status"; } || {
     "$B" load-html "$STAGED" --tab-id "$TAB"

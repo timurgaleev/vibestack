@@ -1,7 +1,7 @@
 ---
 name: qa-only
 description: |
-  Report-only QA testing. Systematically tests a web application and produces a structured report with health score, screenshots, and repro steps — but never fixes anything.
+  Report-only QA of a web app: health score, screenshots and repro steps for each bug. Never fixes anything.
 allowed-tools:
   - Bash
   - Read
@@ -25,13 +25,13 @@ Voice triggers (speech-to-text aliases): "bug report", "just check for bugs".
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -86,8 +86,8 @@ Before falling back to git diff heuristics, check for richer test plan sources:
 1. **Project-scoped test plans:** Check `~/.vibestack/projects/` for recent `*-test-plan-*.md` files for this repo
    ```bash
    setopt +o nomatch 2>/dev/null || true  # zsh compat
-   eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-   ls -t ~/.vibestack/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+   ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
    ```
 2. **Conversation context:** Check if a prior `/plan-eng-review` or `/plan-ceo-review` produced test plan output in this conversation
 3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
@@ -116,14 +116,11 @@ This is the **primary mode** for developers verifying their work. When the user 
 
    **If no obvious pages/routes are identified from the diff:** Do not skip browser testing. The user invoked /qa because they want browser-based verification. Fall back to Quick mode — navigate to the homepage, follow the top 5 navigation targets, check console for errors, and test any interactive elements found. Backend, config, and infrastructure changes affect app behavior — always verify the app still works.
 
-3. **Detect the running app** — check common local dev ports:
+3. **Detect the running app** — probe common local dev ports for a real HTTP answer (a browse `goto` is not a liveness check: it can exit 0 on a refused connection):
    ```bash
-   B='<BROWSE_BIN>'
-   $B goto http://localhost:3000 2>/dev/null && echo "Found app on :3000" || \
-   $B goto http://localhost:4000 2>/dev/null && echo "Found app on :4000" || \
-   $B goto http://localhost:8080 2>/dev/null && echo "Found app on :8080"
+   for p in 3000 4000 8080; do curl -sI --max-time 3 "http://localhost:$p" >/dev/null 2>&1 && echo "APP_PORT: $p"; done; echo PORT_SCAN_DONE
    ```
-   If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
+   Use the port on the first `APP_PORT:` line. No `APP_PORT:` line before `PORT_SCAN_DONE` means no local app is running. If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
 
 4. **Test each affected page/route:**
    - Navigate to the page
@@ -407,7 +404,7 @@ Write the report to both local and project-scoped locations:
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 ```
 Write to `~/.vibestack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
 
