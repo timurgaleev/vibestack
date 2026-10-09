@@ -76,6 +76,7 @@ DIRECTIVE_RE='^\{\{include lib/snippets/[A-Za-z0-9_-]+\.md\}\}$'
 # Fenced code blocks (CommonMark): a fence opens on a line of 0-3 spaces then a
 # run of 3+ backticks or 3+ tildes, and closes only on a line of 0-3 spaces, the
 # same character, a run at least as long, and nothing but whitespace after.
+# A backtick opener whose info string holds a backtick is not a fence.
 # Directives inside a fence are content. FENCE_CHAR is empty outside a fence.
 FENCE_RE='^( {0,3})(`{3,}|~{3,})(.*)$'
 FENCE_CHAR=""
@@ -85,6 +86,8 @@ fence_step() {
   [[ "$1" =~ $FENCE_RE ]] || return 1
   local run="${BASH_REMATCH[2]}" rest="${BASH_REMATCH[3]}"
   if [ -z "$FENCE_CHAR" ]; then
+    # A backtick opener's info string may not contain a backtick (CommonMark).
+    [ "${run:0:1}" = '`' ] && [[ "$rest" == *'`'* ]] && return 1
     FENCE_CHAR="${run:0:1}"; FENCE_LEN=${#run}
     return 0
   fi

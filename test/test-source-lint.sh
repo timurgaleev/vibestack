@@ -43,6 +43,8 @@ fence_case longfence pass '# demo\n````md\n```bash\nx\n```\n````\n' "4-backtick 
 fence_case tildeholds pass '# demo\n~~~\n```\nx\n~~~\n' "~~~ block holding a \`\`\` line passes"
 fence_case wrongchar fail '# demo\n```\nx\n~~~\n' "a closer of the other character does not close"
 fence_case deepindent pass '# demo\n    ```\ncode\n' "a 4-space-indented fence line is content"
+fence_case backtickinfo pass '# demo\n``` `x` ```\ntext\n' "a backtick run whose info string holds a backtick is not a fence"
+fence_case tildeinfo fail '# demo\n~~~ `x`\nunclosed\n' "a ~~~ opener may carry a backtick in its info string"
 
 # 3. Nested include in a snippet.
 d=$(mkfix nested); printf '# snip\n{{include lib/snippets/other.md}}\n' > "$d/lib/snippets/bad.md"

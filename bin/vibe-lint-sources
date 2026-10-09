@@ -6,7 +6,8 @@
 #               lib/snippets/*.md is closed (an unbalanced fence silently
 #               swallows include directives in the renderer). Fences follow
 #               CommonMark, as the renderer does: a fence opens on 0-3 spaces
-#               then 3+ backticks or 3+ tildes (an info string may follow) and
+#               then 3+ backticks or 3+ tildes (an info string may follow, and
+#               after backticks it may not contain a backtick) and
 #               closes only on 0-3 spaces, the same character, a run at least
 #               as long, and nothing but whitespace after.
 #   snippets  — lib/snippets/*.md: no duplicate headings inside one snippet,
@@ -33,7 +34,10 @@ function fence_step(line,   rest, c, n) {
   n = 0
   while (substr(rest, n + 1, 1) == c) n++
   if (n < 3) return fc != ""
-  if (fc == "") { fc = c; fl = n; fline = NR; fopen = line; return 1 }
+  if (fc == "") {
+    if (c == "`" && index(substr(rest, n + 1), "`")) return 0
+    fc = c; fl = n; fline = NR; fopen = line; return 1
+  }
   if (c == fc && n >= fl && substr(rest, n + 1) ~ /^[ \t]*$/) fc = ""
   return 1
 }'
