@@ -41,7 +41,7 @@ must NEVER mutate git state.
 Recover recent project context from local artifacts:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _PROJ="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"

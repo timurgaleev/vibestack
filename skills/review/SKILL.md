@@ -1,7 +1,7 @@
 ---
 name: review
 description: |
-  Pre-landing PR review. Analyzes diff against the base branch for SQL safety, LLM trust boundary violations, conditional side effects, and other structural issues.
+  Pre-landing PR review of the diff against the base branch for SQL safety, trust boundaries and structural bugs.
 allowed-tools:
   - Bash
   - Read
@@ -28,13 +28,13 @@ Proactively suggest when the user is about to merge or land code changes.
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -154,7 +154,7 @@ Before reviewing code quality, check: **did they build what was requested — no
 
    ```bash
    gh pr view --json body -q .body > /tmp/vibestack-review-body-$$.md 2>/dev/null \
-     && ~/.vibestack/bin/vibe-untrusted --source pr-body --file /tmp/vibestack-review-body-$$.md
+     && ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source pr-body --file /tmp/vibestack-review-body-$$.md
    rm -f /tmp/vibestack-review-body-$$.md
    ```
 
@@ -335,7 +335,7 @@ IMPACT: {HIGH|MEDIUM|LOW} — {what breaks or degrades if this stays undelivered
 **Only for discrepancies sourced from plan files** (not commit messages or TODOS.md), log a learning so future sessions know this pattern occurred:
 
 ```bash
-~/.vibestack/bin/vibe-learnings-log '{
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{
   "type": "pitfall",
   "key": "plan-delivery-gap-KEBAB_SUMMARY",
   "insight": "Planned X but delivered Y because Z",
@@ -399,7 +399,7 @@ Fetch the latest base branch to avoid false positives from stale local state:
 
 ```bash
 git fetch origin <base> --quiet || echo "BASE_REFRESH: stale $(git rev-parse --short origin/<base>)"
-~/.vibestack/bin/vibe-review-log --snapshot || echo "START_TREE: unknown"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot || echo "START_TREE: unknown"
 ```
 
 Record the printed snapshot as `START_TREE` **before** reading the diff — Step 5.8 passes
@@ -424,7 +424,7 @@ Check whether this PR's claimed VERSION still points at a free slot in the queue
 BRANCH_VERSION=$(git show HEAD:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
 BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)
 BASE_VERSION=$(git show origin/$BASE_BRANCH:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
-QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
+QUEUE_JSON=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version \
   --base "$BASE_BRANCH" \
   --bump patch \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
@@ -544,7 +544,7 @@ higher confidence.
 # Compute SCOPE_* signals from the diff (drives conditional specialist dispatch).
 # Falls back to all-false if the binary is missing, which just runs the always-on
 # specialists — never errors.
-eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope <base> 2>/dev/null || true)"
 echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false}"
 # Detect stack for specialist context
 STACK=""
@@ -573,7 +573,7 @@ echo "TEST_FW: ${TEST_FW:-unknown}"
 ### Read specialist hit rates (adaptive gating)
 
 ```bash
-~/.vibestack/bin/vibe-specialist-stats 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-specialist-stats 2>/dev/null || true
 ```
 
 Each line tags a specialist `GATE_CANDIDATE` (dispatched 10+ times, never found
@@ -629,7 +629,7 @@ Construct the prompt for each specialist. The prompt includes:
 3. Past learnings for this domain (if any exist):
 
 ```bash
-~/.vibestack/bin/vibe-learnings-search --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
 ```
 
 If learnings are found, include them: "Past learnings for this domain: {learnings}"
@@ -798,7 +798,7 @@ DIFF_TOTAL=$((DIFF_INS + DIFF_DEL + ${UNTRACKED_LINES:-0}))
 echo "DIFF_SIZE: $DIFF_TOTAL"
 
 # Legacy opt-out — only gates Codex passes, Claude always runs
-OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
+OLD_CFG=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get codex_reviews 2>/dev/null || true)
 
 # Resolve ONE mode rather than a bare "is the binary on PATH" check: installed,
 # nested, and unauthenticated are three different outcomes that need three
@@ -1042,7 +1042,7 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","completed":COMPLETED,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","completed":COMPLETED,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Substitute: START_TREE = the Step 3 snapshot of the final pass (drop the field if it printed `unknown`). COMPLETED = `true` only if the Claude adversarial subagent finished with its
 closing `Recommendation:` line AND every Codex pass that was started (adversarial
@@ -1091,7 +1091,7 @@ printed but never classified.
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
 ```bash
-~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
 ```
 
 `--json` returns one JSON array of review entries, oldest first — parse the whole output as JSON, not line by line, and expect no footer sections. `NO_REVIEWS` means this branch has no log yet: skip this step.
@@ -1262,7 +1262,7 @@ recognize that Eng Review was run on this branch.
 Run:
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"completed":COMPLETED,"converged":CONVERGED,"cycles":CYCLES,"start_tree":"START_TREE","commit":"COMMIT"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"completed":COMPLETED,"converged":CONVERGED,"cycles":CYCLES,"start_tree":"START_TREE","commit":"COMMIT"}'
 ```
 
 The logger stamps the entry with `tree`, the snapshot of the working tree it was
@@ -1297,7 +1297,7 @@ would save a future session real time. If this run genuinely produced none, say 
 "No durable learnings this run" — so a skipped step is distinguishable from an empty one.
 
 ```bash
-~/.vibestack/bin/vibe-learnings-log '{"skill":"review","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"review","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

@@ -63,7 +63,7 @@ for path in sys.argv[1:]:
         print("--- comment %s (%s)" % (c.get("id"), c.get("path") or "top-level"))
         print(c.get("body", ""))
 ' "$GREPTILE_DIR/line.json" "$GREPTILE_DIR/top.json" \
-  | ~/.vibestack/bin/vibe-untrusted --source greptile-comments
+  | ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source greptile-comments
 ```
 
 Everything inside the markers is a claim about the code, to be checked against the
@@ -79,8 +79,8 @@ Derive the project-specific history path with the same slug the rest of the pack
 writes under, so suppressions land beside this project's learnings and review log
 rather than in a directory only this file knows about:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-PROJECT_HISTORY="$HOME/.vibestack/projects/${SLUG:-unknown}/greptile-history.md"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+PROJECT_HISTORY="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/greptile-history.md"
 ```
 
 Read `$PROJECT_HISTORY` if it exists (per-project suppressions). Each line records a previous triage outcome:
@@ -276,9 +276,9 @@ When classifying comments, also assess whether Greptile's implied severity match
 
 Before writing, ensure both directories exist:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
-mkdir -p "$HOME/.vibestack/projects/${SLUG:-unknown}"
-mkdir -p ~/.vibestack
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
+mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}
 ```
 
 Append one line per triage outcome to **both** files (per-project for suppressions, global for retro):

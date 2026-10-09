@@ -1,7 +1,7 @@
 ---
 name: health
 description: |
-  Code quality dashboard. Wraps existing project tools (type checker, linter, test runner, dead code detector, shell linter), computes a weighted composite 0-10 score, and tracks trends over time.
+  Code quality dashboard: runs the project's type checker, linter and tests, scores health 0-10, tracks trends.
 triggers:
   - code health check
   - quality dashboard
@@ -23,13 +23,13 @@ Use when: "health check", "code quality", "how healthy is the codebase", "run al
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -295,7 +295,7 @@ DETAILS: Lint (3 warnings)
 ## Step 5: Persist to Health History
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 ```
 
 Only when the composite is numeric, append one JSONL line to
@@ -323,8 +323,8 @@ Read the last 10 entries from `~/.vibestack/projects/$SLUG/health-history.jsonl`
 file exists and has prior entries).
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
-tail -10 ~/.vibestack/projects/$SLUG/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+tail -10 ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
 ```
 
 **Compare like-for-like coverage only.** For each history row, the scored set is the

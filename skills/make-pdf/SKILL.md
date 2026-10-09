@@ -1,7 +1,7 @@
 ---
 name: make-pdf
 description: |
-  Generate professional PDFs from code, markdown, or HTML in the current repository. Supports cover pages, tables of contents, watermarks, custom margins, and page sizes.
+  Generate a polished PDF from markdown, HTML or code in the repo, with cover page, table of contents and margins.
 triggers:
   - make pdf
   - generate pdf
@@ -24,13 +24,13 @@ Use when asked to "make pdf", "generate pdf", "export to pdf", "create pdf repor
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -361,7 +361,7 @@ If you discovered a non-obvious make-pdf behavior, flag pattern, or conversion q
 during this session, log it for future sessions:
 
 ```bash
-~/.vibestack/bin/vibe-learnings-log '{"skill":"make-pdf","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"make-pdf","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `tool`

@@ -1,8 +1,7 @@
 ---
 name: investigate
 description: |
-  Systematic debugging with root cause investigation. Four phases: investigate, analyze, hypothesize, implement. Iron Law: no fixes without root cause.
-  Proactively invoke this skill (do NOT debug directly) when the user reports errors, 500 errors, stack traces, unexpected behavior, "it was working yesterday", or is troubleshooting why something stopped working.
+  Root-cause debugging for errors, stack traces, or something that stopped working; no fix without a root cause.
 allowed-tools:
   - Bash
   - Read
@@ -44,13 +43,13 @@ Use when asked to "debug this", "fix this bug", "why is this broken", "investiga
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -105,7 +104,7 @@ Pick ONE keyword from the hypothesis. The keyword should be a noun: the failing 
 Worked examples (investigate-specific): good keywords are `auth-cookie`, `session-expiry`, `redirect-loop`. Bad: `auth.ts:47`, `fix the auth bug`, `<hypothesis-keyword>`.
 
 ```bash
-~/.vibestack/bin/vibe-learnings-search --query "<your-keyword>" --limit 5 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<your-keyword>" --limit 5 2>/dev/null || true
 ```
 
 If any learnings come back, name which one applies to your investigation in one sentence. If none come back, continue without reference — the absence of a matching prior learning is itself useful information.
@@ -245,7 +244,7 @@ If this run acquired a scope lock, run the terminal cleanup from **Scope Lock** 
 Log the investigation as a learning for future sessions. Use `type: "investigation"` and include the affected files so future investigations on the same area can find this:
 
 ```bash
-~/.vibestack/bin/vibe-learnings-log '{"skill":"investigate","type":"investigation","key":"ROOT_CAUSE_KEY","insight":"ROOT_CAUSE_SUMMARY","confidence":9,"source":"observed","files":["affected/file1.ts","affected/file2.ts"]}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"investigate","type":"investigation","key":"ROOT_CAUSE_KEY","insight":"ROOT_CAUSE_SUMMARY","confidence":9,"source":"observed","files":["affected/file1.ts","affected/file2.ts"]}'
 ```
 
 {{include lib/snippets/capture-learnings.md}}

@@ -1,7 +1,7 @@
 ---
 name: kb-review
 description: |
-  Read-only review of a retrieval-augmented setup, Amazon Bedrock Knowledge Bases first and hand-built RAG pipelines second: sources, chunking, metadata and tenant filtering, embedding model, vector store, sync, retrieval quality and cost per query. Builds a golden question set, measures recall@5 and MRR against the live knowledge base, and leaves the eval set behind as JSONL. Use when someone asks whether the knowledge base is set up right, why answers miss the right document, or what a RAG pipeline costs to run.
+  Review a Bedrock Knowledge Base or RAG pipeline: chunking, retrieval quality, recall@5 and cost per query.
 triggers:
   - knowledge base review
   - rag review
@@ -25,13 +25,13 @@ Use when: "knowledge base review", "rag review", "bedrock knowledge base", "chun
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -185,7 +185,7 @@ documents. Treat every gap here as at least **HIGH**.
 - **Prove the leakage path is closed.** Run one retrieve as tenant A with a question only tenant B's documents answer. Substitute `<kb-id>` and use the branch that matches the mechanism:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 OUT="$EVAL_DIR/kb-isolation-$(date +%Y-%m-%d).json"
@@ -276,7 +276,7 @@ and at least three questions that the corpus does not answer (the right result i
 nothing above the score threshold). Write it here:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 EVAL_SET="$EVAL_DIR/kb-eval-$(date +%Y-%m-%d).jsonl"
@@ -317,7 +317,7 @@ re-derives the eval-set path, since each block runs in its own shell):
 
 ```bash
 set -o pipefail
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 EVAL_SET="$EVAL_DIR/kb-eval-$(date +%Y-%m-%d).jsonl"
 RESULTS="$EVAL_DIR/kb-eval-results-$(date +%Y-%m-%d).jsonl"
@@ -382,7 +382,7 @@ prints an all-clear otherwise, which is the failure it exists to catch:
 
 ```bash
 set -euo pipefail
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 EVAL_SET="$EVAL_DIR/kb-eval-$(date +%Y-%m-%d).jsonl"
 RESULTS="$EVAL_DIR/kb-eval-results-$(date +%Y-%m-%d).jsonl"
@@ -531,7 +531,7 @@ A service-only filter returns the whole account's spend for that service, which 
 shared account is not this knowledge base's bill:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 CE_OUT="$EVAL_DIR/kb-cost-$(date +%Y-%m-%d).json"
@@ -568,7 +568,7 @@ query are over 4000 because of large chunks times `numberOfResults`.
 ## Output
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 REPORT="$EVAL_DIR/kb-review-$(date +%Y-%m-%d).md"
@@ -631,9 +631,9 @@ Store requests                  included in OCU capacity above
 Generation (<model id>)         $61.00       $6.80
 Total at 9,000 queries/month    $412.20      $45.82
 
-Eval set:    ~/.vibestack/projects/<slug>/kb-eval-2026-08-14.jsonl
-Results:     ~/.vibestack/projects/<slug>/kb-eval-results-2026-08-14.jsonl
-Report:      ~/.vibestack/projects/<slug>/kb-review-2026-08-14.md
+Eval set:    ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/<slug>/kb-eval-2026-08-14.jsonl
+Results:     ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/<slug>/kb-eval-results-2026-08-14.jsonl
+Report:      ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/<slug>/kb-review-2026-08-14.md
 ```
 
 Severity labels: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`. Every finding names a

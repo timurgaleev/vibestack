@@ -1,7 +1,7 @@
 ---
 name: open-browser
 description: |
-  Launch vibestack Browser — AI-controlled Chromium with the sidebar extension baked in. Opens a visible browser window where you can watch every action in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in.
+  Open a visible browser window you can watch while the agent drives it, with a live activity sidebar.
 triggers:
   - open browser
   - launch chromium
@@ -19,13 +19,13 @@ Use when asked to "open browser", "launch browser", "connect chrome", "open chro
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -164,7 +164,7 @@ Confirm the output shows `Mode: headed`. Read the port from the state file:
 _REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 _STATE_FILE=""
 [ -n "$_REPO_ROOT" ] && [ -f "$_REPO_ROOT/.vibestack/browse.json" ] && _STATE_FILE="$_REPO_ROOT/.vibestack/browse.json"
-[ -z "$_STATE_FILE" ] && _STATE_FILE="$HOME/.vibestack/browse.json"
+[ -z "$_STATE_FILE" ] && _STATE_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/browse.json"
 grep -o '"port":[0-9]*' "$_STATE_FILE" 2>/dev/null | grep -o '[0-9]*'
 ```
 

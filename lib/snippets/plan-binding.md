@@ -14,10 +14,10 @@ _REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null)
 _BOUND=$( { gh pr view --json body -q .body 2>/dev/null || glab mr view -F json 2>/dev/null | jq -r '.description // empty' 2>/dev/null; } \
   | tr -d '\r`' | sed -n 's/^[[:space:]]*Plan:[[:space:]]*\([^[:space:]]*\).*/\1/p' | head -1)
 [ -n "$_BOUND" ] && echo "PLAN_BINDING: $_BOUND"
-# The same ~/.vibestack/projects/ bucket name the skills that write plans use
+# The same ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/ bucket name the skills that write plans use
 # (owner--repo from the origin remote). Without vibe-slug there is no safe
 # guess: a folder name can be another repository's bucket, so skip it.
-_PLAN_SLUG=$(~/.vibestack/bin/vibe-slug 2>/dev/null | sed -n 's/^SLUG=//p') || true
+_PLAN_SLUG=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null | sed -n 's/^SLUG=//p') || true
 # Candidates: repo design docs this branch added or changed, then plan files that name the branch.
 if [ -n "$_REPOTOP" ]; then
   _MB=$(git merge-base "origin/<base>" HEAD 2>/dev/null)
@@ -25,7 +25,7 @@ if [ -n "$_REPOTOP" ]; then
     [ -n "$BRANCH" ] && git -C "$_REPOTOP" grep -l -F -e "$BRANCH" -- 'docs/designs/*.md' 'docs/plans/*.md'
   } 2>/dev/null | sort -u | sed "s|^|PLAN_CANDIDATE: $_REPOTOP/|"
 fi
-for PLAN_DIR in ${_PLAN_SLUG:+"$HOME/.vibestack/projects/$_PLAN_SLUG"} "$HOME/.claude/plans" "$HOME/.codex/plans" ".vibestack/plans"; do
+for PLAN_DIR in ${_PLAN_SLUG:+"${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$_PLAN_SLUG"} "$HOME/.claude/plans" "$HOME/.codex/plans" ".vibestack/plans"; do
   [ -d "$PLAN_DIR" ] && [ -n "$BRANCH" ] || continue
   grep -l -F -e "$BRANCH" "$PLAN_DIR"/*.md 2>/dev/null | sed 's|^|PLAN_CANDIDATE: |'
 done

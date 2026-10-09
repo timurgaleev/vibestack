@@ -14,13 +14,13 @@ session would have written down about this subject over the name of the skill yo
 are running.
 
 ```bash
-_CROSS_PROJ=$(~/.vibestack/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ~/.vibestack/bin/vibe-learnings-search --query "<topic>" --limit 10 --cross-project \
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<topic>" --limit 10 --cross-project \
     || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 else
-  ~/.vibestack/bin/vibe-learnings-search --query "<topic>" --limit 10 \
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<topic>" --limit 10 \
     || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 fi
 ```
