@@ -238,9 +238,11 @@ design-shotgun will follow your lead, but won't diverge by default."
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "NO_LOCAL_SITE"
 ```
 
-If a local site is running AND the user referenced a URL or said something like "I don't
-like how this looks," screenshot the current page with `$B` and read the screenshot
-inline. Describe what is there — layout, palette, type, the specific things that make
+If the user referenced a URL or said something like "I don't like how this looks,"
+screenshot that page in Step 3c and read the screenshot inline. If they didn't name the
+URL, ask for it in the AskUserQuestion below — never guess which page they mean. If the
+probe above printed `200`, offer `http://localhost:3000` as the default (still ask —
+never assume). Describe what is there — layout, palette, type, the specific things that make
 it feel wrong — and fold that description into every variant brief as the starting
 point to improve on. That description is the whole evolve mechanism: `$D` has no verb
 that takes a screenshot.
@@ -251,6 +253,8 @@ covering all gaps:
 
 > "Here's what I know: [pre-filled context]. I'm missing [gaps].
 > Tell me: [specific questions about the gaps].
+> [Only when the user wants to improve an existing page and named no URL:] Which page
+> URL should I start from? [If the probe printed 200: default http://localhost:3000]
 > How many variants? (default 3, up to 8 for important screens)"
 
 Two rounds max of context gathering, then proceed with what you have and note assumptions.
@@ -363,7 +367,9 @@ C) "Name" — one-line visual description of this direction
 
 Draw on DESIGN.md, taste memory, and the user's request to make each concept distinct.
 
-**Anti-convergence directive (hard requirement):** Each variant MUST use a different
+**Anti-convergence directive (hard requirement):** When a DESIGN.md exists, it decides
+what varies: keep its fonts and palette and vary layout and composition — unless the
+user asked to go off the design system. Without one, each variant MUST use a different
 font family, color palette, and layout approach. If two variants look like siblings
 — same typographic feel, overlapping color temperature, comparable layout rhythm —
 one of them failed. Regenerate the weaker one with a deliberately different direction.
@@ -392,10 +398,17 @@ If D: drop specified concepts, re-present, re-confirm.
 ### Step 3c: Parallel Generation
 
 **If evolving from a screenshot** (user said "I don't like THIS"), take ONE screenshot
-first and read it inline, so the brief can name what to move away from:
+first and read it inline, so the brief can name what to move away from. Open the exact
+URL the user confirmed in Step 1 — a bare screenshot would capture whatever page the
+browse session last visited, possibly another app. With your Write tool, write that URL
+alone to `$_DESIGN_DIR/current-url.txt`, then run:
 
 ```bash
-$B screenshot "$_DESIGN_DIR/current.png"
+_CUR_URL=$(head -n 1 "$_DESIGN_DIR/current-url.txt" 2>/dev/null)
+case "$_CUR_URL" in
+  http://*|https://*) $B goto "$_CUR_URL" && $B screenshot "$_DESIGN_DIR/current.png" ;;
+  *) echo "CURRENT_URL_INVALID: '$_CUR_URL' — confirm an http(s) URL with the user" ;;
+esac
 ```
 
 If `BROWSE_NOT_AVAILABLE`, ask the user for a screenshot instead of skipping the step
@@ -542,9 +555,37 @@ Is this right?"
 
 Use AskUserQuestion to verify before proceeding.
 
-**Save the approved choice:**
+**Save the approved choice.** The confirmed feedback is user text, so it never goes
+into shell source: **write the feedback summary the user just confirmed with the Write
+tool** to `approved-feedback.txt` inside `$_DESIGN_DIR`, then run this block, replacing
+`<V>` with the approved variant letter and `<ROUND_DIR>` with the directory that round's
+`variant-*.png` files are in (`$_DESIGN_DIR` for the first round, `$_DESIGN_DIR/round-2`
+and so on after a remix). The record stores the approved image's absolute path, because
+the letter alone is ambiguous once there is more than one round:
 ```bash
-echo '{"approved_variant":"<V>","feedback":"<FB>","date":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","screen":"<SCREEN>","branch":"'$(git branch --show-current 2>/dev/null)'"}' > "$_DESIGN_DIR/approved.json"
+_FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
+python3 -I - "$_DESIGN_DIR" "<ROUND_DIR>" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
+import datetime, json, os, re, sys
+d, round_dir, fb_file, variant, branch = sys.argv[1:6]
+if not re.fullmatch(r"[A-J]", variant):
+    sys.exit("approved variant must be one letter A-J, got %r" % variant)
+image = os.path.abspath(os.path.join(round_dir, "variant-%s.png" % variant))
+if not os.path.isfile(image):
+    sys.exit("approved image %s is missing; reselect from the variants that exist" % image)
+screen = re.sub(r"-[0-9]{8}$", "", os.path.basename(os.path.normpath(d)))
+feedback = open(fb_file, encoding="utf-8").read().strip() if os.path.isfile(fb_file) else ""
+if not feedback:
+    sys.exit("write the confirmed feedback into %s with the Write tool first" % fb_file)
+rec = {"approved_variant": variant,
+       "approved_path": image,
+       "feedback": feedback,
+       "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+       "screen": screen, "branch": branch}
+with open(os.path.join(d, "approved.json"), "w", encoding="utf-8") as f:
+    json.dump(rec, f)
+print("APPROVED_SAVED:", os.path.join(d, "approved.json"))
+print("APPROVED_IMAGE:", image)
+VIBE_PY_EOF
 ```
 
 ## Step 5: Feedback Confirmation
@@ -567,7 +608,7 @@ Use AskUserQuestion to confirm before saving.
 Write `approved.json` to `$_DESIGN_DIR/` (handled by the loop above).
 
 If invoked from another skill: return the structured feedback for that skill to consume.
-The calling skill reads `approved.json` and the approved variant PNG.
+The calling skill reads `approved.json` and opens the image its `approved_path` names.
 
 If standalone, offer next steps via AskUserQuestion:
 
