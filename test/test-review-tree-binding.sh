@@ -195,7 +195,7 @@ grep -F '"skill":"codex-review","status":"timeout"' "$CX" | grep -vqF '"complete
 echo "land-and-deploy: cite a FRESH run first"
 LD="$SRC/skills/land-and-deploy/SKILL.md"
 T35=$(awk '/^### 3.5b: Test results/{on=1;next} on&&/^### /{exit} on' "$LD")
-printf '%s' "$T35" | grep -qF "vibe-evidence check --expect-cmd '<test command>'" && ok "the gate consults the ledger" || no "the gate never consults the ledger"
+printf '%s' "$T35" | grep -qF "vibe-evidence\" check --expect-cmd '<test command>'" && ok "the gate consults the ledger" || no "the gate never consults the ledger"
 FIRST=$(printf '%s\n' "$T35" | awk '/^```bash$/{f=1;next} /^```$/{if(f)exit} f')
 printf '%s' "$FIRST" | grep -qF '_TEXIT=$?' && ok "the run block is still the first block" || no "the run block moved"
 

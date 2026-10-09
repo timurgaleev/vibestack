@@ -36,8 +36,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
-If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
+If A: run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set cross_project_learnings true`
+If B: run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 

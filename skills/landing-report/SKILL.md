@@ -44,7 +44,7 @@ fi
 When you're running several branches in parallel, it helps to see — at a
 glance — which version numbers are claimed, by which PR, and what slot your next
 `/ship` would land in. This skill is a read-only call into the same
-`~/.vibestack/bin/vibe-next-version` utility `/ship` uses, but with nothing mutating.
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version"` utility `/ship` uses, but with nothing mutating.
 Think of it as `gh pr list` for VERSION numbers.
 
 ---

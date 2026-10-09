@@ -52,7 +52,7 @@ fi
 ## Plan Status Footer
 
 In plan mode, before ExitPlanMode: if the plan file lacks a `## VIBESTACK REVIEW REPORT`
-section, check `~/.vibestack/bin/vibe-review-read --json 2>/dev/null` and append a placeholder.
+section, check `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read" --json 2>/dev/null` and append a placeholder.
 With no review data, append a 5-row placeholder table (CEO/Codex/Eng/Design/DX Review)
 with all zeros and verdict "NO REVIEWS YET — run `/autoplan`".
 If a richer review report already exists, skip — review skills wrote it.

@@ -733,7 +733,7 @@ wrong runner on a pytest or Go project fails for reasons that say nothing about 
 
 **Reuse a proven run first.** When /ship already ran this exact command on this exact
 content, the evidence ledger says so:
-`~/.vibestack/bin/vibe-evidence check --expect-cmd '<test command>' --max-age 24 --allow-paths CHANGELOG.md,VERSION,TODOS.md`.
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence" check --expect-cmd '<test command>' --max-age 24 --allow-paths CHANGELOG.md,VERSION,TODOS.md`.
 Drop from that list any of the three files a test reads itself (a version check, a
 changelog lint). FRESH (exit 0) is the Free tests result — cite its line and skip the run below. STALE,
 or the helper missing, is not a blocker: it only means nothing proves a pass on this

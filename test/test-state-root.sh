@@ -76,6 +76,30 @@ for path in sys.argv[1:]:
 PY
 }
 
+# inline FILE... -> prints `file:line` for each prose inline-code span that runs
+# a pack tool through a literal ~/.vibestack/bin path. The model runs these the
+# same as fenced commands, so they need the VIBESTACK_HOME fallback too.
+inline() {
+  python3 -I - "$@" <<'PY'
+import re, sys
+fence = re.compile(r"^\s*```")
+span = re.compile(r"`([^`\n]+)`")
+bare = re.compile(r"(~|\$HOME|\$\{HOME\})/\.vibestack/bin/[A-Za-z]")
+for path in sys.argv[1:]:
+    inside = False
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if fence.match(line):
+                inside = not inside
+                continue
+            if inside:
+                continue
+            if any(bare.search(m.group(1)) and "VIBESTACK_HOME" not in m.group(1)
+                   for m in span.finditer(line)):
+                print(f"{path}:{n}")
+PY
+}
+
 echo "self-test"
 CLEAN="$TMP/clean.md"; DIRTY="$TMP/dirty.md"
 cat > "$CLEAN" <<'EOF'
@@ -108,6 +132,16 @@ EOF
 out="$(prose "$PROSE")"
 [ "$out" = "$PROSE:3" ] && ok "a prose Write to a literal ~/.vibestack path is flagged; a description is not" \
   || no "prose fixture: want $PROSE:3, got '$out'"
+
+INLINE="$TMP/inline.md"
+cat > "$INLINE" <<'EOF'
+Binaries live in `~/.vibestack/bin/` and state under ~/.vibestack/bin/x.
+Run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set a b`.
+Run `~/.vibestack/bin/vibe-config set a b`.
+EOF
+out="$(inline "$INLINE")"
+[ "$out" = "$INLINE:3" ] && ok "an inline-code ~/.vibestack/bin tool is flagged; a directory mention and the quoted fallback pass" \
+  || no "inline fixture: want line 3, got '$out'"
 
 QUOTE="$TMP/quote.md"
 cat > "$QUOTE" <<'EOF'
@@ -152,6 +186,15 @@ if [ -z "$qhits" ]; then
 else
   no "unquoted pack tools in command position ($(printf '%s\n' "$qhits" | wc -l | tr -d ' ') lines):"
   printf '%s\n' "$qhits" | sed "s|^$ROOT/|       |"
+fi
+
+ihits=""
+[ "${#files[@]}" -gt 0 ] && ihits="$(inline "${files[@]}")"
+if [ -z "$ihits" ]; then
+  ok "no prose inline-code span runs a literal ~/.vibestack/bin path"
+else
+  no "prose inline code names a literal ~/.vibestack/bin path ($(printf '%s\n' "$ihits" | wc -l | tr -d ' ') lines):"
+  printf '%s\n' "$ihits" | sed "s|^$ROOT/|       |"
 fi
 
 phits=""

@@ -221,7 +221,7 @@ Check diff size: `git diff <base>...HEAD --stat | tail -1`. If the diff is >200 
 
 If CEO Review is missing, mention as informational ("CEO Review not run — recommended for product changes") but do NOT block.
 
-For Design Review: run `eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"`. If `SCOPE_FRONTEND=true` and no design review (plan-design-review or design-review-lite) exists in the dashboard, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 9, but consider running /design-review for a full visual audit post-implementation." Still never block.
+For Design Review: run `eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" <base> 2>/dev/null || true)"`. If `SCOPE_FRONTEND=true` and no design review (plan-design-review or design-review-lite) exists in the dashboard, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 9, but consider running /design-review for a full visual audit post-implementation." Still never block.
 
 Continue to Step 2 — do NOT block or ask. Ship runs its own review in Step 9.
 
@@ -644,7 +644,7 @@ Use AskUserQuestion:
   **Noticed by:** vibestack /ship on <date>
   ````
   Scan the file with the same deterministic scanner as Step 19's secret scan:
-  `~/.vibestack/bin/vibe-redact scan --file '<ISSUE_BODY_FILE>'; echo "REDACT_EXIT: $?"`.
+  `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file '<ISSUE_BODY_FILE>'; echo "REDACT_EXIT: $?"`.
   Only `REDACT_EXIT: 0` passes. On any other exit (a finding, or a scan that could
   not run), stop and tell the user to redact + rotate before continuing — do not
   publish.
@@ -2213,7 +2213,7 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
   (Step 19.5), use an unprefixed PR title in Step 19, and log `"version":null` in
   Step 20. Set `NEW_VERSION` to empty and carry `NO_VERSION` forward.
 - **FRESH** → proceed with the bump action below (steps 1–4).
-- **ALREADY_BUMPED** → skip the bump by default. When `BASE_VERSION` is empty (VERSION was added on this branch) there is no base slot to compare against: skip the queue-drift check and reuse `CURRENT_VERSION`. Otherwise check for queue drift first: call `~/.vibestack/bin/vibe-next-version` with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`), compare its `.version` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
+- **ALREADY_BUMPED** → skip the bump by default. When `BASE_VERSION` is empty (VERSION was added on this branch) there is no base slot to compare against: skip the queue-drift check and reuse `CURRENT_VERSION`. Otherwise check for queue drift first: call `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version"` with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`), compare its `.version` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
 - **DRIFT_STALE_PKG** → a prior `/ship` bumped `VERSION` but failed to update `package.json`. Run the sync-only repair block below (after step 4). Do NOT re-bump. Reuse `CURRENT_VERSION` for CHANGELOG and PR body. (Queue check still runs in ALREADY_BUMPED terms after repair.)
 - **DRIFT_UNEXPECTED** → `/ship` has halted (exit 1). Resolve manually; /ship cannot tell which file is authoritative.
 
@@ -2233,7 +2233,7 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
 
    Save the chosen level as `BUMP_LEVEL` (one of `major`, `minor`, `patch`, `micro`). This is the user-intended level. The next step decides *placement* — the level stays the same even if queue-aware allocation has to advance past a claimed slot.
 
-3. **Queue-aware version pick (workspace-aware ship, v1.6.4.0+).** Call `~/.vibestack/bin/vibe-next-version` to see what's already claimed by open PRs against `<base>` (each PR's claim is the VERSION file at its head), then render the queue state to the user. Sibling worktrees are not detected — a WIP branch without a PR claims nothing.
+3. **Queue-aware version pick (workspace-aware ship, v1.6.4.0+).** Call `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version"` to see what's already claimed by open PRs against `<base>` (each PR's claim is the VERSION file at its head), then render the queue state to the user. Sibling worktrees are not detected — a WIP branch without a PR claims nothing.
 
    Replace `<BUMP_LEVEL>` with the level from step 2 and `<BASE_VERSION>` with the
    `BASE:` value the idempotency check printed:
@@ -2527,7 +2527,7 @@ echo "SHIP_ATTRIBUTION: ${_ATTR:-off}"
    - A user or project rule that forbids attribution (CLAUDE.md, AGENTS.md) wins
      over `on`.
 
-   Turn it on with `~/.vibestack/bin/vibe-config set ship_attribution on`.
+   Turn it on with `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set ship_attribution on`.
 
 ```bash
 git commit -m "$(cat <<'EOF'

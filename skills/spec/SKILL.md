@@ -252,7 +252,7 @@ The recorded value is consulted first because a self-hosted, remote-less, or
 offline repo is invisible to `gh` and `glab` and would otherwise resolve to
 `unknown` — public-strict — on every run, with no way for the user to correct it.
 They record it once with
-`~/.vibestack/bin/vibe-config set redact_repo_visibility private`; any value
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set redact_repo_visibility private`; any value
 other than `private` or `public` is ignored and detection continues.
 
 Emit exactly one marker line: `SEMANTIC_REVIEW: clean` OR

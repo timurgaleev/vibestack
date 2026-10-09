@@ -226,7 +226,7 @@ question preference suppress it:
 > browser it reaches is the one holding your sessions. Enable pair-agent on this
 > machine?"
 
-Options: A) Enable — run `~/.vibestack/bin/vibe-config set pair_agent on`, confirm
+Options: A) Enable — run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set pair_agent on`, confirm
 it reads back `on`, and continue. B) No — stop here; local pairing (option A
 above) still works and exposes nothing.
 

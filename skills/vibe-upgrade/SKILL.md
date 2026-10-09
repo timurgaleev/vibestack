@@ -88,14 +88,14 @@ echo "$_REMOTE_VER $_NEW_LEVEL $(date +%s)" > "$_SNOOZE_FILE"
 Note: substitute `{new}` (the remote version from the update-check result) for
 `_REMOTE_VER`. Tell the user the snooze duration ("Next reminder in 24h", or 48h,
 or 1 week, matching the level). Tip: "Enable automatic upgrades with
-`~/.vibestack/bin/vibe-config set auto_upgrade true`."
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set auto_upgrade true`."
 
 **If "Never ask again":**
 ```bash
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set update_check false
 ```
 Tell the user: "Update checks disabled. Re-enable with
-`~/.vibestack/bin/vibe-config set update_check true`." Continue with the current
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set update_check true`." Continue with the current
 skill.
 
 ### Step 2: Locate the install

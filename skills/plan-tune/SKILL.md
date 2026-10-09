@@ -71,8 +71,8 @@ If neither gate fires, route on plain-English intent (not keywords):
 5. **"Update my profile" / "I'm more boil-the-ocean than that" / "I've changed
    my mind"** → run `Edit declared profile` (confirm before writing).
 6. **"Show the gap" / "how far off is my profile"** → run `Show gap`.
-7. **"Turn it off" / "disable"** → `~/.vibestack/bin/vibe-config set question_tuning false`
-8. **"Turn it on" / "enable"** → `~/.vibestack/bin/vibe-config set question_tuning true`
+7. **"Turn it off" / "disable"** → `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set question_tuning false`
+8. **"Turn it on" / "enable"** → `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set question_tuning true`
    followed by `touch "${VIBESTACK_HOME:-$HOME/.vibestack}/.question-tuning-prompted"`.
    Enabling directly is consent; without the marker, a later `disable` would make
    the first-time consent prompt fire all over again.
