@@ -97,17 +97,20 @@ The browse daemon may be carrying a real signed-in session (imported cookies, a
 `/connect-chrome` handoff, a headed window). Treat every run as if it is.
 
 1. **Invocation is consent to LOOK, not to ACT.** Opening pages on the target,
-   reading them, clicking through navigation and filling forms without
-   submitting are covered. Submitting is not.
+   reading them and clicking through navigation are covered. Submitting is not,
+   and neither is typing into a NON-LOCAL editable control: `$B fill` or typing
+   into a signed-in app's fields can persist through auto-save on input, change
+   or blur with no submit at all.
 2. **LOCAL vs NON-LOCAL.** A target is LOCAL when its host is `localhost`,
    `127.0.0.1`, `0.0.0.0`, `::1`, or ends in `.localhost` or `.test`. A `.local`
    host is NOT local. Every other host is NON-LOCAL.
 3. **Mutations on a NON-LOCAL target need one question per run.** Submitting a
-   form (even an invalid one), creating, deleting, sending or changing settings
-   on a NON-LOCAL target runs against the user's real account: before the first
-   one, STOP and use AskUserQuestion ONCE per run, listing the exact mutating
-   actions you intend. Anything not on that list needs a new question. If the
-   user declines, skip those checks and mark them INFERRED.
+   form (even an invalid one), typing into an editable control, creating,
+   deleting, sending or changing settings on a NON-LOCAL target runs against the
+   user's real account: before the first one, STOP and use
+   AskUserQuestion ONCE per run, listing the exact mutating actions you intend.
+   Anything not on that list needs a new question. If the user declines, skip those checks and mark
+   them INFERRED.
 4. **Stay on the target's origin.** Browse only the docs/product origin the user
    named. Never open third-party sites (Discord, Stack Overflow, social
    networks); audit GitHub through `gh` in bash instead.

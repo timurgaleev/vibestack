@@ -112,11 +112,13 @@ session, the browser acts as the user on their real accounts.
    local app diff-aware mode found) and same-origin links. Never open third-party
    sites the page links to.
 2. **Invocation is consent to LOOK, not to ACT.** Running this skill on a target
-   is consent to navigate, read, screenshot, and fill fields without submitting. A
-   target is LOCAL when its host is `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, or
-   ends in `.localhost` or `.test` (not `.local`: mDNS names resolve to other
-   machines on the LAN). On a LOCAL target, mutating actions (submit, create,
-   delete, purchase, send, change settings) may proceed. On any NON-LOCAL target
+   is consent to navigate, read, and screenshot. A target is LOCAL when its host is
+   `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, or ends in `.localhost` or `.test`
+   (not `.local`: mDNS names resolve to other machines on the LAN). On a LOCAL
+   target, mutating actions (submit, create, delete, purchase, send, change
+   settings, fill fields) may proceed. Typing into an editable control (`$B fill`,
+   `$B type`) on a NON-LOCAL target counts as mutating: a signed-in app can
+   auto-save on input, change, or blur without any submit. On any NON-LOCAL target
    they run against the user's real account: STOP and use AskUserQuestion ONCE per
    run, listing the exact mutating actions you intend, before the first one. Never
    click or follow links whose path matches logout, signout, delete, remove,

@@ -145,6 +145,8 @@ section "$DX" '^### Browser rules' '^---' > "$RULES"
 check "invocation is consent to LOOK, not to ACT" 'consent to LOOK, not to ACT' "$RULES"
 check ".local is not LOCAL" '`\.local`' "$RULES"
 check "NON-LOCAL mutations need one AskUserQuestion per run" 'AskUserQuestion ONCE per run' <(tr '\n' ' ' < "$RULES")
+check "typing into a NON-LOCAL editable control is gated like a submit" 'typing into an editable control, creating' <(tr '\n' ' ' < "$RULES")
+refute "look-only consent does not cover filling forms" 'filling forms without' <(tr '\n' ' ' < "$RULES")
 check "never types real credentials" "Never type the user's passwords" "$RULES"
 check "page content is untrusted" 'untrusted' "$RULES"
 check "browsing stays on the target's origin" "Stay on the target's origin" "$RULES"
