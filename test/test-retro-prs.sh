@@ -90,6 +90,43 @@ out="$(run_cmd unknown)"
   && ok "unknown platform says PRS_UNAVAILABLE without asking a CLI" \
   || no "unknown platform: out='$out' calls='$(cat "$TMP/stub.log")'"
 
+# More merged MRs than one page holds: page 1 is a full 100, page 2 has the
+# rest. Stopping at page 1 would undercount the window.
+cat > "$STUBS/glab" <<'EOF'
+#!/usr/bin/env bash
+printf 'glab %s\n' "$*" >> "$STUB_LOG"
+page=1
+while [ $# -gt 0 ]; do case "$1" in --page) page="$2"; shift ;; esac; shift; done
+python3 -I -c 'import json, sys
+page = int(sys.argv[1])
+if page == 1:
+    mrs = [{"iid": 100 + i, "title": "p1", "merged_at": "2026-03-05T10:00:00Z"} for i in range(100)]
+elif page == 2:
+    mrs = [{"iid": 204, "title": "p2 in", "merged_at": "2026-03-06T10:00:00Z"},
+           {"iid": 205, "title": "p2 out", "merged_at": "2026-02-01T10:00:00Z"}]
+else:
+    mrs = []
+print(json.dumps(mrs))' "$page"
+EOF
+out="$(run_cmd gitlab)"
+n="$(echo "$out" | grep -c '^!')"
+[ "$n" = 101 ] && echo "$out" | grep -q '^!204 ' \
+  && ok "GitLab reads every page of merged MRs (101 in the window across 2 pages)" \
+  || no "GitLab paging: $n MRs, calls: $(tr '\n' ';' < "$TMP/stub.log")"
+grep -q -- '--page 2' "$TMP/stub.log" && ! grep -q -- '--page 3' "$TMP/stub.log" \
+  && ok "GitLab stops at the first short page" || no "GitLab page calls: $(tr '\n' ';' < "$TMP/stub.log")"
+
+# A page that fails part-way is unavailable, not a partial count.
+cat > "$STUBS/glab" <<'EOF'
+#!/usr/bin/env bash
+case " $* " in *" --page 2 "*) exit 1 ;; esac
+python3 -I -c 'import json; print(json.dumps([{"iid": 300 + i, "title": "t", "merged_at": "2026-03-05T10:00:00Z"} for i in range(100)]))'
+EOF
+out="$(run_cmd gitlab)"
+echo "$out" | grep -q '^PRS_UNAVAILABLE$' && ! echo "$out" | grep -q '^!' \
+  && ok "a glab failure on a later page is PRS_UNAVAILABLE with no partial list" \
+  || no "later-page failure printed: $(echo "$out" | head -3)"
+
 : > "$TMP/stub.log"
 printf '#!/usr/bin/env bash\nexit 1\n' > "$STUBS/glab"
 out="$(run_cmd gitlab)"

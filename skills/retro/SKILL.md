@@ -287,20 +287,32 @@ git show origin/<default>:VERSION 2>/dev/null
 #     detected — replace <PLATFORM> with github, gitlab or unknown. The window
 #     is bounded at both ends: <start-date> is its first day and <end-date> its
 #     last (today for a normal run). glab has no merged-date filter, so the
-#     window is applied to merged_at here; each MR prints as
-#     "!<iid> <merged_at> <title>".
+#     window is applied to merged_at here, reading page after page until a
+#     short one; each MR prints as "!<iid> <merged_at> <title>", and a failure
+#     on any page prints nothing but PRS_UNAVAILABLE.
 RETRO_PLATFORM='<PLATFORM>'
 case "$RETRO_PLATFORM" in
   github)
     gh pr list --state merged --base <default> --search "merged:<start-date>..<end-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE ;;
   gitlab)
-    glab mr list --merged --target-branch <default> --per-page 100 -F json 2>/dev/null \
-      | python3 -I -c 'import json, sys
-start, end = sys.argv[1], sys.argv[2]
-for m in json.load(sys.stdin):
-    day = (m.get("merged_at") or "")[:10]
-    if day and start <= day <= end:
-        print("!%s %s %s" % (m["iid"], m["merged_at"], m["title"]))' '<start-date>' '<end-date>' 2>/dev/null \
+    python3 -I -c 'import json, subprocess, sys
+base, start, end = sys.argv[1:4]
+found = []
+for page in range(1, 201):
+    out = subprocess.run(["glab", "mr", "list", "--merged", "--target-branch", base,
+                          "--per-page", "100", "--page", str(page), "-F", "json"],
+                         capture_output=True, text=True, check=True).stdout
+    mrs = json.loads(out)
+    for m in mrs:
+        day = (m.get("merged_at") or "")[:10]
+        if day and start <= day <= end:
+            found.append("!%s %s %s" % (m["iid"], m["merged_at"], m["title"]))
+    if len(mrs) < 100:
+        break
+else:
+    sys.exit(1)
+if found:
+    print("\n".join(found))' '<default>' '<start-date>' '<end-date>' 2>/dev/null \
       || echo PRS_UNAVAILABLE ;;
   *) echo PRS_UNAVAILABLE ;;
 esac
