@@ -44,6 +44,19 @@ sys.stdout.write(blocks[idx])
 PY
 }
 
+# fill NAME=value ... — stdin with each '<NAME>' placeholder replaced by the
+# single-quoted value, the way the agent fills it in before running the block.
+fill() {
+  python3 -I -c '
+import sys
+s = sys.stdin.read()
+for a in sys.argv[1:]:
+    k, v = a.split("=", 1)
+    s = s.replace("\x27<%s>\x27" % k, "\x27%s\x27" % v.replace("\x27", "\x27\\\x27\x27"))
+sys.stdout.write(s)
+' "$@"
+}
+
 G="git -c user.name=t -c user.email=t@example.com -c init.defaultBranch=main -c commit.gpgsign=false"
 T=""; H=""
 
@@ -73,17 +86,17 @@ bump() {
   $G -C "$T/seed" add -A; $G -C "$T/seed" commit -qm v2
   git -C "$T/seed" push -q "$T/remote.git" main
 }
-replay_block() { HOME="$H" bash -c "REPO='$1'; _ROOT=''; $(X '### Step 3.5')"; }
+replay_block() { HOME="$H" bash -c "$(X '### Step 3.5' | fill REPO="$1" _ROOT=)"; }
 prep_replay() { mkdir -p "$H/.claude/skills"; : > "$H/.claude/skills/.vibestack-manifest"; replay_block "$T/co" >/dev/null; }
 git_block() {
   HOME="$H" VIBESTACK_AUTO_UPGRADE="${AUTO:-}" \
-    bash -c "REPO='$T/co'; REPLAY='$H/.vibestack/upgrade-replay.sh'; $(X '### Step 4: Upgrade the primary' 0)"
+    bash -c "$(X '### Step 4: Upgrade the primary' 0 | fill REPO="$T/co" REPLAY="$H/.vibestack/upgrade-replay.sh")"
 }
 vend_block() {
-  HOME="$H" bash -c "REPO='$1'; REPLAY='$H/.vibestack/upgrade-replay.sh'; $(X '### Step 4: Upgrade the primary' 1 \
+  HOME="$H" bash -c "$(X '### Step 4: Upgrade the primary' 1 | fill REPO="$1" REPLAY="$H/.vibestack/upgrade-replay.sh" \
     | sed "s#https://github.com/timurgaleev/vibestack.git#$T/remote.git#")"
 }
-sync_block() { HOME="$H" bash -c "REPO='$T/co'; LOCAL_VIBESTACK='$T/proj/vs'; $(X '### Step 4.5' 1)"; }
+sync_block() { HOME="$H" bash -c "$(X '### Step 4.5' 1 | fill REPO="$T/co" LOCAL_VIBESTACK="$T/proj/vs")"; }
 mkvend() { mkdir -p "$T/proj"; cp -R "$T/co" "$T/proj/vs"; rm -rf "$T/proj/vs/.git"; echo local > "$T/proj/vs/MARK"; }
 
 echo "Step 3.5: replay the original install"

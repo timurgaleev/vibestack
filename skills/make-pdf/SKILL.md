@@ -51,8 +51,11 @@ fi
 # Env override first, then the launcher installed with this skill (resolves
 # the repo's compiled binary or runs the CLI on bun).
 P="${MAKE_PDF_BIN:-${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/make-pdf}/bin/vibe-make-pdf}"
-[ -x "$P" ] && "$P" version >/dev/null 2>&1 && echo "FOUND: $P" || echo "NOT_FOUND"
+[ -x "$P" ] && "$P" version >/dev/null 2>&1 && echo "PDF_BIN: $P" || echo "NOT_FOUND"
 ```
+
+Each Bash call starts a fresh shell, so every later block that runs `"$P"` opens with
+`P='<PDF_BIN>'`: replace the placeholder with the path this block printed.
 
 If `NOT_FOUND`, stop and tell the user:
 
@@ -95,6 +98,7 @@ Parse the user's input to determine what to do:
    `--output` flag, and any flag the CLI does not know fails the run with exit 1:
 
 ```bash
+P='<PDF_BIN>'
 "$P" generate "<source>" "<output.pdf>" [flags]
 ```
 
@@ -128,6 +132,7 @@ Pages:   <page count>
 Render the print-styled HTML and open it:
 
 ```bash
+P='<PDF_BIN>'
 "$P" preview "<source>" [flags]
 ```
 
@@ -141,6 +146,7 @@ Verify the render toolchain — browse binary, Chromium launch, `pdftotext` (opt
 generate and open a smoke-test PDF:
 
 ```bash
+P='<PDF_BIN>'
 "$P" setup
 ```
 
@@ -157,6 +163,7 @@ One command, no flags. Gets a clean PDF with running header, page numbers, and a
 CONFIDENTIAL right-footer.
 
 ```bash
+P='<PDF_BIN>'
 "$P" generate letter.md                 # writes /tmp/letter.pdf
 "$P" generate letter.md letter.pdf      # explicit output path
 ```
@@ -166,12 +173,14 @@ CONFIDENTIAL right-footer.
 The footer is on by default, so anything meant to leave the building needs it turned off:
 
 ```bash
+P='<PDF_BIN>'
 "$P" generate --no-confidential memo.md memo.pdf
 ```
 
 ### Publication mode — cover + TOC + chapter breaks
 
 ```bash
+P='<PDF_BIN>'
 "$P" generate --cover --toc --title "On Horizons" essay.md essay.pdf
 ```
 
@@ -180,6 +189,7 @@ Each top-level H1 starts a new page. Disable with `--no-chapter-breaks` for memo
 ### Draft-stage watermark
 
 ```bash
+P='<PDF_BIN>'
 "$P" generate --watermark DRAFT memo.md draft.pdf
 ```
 
@@ -230,6 +240,7 @@ the machine into a shareable document.
 ### Other formats — single-file HTML and Word
 
 ```bash
+P='<PDF_BIN>'
 "$P" generate readme.md out.html --to html     # one self-contained file, no network refs
 "$P" generate readme.md out.docx --to docx     # content fidelity; diagrams become PNG
 ```
@@ -240,6 +251,7 @@ the machine into a shareable document.
 ### CI mode — fail loud on missing assets
 
 ```bash
+P='<PDF_BIN>'
 "$P" generate docs.md --strict
 ```
 
@@ -249,6 +261,7 @@ warnings, so a broken asset path fails the build rather than shipping a placehol
 ### Fast iteration via preview
 
 ```bash
+P='<PDF_BIN>'
 "$P" preview essay.md
 ```
 

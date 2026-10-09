@@ -283,9 +283,13 @@ SPEC_SCAN=$(mktemp /tmp/spec-scan-XXXXXXXX)
 echo "SPEC_SCAN: $SPEC_SCAN"
 ```
 
-Read the empty file, **Write the draft spec into `SPEC_SCAN` verbatim**, then:
+Read the empty file, **Write the draft spec into `SPEC_SCAN` verbatim**, then run
+this with `<SPEC_SCAN>` replaced by the printed path (each Bash call is a fresh
+shell, so a value from an earlier block reaches a later one only as a placeholder
+you fill in):
 
 ```bash
+SPEC_SCAN='<SPEC_SCAN>'
 ~/.vibestack/bin/vibe-redact scan --file "$SPEC_SCAN"
 echo "REDACT_EXIT: $?"
 rm -f "$SPEC_SCAN"
@@ -329,9 +333,10 @@ echo "SPEC_DRAFT: $SPEC_DRAFT"
 
 Read the empty file, then **Write the draft spec into the printed `SPEC_DRAFT`
 verbatim with the Write tool** (only after the 4.5b scan passed — a blocked spec is
-never written to a sink, and the 4.5b `SPEC_SCAN` scratch file is already gone). Then build the prompt from that file and send it on stdin:
+never written to a sink, and the 4.5b `SPEC_SCAN` scratch file is already gone). Then build the prompt from that file and send it on stdin, with `<SPEC_DRAFT>` replaced by the printed path:
 
 ```bash
+SPEC_DRAFT='<SPEC_DRAFT>'
 [ -s "$SPEC_DRAFT" ] || { echo "SPEC_MISSING: write the draft into $SPEC_DRAFT with the Write tool first" >&2; exit 1; }
 TMPERR_GATE=$(mktemp /tmp/spec-gate-XXXXXXXX)
 GATE_PROMPT=$(mktemp /tmp/spec-gate-prompt-XXXXXXXX)
@@ -441,12 +446,16 @@ title into `TITLE_FILE` with the Write tool.**
 
 **Re-scan before filing.** The Phase 4.5a/4.5b gates ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so on `$BODY_FILE` and the title you are about to file: (1) repeat the Phase 4.5a semantic re-read and honor its verdict, and (2) run the same deterministic scanner as the 4.5b gate on both files: `~/.vibestack/bin/vibe-redact scan --file "$BODY_FILE" --file "$TITLE_FILE"; echo "REDACT_EXIT: $?"`. Only `REDACT_EXIT: 0` passes; on any other exit (a finding, or a scan that could not run), **stop**: redact and rotate before filing — never create the issue with a secret in it. Any redaction or edit the scan forces is applied to `$BODY_FILE` and re-scanned there; a fix made only in the conversation is lost the moment the body is rendered again.
 
-If `gh` is available and authenticated:
+If `gh` is available and authenticated, replace `<TITLE_FILE>` and `<BODY_FILE>`
+with the printed paths and run:
 
 ```bash
+TITLE_FILE='<TITLE_FILE>'
+BODY_FILE='<BODY_FILE>'
 ISSUE_URL=$(gh issue create --title "$(head -n1 "$TITLE_FILE")" --body-file "$BODY_FILE")
 ISSUE_NUMBER=$(echo "$ISSUE_URL" | sed -E 's|.*/issues/([0-9]+)$|\1|')
-echo "Filed: $ISSUE_URL"
+echo "ISSUE_URL: $ISSUE_URL"
+echo "ISSUE_NUMBER: $ISSUE_NUMBER"
 ```
 
 If `gh` is not available, print: "`gh` not authenticated — title and body below
@@ -476,9 +485,17 @@ is consumed by `/ship` for auto-close.
 
 #### Archive the spec (always, local by default)
 
-Resolve the archive path under the vibestack project state dir:
+Resolve the archive path under the vibestack project state dir. Replace
+`<TITLE_FILE>` and `<BODY_FILE>` with the printed paths, and `<ISSUE_NUMBER>` and
+`<ISSUE_URL>` with the values the filing block printed — an empty string for each
+when the issue was not filed:
 
 ```bash
+TITLE_FILE='<TITLE_FILE>'
+BODY_FILE='<BODY_FILE>'
+ISSUE_NUMBER='<ISSUE_NUMBER>'
+ISSUE_URL='<ISSUE_URL>'
+if [ -n "${CLAUDE_PLAN_FILE:-}" ]; then PLAN_MODE=active; else PLAN_MODE=inactive; fi
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 ARCHIVE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/specs"
 mkdir -p "$ARCHIVE_DIR"
@@ -504,7 +521,8 @@ EOF
 } > "$ARCHIVE_PATH.tmp"
 mv "$ARCHIVE_PATH.tmp" "$ARCHIVE_PATH"
 rm -f "$BODY_FILE" "$TITLE_FILE"
-echo "Archived: $ARCHIVE_PATH"
+echo "ARCHIVE_PATH: $ARCHIVE_PATH"
+echo "SLUG_TITLE: $SLUG_TITLE"
 ```
 
 The PID suffix and atomic rename prevent collisions when two `/spec` invocations
@@ -564,24 +582,31 @@ SHA (not "HEAD") for the worktree:
 
 ```bash
 PIN_SHA=$(git rev-parse HEAD)
+echo "PIN_SHA: $PIN_SHA"
 ```
 
 **Unique branch + worktree path:** Suffix with `$$` to avoid concurrent
-collisions:
+collisions. Replace `<SLUG_TITLE>` with the value the archive block printed:
 
 ```bash
+SLUG_TITLE='<SLUG_TITLE>'
 SPAWN_BRANCH="spec/${SLUG_TITLE}-$$"
 SPAWN_PATH="${WORKTREE_PARENT:-../worktrees}/${SLUG_TITLE}-$$"
 mkdir -p "$(dirname "$SPAWN_PATH")"
+echo "SPAWN_BRANCH: $SPAWN_BRANCH"
+echo "SPAWN_PATH: $SPAWN_PATH"
 ```
 
 **Mandatory final-confirm gate:** AskUserQuestion: "Spawn agent now? Last
 chance to revise the spec." Options: A) Spawn. B) Cancel (issue stays filed,
 archive stays written).
 
-If A:
+If A, with each placeholder replaced by the value printed above:
 
 ```bash
+SPAWN_PATH='<SPAWN_PATH>'
+SPAWN_BRANCH='<SPAWN_BRANCH>'
+PIN_SHA='<PIN_SHA>'
 git worktree add "$SPAWN_PATH" -b "$SPAWN_BRANCH" "$PIN_SHA" 2>&1
 ```
 
@@ -593,6 +618,9 @@ desired." Then fall back to current dir (still spawn).
 If A and worktree created: spawn `claude -p` with the spec piped via stdin:
 
 ```bash
+ARCHIVE_PATH='<ARCHIVE_PATH>'
+SPAWN_PATH='<SPAWN_PATH>'
+SPAWN_BRANCH='<SPAWN_BRANCH>'
 cat "$ARCHIVE_PATH" | (cd "$SPAWN_PATH" && claude -p 2>&1) &
 SPAWN_PID=$!
 echo "Spawned: PID $SPAWN_PID in $SPAWN_PATH (branch $SPAWN_BRANCH)"

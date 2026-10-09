@@ -96,6 +96,7 @@ If C: ask for the path. Verify it exists. Use as positional argument.
 ## Step 2: Choose providers
 
 ```bash
+BIN="$HOME/.vibestack/bin/vibe-model-benchmark"
 "$BIN" --prompt "unused, dry-run" --models claude,gpt,gemini --dry-run
 ```
 
@@ -135,6 +136,7 @@ If judge is NOT available, skip this question and omit the `--judge` flag.
 Construct the command from Step 1, 2, 3 decisions:
 
 ```bash
+BIN="$HOME/.vibestack/bin/vibe-model-benchmark"
 "$BIN" <prompt-spec> --models <picked-models> [--judge] --output table
 ```
 
