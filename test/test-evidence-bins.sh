@@ -449,7 +449,7 @@ printf '#!/bin/sh\nprintf "CODEX: %%s\\n" "$STUB_VERDICT"\n[ "$STUB_VERDICT" = u
 chmod +x "$PFH/.vibestack/bin/vibe-codex-probe"
 printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
 pf() { # pf VERDICT -> the preflight's full output
-  HOME="$PFH" PATH="$FAKE:/usr/bin:/bin" STUB_VERDICT="$1" \
+  HOME="$PFH" VIBESTACK_HOME="$PFH/.vibestack" PATH="$FAKE:/usr/bin:/bin" STUB_VERDICT="$1" \
     env -u CODEX_THREAD_ID -u CODEX_SANDBOX -u VIBE_FORCE_CODEX_REVIEW bash "$PF" 2>&1
 }
 pfmode() { pf "$1" | sed -n 's/^CODEX_MODE: //p'; }
@@ -472,13 +472,13 @@ printf '#!/bin/sh\necho disabled\n' > "$PFH/.vibestack/bin/vibe-config"; chmod +
 chk "codex_reviews disabled wins over a usable probe" "$(pfmode usable)" "disabled"
 rm -f "$PFH/.vibestack/bin/vibe-config"
 chk "a Codex host is under_codex, not a nested pass" \
-  "$(HOME="$PFH" PATH="$FAKE:/usr/bin:/bin" STUB_VERDICT=usable CODEX_THREAD_ID=t \
+  "$(HOME="$PFH" VIBESTACK_HOME="$PFH/.vibestack" PATH="$FAKE:/usr/bin:/bin" STUB_VERDICT=usable CODEX_THREAD_ID=t \
      env -u VIBE_FORCE_CODEX_REVIEW bash "$PF" 2>&1 | sed -n 's/^CODEX_MODE: //p')" "under_codex"
 if PATH="/usr/bin:/bin" command -v codex >/dev/null 2>&1; then
   ok "SKIP no-binary preflight case (codex is installed inside /usr/bin:/bin)"
 else
   chk "no codex binary -> not_installed without asking the probe" \
-    "$(HOME="$PFH" PATH="/usr/bin:/bin" STUB_VERDICT=usable \
+    "$(HOME="$PFH" VIBESTACK_HOME="$PFH/.vibestack" PATH="/usr/bin:/bin" STUB_VERDICT=usable \
        env -u CODEX_THREAD_ID -u CODEX_SANDBOX bash "$PF" 2>&1 | sed -n 's/^CODEX_MODE: //p')" "not_installed"
 fi
 

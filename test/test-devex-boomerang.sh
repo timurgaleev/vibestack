@@ -79,7 +79,7 @@ DX="$(render devex-review)"
 BASE="$TMP/dx-base.md"
 section "$DX" '^### Boomerang Baseline' '^## Step 1:' > "$BASE"
 [ -s "$BASE" ] || { echo "Boomerang Baseline not found in devex-review" >&2; exit 1; }
-first_bash "$BASE" | sed "s|~/.vibestack/bin/|$BIN/|g" > "$TMP/base.sh"
+first_bash "$BASE" | sed -e "s|\${VIBESTACK_HOME:-\$HOME/.vibestack}/bin/|$BIN/|g" -e "s|~/.vibestack/bin/|$BIN/|g" > "$TMP/base.sh"
 BOUT="$(cd "$REPO" && bash "$TMP/base.sh" 2>&1)"
 printf '%s' "$BOUT" | grep -q '"getting_started": 8' \
   && ok "the baseline block prints the plan's pass_scores" \
@@ -122,7 +122,7 @@ PDX="$(render plan-devex-review)"
 TREND="$TMP/pdx-trend.md"
 section "$PDX" '^### DX Trend Check' '^### Pass 1' > "$TREND"
 [ -s "$TREND" ] || { echo "DX Trend Check not found in plan-devex-review" >&2; exit 1; }
-first_bash "$TREND" | sed "s|~/.vibestack/bin/|$BIN/|g" > "$TMP/trend.sh"
+first_bash "$TREND" | sed -e "s|\${VIBESTACK_HOME:-\$HOME/.vibestack}/bin/|$BIN/|g" -e "s|~/.vibestack/bin/|$BIN/|g" > "$TMP/trend.sh"
 TOUT="$(cd "$REPO" && bash "$TMP/trend.sh" 2>&1)"
 printf '%s' "$TOUT" | grep -q '"getting_started": 4' \
   && ok "the trend block prints prior pass_scores" || no "the trend block lost prior scores"

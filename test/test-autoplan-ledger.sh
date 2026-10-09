@@ -64,7 +64,7 @@ STUB
   chmod +x "$TMP/home/.vibestack/bin/vibe-review-log"
   git -C "$TMP/repo" init -q
   printf '%s\n' "$block" > "$TMP/block.sh"
-  (cd "$TMP/repo" && HOME="$TMP/home" bash "$TMP/block.sh") >/dev/null 2>&1
+  (cd "$TMP/repo" && HOME="$TMP/home" VIBESTACK_HOME="$TMP/home/.vibestack" bash "$TMP/block.sh") >/dev/null 2>&1
   res="$(python3 -I - "$TMP/home/log.jsonl" <<'PY'
 import json, re, sys
 try:
