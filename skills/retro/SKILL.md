@@ -1,7 +1,7 @@
 ---
 name: retro
 description: |
-  Weekly engineering retrospective. Analyzes commit history, work patterns, and code quality metrics with persistent history and trend tracking. Team-aware: breaks down per-person contributions with praise and growth areas.
+  Weekly engineering retrospective from git history: shipping metrics, work patterns, trends and per-person feedback.
 allowed-tools:
   - Bash
   - Read
@@ -23,13 +23,13 @@ Proactively suggest at the end of a work week or sprint.
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -97,8 +97,6 @@ When the user types `/retro`, run this skill.
 - `/retro 30d` — last 30 days
 - `/retro compare` — compare current window vs prior same-length window
 - `/retro compare 14d` — compare with explicit window
-- `/retro global` — cross-project retro across all AI coding tools (7d default)
-- `/retro global 14d` — cross-project retro with explicit window
 
 
 
@@ -108,20 +106,16 @@ Parse the argument to determine the time window. Default to 7 days if no argumen
 
 **Midnight-aligned windows:** For day (`d`) and week (`w`) units, compute an absolute start date at local midnight, not a relative string. For example, if today is 2026-03-18 and the window is 7 days: the start date is 2026-03-11. Use `--since="2026-03-11T00:00:00"` for git log queries — the explicit `T00:00:00` suffix ensures git starts from midnight. Without it, git uses the current wall-clock time (e.g., `--since="2026-03-11"` at 11pm means 11pm, not midnight). For week units, multiply by 7 to get days (e.g., `2w` = 14 days back). For hour (`h`) units, use `--since="N hours ago"` since midnight alignment does not apply to sub-day windows.
 
-**Argument validation:** If the argument doesn't match a number followed by `d`, `h`, or `w`, the word `compare` (optionally followed by a window), or the word `global` (optionally followed by a window), show this usage and stop:
+**Argument validation:** If the argument doesn't match a number followed by `d`, `h`, or `w`, or the word `compare` (optionally followed by a window), show this usage and stop:
 ```
-Usage: /retro [window | compare | global]
+Usage: /retro [window | compare]
   /retro              — last 7 days (default)
   /retro 24h          — last 24 hours
   /retro 14d          — last 14 days
   /retro 30d          — last 30 days
   /retro compare      — compare this period vs prior period
   /retro compare 14d  — compare with explicit window
-  /retro global       — cross-project retro across all AI tools (7d default)
-  /retro global 14d   — cross-project retro with explicit window
 ```
-
-**If the first argument is `global`:** Skip the normal repo-scoped retro (Steps 1-14). Instead, follow the **Global Retrospective** flow at the end of this document. The optional second argument is the time window (default 7d). This mode does NOT require being inside a git repo.
 
 {{include lib/snippets/prior-learnings.md}}
 ### Non-git context (optional)
@@ -129,7 +123,7 @@ Usage: /retro [window | compare | global]
 Check for non-git context that should be included in the retro:
 
 ```bash
-[ -f ~/.vibestack/retro-context.md ] && echo "RETRO_CONTEXT_FOUND" || echo "NO_RETRO_CONTEXT"
+[ -f "${VIBESTACK_HOME:-$HOME/.vibestack}/retro-context.md" ] && echo "RETRO_CONTEXT_FOUND" || echo "NO_RETRO_CONTEXT"
 ```
 
 If `RETRO_CONTEXT_FOUND`: read `~/.vibestack/retro-context.md`. This file is user-authored and may contain meeting notes, calendar events, decisions, and other context that doesn't appear in git history. Incorporate this context into the retro narrative where relevant.
@@ -229,14 +223,18 @@ git log origin/<default> --since="<window>" --format="%H|%aN|%ae|%ai|%s" --short
 
 # 2. Per-commit test vs total LOC breakdown with author
 #    Each commit block starts with COMMIT:<hash>|<author>, followed by numstat lines.
-#    Separate test files (matching test/|spec/|__tests__/) from production files.
+#    Test files: paths matching '(^|/)(tests?|specs?|__tests__)/|\.(test|spec)\.|_(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.rb$|Tests?\.swift$|\.tftest\.hcl$|\.bats$'.
+#    Generated/build paths matching '(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/'
+#    count toward neither test LOC nor logical SLOC, and are dropped from hotspots
+#    (commands 4, 10, 12 and 13 apply the same exclusion).
 git log origin/<default> --since="<window>" --format="COMMIT:%H|%aN" --numstat
 
 # 3. Commit timestamps for session detection and hourly distribution (with author)
 git log origin/<default> --since="<window>" --format="%at|%aN|%ai|%s" | sort -n
 
 # 4. Files most frequently changed (hotspot analysis)
-git log origin/<default> --since="<window>" --format="" --name-only | grep -v '^$' | sort | uniq -c | sort -rn
+git log origin/<default> --since="<window>" --format="" --name-only | grep -v '^$' \
+  | grep -vE '(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/' | sort | uniq -c | sort -rn
 
 # 5. PR/MR numbers from commit messages (GitHub #NNN, GitLab !NNN)
 git log origin/<default> --since="<window>" --format="%s" | grep -oE '[#!][0-9]+' | sort -t'#' -k1 | uniq
@@ -248,28 +246,34 @@ git log origin/<default> --since="<window>" --format="AUTHOR:%aN" --name-only
 git shortlog origin/<default> --since="<window>" -sn --no-merges
 
 # 8. Greptile triage history (if available)
-cat ~/.vibestack/greptile-history.md 2>/dev/null || true
+cat "${VIBESTACK_HOME:-$HOME/.vibestack}/greptile-history.md" 2>/dev/null || true
 
 # 9. TODOS.md backlog (if available)
 cat TODOS.md 2>/dev/null || true
 
 # 10. Test file count
-find . -name '*.test.*' -o -name '*.spec.*' -o -name '*_test.*' -o -name '*_spec.*' 2>/dev/null | grep -v node_modules | wc -l
+find . -type f -not -path './.git/*' 2>/dev/null \
+  | grep -vE '(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/' \
+  | grep -E '(^|/)(tests?|specs?|__tests__)/|\.(test|spec)\.|_(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.rb$|Tests?\.swift$|\.tftest\.hcl$|\.bats$' | wc -l
 
 # 11. Regression test commits in window
 git log origin/<default> --since="<window>" --oneline --grep="test(qa):" --grep="test(design):" --grep="test: coverage"
 
 # 12. vibestack skill usage telemetry (if available)
-cat ~/.vibestack/analytics/skill-usage.jsonl 2>/dev/null || true
+cat "${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl" 2>/dev/null || true
 
 # 12. Test files changed in window
-git log origin/<default> --since="<window>" --format="" --name-only | grep -E '\.(test|spec)\.' | sort -u | wc -l
+git log origin/<default> --since="<window>" --format="" --name-only | grep -v '^$' \
+  | grep -vE '(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/' \
+  | grep -E '(^|/)(tests?|specs?|__tests__)/|\.(test|spec)\.|_(test|spec)\.|(^|/)test_[^/]*\.py$|_test\.rb$|Tests?\.swift$|\.tftest\.hcl$|\.bats$' | sort -u | wc -l
 
 # 13. Logical SLOC added: added lines minus blanks and comment-only lines.
 #     Leader matching is a heuristic, not a parser — good enough to keep the
 #     headline number from counting whitespace and license headers as shipping.
+#     The awk drops hunks of generated/build files (same pattern as command 4).
 git log origin/<default> --since="<window>" --no-merges -p --unified=0 --no-color \
-  | grep '^+' | grep -v '^+++' | cut -c2- \
+  | awk -v gen='(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/' '/^\+\+\+ /{skip = (substr($0, 5) ~ gen); next} /^\+/ && !skip' \
+  | cut -c2- \
   | grep -vE '^[[:space:]]*$' \
   | grep -vE '^[[:space:]]*(#|//|/\*|\*|--|<!--)' | wc -l
 
@@ -277,6 +281,12 @@ git log origin/<default> --since="<window>" --no-merges -p --unified=0 --no-colo
 _FIRST=$(git log origin/<default> --since="<window>" --format=%H | tail -1)
 git show "${_FIRST}^:VERSION" 2>/dev/null || git show "${_FIRST}:VERSION" 2>/dev/null
 git show origin/<default>:VERSION 2>/dev/null
+
+# 15. Merged PRs in window (hosting data)
+gh pr list --state merged --base <default> --search "merged:>=<start-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE
+
+# 16. CHANGELOG entries added in window
+git log origin/<default> --since="<window>" --format= -p -- CHANGELOG.md | grep '^+' | grep -v '^+++' || true
 ```
 
 ### Step 2: Compute Metrics
@@ -285,11 +295,12 @@ Calculate and present these metrics in a summary table:
 
 | Metric | Value |
 |--------|-------|
-| **Features shipped** (from CHANGELOG + merged PR titles) | N |
+| **Features shipped** (deduplicated CHANGELOG entry lines + merged PR titles) | N |
 | Commits to main | N |
 | Weighted commits (commits × avg files-touched, capped at 20 per commit) | N |
 | Contributors | N |
 | PRs merged | N |
+| PRs referenced (`#NNN`/`!NNN` in subjects) | N |
 | **Logical SLOC added** (non-blank, non-comment — primary code-volume metric) | N |
 | Raw LOC: insertions | N |
 | Raw LOC: deletions | N |
@@ -301,7 +312,7 @@ Calculate and present these metrics in a summary table:
 | Detected sessions | N |
 | Avg raw LOC/session-hour | N |
 | Greptile signal | N% (Y catches, Z FPs) |
-| Test Health | N total tests · M added this period · K regression tests |
+| Test Health | N test files · M test files changed this period · K regression tests |
 
 **Metric order rationale (V1):** features shipped leads — what users got. Commits
 and weighted commits reflect intent-to-ship. Logical SLOC added reflects real
@@ -309,8 +320,12 @@ new functionality. Raw LOC is demoted to context because AI inflates it; ten
 lines of a good fix is not less shipping than ten thousand lines of scaffold.
 See docs/designs/PLAN_TUNING_V1.md §Workstream C.
 
-Logical SLOC comes from command 13, version range from command 14. **Every row
-traces to a Step 1 command.** If a row has no data source in this repo — no
+Logical SLOC comes from command 13, version range from command 14. PRs merged
+comes from command 15; on `PRS_UNAVAILABLE` the row reads "unavailable (no gh)" —
+never infer it from `#NNN` in subjects, which is what PRs referenced (command 5)
+counts. Features shipped is the deduplicated CHANGELOG entry lines from command 16
+plus the merged PR titles from command 15; when both sources are empty or
+unavailable it reads "unavailable", not 0. **Every row traces to a Step 1 command.** If a row has no data source in this repo — no
 VERSION file, no CHANGELOG, no Greptile history — drop the row. Never fill a
 cell from your own estimate: an estimated number sitting in a table of measured
 ones is indistinguishable from a measurement.
@@ -384,7 +399,7 @@ Identify and call out:
 ### Step 4: Work Session Detection
 
 Detect sessions using **45-minute gap** threshold between consecutive commits. For each session report:
-- Start/end time (Pacific)
+- Start/end time (local timezone)
 - Number of commits
 - Duration in minutes
 
@@ -498,7 +513,9 @@ setopt +o nomatch 2>/dev/null || true  # zsh compat
 ls -t .context/retros/*.json 2>/dev/null
 ```
 
-**If prior retros exist:** Load the most recent one using the Read tool. Calculate deltas for key metrics and include a **Trends vs Last Retro** section:
+**Only compare against a prior retro with the same `window` value** (e.g., 7d vs 7d). Pick the most recent prior retro; if its `window` differs from the current one, skip the Trends section and note: "Prior retro used a different window — skipping comparison."
+
+**If a matching prior retro exists:** Load it using the Read tool. Calculate deltas for key metrics and include a **Trends vs Last Retro** section:
 ```
                     Last        Now         Delta
 Test ratio:         22%    →    41%         ↑19pp
@@ -519,14 +536,13 @@ After computing all metrics (including streak) and loading any prior history for
 mkdir -p .context/retros
 ```
 
-Determine the next sequence number for today (substitute the actual date for `$(date +%Y-%m-%d)`):
+Determine the next unused sequence number for today. Replace `<TODAY>` with the
+`YYYY-MM-DD` date you computed from the session reminder (never from `date`):
 ```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Count existing retros for today to get next sequence number
-today=$(date +%Y-%m-%d)
-existing=$(ls .context/retros/${today}-*.json 2>/dev/null | wc -l | tr -d ' ')
-next=$((existing + 1))
-# Save as .context/retros/${today}-${next}.json
+today='<TODAY>'
+# First unused number, so a deleted -1 never makes this run overwrite -2
+next=1; while [ -e ".context/retros/${today}-${next}.json" ]; do next=$((next+1)); done
+echo "SAVE_AS: .context/retros/${today}-${next}.json"
 ```
 
 Use the Write tool to save the JSON file with this schema:
@@ -575,7 +591,6 @@ Include test health data in the JSON when test files exist:
 ```json
   "test_health": {
     "total_test_files": 47,
-    "tests_added_this_period": 5,
     "regression_test_commits": 3,
     "test_files_changed": 8
   }
@@ -636,9 +651,9 @@ Narrative covering:
 
 ### Test Health
 - Total test files: N (from command 10)
-- Tests added this period: M (from command 12 — test files changed)
+- Test files changed this period: M (from command 12)
 - Regression test commits: list `test(qa):` and `test(design):` and `test: coverage` commits from command 11
-- If prior retro exists and has `test_health`: show delta "Test count: {last} → {now} (+{delta})"
+- If prior retro exists and has `test_health`: show delta "Test files: {last} → {now} (+{delta})"
 - If test ratio < 20%: flag as growth area — "100% test coverage is the goal. Tests make vibe coding safe."
 
 ### Plan Completion
@@ -646,8 +661,8 @@ Check review JSONL logs for plan completion data from /ship runs this period:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-cat ~/.vibestack/projects/$SLUG/*-reviews.jsonl 2>/dev/null | grep '"skill":"ship"' | grep '"plan_items_total"' || echo "NO_PLAN_DATA"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+cat "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-reviews.jsonl 2>/dev/null | grep '"skill":"ship"' | grep '"plan_items_total"' || echo "NO_PLAN_DATA"
 ```
 
 If plan completion data exists within the retro time window:
@@ -715,305 +730,12 @@ Small, practical, realistic. Each must be something that takes <5 minutes to ado
 
 ---
 
-## Global Retrospective Mode
-
-When the user runs `/retro global` (or `/retro global 14d`), follow this flow instead of the repo-scoped Steps 1-14. This mode works from any directory — it does NOT require being inside a git repo.
-
-### Global Step 1: Compute time window
-
-Same midnight-aligned logic as the regular retro. Default 7d. The second argument after `global` is the window (e.g., `14d`, `30d`, `24h`).
-
-### Global Step 2: Run discovery
-
-Locate and run the discovery script using this fallback chain:
-
-```bash
-DISCOVER_BIN=""
-[ -x "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-global-discover" ] && DISCOVER_BIN="${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-global-discover"
-[ -z "$DISCOVER_BIN" ] && command -v vibe-global-discover >/dev/null 2>&1 && DISCOVER_BIN="$(command -v vibe-global-discover)"
-echo "DISCOVER_BIN: ${DISCOVER_BIN:-none}"
-```
-
-**Stop-guard:** if `DISCOVER_BIN` is `none`, vibestack does not ship a cross-tool
-session-discovery binary, so global mode has no data source. Do NOT fall through
-and fabricate a narrative from an empty query. STOP and say: "`/retro global`
-needs a cross-tool session-discovery binary (`vibe-global-discover`) that isn't
-installed. Run a repo-scoped retro instead: `/retro` from inside a project."
-
-Only when a binary IS present, run the discovery, replacing `<DISCOVER_BIN>` with
-the path printed above:
-```bash
-DISCOVER_BIN='<DISCOVER_BIN>'
-"$DISCOVER_BIN" --since "<window>" --format json 2>/tmp/vibestack-discover-stderr
-```
-
-Read the stderr output from `/tmp/vibestack-discover-stderr` for diagnostic info. Parse the JSON output from stdout.
-
-If `total_sessions` is 0, say: "No AI coding sessions found in the last <window>. Try a longer window: `/retro global 30d`" and stop.
-
-### Global Step 3: Run git log on each discovered repo
-
-For each repo in the discovery JSON's `repos` array, find the first valid path in `paths[]` (directory exists with `.git/`). If no valid path exists, skip the repo and note it.
-
-**For local-only repos** (where `remote` starts with `local:`): skip `git fetch` and use the local default branch. Use `git log HEAD` instead of `git log origin/$DEFAULT`.
-
-**For repos with remotes:**
-
-```bash
-git -C <path> fetch origin --quiet 2>/dev/null
-```
-
-Detect the default branch for each repo: first try `git symbolic-ref refs/remotes/origin/HEAD`, then check common branch names (`main`, `master`), then fall back to `git rev-parse --abbrev-ref HEAD`. Use the detected branch as `<default>` in the commands below.
-
-```bash
-# Commits with stats
-git -C <path> log origin/$DEFAULT --since="<start_date>T00:00:00" --format="%H|%aN|%ai|%s" --shortstat
-
-# Commit timestamps for session detection, streak, and context switching
-git -C <path> log origin/$DEFAULT --since="<start_date>T00:00:00" --format="%at|%aN|%ai|%s" | sort -n
-
-# Per-author commit counts
-git -C <path> shortlog origin/$DEFAULT --since="<start_date>T00:00:00" -sn --no-merges
-
-# PR/MR numbers from commit messages (GitHub #NNN, GitLab !NNN)
-git -C <path> log origin/$DEFAULT --since="<start_date>T00:00:00" --format="%s" | grep -oE '[#!][0-9]+' | sort -t'#' -k1 | uniq
-```
-
-For repos that fail (deleted paths, network errors): skip and note "N repos could not be reached."
-
-### Global Step 4: Compute global shipping streak
-
-For each repo, get commit dates (capped at 365 days):
-
-```bash
-git -C <path> log origin/$DEFAULT --since="365 days ago" --format="%ad" --date=format:"%Y-%m-%d" | sort -u
-```
-
-Union all dates across all repos. Count backward from today — how many consecutive days have at least one commit to ANY repo? If the streak hits 365 days, display as "365+ days".
-
-### Global Step 5: Compute context switching metric
-
-From the commit timestamps gathered in Step 3, group by date. For each date, count how many distinct repos had commits that day. Report:
-- Average repos/day
-- Maximum repos/day
-- Which days were focused (1 repo) vs. fragmented (3+ repos)
-
-### Global Step 6: Per-tool productivity patterns
-
-From the discovery JSON, analyze tool usage patterns:
-- Which AI tool is used for which repos (exclusive vs. shared)
-- Session count per tool
-- Behavioral patterns (e.g., "Codex used exclusively for myapp, Claude Code for everything else")
-
-### Global Step 7: Aggregate and generate narrative
-
-Structure the output with the **shareable personal card first**, then the full
-team/project breakdown below. The personal card is designed to be screenshot-friendly
-— everything someone would want to share on X/Twitter in one clean block.
-
----
-
-**Tweetable summary** (first line, before everything else):
-```
-Week of Mar 14: 5 projects, 138 commits, 250k LOC across 5 repos | 48 AI sessions | Streak: 52d 🔥
-```
-
-## 🚀 Your Week: [user name] — [date range]
-
-This section is the **shareable personal card**. It contains ONLY the current user's
-stats — no team data, no project breakdowns. Designed to screenshot and post.
-
-Use the user identity from `git config user.name` to filter all per-repo git data.
-Aggregate across all repos to compute personal totals.
-
-Render as a single visually clean block. Left border only — no right border (LLMs
-can't align right borders reliably). Pad repo names to the longest name so columns
-align cleanly. Never truncate project names.
-
-```
-╔═══════════════════════════════════════════════════════════════
-║  [USER NAME] — Week of [date]
-╠═══════════════════════════════════════════════════════════════
-║
-║  [N] commits across [M] projects
-║  +[X]k LOC added · [Y]k LOC deleted · [Z]k net
-║  [N] AI coding sessions (CC: X, Codex: Y, Gemini: Z)
-║  [N]-day shipping streak 🔥
-║
-║  PROJECTS
-║  ─────────────────────────────────────────────────────────
-║  [repo_name_full]        [N] commits    +[X]k LOC    [solo/team]
-║  [repo_name_full]        [N] commits    +[X]k LOC    [solo/team]
-║  [repo_name_full]        [N] commits    +[X]k LOC    [solo/team]
-║
-║  SHIP OF THE WEEK
-║  [PR title] — [LOC] lines across [N] files
-║
-║  TOP WORK
-║  • [1-line description of biggest theme]
-║  • [1-line description of second theme]
-║  • [1-line description of third theme]
-║
-║  Powered by vibestack
-╚═══════════════════════════════════════════════════════════════
-```
-
-**Rules for the personal card:**
-- Only show repos where the user has commits. Skip repos with 0 commits.
-- Sort repos by user's commit count descending.
-- **Never truncate repo names.** Use the full repo name (e.g., `analyze_transcripts`
-  not `analyze_trans`). Pad the name column to the longest repo name so all columns
-  align. If names are long, widen the box — the box width adapts to content.
-- For LOC, use "k" formatting for thousands (e.g., "+64.0k" not "+64010").
-- Role: "solo" if user is the only contributor, "team" if others contributed.
-- Ship of the Week: the user's single highest-LOC PR across ALL repos.
-- Top Work: 3 bullet points summarizing the user's major themes, inferred from
-  commit messages. Not individual commits — synthesize into themes.
-  E.g., "Built /retro global — cross-project retrospective with AI session discovery"
-  not "feat: vibe-global-discover" + "feat: /retro global template".
-- The card must be self-contained. Someone seeing ONLY this block should understand
-  the user's week without any surrounding context.
-- Do NOT include team members, project totals, or context switching data here.
-
-**Personal streak:** Use the user's own commits across all repos (filtered by
-`--author`) to compute a personal streak, separate from the team streak.
-
----
-
-## Global Engineering Retro: [date range]
-
-Everything below is the full analysis — team data, project breakdowns, patterns.
-This is the "deep dive" that follows the shareable card.
-
-### All Projects Overview
-| Metric | Value |
-|--------|-------|
-| Projects active | N |
-| Total commits (all repos, all contributors) | N |
-| Total LOC | +N / -N |
-| AI coding sessions | N (CC: X, Codex: Y, Gemini: Z) |
-| Active days | N |
-| Global shipping streak (any contributor, any repo) | N consecutive days |
-| Context switches/day | N avg (max: M) |
-
-### Per-Project Breakdown
-For each repo (sorted by commits descending):
-- Repo name (with % of total commits)
-- Commits, LOC, PRs merged, top contributor
-- Key work (inferred from commit messages)
-- AI sessions by tool
-
-**Your Contributions** (sub-section within each project):
-For each project, add a "Your contributions" block showing the current user's
-personal stats within that repo. Use the user identity from `git config user.name`
-to filter. Include:
-- Your commits / total commits (with %)
-- Your LOC (+insertions / -deletions)
-- Your key work (inferred from YOUR commit messages only)
-- Your commit type mix (feat/fix/refactor/chore/docs breakdown)
-- Your biggest ship in this repo (highest-LOC commit or PR)
-
-If the user is the only contributor, say "Solo project — all commits are yours."
-If the user has 0 commits in a repo (team project they didn't touch this period),
-say "No commits this period — [N] AI sessions only." and skip the breakdown.
-
-Format:
-```
-**Your contributions:** 47/244 commits (19%), +4.2k/-0.3k LOC
-  Key work: Writer Chat, email blocking, security hardening
-  Biggest ship: PR #605 — Writer Chat eats the admin bar (2,457 ins, 46 files)
-  Mix: feat(3) fix(2) chore(1)
-```
-
-### Cross-Project Patterns
-- Time allocation across projects (% breakdown, use YOUR commits not total)
-- Peak productivity hours aggregated across all repos
-- Focused vs. fragmented days
-- Context switching trends
-
-### Tool Usage Analysis
-Per-tool breakdown with behavioral patterns:
-- Claude Code: N sessions across M repos — patterns observed
-- Codex: N sessions across M repos — patterns observed
-- Gemini: N sessions across M repos — patterns observed
-
-### Ship of the Week (Global)
-Highest-impact PR across ALL projects. Identify by LOC and commit messages.
-
-### 3 Cross-Project Insights
-What the global view reveals that no single-repo retro could show.
-
-### 3 Habits for Next Week
-Considering the full cross-project picture.
-
----
-
-### Global Step 8: Load history & compare
-
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ~/.vibestack/retros/global-*.json 2>/dev/null | head -5
-```
-
-**Only compare against a prior retro with the same `window` value** (e.g., 7d vs 7d). If the most recent prior retro has a different window, skip comparison and note: "Prior global retro used a different window — skipping comparison."
-
-If a matching prior retro exists, load it with the Read tool. Show a **Trends vs Last Global Retro** table with deltas for key metrics: total commits, LOC, sessions, streak, context switches/day.
-
-If no prior global retros exist, append: "First global retro recorded — run again next week to see trends."
-
-### Global Step 9: Save snapshot
-
-```bash
-mkdir -p ~/.vibestack/retros
-```
-
-Determine the next sequence number for today:
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-today=$(date +%Y-%m-%d)
-existing=$(ls ~/.vibestack/retros/global-${today}-*.json 2>/dev/null | wc -l | tr -d ' ')
-next=$((existing + 1))
-```
-
-Use the Write tool to save JSON to `~/.vibestack/retros/global-${today}-${next}.json`:
-
-```json
-{
-  "type": "global",
-  "date": "2026-03-21",
-  "window": "7d",
-  "projects": [
-    {
-      "name": "vibestack",
-      "remote": "<detected from git remote get-url origin, normalized to HTTPS>",
-      "commits": 47,
-      "insertions": 3200,
-      "deletions": 800,
-      "sessions": { "claude_code": 15, "codex": 3, "gemini": 0 }
-    }
-  ],
-  "totals": {
-    "commits": 182,
-    "insertions": 15300,
-    "deletions": 4200,
-    "projects": 5,
-    "active_days": 6,
-    "sessions": { "claude_code": 48, "codex": 8, "gemini": 3 },
-    "global_streak_days": 52,
-    "avg_context_switches_per_day": 2.1
-  },
-  "tweetable": "Week of Mar 14: 5 projects, 182 commits, 15.3k LOC | CC: 48, Codex: 8, Gemini: 3 | Focus: vibestack (58%) | Streak: 52d"
-}
-```
-
----
-
 ## Compare Mode
 
 When the user runs `/retro compare` (or `/retro compare 14d`):
 
 1. Compute metrics for the current window (default 7d) using the midnight-aligned start date (same logic as the main retro — e.g., if today is 2026-03-18 and window is 7d, use `--since="2026-03-11T00:00:00"`)
-2. Compute metrics for the immediately prior same-length window using both `--since` and `--until` with midnight-aligned dates to avoid overlap (e.g., for a 7d window starting 2026-03-11: prior window is `--since="2026-03-04T00:00:00" --until="2026-03-11T00:00:00"`)
+2. Compute metrics for the immediately prior same-length window using both `--since` and `--until` with midnight-aligned dates. `--until` is inclusive, so the prior window ends one second before the current start (e.g., for a 7d window starting 2026-03-11: prior window is `--since="2026-03-04T00:00:00" --until="2026-03-10T23:59:59"`). Streaks, the Step 0.5 freshness guard and the history ledger apply to the current window only; where a prior value is zero, the delta shows "N/A" instead of a percentage.
 3. Show a side-by-side comparison table with deltas and arrows
 4. Write a brief narrative highlighting the biggest improvements and regressions
 5. Save only the current-window snapshot to `.context/retros/` (same as a normal retro run); do **not** persist the prior-window metrics.
@@ -1041,7 +763,6 @@ When the user runs `/retro compare` (or `/retro compare 14d`):
 - Treat merge commits as PR boundaries
 - Do not read CLAUDE.md or other docs — this skill is self-contained
 - On first run (no prior retros), skip comparison sections gracefully
-- **Global mode:** Does NOT require being inside a git repo. Saves snapshots to `~/.vibestack/retros/` (not `.context/retros/`). Gracefully skip AI tools that aren't installed. Only compare against prior global retros with the same window value. If streak hits 365d cap, display as "365+ days".
 
 ---
 
