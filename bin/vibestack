@@ -117,7 +117,7 @@ doctor_runtimes() {
       echo "  note $name not installed — $why unavailable"
     fi
   done
-  if [ -d "$VIBE_HOME/browse/node_modules" ]; then echo "  ok   browse deps $VIBE_HOME/browse"
+  if [ -d "$VIBE_HOME/browse/node_modules/playwright" ]; then echo "  ok   browse deps $VIBE_HOME/browse"
   else echo "  note browse first-run setup pending"
   fi
 }
