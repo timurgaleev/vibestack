@@ -50,7 +50,8 @@ implementing, investigate before fixing, review before shipping.
 | Review a shipped UI, or explore design directions | `design-review`, `design-shotgun`, `design-consultation` |
 | Ship: tests, version, changelog, PR | `ship` |
 | Address PR review threads and failing CI | `address-pr-review` |
-| Merge, deploy, and confirm production health | `land-and-deploy`, `canary` |
+| Merge, deploy, and confirm production health | `land-and-deploy`, `canary` (`setup-deploy` configures it once) |
+| Measure page performance against a baseline | `benchmark` |
 | Update docs after shipping | `document-release`, `document-generate` |
 | Strip machine-sounding prose | `unslop` |
 | Check code-quality health or find refactors | `health`, `improve-arch` |

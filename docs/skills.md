@@ -85,7 +85,7 @@ Triggers: `review this PR`, `code review`, `pre-landing review`
 ### `/spec`
 Turn vague intent into a precise, executable spec in five phases.
 
-Phases: understand the why (+ optional dedupe), scope and boundaries, technical interrogation (mandatory code-reading first), draft review, file. Optional codex quality gate (0-10, fail-closed secret redaction before dispatch). Archives the spec under `~/.vibestack/projects/<slug>/specs/`. Plan-mode-aware: files the issue and loads it into the active plan file in plan mode; files + spawns `claude -p` in a fresh worktree in execution mode. `/ship` can close the source issue on merge.
+Phases: understand the why (+ optional dedupe), scope and boundaries, technical interrogation (mandatory code-reading first), draft review, file. Optional codex quality gate (0-10, fail-closed secret redaction before dispatch). Archives the spec under `~/.vibestack/projects/<slug>/specs/`. Plan-mode-aware: files the issue and loads it into the active plan file in plan mode; in execution mode (or with `--execute`) it files and spawns `claude -p` only inside a fresh worktree it has verified. `/ship` can close the source issue on merge.
 
 Triggers: `spec this out`, `file an issue`, `write up a ticket`, `turn this into a backlog item`
 
@@ -156,6 +156,8 @@ Iterative test-fix-verify loop for a feature.
 
 Tests the feature, finds bugs, fixes them, verifies the fix, and repeats until passing. Produces a test report with what was found, fixed, and verified. Use when you want QA with fixes, not just a report.
 
+For each bug it writes the regression test and proves it red before fixing, and commits only fixes it verified. Each run is written to `.vibestack/qa-reports/run-<UTC>/` and compared against the newest earlier run; on a non-local target it looks but does not act until you answer one consent question.
+
 Triggers: `qa this`, `test and fix`, `qa the feature`
 
 ---
@@ -165,6 +167,8 @@ QA audit — finds bugs, does not fix them.
 
 Same coverage as `/qa` but stops after reporting. Useful for a clean separation between QA and engineering, or when you want to decide which bugs to fix before touching code.
 
+Each run is written to `.vibestack/qa-reports/run-<UTC>/` and its regressions are compared against the newest earlier run. On a non-local target it looks but does not act until you answer one consent question.
+
 Triggers: `qa report`, `qa only`, `find bugs`
 
 ---
@@ -172,7 +176,7 @@ Triggers: `qa report`, `qa only`, `find bugs`
 ### `/canary`
 Canary deploy health check.
 
-Compares error rates and latency between canary and stable. Checks logs for new error patterns. Outputs a go/no-go recommendation with evidence. Use after a partial rollout to decide whether to proceed or roll back.
+Monitors the deployed pages with the browse shim against a pre-deploy baseline — console error identity, load time, broken links and screenshots — and alerts only on a change confirmed across two consecutive checks. Writes a status report and appends each run to the project's `canary-history.jsonl`.
 
 Triggers: `canary check`, `check canary`, `canary health`
 
@@ -295,7 +299,7 @@ Triggers: `health check`, `project health`, `code quality dashboard`
 ### `/benchmark`
 Performance benchmarking.
 
-Measures: build time, test suite duration, bundle sizes. Compares against a baseline (last commit or specified ref). Flags regressions. Use before and after performance-sensitive changes.
+Collects Navigation Timing, FCP/LCP and resource data for each page via `$B js`, and writes a timestamped history file per run. `--baseline` captures a baseline file; later runs compare against it and flag regressions.
 
 Triggers: `benchmark`, `performance check`, `measure performance`
 
@@ -437,15 +441,6 @@ Triggers: `configure deploy`, `setup deployment`, `set deploy platform`
 
 ---
 
-### `/benchmark-models`
-Compare AI model outputs side-by-side to find the best fit for a task.
-
-Run a prompt against multiple providers (OpenAI, Anthropic, Google, Mistral, Groq, Together, local Ollama), optionally judge results with a separate model. Saves results to `~/.vibestack/benchmarks/` for later comparison. Uses the `vibe-model-benchmark` binary from `~/.vibestack/bin/` — vibestack does not bundle this binary; see [`external-tools.md`](external-tools.md#vibe-model-benchmark).
-
-Triggers: `benchmark models`, `compare models`, `test models`
-
----
-
 ### `/browse`
 Fast headless browser for QA testing and site dogfooding.
 
@@ -459,6 +454,8 @@ Triggers: `browse a page`, `headless browser`, `take page screenshot`
 Get an independent second opinion from a nested Claude instance.
 
 Three modes: **Review** (brutally honest diff review via `claude -p`), **Challenge** (adversarial failure-mode analysis), **Consult** (read-only Q&A about the repo). All modes run nested Claude with `--disable-slash-commands`; review/challenge are tool-less, consult uses Read/Grep/Glob only. Session IDs saved for consult continuity.
+
+Review gates like `/codex` — P1-P3 tagged findings or `NO_FINDINGS`, a `GATE` line, and an entry in the review log. The nested session runs with no MCP servers or hooks, and the skill warns when invoked inside Claude Code, since the second opinion then comes from the same model.
 
 Triggers: `claude review`, `claude challenge`, `ask claude`
 
@@ -512,7 +509,7 @@ Triggers: `read my telegram`, `listen to the voice message`, `transcribe the voi
 ---
 
 ### `/skillify`
-Turn a working browse/scrape flow into a reusable skill — write a new `SKILL.md` from the captured steps, render-validate, brand-check, and install.
+Turn a working browse/scrape flow into a reusable skill — write a new `SKILL.md` from the captured steps, render-validate, brand-check, and install. By default it installs into your own skills directory (or a project's); it writes into the pack checkout only when you ask for that explicitly.
 
 Triggers: `skillify this`, `make this a skill`, `save this flow as a skill`
 

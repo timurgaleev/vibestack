@@ -12,7 +12,7 @@
 
 ## What is vibestack?
 
-Sixty-one commands for AI coding assistants, each one a file your agent reads and
+Sixty commands for AI coding assistants, each one a file your agent reads and
 exposes by name. You type `/review` instead of "check my code," and a written
 process runs: read the diff, look for the things that actually break, report with
 evidence. Same for planning, debugging, security, shipping.
@@ -23,8 +23,8 @@ assistant behaves that way between commands too.
 
 Works in Claude Code, Cursor, Kiro and Codex CLI from one source. MIT, no
 telemetry, no account, no cloud service of its own. Some commands do reach out
-by design — `/codex` sends your diff to a second model, `/benchmark-models`
-queries providers, `/pair-agent` opens a tunnel — and each says so before it
+by design — `/codex` sends your diff to a second model, `/telegram`
+sends messages as you, `/pair-agent` opens a tunnel — and each says so before it
 runs.
 
 | What you get | Why it matters |
@@ -118,11 +118,11 @@ reserved there for Codex's own commands.
 | `/telegram` | Read, transcribe and send Telegram messages as your own account | |
 | `/careful` `/freeze` `/guard` | Refuse destructive commands and edits outside a boundary | |
 
-The other 39 cover design, docs, retros, context handoff, browser QA and
+The other 38 cover design, docs, retros, context handoff, browser QA and
 release. **[Every command, with what it does: `docs/skills.md`](docs/skills.md)**
 
 <p align="center">
-  <img src="./docs/assets/skill-map.svg" alt="The sixty-one commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
+  <img src="./docs/assets/skill-map.svg" alt="The sixty commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
 </p>
 
 ---

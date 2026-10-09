@@ -5,7 +5,7 @@
 ### Fit the skill listing into Codex's 8,000-char budget
 
 `bin/vibe-context-budget --runtime codex` measures the rendered listing at
-16,987 / 8,000 chars, so Codex shortens descriptions and may drop skills from
+16,755 / 8,000 chars, so Codex shortens descriptions and may drop skills from
 its initial list. Trim the heaviest descriptions it ranks until the total fits,
 then make its exit 1 fatal in the `context-budget` CI job instead of a warning.
 
