@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.52.0 — 2026-10-09
+
+### Changed
+
+- **Skill descriptions fit the listing budget.** Every description was
+  trimmed to what the skill does and when to use it; the full listing is
+  6,892 of Codex's 8,000 characters. The context-budget check now fails CI
+  instead of only reporting.
+- **Skills honor `VIBESTACK_HOME`.** Bash blocks resolve the state root as
+  `${VIBESTACK_HOME:-$HOME/.vibestack}`, the browse Chromium profile follows
+  it too, and `test/test-state-root.sh` keeps new blocks from hardcoding
+  `~/.vibestack`.
+- **`vibestack doctor` checks more**: the installed tool list, the version
+  stamp, and browse dependencies by the `playwright` package.
+- **Every subagent dispatch runs in the foreground.** `/cso`,
+  `/improve-arch`, `/office-hours` and `/plan-design-review` now state it, and
+  the dispatch-flag check has no pending exceptions left.
+
+### Fixed
+
+- **`/retro` reports honest metrics**, compares like-for-like windows, records
+  `prs_merged: null` when `gh` is unavailable, and drops its dead global mode.
+- **`/qa`, `/qa-only`, `/scrape`, `/connect-chrome`, `/diagram` and
+  `/benchmark` correctness fixes.** `/diagram` renders its PNG with the browse
+  daemon's chain form, and the browse snippets document both chain forms.
+- **`/office-hours` writes its design doc before asking for approval.**
+- **Approval, gate and cleanup fixes** in `/skillify` (runtime-correct
+  invocation labels), `/spec`, `/design-consultation`, `/design-shotgun`,
+  `/landing-report`, `/land-and-deploy`, `/claude`, `/devex-review` and the
+  `/vibe` router.
+- **`/setup-browser-cookies` points to `/connect-chrome`** where cookie import
+  is unavailable.
+
 ## 1.51.0 — 2026-10-09
 
 ### Removed
