@@ -534,6 +534,7 @@ After the opt-in/cherry-pick ceremony, write the plan to disk so the vision and 
 
 ```bash
 eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
 
 Before writing, check for existing CEO plans in the ceo-plans/ directory. If any are >30 days old or their branch has been merged/deleted, offer to archive them:
@@ -544,7 +545,7 @@ mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/archive
 # For each stale plan: mv ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/{old-plan}.md ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/archive/
 ```
 
-Write to `~/.vibestack/projects/$SLUG/ceo-plans/{date}-{feature-slug}.md` using this format:
+Write to `<PROJECT_DIR>/ceo-plans/{date}-{feature-slug}.md` using this format, where `<PROJECT_DIR>` is the path the first block above printed on its `PROJECT_DIR:` line:
 
 ```markdown
 ---

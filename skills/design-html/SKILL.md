@@ -80,7 +80,7 @@ invent a subcommand; anything other than `status` and `variants` either reports 
 it is unsupported or exits with a usage error.
 
 **CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards,
-`approved.json`) MUST be saved under `~/.vibestack/projects/$SLUG/designs/`, NEVER to
+`approved.json`) MUST be saved under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/`, NEVER to
 `.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled
 directory. Design artifacts are USER data, not project files. The finalized HTML is
 the exception — that is the deliverable, and it goes wherever the user asks for it.
@@ -380,11 +380,19 @@ Run the detected install command. Then use standard imports in the component.
 
 ### HTML Generation
 
-Write a single file using the Write tool. Save to:
-`~/.vibestack/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.html`
+Resolve the output directory first (fill in `<screen-name>`):
 
-For framework output, save to:
-`~/.vibestack/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.[tsx|svelte|vue]`
+```bash
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
+mkdir -p "$_DESIGN_DIR"
+echo "DESIGN_DIR: $_DESIGN_DIR"
+```
+
+Write a single file using the Write tool. Save to `<DESIGN_DIR>/finalized.html`,
+where `<DESIGN_DIR>` is the path the block printed on its `DESIGN_DIR:` line.
+
+For framework output, save to `<DESIGN_DIR>/finalized.[tsx|svelte|vue]`.
 
 **Always include in vanilla HTML:**
 - Pretext imported from esm.sh in a `<script type="module">` (see above)

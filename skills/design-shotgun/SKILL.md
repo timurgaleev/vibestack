@@ -571,7 +571,7 @@ If standalone, offer next steps via AskUserQuestion:
 ## Important Rules
 
 1. **Never save to `.context/`, `docs/designs/`, or `/tmp/`.** All design artifacts go
-   to `~/.vibestack/projects/$SLUG/designs/`. This is enforced. See DESIGN_SETUP above.
+   to `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/`. This is enforced. See DESIGN_SETUP above.
 2. **Show variants inline, always.** Reading each PNG into the conversation is how
    the user sees the designs — there is no board to open in their browser.
 3. **Confirm feedback before saving.** Always summarize what you understood and verify.

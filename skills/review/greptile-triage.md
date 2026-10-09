@@ -279,11 +279,15 @@ Before writing, ensure both directories exist:
 eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
+echo "STATE_ROOT: ${VIBESTACK_HOME:-$HOME/.vibestack}"
 ```
 
 Append one line per triage outcome to **both** files (per-project for suppressions, global for retro):
-- `~/.vibestack/projects/$SLUG/greptile-history.md` (per-project)
-- `~/.vibestack/greptile-history.md` (global aggregate)
+- `<PROJECT_DIR>/greptile-history.md` (per-project)
+- `<STATE_ROOT>/greptile-history.md` (global aggregate)
+
+`<PROJECT_DIR>` and `<STATE_ROOT>` are the paths the block above printed.
 
 Format:
 ```

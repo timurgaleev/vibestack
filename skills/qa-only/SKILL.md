@@ -83,7 +83,7 @@ If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (c
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check `~/.vibestack/projects/` for recent `*-test-plan-*.md` files for this repo
+1. **Project-scoped test plans:** Check the project dir under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/` for recent `*-test-plan-*.md` files for this repo
    ```bash
    setopt +o nomatch 2>/dev/null || true  # zsh compat
    eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
@@ -405,8 +405,9 @@ Write the report to both local and project-scoped locations:
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
 eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
-Write to `~/.vibestack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
+Write to `<PROJECT_DIR>/{user}-{branch}-test-outcome-{datetime}.md`, where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line.
 
 ### Output Structure
 

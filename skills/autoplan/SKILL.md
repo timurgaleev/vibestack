@@ -911,7 +911,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 
 - Architecture choices: explicit over clever (P5). If codex disagrees with valid reason → TASTE DECISION. Scope changes both models agree on → USER CHALLENGE.
 - Evals: always include all relevant suites (P1)
-- Test plan: generate artifact at `~/.vibestack/projects/$SLUG/{user}-{branch}-test-plan-{datetime}.md`
+- Test plan: generate artifact at `<PROJECT_DIR>/{user}-{branch}-test-plan-{datetime}.md`, where `<PROJECT_DIR>` is the path `echo "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"` prints after `vibe-slug` — never a literal `~/.vibestack`
 - TODOS.md: collect all deferred scope expansions from Phase 1, auto-write
 
 **Required execution checklist (Eng):**
@@ -1054,7 +1054,7 @@ produced. Check the plan file and conversation for each item.
 - [ ] Scope challenge with actual code analysis (not just "scope is fine")
 - [ ] Architecture ASCII diagram produced
 - [ ] Test diagram mapping codepaths to test coverage
-- [ ] Test plan artifact written to disk at ~/.vibestack/projects/$SLUG/
+- [ ] Test plan artifact written to disk at `<PROJECT_DIR>/`
 - [ ] "NOT in scope" section written
 - [ ] "What already exists" section written
 - [ ] Failure modes registry with critical gap assessment

@@ -38,6 +38,27 @@ for path in sys.argv[1:]:
 PY
 }
 
+# prose FILE... -> prints `file:line` for each prose instruction (Write, Read,
+# save, append, generate) that names a literal ~/.vibestack path. The Write and
+# Read tools expand nothing, so the path they get must be the one a block
+# printed (a `<PROJECT_DIR>`-style placeholder), not the default root.
+prose() {
+  python3 -I - "$@" <<'PY'
+import re, sys
+fence = re.compile(r"^\s*```")
+instr = re.compile(r"(?<!is )(?<!are )\b(Write|Read|read|write|[Ss]ave[sd]?|[Aa]ppend|[Gg]enerate)\b[^`\n]{0,40}`(~|\$HOME)/\.vibestack/")
+for path in sys.argv[1:]:
+    inside = False
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if fence.match(line):
+                inside = not inside
+                continue
+            if not inside and instr.search(line):
+                print(f"{path}:{n}")
+PY
+}
+
 echo "self-test"
 CLEAN="$TMP/clean.md"; DIRTY="$TMP/dirty.md"
 cat > "$CLEAN" <<'EOF'
@@ -61,6 +82,16 @@ out="$(scan "$DIRTY")"
 [ "$out" = "$DIRTY:4" ] && ok "bare ~/.vibestack in a fence is flagged at its line" \
   || no "dirty fixture: want $DIRTY:4, got '$out'"
 
+PROSE="$TMP/prose.md"
+cat > "$PROSE" <<'EOF'
+The boundary is saved in `~/.vibestack/freeze-dir.txt` for later sessions.
+Write to `<PROJECT_DIR>/report.md`.
+Write to `~/.vibestack/projects/{slug}/report.md`.
+EOF
+out="$(prose "$PROSE")"
+[ "$out" = "$PROSE:3" ] && ok "a prose Write to a literal ~/.vibestack path is flagged; a description is not" \
+  || no "prose fixture: want $PROSE:3, got '$out'"
+
 echo "repo"
 # skills/*/*.md covers every SKILL.md and its sub-docs; symlinked sub-docs
 # point at another skill's file, which is scanned under its own name.
@@ -80,6 +111,15 @@ if [ -z "$hits" ]; then
 else
   no "fenced commands hardcode the state root ($(printf '%s\n' "$hits" | wc -l | tr -d ' ') lines):"
   printf '%s\n' "$hits" | sed "s|^$ROOT/|       |"
+fi
+
+phits=""
+[ "${#files[@]}" -gt 0 ] && phits="$(prose "${files[@]}")"
+if [ -z "$phits" ]; then
+  ok "no prose Write/Read instruction names a literal ~/.vibestack path"
+else
+  no "prose instructions name a literal ~/.vibestack path ($(printf '%s\n' "$phits" | wc -l | tr -d ' ') lines):"
+  printf '%s\n' "$phits" | sed "s|^$ROOT/|       |"
 fi
 
 echo

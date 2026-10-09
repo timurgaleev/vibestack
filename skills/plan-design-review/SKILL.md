@@ -310,7 +310,7 @@ If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-b
 works. The first real generation in Step 0.5 settles that (see its skip list).
 
 **Where design artifacts go.** Every mockup, comparison board, and `approved.json`
-is written under `~/.vibestack/projects/$SLUG/designs/` — never to `.context/`,
+is written under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/` — never to `.context/`,
 `docs/`, `/tmp/`, or anywhere inside the repo. They are the user's data, not the
 project's: they have to survive a reboot, outlive the branch they were made on, and
 never end up in a commit.
@@ -359,13 +359,13 @@ The ONLY time you skip mockups is when:
 If the user explicitly says "skip mockups" or "text only", respect that. Otherwise, generate.
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** These commands write design artifacts to
-`~/.vibestack/projects/$SLUG/designs/` (user config directory, not project files).
+`${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/` (user config directory, not project files).
 Mockups are design artifacts that inform the plan, not code changes. The vibestack
 designer outputs PNGs and HTML comparison boards for human review during the
 planning phase. Generating mockups during planning is the whole point.
 
 Allowed commands under this exception:
-- `mkdir -p ~/.vibestack/projects/$SLUG/designs/...`
+- `mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/..."`
 - Writing the brief and feedback files, and `approved.json`, inside `$_DESIGN_DIR`
 - `$D variants`, `$D check`, `$D compare`
 - `open` (to view a board or a mockup when no browser is already showing it)

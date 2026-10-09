@@ -1009,11 +1009,12 @@ After producing the coverage diagram, write a test plan artifact so `/qa` and `/
 
 ```bash
 eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
 
-Write to `~/.vibestack/projects/{slug}/{user}-{branch}-ship-test-plan-{datetime}.md`:
+Write to `<PROJECT_DIR>/{user}-{branch}-ship-test-plan-{datetime}.md`, where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line:
 
 ```markdown
 # Test Plan

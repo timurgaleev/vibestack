@@ -847,10 +847,11 @@ eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 BRANCH=$(git branch --show-current 2>/dev/null)
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 PRIOR=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
 If `$PRIOR` exists, the new doc gets a `Supersedes:` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
-Write to `~/.vibestack/projects/{slug}/{user}-{branch}-design-{datetime}.md`.
+Write to `<PROJECT_DIR>/{user}-{branch}-design-{datetime}.md`, where `<PROJECT_DIR>` is the path the lineage block printed on its `PROJECT_DIR:` line.
 
 **Decision-record concision.** The doc records decisions, not the conversation.
 One bullet per decision with its reason. An approach the user ruled out during
@@ -1154,7 +1155,11 @@ Design trajectory with interpretation:
 **Accumulated signal visibility:** Read ACCUMULATED_SIGNALS from the profile.
 "Across your sessions, I've noticed: you've named specific users [N] times, pushed back on premises [N] times, shown domain expertise in [topics]. These patterns mean something."
 
-**Builder Journey Summary** (session 5+): Auto-generate `~/.vibestack/builder-journey.md`
+**Builder Journey Summary** (session 5+): print the state root first:
+```bash
+echo "STATE_ROOT: ${VIBESTACK_HOME:-$HOME/.vibestack}"
+```
+Then auto-generate `<STATE_ROOT>/builder-journey.md` (the path that line printed)
 with a narrative arc (not a data table). The arc tells the STORY of their journey in
 second person, referencing specific things they said across sessions. Then open it:
 ```bash
@@ -1171,7 +1176,7 @@ Then proceed to Resources below.
 
 Full accumulated signal summary from the profile.
 
-Auto-generate updated `~/.vibestack/builder-journey.md` with narrative arc. Open it.
+Print the state root with `echo "STATE_ROOT: ${VIBESTACK_HOME:-$HOME/.vibestack}"`, auto-generate updated `<STATE_ROOT>/builder-journey.md` (the path that line printed) with narrative arc, and open it.
 
 Then proceed to Resources below.
 

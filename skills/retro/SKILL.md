@@ -123,10 +123,11 @@ Usage: /retro [window | compare]
 Check for non-git context that should be included in the retro:
 
 ```bash
+echo "STATE_ROOT: ${VIBESTACK_HOME:-$HOME/.vibestack}"
 [ -f "${VIBESTACK_HOME:-$HOME/.vibestack}/retro-context.md" ] && echo "RETRO_CONTEXT_FOUND" || echo "NO_RETRO_CONTEXT"
 ```
 
-If `RETRO_CONTEXT_FOUND`: read `~/.vibestack/retro-context.md`. This file is user-authored and may contain meeting notes, calendar events, decisions, and other context that doesn't appear in git history. Incorporate this context into the retro narrative where relevant.
+If `RETRO_CONTEXT_FOUND`: read `<STATE_ROOT>/retro-context.md`, where `<STATE_ROOT>` is the path the block printed on its `STATE_ROOT:` line (every `<STATE_ROOT>` below means the same path). This file is user-authored and may contain meeting notes, calendar events, decisions, and other context that doesn't appear in git history. Incorporate this context into the retro narrative where relevant.
 
 ### Step 0.5: Stale-base + bad-today-anchor pre-flight guard
 
@@ -341,7 +342,7 @@ bob                       3   +120/-40     tests/
 
 Sort by commits descending. The current user (from `git config user.name`) always appears first, labeled "You (name)".
 
-**Greptile signal (if history exists):** Read `~/.vibestack/greptile-history.md` (fetched in Step 1, command 8). Filter entries within the retro time window by date. Count entries by type: `fix`, `fp`, `already-fixed`. Compute signal ratio: `(fix + already-fixed) / (fix + already-fixed + fp)`. If no entries exist in the window or the file doesn't exist, skip the Greptile metric row. Skip unparseable lines silently.
+**Greptile signal (if history exists):** Read `<STATE_ROOT>/greptile-history.md` (fetched in Step 1, command 8). Filter entries within the retro time window by date. Count entries by type: `fix`, `fp`, `already-fixed`. Compute signal ratio: `(fix + already-fixed) / (fix + already-fixed + fp)`. If no entries exist in the window or the file doesn't exist, skip the Greptile metric row. Skip unparseable lines silently.
 
 **Backlog Health (if TODOS.md exists):** Read `TODOS.md` (fetched in Step 1, command 9). Compute:
 - Total open TODOs (exclude items in `## Completed` section)
@@ -357,7 +358,7 @@ Include in the metrics table:
 
 If TODOS.md doesn't exist, skip the Backlog Health row.
 
-**Skill Usage (if analytics exist):** Read `~/.vibestack/analytics/skill-usage.jsonl` if it exists. Filter entries within the retro time window by `ts` field. Separate skill activations (no `event` field) from hook fires (`event: "hook_fire"`). Aggregate by skill name. Present as:
+**Skill Usage (if analytics exist):** Read `<STATE_ROOT>/analytics/skill-usage.jsonl` if it exists. Filter entries within the retro time window by `ts` field. Separate skill activations (no `event` field) from hook fires (`event: "hook_fire"`). Aggregate by skill name. Present as:
 
 ```
 | Skill Usage | /ship(12) /qa(8) /review(5) · 3 safety hook fires |
@@ -365,7 +366,7 @@ If TODOS.md doesn't exist, skip the Backlog Health row.
 
 If the JSONL file doesn't exist or has no entries in the window, skip the Skill Usage row.
 
-**Eureka Moments (if logged):** Read `~/.vibestack/analytics/eureka.jsonl` if it exists. Filter entries within the retro time window by `ts` field. For each eureka moment, show the skill that flagged it, the branch, and a one-line summary of the insight. Present as:
+**Eureka Moments (if logged):** Read `<STATE_ROOT>/analytics/eureka.jsonl` if it exists. Filter entries within the retro time window by `ts` field. For each eureka moment, show the skill that flagged it, the branch, and a one-line summary of the insight. Present as:
 
 ```
 | Eureka Moments | 2 this period |
@@ -587,7 +588,7 @@ Use the Write tool to save the JSON file with this schema:
 
 When command 16 printed `PRS_UNAVAILABLE`, write `"prs_merged": null`, never `0`: a zero reads as a window with no merges, and a later trend comparison would count it as a real drop.
 
-**Note:** Only include the `greptile` field if `~/.vibestack/greptile-history.md` exists and has entries within the time window. Only include the `backlog` field if `TODOS.md` exists. Only include the `test_health` field if test files were found (command 10 returns > 0). If any has no data, omit the field entirely.
+**Note:** Only include the `greptile` field if `<STATE_ROOT>/greptile-history.md` exists and has entries within the time window. Only include the `backlog` field if `TODOS.md` exists. Only include the `test_health` field if test files were found (command 10 returns > 0). If any has no data, omit the field entirely.
 
 Include test health data in the JSON when test files exist:
 ```json

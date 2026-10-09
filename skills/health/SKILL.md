@@ -296,10 +296,11 @@ DETAILS: Lint (3 warnings)
 
 ```bash
 eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
 
 Only when the composite is numeric, append one JSONL line to
-`~/.vibestack/projects/$SLUG/health-history.jsonl`. A run with no checks or a capture
+`<PROJECT_DIR>/health-history.jsonl` (where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line). A run with no checks or a capture
 ERROR writes nothing and leaves the existing history as it is:
 
 ```json
@@ -319,7 +320,7 @@ If a category was skipped, set its value to `null`.
 
 ## Step 6: Trend Analysis + Recommendations
 
-Read the last 10 entries from `~/.vibestack/projects/$SLUG/health-history.jsonl` (if the
+Read the last 10 entries from `<PROJECT_DIR>/health-history.jsonl` (if the
 file exists and has prior entries).
 
 ```bash
