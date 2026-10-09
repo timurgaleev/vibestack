@@ -52,16 +52,18 @@ fi
 
 # 3. The search itself: no python3 -> non-zero exit with a reason.
 NOPY="$TMP/nopy"; mkdir -p "$NOPY" "$TMP/w/projalpha"
-for t in bash dirname basename git sed awk tr echo cat; do
+for t in bash dirname basename git sed awk tr echo cat cut shasum sha256sum; do
   p="$(command -v "$t" 2>/dev/null)" && [ -x "$p" ] && ln -sf "$p" "$NOPY/$t"
 done
-mkdir -p "$VIBESTACK_HOME/projects/projalpha"
+# Without a remote the bucket is the folder name plus a hash of the path.
+ALPHA="$(cd "$TMP/w/projalpha" && "$BIN/vibe-slug" 2>/dev/null | sed -n 's/^SLUG=//p')"
+mkdir -p "$VIBESTACK_HOME/projects/$ALPHA"
 echo '{"type":"pattern","key":"k","insight":"i","confidence":5,"source":"observed"}' \
-  > "$VIBESTACK_HOME/projects/projalpha/learnings.jsonl"
+  > "$VIBESTACK_HOME/projects/$ALPHA/learnings.jsonl"
 out="$(cd "$TMP/w/projalpha" && PATH="$NOPY" "$NOPY/bash" "$BIN/vibe-learnings-search" 2>&1)"; rc=$?
 [ "$rc" -ne 0 ] && echo "$out" | grep -q 'python3 not found' \
   && ok "missing python3 exits non-zero with a reason" || no "missing python3: rc=$rc '$out'"
-rm -f "$VIBESTACK_HOME/projects/projalpha/learnings.jsonl"
+rm -f "$VIBESTACK_HOME/projects/$ALPHA/learnings.jsonl"
 
 # 4. Cross-project end to end: log in one project, search from another.
 mkdir -p "$TMP/w/projbeta"
@@ -71,9 +73,9 @@ mkdir -p "$TMP/w/projbeta"
 (cd "$TMP/w/projalpha" && "$BIN/vibe-learnings-log" \
   '{"skill":"learn","type":"pattern","key":"guessed","insight":"mango guess from code","confidence":9,"source":"inferred","trusted":true}') >/dev/null \
   || no "logging an inferred entry failed"
-grep -q '"key":"said-outright".*"trusted":true' "$VIBESTACK_HOME/projects/projalpha/learnings.jsonl" \
+grep -q '"key":"said-outright".*"trusted":true' "$VIBESTACK_HOME/projects/$ALPHA/learnings.jsonl" \
   && ok "log marks a user-stated entry trusted" || no "user-stated entry not marked trusted"
-grep -q '"key":"guessed".*"trusted":false' "$VIBESTACK_HOME/projects/projalpha/learnings.jsonl" \
+grep -q '"key":"guessed".*"trusted":false' "$VIBESTACK_HOME/projects/$ALPHA/learnings.jsonl" \
   && ok "log ignores a payload's own trusted claim" || no "inferred entry kept a caller-supplied trusted flag"
 
 out="$(cd "$TMP/w/projbeta" && "$BIN/vibe-learnings-search" --query mango 2>&1)"

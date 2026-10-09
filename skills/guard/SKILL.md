@@ -13,6 +13,11 @@ hooks:
         - type: command
           command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../careful/bin/check-careful.sh"
           statusMessage: "Checking for destructive commands..."
+    - matcher: "PowerShell"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../careful/bin/check-careful.sh"
+          statusMessage: "Checking for destructive commands..."
     - matcher: "Edit"
       hooks:
         - type: command
@@ -47,6 +52,13 @@ This is `/careful` + `/freeze` in a single command.
 
 **Dependency note:** This skill references hook scripts from the sibling `/careful` and `/freeze` skill directories. Both must be installed (they are installed together by the vibestack install script).
 
+**Where this is enforced.** Both protections run as Claude Code `PreToolUse`
+hooks. Cursor, Kiro and Codex install the same skill, but the hooks are not
+guaranteed to run there; outside Claude Code `/guard` is instruction-only. On
+those hosts, tell the user guard mode is advisory: you will confirm before a
+destructive command and keep your own edits inside the boundary, but nothing
+blocks a tool call you get wrong.
+
 ## Setup
 
 Ask the user which directory to restrict edits to:
@@ -67,9 +79,9 @@ other writer finishes; never write or delete the state file directly.
 
 Tell the user:
 - "**Guard mode active.** Two protections are now running:"
-- "1. **Destructive command guard** — rm -rf, DROP TABLE, force-push, etc. warn before executing (you can override); catastrophic shapes (recursive delete of `/` or `~`, force-push to the default branch) are blocked outright"
+- "1. **Destructive command guard** — Bash and PowerShell: rm -rf, Remove-Item -Recurse, DROP TABLE, force-push, etc. warn before executing (you can override); catastrophic shapes (recursive delete of `/` or `~`, force-push to the default branch) are blocked outright"
 - "2. **Edit boundary** — Edit, Write and NotebookEdit restricted to `<FREEZE_DIR>/`. Edits outside this directory are blocked."
-- "To remove the edit boundary, run `/unfreeze`. To deactivate everything, end the session."
+- "The edit boundary is saved in `~/.vibestack/freeze-dir.txt` and outlives this session: any later session that loads the freeze hook (`/freeze`, `/guard`, `/investigate`) enforces it again. To remove it, run `/unfreeze`. Ending the session turns off the destructive command guard only."
 
 ## What's protected
 

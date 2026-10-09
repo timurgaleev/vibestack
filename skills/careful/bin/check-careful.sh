@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # check-careful.sh — PreToolUse hook for /careful skill
-# Reads JSON from stdin, checks Bash command for destructive patterns.
+# Reads JSON from stdin, checks a Bash or PowerShell command for destructive
+# patterns.
 # Two tiers:
 #   HIGH   — a tiny set of catastrophic SIMPLE commands returns "deny"
 #            (best-effort advisory hard-stop, not a policy boundary).
@@ -294,7 +295,111 @@ fi
 
 WARN=""
 
-if printf '%s' "$CMD" | grep -qE 'rm[[:space:]]+(-[a-zA-Z]*[rR]|--recursive)' 2>/dev/null; then
+# --- PowerShell and cmd ---
+# Scans the PowerShell tool's command (Claude Code's shell on Windows, which
+# carries its text in the same tool_input.command field as Bash), and the part
+# of any other command from a nested `powershell`/`pwsh`/`cmd` launcher onward
+# (`pwsh -c "..."`, `cmd /c rd /s /q x`, Git Bash's `cmd //c`). A plain Bash
+# command never reaches the table, so Bash keeps exactly its own families.
+# Best-effort: PowerShell can assemble a command at runtime, so encoded and
+# evaluated forms ask instead of being parsed.
+_careful_tool_name() {
+  # Only a payload that names the PowerShell tool pays for a second parse.
+  case "$INPUT" in *'"PowerShell"'*) ;; *) return 0 ;; esac
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$INPUT" | python3 -c 'import sys,json
+d = json.loads(sys.stdin.read())
+t = d.get("tool_name", "") if isinstance(d, dict) else ""
+sys.stdout.write(t.strip() if isinstance(t, str) else "")' 2>/dev/null && return 0
+  fi
+  if command -v node >/dev/null 2>&1; then
+    printf '%s' "$INPUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const t=(JSON.parse(s)||{}).tool_name;process.stdout.write(typeof t==="string"?t.trim():"")}catch(e){}})' 2>/dev/null
+  fi
+  return 0
+}
+_WIN_SCAN=""
+[ "$(_careful_tool_name)" = "PowerShell" ] && _WIN_SCAN="$CMD_LOWER"
+# A launcher run by quoted full path ("C:/Program Files/PowerShell/7/pwsh.exe")
+# ends in its closing quote, not whitespace.
+_WIN_LAUNCH_RE="(^|[^a-z0-9_.\$-])((powershell|pwsh|cmd)(\\.exe)?[\"']?([[:space:]].*)?)\$"
+if [ -z "$_WIN_SCAN" ] && [[ $CMD_LOWER =~ $_WIN_LAUNCH_RE ]]; then
+  _WIN_SCAN="${BASH_REMATCH[2]}"
+fi
+if [ -n "$_WIN_SCAN" ]; then
+  # cmd escapes with ^ (r^d is rd) and PowerShell with a backtick
+  # (Re`move-Item is Remove-Item); dropping both only joins characters.
+  _WIN_SCAN="${_WIN_SCAN//^/}"
+  _WIN_SCAN="${_WIN_SCAN//\`/}"
+  # PowerShell takes an en dash, em dash or horizontal bar as a parameter
+  # prefix (Remove-Item x –Recurse); fold them to the ASCII hyphen.
+  _WIN_SCAN="${_WIN_SCAN//–/-}"
+  _WIN_SCAN="${_WIN_SCAN//—/-}"
+  _WIN_SCAN="${_WIN_SCAN//―/-}"
+  _NL=$'\n'
+  # Command position: start of text, a statement or pipeline separator, an
+  # opening bracket or quote, or right after a shell launcher and its switches.
+  # The same names elsewhere (ord, --del, /rd/) never match.
+  _CP="(^|[;&|({}\"'${_NL}]|(powershell|pwsh|cmd)(\.exe)?([[:space:]]+(-|/+)[a-z]+([[:space:]:=]+[a-z0-9_.-]+)?)*)[[:space:]]*"
+  _STMT="[^;|${_NL}]*"
+  # One statement's arguments, where a quoted argument may hold ; or |
+  # (Remove-Item 'C:\a;b' -Recurse is one statement, not two).
+  _PS_STMT="([^;|'\"${_NL}]|'[^']*'|\"[^\"]*\")*"
+  # A cmdlet may be module-qualified: Microsoft.PowerShell.Management\Remove-Item.
+  _MOD="([a-z0-9_.]+\\\\)?"
+  # A switch ends at anything that cannot continue its name: whitespace, the
+  # :$true form, or the closing quote, brace, paren or ; of its statement.
+  _SW_END="([^[:alnum:]_-]|$)"
+  _CMD_STMT="[^;|&${_NL}]*"
+  _WHY_DYNAMIC="/careful cannot see what encoded or evaluated PowerShell will run. Read it before approving."
+  # Name, ERE, warning. Parameters match any prefix PowerShell accepts
+  # (-r/-rec/-recurse, -fo/-forc/-force; -f alone is ambiguous with -Filter).
+  _WIN_RULES=(
+    ps_remove_item
+    "${_CP}${_MOD}(remove-item|rm|ri|del|erase|rd|rmdir)[[:space:]](${_PS_STMT}[[:space:]])?-(r|re|rec|recu|recur|recurs|recurse|fo|for|forc|force)${_SW_END}"
+    "Destructive: PowerShell Remove-Item (or rm/ri/del/erase/rd/rmdir) with -Recurse or -Force. This permanently removes files."
+    ps_pipe_remove
+    "${_CP}${_MOD}(gci|get-childitem|ls|dir)[[:space:]](${_PS_STMT}[[:space:]])?-(r|re|rec|recu|recur|recurs|recurse)([^[:alnum:]_|-]${_PS_STMT})?\\|[[:space:]]*((foreach-object|foreach|%)[[:space:]]*\\{[[:space:]]*)?${_MOD}(remove-item|rm|ri|del|erase|rd|rmdir)${_SW_END}"
+    "Destructive: Get-ChildItem -Recurse piped into Remove-Item deletes every file it lists."
+    ps_pipe_delete_method
+    "${_CP}${_MOD}(gci|get-childitem|ls|dir)[[:space:]]${_PS_STMT}\\|[^;${_NL}]*\\\$(_|psitem)\\.delete[[:space:]]*\\("
+    "Destructive: Get-ChildItem piped into a .Delete() call removes every item it lists."
+    cmd_rd_s
+    "${_CP}(rd|rmdir)[[:space:]]${_CMD_STMT}/s([[:space:]/]|$)"
+    "Destructive: cmd rd/rmdir /s deletes a whole directory tree."
+    cmd_del_s
+    "${_CP}(del|erase)[[:space:]]${_CMD_STMT}/s([[:space:]/]|$)"
+    "Destructive: cmd del/erase /s deletes matching files in every subdirectory."
+    ps_format_volume
+    "${_CP}(format-volume|clear-disk)([[:space:]]|$)"
+    "Destructive: Format-Volume / Clear-Disk erases a whole volume or disk."
+    ps_dotnet_delete
+    '\[(system\.)?io\.(directory|file)\]::delete'
+    "Destructive: [IO.Directory]::Delete / [IO.File]::Delete removes files without Remove-Item."
+    ps_encoded_command
+    "(^|[^a-z0-9_.\$-])(powershell|pwsh)(\\.exe)?[\"']?[[:space:]](${_STMT}[[:space:]])?-(e|ec|en|enc[a-z]*)([[:space:]:]|\$)"
+    "PowerShell -EncodedCommand. ${_WHY_DYNAMIC}"
+    ps_start_process_shell
+    "${_CP}${_MOD}(start-process|saps|start)[[:space:]]${_STMT}(cmd|powershell|pwsh)(\\.exe)?[\"']?([[:space:]]|$)"
+    "Start-Process launching cmd or PowerShell. /careful cannot see what its -ArgumentList will run. Read it before approving."
+    ps_scriptblock_create
+    '\[(system\.management\.automation\.)?scriptblock\]::create'
+    "PowerShell [scriptblock]::Create. ${_WHY_DYNAMIC}"
+    ps_invoke_expression
+    "${_CP}(invoke-expression|iex)([[:space:](]|$)"
+    "PowerShell Invoke-Expression (iex). ${_WHY_DYNAMIC}"
+  )
+  _WI=0
+  while [ "$_WI" -lt "${#_WIN_RULES[@]}" ]; do
+    _WRE="${_WIN_RULES[$((_WI + 1))]}"
+    if [[ $_WIN_SCAN =~ $_WRE ]]; then
+      WARN="${_WIN_RULES[$((_WI + 2))]}"
+      break
+    fi
+    _WI=$((_WI + 3))
+  done
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'rm[[:space:]]+(-[a-zA-Z]*[rR]|--recursive)' 2>/dev/null; then
   WARN="Destructive: recursive delete (rm -r). This permanently removes files."
 fi
 
@@ -363,7 +468,7 @@ if [ -z "$WARN" ]; then
   # every command — only pay it when project state actually exists.
   if [ -z "$_PAT" ] && [ -d "$_CFG_DIR/projects" ] && [ -x "$HOME/.vibestack/bin/vibe-slug" ]; then
     SLUG=""
-    eval "$("$HOME/.vibestack/bin/vibe-slug" 2>/dev/null || true)" 2>/dev/null || SLUG=""
+    eval "$(VIBESTACK_SLUG_NO_MIGRATE=1 "$HOME/.vibestack/bin/vibe-slug" 2>/dev/null || true)" 2>/dev/null || SLUG=""
     if [ -n "${SLUG:-}" ]; then
       _PAT=$(_match_pattern_file "$_CFG_DIR/projects/$SLUG/careful-patterns.txt") || _PAT=""
     fi

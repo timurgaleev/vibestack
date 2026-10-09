@@ -12,6 +12,11 @@ hooks:
         - type: command
           command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/careful}/bin/check-careful.sh"
           statusMessage: "Checking for destructive commands..."
+    - matcher: "PowerShell"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/careful}/bin/check-careful.sh"
+          statusMessage: "Checking for destructive commands..."
 triggers:
   - be careful
   - warn before destructive
@@ -25,9 +30,16 @@ Use when touching prod, debugging live systems, or working in a shared environme
 
 # /careful — Destructive Command Guardrails
 
-Safety mode is now **active**. Every bash command will be checked for destructive
-patterns before running. Most matches warn and are overridable; a small
-catastrophic set is blocked outright.
+Safety mode is now **active**. Every Bash and PowerShell command will be checked
+for destructive patterns before running. Most matches warn and are overridable; a
+small catastrophic set is blocked outright.
+
+**Where this is enforced.** The checks run as a Claude Code `PreToolUse` hook.
+Cursor, Kiro and Codex install the same skill, but the hook is not guaranteed
+to run there; outside Claude Code `/careful` is instruction-only. On those
+hosts, tell the user that safety mode is advisory: you will stop and confirm
+before a command from the table below, but nothing intercepts it if you miss
+one.
 
 ## Two tiers
 
@@ -52,6 +64,28 @@ session.
 | `git checkout .` / `git restore .` | `git checkout .` | Uncommitted work loss |
 | `kubectl delete` | `kubectl delete pod` | Production impact |
 | `docker rm -f` / `docker system prune` | `docker system prune -a` | Container/image loss |
+
+## PowerShell and cmd (Windows)
+
+The hook also checks the PowerShell tool (Claude Code's shell on Windows) and
+any `pwsh`/`powershell`/`cmd` launched from Bash on any OS. Matching ignores
+case, covers aliases in command position, accepts parameter prefixes (`-r`,
+`-fo`) and strips cmd `^` and PowerShell backtick escapes. Every warning is
+`ask`; the rows above apply there too.
+
+| Pattern | Example |
+|---------|---------|
+| `Remove-Item`/`rm`/`ri`/`del`/`erase`/`rd`/`rmdir` + `-Recurse` or `-Force` | `gci \| ri -r -fo` |
+| `Get-ChildItem`/`gci`/`ls`/`dir` `-Recurse` piped into `Remove-Item` or its aliases | `gci C:\p -Recurse \| Remove-Item` |
+| cmd `rd /s`, `rmdir /s`, `del /s`, `erase /s` | `cmd /c rd /s /q C:\proj` |
+| `Format-Volume`, `Clear-Disk`, `[IO.Directory]::Delete`, `[IO.File]::Delete` | `Clear-Disk -Number 1` |
+| `-EncodedCommand`, `Invoke-Expression`/`iex` (cannot be inspected) | `irm $url \| iex` |
+
+String matching cannot see a command PowerShell builds at runtime. For a hard
+stop, add Claude Code permission deny rules, which parse PowerShell and its
+aliases — for example `"deny": ["PowerShell(Remove-Item *)"]` in
+`.claude/settings.json`. The hook itself runs through `bash`, so on Windows it
+needs Git Bash.
 
 ## Safe exceptions (no warning)
 

@@ -974,7 +974,7 @@ CODEX SAYS (plan review — outside voice):
 
 On any Codex error, fall back to the Claude adversarial subagent.
 
-**If `CODEX_MODE` is `under_codex`, `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored):**
+**If `CODEX_MODE` is `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored), or `under_codex` with no completed `claude -p` pass:** under `under_codex` the preflight's `OUTSIDE_VOICE` branches govern — `claude -p` runs first, and only its fallback reaches this subagent.
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
 Bound it the way the Codex pass is bound: cap the dispatch at a 5-minute timeout, so
@@ -987,7 +987,7 @@ the timeout does not count as a completed review.
 
 Subagent prompt: same plan review prompt as above.
 
-Present findings under an `OUTSIDE VOICE (Claude subagent):` header.
+Present findings under an `OUTSIDE VOICE (Claude subagent):` header — under `under_codex`, use `OUTSIDE VOICE (same-model subagent — not cross-model):` instead, since the subagent is Codex too.
 
 If the subagent fails or times out: "Outside voice unavailable. Continuing to outputs."
 Skip the cross-model tension step and persist the result below as unavailable — no
@@ -1040,10 +1040,12 @@ saved, with the cause and the status it would have recorded. Continue the review
 
 Substitute:
 - STATUS = "clean" only if a reviewer actually completed and found no issues;
-  "issues_found" if a completed reviewer reported findings; "unavailable" if neither
-  Codex nor the subagent completed; "skipped" when `CODEX_MODE` is `disabled`.
-- SOURCE = "codex" if the Codex pass completed, "claude" if the subagent completed,
-  "none" if no reviewer completed.
+  "issues_found" if a completed reviewer reported findings; "unavailable" if no
+  reviewer (Codex, `claude -p` or the subagent) completed; "skipped" when `CODEX_MODE` is `disabled`.
+- SOURCE = "codex" if the Codex pass completed, "claude_cli" if the `claude -p` pass
+  completed (under Codex), "claude" if the Claude subagent completed,
+  "same_model_subagent" if the under-Codex fallback subagent completed, "none" if no
+  reviewer completed.
 - OUTSIDE_STATUS = "completed" if a reviewer completed, "unavailable" if none did,
   "disabled" when `CODEX_MODE` is `disabled`.
 

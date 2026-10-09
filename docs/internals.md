@@ -86,7 +86,7 @@ new.
 
 | Binary | Purpose |
 |--------|---------|
-| `vibe-slug` | Project slug from the git remote |
+| `vibe-slug` | Project slug from the origin remote, as `owner--repo` (`github.com/alice/api` → `alice--api`). The double hyphen never occurs inside a sanitized part, so `a-b/c` and `a/b-c` stay apart and no new slug equals an old one; when sanitizing changed the owner or repo (`my.repo` and `my_repo`), and for nested groups and local-path remotes, an 8-hex hash of the canonical remote is appended. Without a remote the slug is the folder name plus a hash of the clone's absolute git common dir, so two remote-less repos with one folder name stay apart. `VIBESTACK_PROJECT_SLUG` overrides. The first run under the new name copies durable state (learnings, decisions, specs, design boards, the project's own stamped checkpoints) from the old name-only bucket — copied, never moved — only when that bucket holds a checkpoint stamped with this exact project. A review-log commit that also exists here is not proof (a fork shares history): it, like no evidence at all, prints a notice once and `vibe-slug --migrate` copies on request. Unstamped checkpoints come across only with `--migrate --include-unstamped`. The old bucket's `.claimed-by` records the claiming project and its evidence; an unproven claim gives way to a later project that holds a stamped checkpoint there. A copy that fails partway leaves no marker or claim and is retried. `VIBESTACK_SLUG_NO_MIGRATE=1` skips the copy; `vibe-evidence`, `vibe-review-log` and `vibe-review-read` set it because they call `vibe-slug` under a 5s timeout. Review logs and deploy confirmations are never carried over, so the readiness dashboard starts empty for branches that were open. `--identity`, `--stamp-checkpoint` and `--classify-checkpoints` let `/context-save` stamp and `/context-restore` filter checkpoints by project; a checkpoint without a closing `---` is refused. Limit: one owner/repo on two hosts shares a bucket — set `VIBESTACK_PROJECT_SLUG` |
 | `vibe-config` | Get/set project config (`config.json`) |
 | `vibe-learnings-log` / `vibe-learnings-search` | Append / search per-project learnings |
 | `vibe-learnings-sync-plan` | Plan `/learn sync` pushes: dedup, watermark, secret redaction |
@@ -109,13 +109,14 @@ new.
 | `vibe-review-log` / `vibe-review-read` | Append / read the per-branch review ledger the plan-* dashboards summarise |
 | `vibe-next-version` | Next free VERSION slot, skipping versions claimed by open PRs against the same base — each PR's claim is the VERSION file at its head (`--exclude-pr` drops your own) |
 | `vibe-diff-scope` | Classify a diff as frontend / backend / docs / config, so QA and canary depth match the change |
-| `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it |
+| `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it. `vibe-redact scan --file <path> [--file …]` is the deterministic, fail-closed scan the publishing skills (`/spec`, `/document-generate`, `/document-release`, `/ship`) run before any external write: exit 0 clean, 1 finding (`HIGH  <label>  <path>:<line>  <masked>`), 2 could not run — the same matcher and patterns as the pre-push guard. Both skip documentation placeholders judged on the matched value alone (the AWS docs keys, `<token>`, `xxxxxx`, a value starting or ending in `example`), and the guard blocks a push when the matcher itself fails |
 | `vibe-design` | Design-asset generation; reports `DESIGN_NOT_AVAILABLE` without an API key. `variants` never overwrites (an existing `variant-A.png` makes the next image `variant-A-2.png`) and prints `requested:`, one `saved: <path>` per image written, `failures:` and one `failed: <variant>: <reason>` per image not saved — callers use only the `saved:` paths. `--brief-file <path>` reads the brief from a file, so skills never put brief text in shell source. Exit 0 all saved, 3 partial, 2 nothing saved (with a `DESIGN_ERROR:` line), 1 usage error |
 | `vibe-specialist-stats` | Aggregate specialist-reviewer findings across runs |
 | `vibe-tree-hash` | Content fingerprint of the tracked working tree — a git tree id, so a commit or rebase that changes no bytes changes no hash |
-| `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose |
+| `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose. A single argument after `--` runs as a shell command line and is recorded verbatim. `check` narrows with `--expect-cmd C` (the recorded line must equal C), `--max-age H` (older passes are STALE) and `--allow-paths P` (a run at another tree still counts when only release bookkeeping such as `CHANGELOG.md,VERSION` differs); a recorded tree the object store no longer has never matches |
 | `vibe-version-bump` | Move VERSION, `package.json` and the lockfiles together or not at all; `--root` for a manifest in a subdirectory |
 | `vibe-detach` | Run a command past the turn boundary; `status` separates running (exit 2) from failed (exit 1) |
+| `vibe-context-budget` | Measure the always-loaded skill listing (rendered name + description per skill) against a runtime's budget — Codex 8,000 chars by default; exit 1 over budget, `--warn-only` reports without failing; CI reports it on every PR |
 | `vibe-codex-probe` | Whether Codex is *usable*, not merely installed — cheap negatives first, one cached round trip for the positive |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
@@ -264,7 +265,13 @@ legs `brew install bash` first. Three jobs run beyond the matrix:
 `session-runner.ts` spawns a real `claude -p` session in a throwaway sandbox:
 skills render from repo sources into the sandbox's project-level
 `.claude/skills/` (the path real installs resolve), `VIBESTACK_HOME` points
-into the sandbox, and the child gets zero MCP servers. The runner streams
+into the sandbox, and the child gets zero MCP servers. Sessions run with
+`--dangerously-skip-permissions`, so the child's working directory is the
+sandbox and its `HOME` (with `CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME`) is a
+fresh directory inside it — never your HOME or this repository. The same holds
+for every session and judge call of `bun run test:compliance`, which keeps its
+USD cap (`--max-usd`, default $1.00). Authenticate with `ANTHROPIC_API_KEY` or
+`CLAUDE_CODE_OAUTH_TOKEN`; nothing under the real HOME is read. The runner streams
 NDJSON and survives timed-out children that leave pipe-holding orphans —
 regression-locked by `session-runner-timeout.test.ts`, which runs offline in
 the default suite.

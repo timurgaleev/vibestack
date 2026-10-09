@@ -122,10 +122,10 @@ grep -qxF "$(printf 'other-key\tpattern')" "$PROJ/memrain-synced.txt" && [ ! -e 
 
 # ---------------------------------------------------------------------------
 # bin/vibe-learnings-search and bin/vibe-learnings-log
-# Run from a scratch directory outside any git repo, so vibe-slug derives the
-# slug "learnproj" from the directory name.
+# Run from a scratch directory outside any git repo; vibe-slug derives the
+# slug from the directory name plus a hash of its path.
 WORK="$TMP/work/learnproj"; mkdir -p "$WORK"
-LSTORE="$VIBESTACK_HOME/projects/learnproj"; mkdir -p "$LSTORE"
+LSTORE="$VIBESTACK_HOME/projects/$(cd "$WORK" && "$BIN/vibe-slug" 2>/dev/null | sed -n 's/^SLUG=//p')"; mkdir -p "$LSTORE"
 SEARCH() { (cd "$WORK" && "$BIN/vibe-learnings-search" "$@"); }
 LOG()    { (cd "$WORK" && "$BIN/vibe-learnings-log" "$@"); }
 today="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

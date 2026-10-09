@@ -1,6 +1,6 @@
 {
   "name": "vibestack",
-  "version": "1.48.0",
+  "version": "1.49.0",
   "description": "vibestack \u2014 AI coding skills + a fast headless browser daemon. One repo, one install, the whole workflow.",
   "license": "MIT",
   "type": "module",
@@ -12,8 +12,9 @@
     "vendor:xterm": "mkdir -p extension/lib && cp node_modules/xterm/lib/xterm.js extension/lib/xterm.js && cp node_modules/xterm/css/xterm.css extension/lib/xterm.css && cp node_modules/xterm-addon-fit/lib/xterm-addon-fit.js extension/lib/xterm-addon-fit.js",
     "test:evals": "RUN_EVALS=1 bun test test/evals/",
     "test:runner": "bun test test/evals/session-runner-timeout.test.ts",
+    "test:compliance": "bun run test/evals/compliance/run.ts",
     "make-pdf": "bun run make-pdf/src/cli.ts",
-    "build:make-pdf": "bun build --compile make-pdf/src/cli.ts --outfile make-pdf/dist/pdf",
+    "build:make-pdf": "bun build --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig make-pdf/src/cli.ts --outfile make-pdf/dist/pdf",
     "build:diagram-render": "cd lib/diagram-render && bun install && bun run scripts/build.ts",
     "test:make-pdf": "bun run build:make-pdf && bun test make-pdf/test/"
   },
@@ -33,7 +34,7 @@
     "xterm-addon-fit": "^0.8.0"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.3.3"
   },
   "keywords": [
     "browser",

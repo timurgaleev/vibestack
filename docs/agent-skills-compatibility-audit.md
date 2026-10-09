@@ -153,6 +153,11 @@ across targets. The `hooks:` frontmatter field tells Claude Code to invoke a
 shell script at `PreToolUse` time. Cursor and Kiro may or may not honor this
 field — the Agent Skills spec doesn't standardize it.
 
+`careful` and `guard` register their command hook on two matchers, `Bash` and
+`PowerShell` (Claude Code's shell on Windows). Outside Claude Code `careful`,
+`freeze` and `guard` say in their bodies that they are instruction-only: nothing
+intercepts the tool call, and the freeze boundary file is not enforced.
+
 **Sub-finding F2a:** `guard` and `investigate` reuse the hook scripts of
 `careful` and `freeze` respectively, via cross-skill `${CLAUDE_SKILL_DIR}/../`
 paths. This works under Claude's per-skill directory layout but assumes the

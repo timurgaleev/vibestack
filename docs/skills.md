@@ -335,9 +335,11 @@ Triggers: `restore context`, `context restore`, `pick up where I left off`
 ### `/careful`
 Activate extra caution for risky operations.
 
-Registers a PreToolUse hook that intercepts Bash commands matching destructive patterns: `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout .`, `kubectl delete`, `docker rm -f`. Most matches prompt and are overridable. A small catastrophic set is blocked outright and cannot be overridden while the skill is active: recursive deletion of `/` or your home directory, and a force-push to the repo's default branch. Only simple commands qualify for that tier — anything with `;`, `&&`, a pipe or a newline falls back to a prompt, and `--force-with-lease` never hard-denies. Safe build artifact deletions (`node_modules`, `.next`, `dist`, etc.) pass through silently.
+Registers a PreToolUse hook on the Bash and PowerShell tools that intercepts commands matching destructive patterns: `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout .`, `kubectl delete`, `docker rm -f`. Most matches prompt and are overridable. A small catastrophic set is blocked outright and cannot be overridden while the skill is active: recursive deletion of `/` or your home directory, and a force-push to the repo's default branch. Only simple commands qualify for that tier — anything with `;`, `&&`, a pipe or a newline falls back to a prompt, and `--force-with-lease` never hard-denies. Safe build artifact deletions (`node_modules`, `.next`, `dist`, etc.) pass through silently.
 
-Active for the session until you end it.
+PowerShell (Claude Code's shell on Windows) and any `pwsh`/`powershell`/`cmd` launched from Bash get a trimmed Windows set: recursive or forced `Remove-Item` and its aliases, `Get-ChildItem -Recurse` piped into `Remove-Item`, cmd `rd /s` and `del /s`, `Format-Volume`/`Clear-Disk`, `[IO.Directory]::Delete`, and `-EncodedCommand`/`Invoke-Expression`, which cannot be inspected. All of them prompt.
+
+Active for the session until you end it. The hook runs only in Claude Code; in Cursor, Kiro and Codex `/careful` is instruction-only.
 
 **Your own patterns.** Add one POSIX ERE per line to
 `~/.vibestack/careful-patterns.txt` (or, for one project only,
@@ -366,6 +368,8 @@ Records the directory in `~/.vibestack/freeze-dir.txt` through `freeze-state.sh`
 
 Read and Bash operations are unaffected.
 
+The boundary lives in the state file, not in the session: it persists until `/unfreeze`, and any later session that loads the freeze hook (`/freeze`, `/guard`, `/investigate`) enforces it again. The hook runs only in Claude Code; in Cursor, Kiro and Codex `/freeze` is instruction-only.
+
 Triggers: `freeze edits to directory`, `lock editing scope`, `restrict file changes`, `only edit this folder`
 
 ---
@@ -384,7 +388,7 @@ Full safety mode: `/careful` + `/freeze` combined.
 
 Activates the destructive-command guard (warnings, plus the non-overridable tier described under `/careful`) and edit-scope restriction in one command. Use when touching production systems or debugging live issues.
 
-To remove the edit boundary: `/unfreeze`. To deactivate everything: end the session.
+The edit boundary persists in `~/.vibestack/freeze-dir.txt` until `/unfreeze`, across sessions. Ending the session turns off the destructive-command guard only. The hooks run only in Claude Code; in Cursor, Kiro and Codex `/guard` is instruction-only.
 
 Triggers: `full safety mode`, `guard against mistakes`, `maximum safety`, `guard mode`, `lock it down`
 

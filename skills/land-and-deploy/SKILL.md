@@ -717,6 +717,14 @@ script in `package.json`, a `Makefile` `test` target, `pytest.ini`, `go.mod`,
 `Cargo.toml`) as options, plus "no test suite". Never assume a framework default: the
 wrong runner on a pytest or Go project fails for reasons that say nothing about the code.
 
+**Reuse a proven run first.** When /ship already ran this exact command on this exact
+content, the evidence ledger says so:
+`~/.vibestack/bin/vibe-evidence check --expect-cmd '<test command>' --max-age 24 --allow-paths CHANGELOG.md,VERSION,TODOS.md`.
+Drop from that list any of the three files a test reads itself (a version check, a
+changelog lint). FRESH (exit 0) is the Free tests result — cite its line and skip the run below. STALE,
+or the helper missing, is not a blocker: it only means nothing proves a pass on this
+tree, so run the suite. A failed run is the blocker.
+
 Run it on the checkout Step 1 verified, recording the command's own exit status — a pipe
 into `tail` would report `tail`'s status instead:
 

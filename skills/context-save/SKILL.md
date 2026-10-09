@@ -223,6 +223,20 @@ files_modified:
 The `files_modified` list comes from `git status --short` (both staged and unstaged
 modified files). Use relative paths from the repo root.
 
+Then stamp the project identity into the frontmatter. Do not write these two
+fields yourself: the bin writes `remote:` (the origin with any credentials
+removed, or `none`) and `project_root:` (the repository root), which
+`/context-restore` uses to refuse another project's checkpoint. Substitute the
+exact `FILE=` path printed in Step 4:
+
+```bash
+~/.vibestack/bin/vibe-slug --stamp-checkpoint "{FILE}" \
+  && grep -E '^(remote|project_root):' "{FILE}"
+```
+
+If the stamp fails, say so in the confirmation below — the save still stands,
+but restore will treat it as an unstamped checkpoint.
+
 After writing, confirm to the user:
 
 ```
@@ -304,6 +318,8 @@ If there are no saved contexts, tell the user: "No saved contexts yet. Run
 - **Never modify code.** This skill only reads state and writes the context file.
 - **Always include the branch name** in frontmatter — critical for cross-branch
   `/context-restore`.
+- **Always stamp the project identity** with `vibe-slug --stamp-checkpoint`, run
+  from inside the project — never hand-write `remote:` or `project_root:`.
 - **Saved files are append-only.** Never overwrite or delete existing files. Each
   save creates a new file.
 - **Infer, don't interrogate.** Use git state and conversation context to fill in

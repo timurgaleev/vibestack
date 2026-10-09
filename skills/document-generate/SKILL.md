@@ -414,7 +414,14 @@ Fix any failures before proceeding.
 
 ## Step 9: Commit & Output
 
-**Secret scan before commit.** Doc generators routinely emit example credentials that look real. Before staging, scan every generated/updated documentation file for high-confidence secrets. On a match, **stop**: name the file and matched pattern, and tell the user to redact (and rotate if the secret is real) before re-running. Do not commit.
+**Secret scan before commit.** Doc generators routinely emit example credentials that look real. Before staging, run the deterministic scanner over every generated/updated documentation file — one `--file` per file, the exact bytes on disk:
+
+```bash
+~/.vibestack/bin/vibe-redact scan --file <doc-1> --file <doc-2>
+echo "REDACT_EXIT: $?"
+```
+
+It fails closed: only `REDACT_EXIT: 0` passes. Exit 1 prints each finding as `HIGH  <label>  <path>:<line>  <masked>`; exit 2 (or a missing binary) means the scan did not run, which blocks the same way. On any non-zero exit, **stop**: name the file, line and pattern, and tell the user to redact (and rotate if the secret is real) before re-running. Do not commit. Obvious documentation placeholders (`AKIAIOSFODNN7EXAMPLE`, `<your-token>`, `xxxxxx`) pass on their own; anything else that matches is treated as live. The scanner covers the single-token shapes below; also read the files for the multi-line shapes it cannot see (a service-account JSON key) and stop on those the same way.
 
 {{include lib/snippets/secret-scan-patterns.md}}
 
@@ -519,9 +526,17 @@ glab mr view -F json 2>/dev/null | python3 -c "import sys,json; print(json.load(
 ```
 
    e. **Secret scan before external write.** Scan the exact text about to be
-   published (`<body-file>`) for high-confidence secrets with the patterns
-   listed before step 1. On a match, STOP — tell the user to redact (and
-   rotate if real) before continuing; do not publish.
+   published with the same scanner as before step 1 — after your last edit to
+   `<body-file>`, so the bytes scanned are the bytes sent:
+
+```bash
+~/.vibestack/bin/vibe-redact scan --file <body-file>
+echo "REDACT_EXIT: $?"
+```
+
+   Only `REDACT_EXIT: 0` passes; any other exit (a finding, or a scan that
+   could not run) means STOP — tell the user to redact (and rotate if real)
+   before continuing; do not publish.
 
    f. **Banner tripwire.** The trust-envelope banner must never reach a live
    PR/MR. Compare the outgoing file against the snapshot and fail closed — if

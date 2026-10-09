@@ -25,6 +25,26 @@ VIBE_BIN="$VIBE_HOME/bin"
 # bin/vibe-render-skill, which a hard-killed run used to leave replaced.
 RENDERER_BIN="${VIBE_RENDER_SKILL:-$REPO_DIR/bin/vibe-render-skill}"
 
+# Oldest Bun that honours --no-compile-autoload-dotenv/-bunfig. Keep in step
+# with engines.bun in package.json.
+VIBE_BUN_FLOOR="1.3.3"
+
+# bun_version_at_least FOUND FLOOR — numeric major.minor.patch comparison.
+# A version string that does not parse counts as below the floor.
+bun_version_at_least() {
+  local found="${1%%[-+]*}" floor="$2" i f_part r_part
+  [[ "$found" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  local -a f r
+  IFS=. read -r -a f <<<"$found"
+  IFS=. read -r -a r <<<"$floor"
+  for i in 0 1 2; do
+    f_part=$((10#${f[$i]})); r_part=$((10#${r[$i]}))
+    [ "$f_part" -gt "$r_part" ] && return 0
+    [ "$f_part" -lt "$r_part" ] && return 1
+  done
+  return 0
+}
+
 # ───────────────────────────────────────────────────────────────────────────
 # Multi-target configuration (v1.4.0+)
 #
@@ -903,7 +923,28 @@ if [ "$DRY_RUN" != "1" ]; then
   # deps so /browse + /open-browser get the rich TypeScript daemon (CDP inspector,
   # PTY, sidebar extension, content-security). Idempotent; non-fatal — /browse
   # falls back to the bundled stateless Playwright shim when this is absent.
+  #
+  # Bun floor: the compiled tools (make-pdf/dist/pdf) are built with
+  # --no-compile-autoload-dotenv/--no-compile-autoload-bunfig so a repo's .env
+  # or bunfig.toml preload cannot reach them. Older Bun lacks those flags, so
+  # below the floor the bun-backed tooling is skipped rather than set up unsafe.
+  bun_ok=0
   if [ -f "$REPO_DIR/package.json" ] && command -v bun >/dev/null 2>&1; then
+    bun_found=$(bun --version 2>/dev/null | head -1)
+    bun_help=$(bun build --help 2>&1 || true)
+    if ! bun_version_at_least "$bun_found" "$VIBE_BUN_FLOOR"; then
+      echo "  ! bun $bun_found is older than $VIBE_BUN_FLOOR — skipping the browse daemon and make-pdf tooling."
+      echo "    Older Bun ignores --no-compile-autoload-dotenv, so compiled tools could read a project's .env."
+      echo "    Fix: bun upgrade, then re-run ./install"
+    elif ! grep -qF -- "--no-compile-autoload-dotenv" <<<"$bun_help" \
+      || ! grep -qF -- "--no-compile-autoload-bunfig" <<<"$bun_help"; then
+      echo "  ! bun $bun_found does not support --no-compile-autoload-dotenv/--no-compile-autoload-bunfig — skipping the browse daemon and make-pdf tooling."
+      echo "    Fix: bun upgrade, then re-run ./install"
+    else
+      bun_ok=1
+    fi
+  fi
+  if [ "$bun_ok" = "1" ]; then
     # Re-run bun install when ANY runtime dep is missing — checking only
     # playwright left upgrades without newer deps (e.g. make-pdf's html-to-docx).
     if [ ! -d "$REPO_DIR/node_modules/playwright" ] || [ ! -d "$REPO_DIR/node_modules/html-to-docx" ]; then

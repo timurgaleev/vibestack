@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# vibe-redact — install/uninstall the credential pre-push guard.
+# vibe-redact — deterministic credential scan, and the pre-push guard.
 #
+#   vibe-redact scan --file <path> [--file <path> ...]
+#                                        scan files about to leave the machine
 #   vibe-redact install-prepush-hook     install the guard in the current repo
 #   vibe-redact uninstall-prepush-hook   remove it (restores any chained hook)
+#
+# `scan` runs the same matcher and patterns as the pre-push guard over the
+# exact bytes of each file. Exit 0 = clean, 1 = credential found (masked
+# findings on stdout as `HIGH  <label>  <path>:<line>  <masked>`), 2 = the scan
+# could not run (bad usage, unreadable file, matcher failure). Callers treat
+# any non-zero exit as blocked. VIBESTACK_REDACT_PREPUSH=skip does not apply.
 #
 # The installed hook runs vibe-redact-prepush against every push and blocks
 # when a high-confidence credential appears in the pushed diff. Any pre-existing
@@ -63,6 +71,59 @@ EOF
   echo "vibe-redact: installed pre-push hook at $hook_path"
 }
 
+scan_files() {
+  local files=() f text hits rc n label span total=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --file)
+        [ $# -ge 2 ] && [ -n "$2" ] || { echo "vibe-redact scan: --file needs a path" >&2; exit 2; }
+        files+=("$2"); shift 2 ;;
+      --file=*)
+        [ -n "${1#--file=}" ] || { echo "vibe-redact scan: --file needs a path" >&2; exit 2; }
+        files+=("${1#--file=}"); shift ;;
+      *) echo "vibe-redact scan: unknown argument: $1" >&2; exit 2 ;;
+    esac
+  done
+  [ "${#files[@]}" -gt 0 ] || { echo "vibe-redact scan: --file <path> is required" >&2; exit 2; }
+
+  local matcher="$SELF_DIR/vibe-redact-prepush"
+  if [ ! -r "$matcher" ]; then
+    echo "vibe-redact scan: matcher $matcher not found — cannot scan" >&2
+    exit 2
+  fi
+  # shellcheck source=/dev/null
+  . "$matcher" || { echo "vibe-redact scan: could not load $matcher" >&2; exit 2; }
+  if ! declare -F redact_find >/dev/null; then
+    echo "vibe-redact scan: $matcher has no redact_find — cannot scan" >&2
+    exit 2
+  fi
+
+  for f in "${files[@]}"; do
+    if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+      echo "vibe-redact scan: cannot read $f" >&2
+      exit 2
+    fi
+    text=$(cat -- "$f") || { echo "vibe-redact scan: cannot read $f" >&2; exit 2; }
+    rc=0
+    hits=$(redact_find "$text") || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "vibe-redact scan: matcher failed on $f" >&2
+      exit 2
+    fi
+    [ -n "$hits" ] || continue
+    while IFS=$'\t' read -r n label span; do
+      printf 'HIGH  %-22s %s:%s  %.10s...\n' "$label" "$f" "$n" "$span"
+      total=$((total + 1))
+    done <<< "$hits"
+  done
+
+  if [ "$total" -gt 0 ]; then
+    echo "REDACT_SCAN: blocked ($total finding(s)) — redact, rotate any real credential, re-scan" >&2
+    exit 1
+  fi
+  echo "REDACT_SCAN: clean"
+}
+
 uninstall_hook() {
   local dir hook_path local_path
   dir=$(hooks_path)
@@ -82,9 +143,10 @@ uninstall_hook() {
 }
 
 case "${1:-}" in
+  scan)                   shift; scan_files "$@" ;;
   install-prepush-hook)   install_hook ;;
   uninstall-prepush-hook) uninstall_hook ;;
   *)
-    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
     exit 1 ;;
 esac

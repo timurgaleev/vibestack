@@ -58,6 +58,9 @@ If `NOT_FOUND`, stop and tell the user:
 
 > make-pdf renderer not found. It ships with the vibestack repo.
 > Run: `cd ~/data/vibestack && bun install && bun run build:make-pdf && ./install`
+> (Bun 1.3.3 or newer — `bun --version`. Older Bun ignores the build's
+> `--no-compile-autoload-dotenv` flag, so the binary could read a project's `.env`;
+> run `bun upgrade` first.)
 > Or set `$MAKE_PDF_BIN` to the path of an existing `make-pdf` binary.
 >
 > After building, re-run `/make-pdf`.
