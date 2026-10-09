@@ -663,7 +663,7 @@ After the user picks a direction:
 - If the user wants to iterate further, run `$D variants` again with a brief that folds in their feedback, into a fresh `--output-dir` subdirectory, and use the new `saved:` paths — there is no refine-in-place verb.
 
 **Plan mode vs. implementation mode:**
-- **If in plan mode:** Add the approved mockup path (the full `$_DESIGN_DIR` path) and extracted tokens to the plan file under an "## Approved Design Direction" section. The design system gets written to DESIGN.md when the plan is implemented.
+- **If in plan mode:** Keep the approved mockup path (the full `$_DESIGN_DIR` path) and the extracted tokens for Phase 6, and write nothing to the plan file yet. They go into the plan file only after the user picks A at Q-final; B and C leave it untouched. The design system gets written to DESIGN.md when the plan is implemented.
 - **If NOT in plan mode:** Proceed directly to Phase 6, which prepares DESIGN.md from the extracted tokens and writes it once the user approves at Q-final.
 
 ### Path B: HTML Preview Page (fallback if DESIGN_NOT_AVAILABLE)
@@ -731,7 +731,7 @@ List all decisions together with the prepared DESIGN.md preview and the CLAUDE.m
 
 Wait for the answer. B and C write nothing.
 
-**If in plan mode (after A):** Write the DESIGN.md content into the plan file as a "## Proposed DESIGN.md" section. Do NOT write the actual file — that happens at implementation time.
+**If in plan mode (after A):** If a mockup was approved in Phase 5, add its full path and the extracted tokens to the plan file under an "## Approved Design Direction" section. Write the DESIGN.md content into the plan file as a "## Proposed DESIGN.md" section. Do NOT write the actual file — that happens at implementation time.
 
 **If NOT in plan mode (after A):** Whenever a DESIGN.md already exists — **start fresh** and **update** alike — back it up before writing over it. Run this from the repo root and name the printed backup path to the user; it never overwrites an existing backup:
 

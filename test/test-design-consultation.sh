@@ -97,6 +97,17 @@ has "$TMP/p6" "Never append a second copy" && ok "CLAUDE.md section is replaced,
 grep -q 'append this section' "$TMP/p6" && no "Phase 6 still says to append to CLAUDE.md" \
   || ok "no blind append to CLAUDE.md"
 
+echo "plan mode: the plan file waits for Q-final"
+section "$R" "## Phase 5: Design System Preview" > "$TMP/p5"
+grep -q 'Approved Design Direction' "$TMP/p5" \
+  && no "Phase 5 writes Approved Design Direction before Q-final" \
+  || ok "Phase 5 writes nothing to the plan file"
+grep -q 'write nothing to the plan file yet' "$TMP/p5" \
+  && ok "Phase 5 defers the plan-file update" || no "Phase 5 does not defer the plan-file update"
+before "$TMP/p6" "AskUserQuestion Q-final" "Approved Design Direction" \
+  && ok "Approved Design Direction is written only after Q-final" \
+  || no "Approved Design Direction is not written after Q-final"
+
 echo "outside voices"
 section "$R" "## Design Outside Voices" > "$TMP/ov"
 has "$TMP/ov" 'CODEX_MODE="under_codex"' && ok "the shared outside-voice preflight is included" \
