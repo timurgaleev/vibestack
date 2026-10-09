@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.53.0 — 2026-10-09
+
+### Fixed
+
+- **`/scrape` asks before running a saved browser-skill.** Those scripts get a
+  read+write daemon token, so running one silently broke the read-only promise.
+  Spawned and headless sessions never run them.
+- **`vibestack doctor` checks the installed `bin/` against the installer's
+  tool inventory** and reads the installed version stamp, so a missing tool or
+  stamp is reported instead of passing.
+- **Skills use the resolved state root everywhere.** Prose Write and Read
+  targets name the directory the block printed, every
+  `${VIBESTACK_HOME:-$HOME/.vibestack}` path is quoted (a state root with a
+  space no longer breaks commands), and `test/test-state-root.sh` rejects both
+  regressions, including in inline prose commands.
+- **`/retro` merged-PR metrics are correct**: GitLab repositories are queried
+  with `glab` across every page, each window is bounded at its end date, and
+  GitHub reads up to 1000 merged PRs.
+
 ## 1.52.0 — 2026-10-09
 
 ### Changed
