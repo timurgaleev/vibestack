@@ -166,6 +166,13 @@ echo "OLD_VERSION=$OLD_VERSION"
 
 Carry `OLD_VERSION` into the later steps (substitute the printed value).
 
+Every bash block runs in a fresh shell, so nothing set in one block survives
+into the next. Before running each later block, set `REPO`, `REPLAY`,
+`OLD_VERSION`, `LOCAL_VIBESTACK` and `_ROOT` at its top to the values printed
+earlier. The mutating blocks check them first and print
+`NOT_A_VIBESTACK_INSTALL` (or `REPLAY_UNKNOWN`) instead of running `git`, `mv`
+or `rm` against an empty or wrong path.
+
 ### Step 3.5: Record how the pack was installed
 
 The upgrade re-runs `./install` exactly as it was originally run — the same
@@ -270,6 +277,14 @@ replay the install of the known-good version. Interactively, stop with the
 recorded commit instead and let the user decide.
 
 ```bash
+case "${REPO:-}" in /?*) : ;; *) echo "NOT_A_VIBESTACK_INSTALL — REPO is empty or relative; set it to the path from Step 2"; exit 1 ;; esac
+[ -f "$REPO/install" ] && [ -f "$REPO/VERSION" ] && [ -d "$REPO/skills" ] \
+  || { echo "NOT_A_VIBESTACK_INSTALL $REPO"; exit 1; }
+[ -n "${REPLAY:-}" ] && [ -f "$REPLAY" ] || { echo "REPLAY_UNKNOWN — REPLAY is unset or missing; re-run Step 3.5"; exit 1; }
+_TOP="$(git -C "$REPO" rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$_TOP" ] || [ "$(cd "$_TOP" && pwd -P)" != "$(cd "$REPO" && pwd -P)" ]; then
+  echo "NOT_A_VIBESTACK_INSTALL $REPO is not the top of its own git checkout"; exit 1
+fi
 cd "$REPO" || exit 1
 _AUTO=""
 [ "${VIBESTACK_AUTO_UPGRADE:-}" = "1" ] && _AUTO="true"
@@ -311,7 +326,9 @@ failure. Each move is checked, and the live install is never deleted — on a
 failure it is either still in place or still at `$REPO.bak`.
 
 ```bash
-[ -f "$REPO/install" ] && [ -f "$REPO/VERSION" ] || { echo "NOT_A_VIBESTACK_INSTALL $REPO"; exit 1; }
+case "${REPO:-}" in /?*) : ;; *) echo "NOT_A_VIBESTACK_INSTALL — REPO is empty or relative; set it to the path from Step 2"; exit 1 ;; esac
+[ -f "$REPO/install" ] && [ -f "$REPO/VERSION" ] && [ -d "$REPO/skills" ] || { echo "NOT_A_VIBESTACK_INSTALL $REPO"; exit 1; }
+[ -n "${REPLAY:-}" ] && [ -f "$REPLAY" ] || { echo "REPLAY_UNKNOWN — REPLAY is unset or missing; re-run Step 3.5"; exit 1; }
 if [ -e "$REPO.bak" ] || [ -L "$REPO.bak" ]; then
   echo "STALE_BACKUP — $REPO.bak is left over from an interrupted upgrade. Check which copy you want, move or delete $REPO.bak, then re-run /vibe-upgrade."
   exit 1
@@ -363,7 +380,10 @@ vendored copy — team mode uses the global install as the single source of trut
 ```bash
 # Guard: refuse to run without a concrete vendored-copy path (never rm an empty
 # or root path). Both must be set and LOCAL_VIBESTACK must live under _ROOT.
-case "$LOCAL_VIBESTACK" in "$_ROOT"/?*) : ;; *) echo "SKIP — no valid vendored copy under repo root"; exit 0 ;; esac
+case "${_ROOT:-}" in /?*) : ;; *) echo "SKIP — _ROOT is empty or relative; set it to the repo root from Step 2.5"; exit 0 ;; esac
+case "${LOCAL_VIBESTACK:-}" in "$_ROOT"/?*) : ;; *) echo "SKIP — no valid vendored copy under repo root"; exit 0 ;; esac
+[ -f "$LOCAL_VIBESTACK/install" ] && [ -f "$LOCAL_VIBESTACK/VERSION" ] \
+  || { echo "SKIP — $LOCAL_VIBESTACK is not a vibestack copy"; exit 0; }
 cd "$_ROOT" || { echo "SYNC_FAILED — cannot enter $_ROOT"; exit 1; }
 _REL="${LOCAL_VIBESTACK#$_ROOT/}"
 git rm -r --cached "$_REL" 2>/dev/null || true
@@ -384,7 +404,10 @@ committed copy — teammates run `./install` from it themselves. The new copy is
 staged completely before the live one is moved, and every move is checked.
 
 ```bash
-case "$LOCAL_VIBESTACK" in /?*) : ;; *) echo "SYNC_SKIPPED — no valid vendored copy path"; exit 1 ;; esac
+case "${LOCAL_VIBESTACK:-}" in /?*) : ;; *) echo "SYNC_SKIPPED — no valid vendored copy path"; exit 1 ;; esac
+case "${REPO:-}" in /?*) : ;; *) echo "SYNC_SKIPPED — REPO is empty or relative; set it to the path from Step 2"; exit 1 ;; esac
+[ -f "$REPO/install" ] && [ -f "$REPO/VERSION" ] && [ -d "$REPO/skills" ] \
+  || { echo "SYNC_SKIPPED — $REPO is not a vibestack install"; exit 1; }
 [ -f "$LOCAL_VIBESTACK/install" ] && [ -f "$LOCAL_VIBESTACK/VERSION" ] \
   || { echo "SYNC_SKIPPED — $LOCAL_VIBESTACK is not a vibestack copy"; exit 1; }
 if [ -e "$LOCAL_VIBESTACK.bak" ] || [ -L "$LOCAL_VIBESTACK.bak" ]; then
@@ -419,16 +442,20 @@ Only after Step 4 printed `INSTALL_OK` or `VENDORED_UPGRADE_OK` (see the stop
 rule), run any migration scripts for versions between the
 old and new version. Migrations handle state fixes `./install` alone can't cover
 (stale config, orphaned files, directory-structure changes). Substitute
-`OLD_VERSION` and `REPO` from earlier steps.
+`OLD_VERSION` and `REPO` from earlier steps. Each migration gets the install
+directory as `VIBESTACK_INSTALL_DIR`, so it works for a project-local copy as
+well as the global checkout.
 
 ```bash
+case "${REPO:-}" in /?*) : ;; *) echo "MIGRATIONS_SKIPPED — REPO is empty or relative; set it to the path from Step 2"; exit 1 ;; esac
+: "${OLD_VERSION:?OLD_VERSION is unset; set it to the value printed by Step 3}"
 MIGRATIONS_DIR="$REPO/skills/vibe-upgrade/migrations"
 if [ -d "$MIGRATIONS_DIR" ]; then
   for migration in $(find "$MIGRATIONS_DIR" -maxdepth 1 -name 'v*.sh' -type f 2>/dev/null | sort -V); do
     m_ver="$(basename "$migration" .sh | sed 's/^v//')"
     if [ "$OLD_VERSION" != "unknown" ] && [ "$(printf '%s\n%s' "$OLD_VERSION" "$m_ver" | sort -V | head -1)" = "$OLD_VERSION" ] && [ "$OLD_VERSION" != "$m_ver" ]; then
       echo "Running migration $m_ver..."
-      bash "$migration" || echo "  Warning: migration $m_ver had errors (non-fatal)"
+      VIBESTACK_INSTALL_DIR="$REPO" bash "$migration" || echo "  Warning: migration $m_ver had errors (non-fatal)"
     fi
   done
 fi
@@ -436,7 +463,7 @@ fi
 
 Migrations are idempotent bash scripts in `skills/vibe-upgrade/migrations/`, each
 named `v{VERSION}.sh`, run only when upgrading from an older version. See
-`CLAUDE.md` for how to add one.
+`skills/vibe-upgrade/migrations/README.md` for how to add one.
 
 ### Step 5: Write marker + clear cache
 

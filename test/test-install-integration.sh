@@ -787,6 +787,117 @@ test_install_recovery_orphaned_old() {
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
 }
 
+# --- uninstall --delete-state: state-directory safety
+# Every case points VIBESTACK_HOME somewhere inside the fake HOME, so a
+# regression can only ever delete the throwaway directory.
+test_uninstall_delete_state_refuses_home() {
+  : > "$HOME/keep-me"
+  local out rc
+  out=$(VIBESTACK_HOME="$HOME" "$UNINSTALL" --target=claude --delete-state < /dev/null 2>&1); rc=$?
+  assert_eq "2" "$rc" "uninstall exit code for VIBESTACK_HOME=\$HOME" || return 1
+  assert_file_exists "$HOME/keep-me" || return 1
+  grep -q "refusing --delete-state" <<<"$out" || { echo "    no refusal message: $out" >&2; return 1; }
+}
+
+test_uninstall_delete_state_refuses_link_to_home() {
+  : > "$HOME/keep-me"
+  ln -s "$HOME" "$HOME/state-link"
+  local rc
+  VIBESTACK_HOME="$HOME/state-link" "$UNINSTALL" --target=claude --delete-state < /dev/null >/dev/null 2>&1; rc=$?
+  assert_eq "2" "$rc" "uninstall exit code for a link to \$HOME" || return 1
+  assert_file_exists "$HOME/keep-me" || return 1
+}
+
+test_uninstall_delete_state_refuses_current_repo() {
+  local proj="$HOME/proj"
+  mkdir -p "$proj"
+  git -C "$proj" init -q
+  : > "$proj/keep-me"
+  local rc
+  ( cd "$proj" && VIBESTACK_HOME="$proj" "$UNINSTALL" --target=claude --delete-state < /dev/null >/dev/null 2>&1 ); rc=$?
+  assert_eq "2" "$rc" "uninstall exit code for the current repository" || return 1
+  assert_file_exists "$proj/keep-me" || return 1
+}
+
+test_uninstall_delete_state_leaves_relocated_dir() {
+  local state="$HOME/elsewhere/state"
+  mkdir -p "$state"
+  : > "$state/learnings.jsonl"
+  local out rc
+  out=$(VIBESTACK_HOME="$state" "$UNINSTALL" --target=claude --delete-state < /dev/null 2>&1); rc=$?
+  assert_eq "0" "$rc" "uninstall exit code for a relocated state dir" || return 1
+  assert_file_exists "$state/learnings.jsonl" || return 1
+  grep -qF "rm -rf -- '$state'" <<<"$out" || { echo "    removal command not printed: $out" >&2; return 1; }
+}
+
+test_uninstall_delete_state_removes_default_dir() {
+  mkdir -p "$HOME/.vibestack"
+  : > "$HOME/.vibestack/learnings.jsonl"
+  "$UNINSTALL" --target=claude --delete-state < /dev/null >/dev/null 2>&1
+  assert_file_missing "$HOME/.vibestack" || return 1
+}
+
+# --- Bun floor: below it, install skips the bun-backed tooling
+# make_fake_bun VERSION WITH_FLAGS(0|1): a `bun` stub that reports VERSION,
+# advertises the compile-autoload flags only when asked, and logs every call.
+make_fake_bun() {
+  local dir="$HOME/fakebin"
+  mkdir -p "$dir"
+  cat > "$dir/bun" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$HOME/bun-calls"
+case "\$1" in
+  --version) echo "$1" ;;
+  build) [ "$2" = "1" ] && printf '      --no-compile-autoload-dotenv\n      --no-compile-autoload-bunfig\n' ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/bun"
+  FAKE_BUN_PATH="$dir:$PATH"
+}
+
+test_install_skips_bun_tooling_below_floor() {
+  make_fake_bun 1.2.0 1
+  local out
+  out=$(PATH="$FAKE_BUN_PATH" "$INSTALL" --target=claude < /dev/null 2>&1)
+  grep -q "bun 1.2.0 is older than 1.3.3" <<<"$out" || { echo "    no floor message" >&2; return 1; }
+  # Both outcomes of the deps step print a "+ browse daemon" line, whether or
+  # not node_modules is already present; below the floor neither may appear.
+  if grep -q "+ browse daemon" <<<"$out"; then
+    echo "    the browse daemon step ran below the floor" >&2; return 1
+  fi
+  assert_file_exists "$HOME/.claude/skills/office-hours/SKILL.md" || return 1
+}
+
+test_install_skips_bun_tooling_without_autoload_flags() {
+  make_fake_bun 1.4.0 0
+  local out
+  out=$(PATH="$FAKE_BUN_PATH" "$INSTALL" --target=claude < /dev/null 2>&1)
+  grep -q "does not support --no-compile-autoload-dotenv" <<<"$out" || { echo "    no flag message" >&2; return 1; }
+}
+
+test_install_accepts_bun_at_floor() {
+  make_fake_bun 1.3.3 1
+  local out
+  out=$(PATH="$FAKE_BUN_PATH" "$INSTALL" --target=claude < /dev/null 2>&1)
+  if grep -q "skipping the browse daemon" <<<"$out"; then
+    echo "    bun at the floor was rejected" >&2; return 1
+  fi
+  grep -q "+ browse daemon" <<<"$out" || { echo "    the browse daemon step did not run at the floor" >&2; return 1; }
+}
+
+# --- The compiled make-pdf binary must not autoload a project's .env/bunfig
+test_make_pdf_build_disables_autoload() {
+  local script
+  script=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["scripts"]["build:make-pdf"])' "$REPO_DIR/package.json")
+  grep -q -- "--no-compile-autoload-dotenv" <<<"$script" || { echo "    build:make-pdf lacks --no-compile-autoload-dotenv" >&2; return 1; }
+  grep -q -- "--no-compile-autoload-bunfig" <<<"$script" || { echo "    build:make-pdf lacks --no-compile-autoload-bunfig" >&2; return 1; }
+  local engines floor
+  engines=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["engines"]["bun"])' "$REPO_DIR/package.json")
+  floor=$(sed -n 's/^VIBE_BUN_FLOOR="\(.*\)"$/\1/p' "$INSTALL")
+  assert_eq ">=$floor" "$engines" "engines.bun matches install's Bun floor" || return 1
+}
+
 # ───────────────────────────────────────────────────────────────────────────
 # Runner
 # ───────────────────────────────────────────────────────────────────────────
@@ -828,6 +939,15 @@ run_test "v1.5: staging failure preserves prod"                 test_install_sta
 run_test "v1.5: recovery cleans orphaned staging"               test_install_recovery_orphaned_staging
 run_test "v1.5: rapid rerun does not nest .old (codex P2 fix)"  test_install_rapid_rerun_does_not_nest_old
 run_test "v1.5: recovery restores from orphaned .old"           test_install_recovery_orphaned_old
+run_test "uninstall --delete-state refuses VIBESTACK_HOME=\$HOME" test_uninstall_delete_state_refuses_home
+run_test "uninstall --delete-state refuses a link to \$HOME"     test_uninstall_delete_state_refuses_link_to_home
+run_test "uninstall --delete-state refuses the current repo"    test_uninstall_delete_state_refuses_current_repo
+run_test "uninstall --delete-state leaves a relocated dir"      test_uninstall_delete_state_leaves_relocated_dir
+run_test "uninstall --delete-state removes ~/.vibestack"        test_uninstall_delete_state_removes_default_dir
+run_test "install skips bun tooling below the floor"            test_install_skips_bun_tooling_below_floor
+run_test "install skips bun without autoload flags"             test_install_skips_bun_tooling_without_autoload_flags
+run_test "install accepts bun at the floor"                     test_install_accepts_bun_at_floor
+run_test "make-pdf build disables .env/bunfig autoload"         test_make_pdf_build_disables_autoload
 # Heaviest test last (full 3-target install from a nested copy) so it never
 # loads the machine ahead of the timing-sensitive PTY tests above.
 run_test "repo_inside_target_installs_all_targets"              test_repo_inside_target_installs_all_targets
