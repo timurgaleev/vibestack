@@ -21,4 +21,7 @@ if [ ! -d "$_REPO/node_modules/playwright" ]; then
   exit 2
 fi
 
-exec bun run "$_CLI" "$@"
+# --no-env-file / --config=/dev/null: bun would otherwise load the caller's
+# repo .env (which can switch off the Chromium sandbox) and bunfig.toml (whose
+# preload runs arbitrary code) — the daemon runs inside untrusted clones.
+exec bun run --no-env-file --config=/dev/null "$_CLI" "$@"

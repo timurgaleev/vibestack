@@ -64,37 +64,67 @@ If `NEEDS_SETUP`, stop and tell the user:
 
 ---
 
-## Step 0: Pre-flight cleanup
+## Step 0: Check for a running browse daemon
 
-Before connecting, kill any stale browse servers and clean up lock files that
-may have persisted from a crash. This prevents "already connected" false
-positives and Chromium profile lock conflicts.
+A running browse daemon may hold open tabs, cookies and signed-in sessions —
+cookies imported with /setup-browser-cookies, a remote agent paired through
+/pair-agent — and replacing it loses all of them. Never kill it, and never
+delete its state file, to get it out of the way. Probe without starting one
+(`BROWSE_NO_AUTOSTART=1` keeps `status` from booting a daemon):
 
 ```bash
-# Kill any existing browse server
-_REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-_BROWSE_STATE=""
-[ -n "$_REPO_ROOT" ] && _BROWSE_STATE="$_REPO_ROOT/.vibestack/browse.json"
-[ -z "$_BROWSE_STATE" ] || [ ! -f "$_BROWSE_STATE" ] && _BROWSE_STATE="$HOME/.vibestack/browse.json"
-if [ -f "$_BROWSE_STATE" ]; then
-  _OLD_PID=$(grep -o '"pid":[0-9]*' "$_BROWSE_STATE" 2>/dev/null | grep -o '[0-9]*')
-  [ -n "$_OLD_PID" ] && kill "$_OLD_PID" 2>/dev/null || true
-  sleep 1
-  [ -n "$_OLD_PID" ] && kill -9 "$_OLD_PID" 2>/dev/null || true
-  rm -f "$_BROWSE_STATE"
-fi
-# Clean Chromium profile locks (can persist after crashes)
-_PROFILE_DIR="$HOME/.vibestack/chromium-profile"
-for _LF in SingletonLock SingletonSocket SingletonCookie; do
-  rm -f "$_PROFILE_DIR/$_LF" 2>/dev/null || true
-done
-echo "Pre-flight cleanup done"
+_STATUS=$(BROWSE_NO_AUTOSTART=1 $B status 2>&1); _STATUS_RC=$?
+printf '%s\n' "$_STATUS" | head -5
+if [ "$_STATUS_RC" -ne 0 ]; then echo "DAEMON: none"
+elif printf '%s' "$_STATUS" | grep -q 'Mode: headed'; then echo "DAEMON: headed"
+else echo "DAEMON: live"; fi
 ```
+
+- **`DAEMON: none`**: no daemon answered. Run Step 1's plain `$B connect`. Do
+  not delete the Chromium profile's lock files yourself: another project's
+  vibestack Browser may hold them. The CLI cleans up stale state itself — a
+  lock whose browser is gone, or an orphaned browser whose daemon died — and it
+  refuses, killing and deleting nothing, when a live browser it does not own
+  holds the profile or a daemon is alive but too busy to answer. If it refuses,
+  show its output and stop.
+
+- **`DAEMON: headed`**: vibestack Browser is already open. Step 1's plain
+  `$B connect` reports that; continue to Step 2.
+
+- **`DAEMON: live`**: a headless daemon is running. With `SESSION_KIND:
+  spawned` or `headless`, do not ask and do not replace it. Print this and
+  stop:
+
+  ```bash
+  printf 'Live browse daemon left running. Run %s stop, then re-run /open-browser to replace it.\n' "$B"
+  ```
+
+  Otherwise AskUserQuestion. Replacing the daemon cannot be undone:
+
+  > "A browse daemon is already running (tabs and logins may be active).
+  > Opening vibestack Browser replaces it, and everything in that daemon is
+  > lost."
+  >
+  > RECOMMENDATION: Choose B unless you are done with the running session.
+
+  Options:
+  - A) Replace it (runs `$B connect --force-restart`; its tabs, cookies and logins are lost)
+  - B) Keep it running and stop here
+
+  Only an explicit A runs Step 1 with `--force-restart`. On B, or on a reply
+  that is not clearly A, print the "Live browse daemon left running" line above
+  and stop.
 
 ## Step 1: Connect
 
 ```bash
 $B connect
+```
+
+After an explicit A in Step 0, and only then:
+
+```bash
+$B connect --force-restart
 ```
 
 This launches vibestack Browser (rebranded Chromium) in headed mode with:
@@ -188,7 +218,8 @@ If B: Tell the user:
 If C:
 
 1. Run `$B status` and show the output
-2. If the server is not healthy, re-run Step 0 cleanup + Step 1 connect
+2. If the server is not healthy, re-run Step 0 (probe, and ask before any
+   replacement) and then Step 1 connect
 3. If the server IS healthy but the browser isn't visible, try `$B focus`
 4. If that fails, ask the user what they see (error message, blank screen, etc.)
 

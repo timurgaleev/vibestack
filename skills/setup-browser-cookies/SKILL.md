@@ -95,27 +95,51 @@ an interactive picker UI in your default browser where you can:
 - Click "+" to import a domain's cookies
 - Click trash to remove imported cookies
 
-Tell the user: **"Cookie picker opened — select the domains you want to import in your browser, then tell me when you're done."**
+Tell the user: **"Cookie picker opened — choose the browser, the profile, and the domains you want to import, then tell me when you're done."**
+
+The choice of browser, profile and domains is the user's. Never pick one for
+them, and never treat whichever browser the CLI falls back to as consent. A
+profile you could not read is unknown, not empty.
 
 ### 3. Direct import (alternative)
 
-If the user specifies a domain directly (e.g., `/setup-browser-cookies github.com`), skip the UI:
+If the user names a domain directly (e.g., `/setup-browser-cookies github.com`),
+skip the UI — but only with a browser the user named. If they did not name one,
+ask via AskUserQuestion which browser to import from — this path skips the
+picker, so you have no detected list: name the supported ones (Chrome, Chromium,
+Arc, Brave, Edge, Comet) and let the user answer; never fill one in yourself. The import is scoped to the page the daemon is on,
+so navigate to the domain first:
 
 ```bash
-$B cookie-import-browser comet --domain github.com
+$B goto https://github.com
+$B cookie-import-browser <browser> --domain github.com
 ```
 
-Replace `comet` with the appropriate browser if specified.
+`<browser>` is the one the user chose. `--profile` takes a profile directory
+(`Default`, `Profile 1`), not a display name; omit it only when the user's
+browser has a single relevant profile, otherwise use the picker. `--all` imports
+every non-expired cookie from the browser — run it only when the user asked for
+exactly that.
 
-### 4. Verify
+### 4. Report honestly
 
-After the user confirms they're done:
+Report what the import itself returned: the receipt line (`Imported N cookies
+for <domain> from <browser>`, plus any `failed to decrypt` count) or the picker's
+per-domain counts, and say plainly when an import was partial, zero, or errored.
 
-```bash
-$B cookies
-```
+Never run `$B cookies` or `$B storage` to "show what was imported", and never
+put a cookie value, token, password, or session detail into the transcript or a
+report. Counts and domain names are the whole summary.
 
-Show the user a summary of imported cookies (domain counts).
+Keep three states apart, and name the one you are in:
+
+- **Not checked** — cookies were copied; nobody looked at whether they sign you in.
+- **Not verified** — you checked, and the target did not show a signed-in state.
+- **Verified** — a page on the target showed positive signed-in evidence (an
+  account-only page rendered instead of the sign-in wall).
+
+An import count, a zero-error import, or an HTTP 200 never proves a login.
+Stop at **Not checked** unless the user asked you to check.
 
 ## Notes
 

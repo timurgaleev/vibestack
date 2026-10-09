@@ -203,8 +203,17 @@ curl -sf "{health-check-url}" -o /dev/null -w "%{http_code}" 2>/dev/null || echo
 {deploy-status-command} 2>/dev/null | head -5 || echo "COMMAND_FAILED"
 ```
 
-Report results. If anything failed, note it but don't block — the config is still
-useful even if the health check is temporarily unreachable.
+3. Read back the merge method you wrote:
+```bash
+grep -i '^[[:space:]]*-[[:space:]]*Merge method:' CLAUDE.md | head -1
+```
+It must name exactly one of `squash`, `merge` or `rebase`. /land-and-deploy stops
+with `MERGE_METHOD_UNKNOWN` on anything else, the unfilled `{squash/merge/rebase}`
+placeholder included, so fix the line before finishing.
+
+Report results. If a health check or status command failed, note it but don't
+block — the config is still useful even if the health check is temporarily
+unreachable.
 
 ### Step 6: Summary
 

@@ -36,7 +36,7 @@ import {
   isRootToken, checkConnectRateLimit, type TokenInfo,
 } from './token-registry';
 import { validateTempPath } from './path-security';
-import { resolveConfig, ensureStateDir, readVersionHash, resolveChromiumProfile, cleanSingletonLocks } from './config';
+import { resolveConfig, ensureStateDir, readVersionHash, resolveChromiumProfile, cleanSingletonLocks, isPairAgentEnabled, PAIR_AGENT_OFF_HINT } from './config';
 import { emitActivity, subscribe, getActivityAfter, getActivityHistory, getSubscriberCount } from './activity';
 import { createSseEndpoint } from './sse-helpers';
 import { initAuditLog, writeAuditEntry } from './audit';
@@ -719,8 +719,11 @@ if (BROWSE_PARENT_PID > 0 && !IS_HEADED_WATCHDOG) {
 }
 
 // ─── Command Sets (from commands.ts — single source of truth) ───
-import { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS } from './commands';
+import { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS, META_COMMANDS_WITHOUT_PAGE } from './commands';
 export { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS };
+
+/** Meta commands that capture the active page's content. */
+export const PAGE_CAPTURE_COMMANDS = new Set(['snapshot', 'screenshot', 'pdf', 'responsive']);
 
 /**
  * Whether an invocation should be treated as a WRITE for capability gating
@@ -1124,18 +1127,18 @@ async function handleCommandInternalImpl(
           }
           if (command === 'text') {
             const target = session.getActiveFrameOrPage();
-            result = await getCleanTextWithStripping(target);
+            result = await browserManager.failIfNavigationBlocked(page, getCleanTextWithStripping(target));
           } else {
-            result = await handleReadCommand(command, args, session, browserManager);
+            result = await browserManager.failIfNavigationBlocked(page, handleReadCommand(command, args, session, browserManager));
           }
         } finally {
           await cleanupHiddenMarkers(page);
         }
       } else {
-        result = await handleReadCommand(command, args, session, browserManager);
+        result = await browserManager.failIfNavigationBlocked(session.getPage(), handleReadCommand(command, args, session, browserManager));
       }
     } else if (WRITE_COMMANDS.has(command)) {
-      result = await handleWriteCommand(command, args, session, browserManager);
+      result = await browserManager.failIfNavigationBlocked(session.getPage(), handleWriteCommand(command, args, session, browserManager));
     } else if (META_COMMANDS.has(command)) {
       // Pass chain depth + executeCommand callback so chain routes subcommands
       // through the full security pipeline (scope, domain, tab, wrapping).
@@ -1143,7 +1146,7 @@ async function handleCommandInternalImpl(
       // shutdown is factory-scoped (deleted from module scope in v1.35.0.0);
       // route the call through activeShutdown which buildFetchHandler assigns.
       const shutdownFn = () => activeShutdown ? activeShutdown() : Promise.resolve();
-      result = await handleMetaCommand(command, args, browserManager, shutdownFn, tokenInfo, {
+      const runMeta = () => handleMetaCommand(command, args, browserManager, shutdownFn, tokenInfo, {
         chainDepth,
         daemonPort: LOCAL_LISTEN_PORT,
         executeCommand: (body, ti) => handleCommandInternal(body, ti, {
@@ -1152,6 +1155,20 @@ async function handleCommandInternalImpl(
           chainDepth: chainDepth + 1,  // recursion guard
         }),
       });
+      if (PAGE_CAPTURE_COMMANDS.has(command)) {
+        // A navigation the page started on its own is only blanked after its
+        // guard check settles; capturing before then could record the blocked
+        // response.
+        const page = session.getPage();
+        await browserManager.settleNavigationGuard(page);
+        result = await browserManager.failIfNavigationBlocked(page, runMeta());
+      } else if (!META_COMMANDS_WITHOUT_PAGE.has(command)) {
+        // diff, cdp, ux-audit, tab-each, newtab, state, ... read or navigate a
+        // tab, so a navigation blocked while they ran is reported, never read.
+        result = await browserManager.failIfNavigationBlocked(session.getPage(), runMeta());
+      } else {
+        result = await runMeta();
+      }
       // Start periodic snapshot interval when watch mode begins
       if (command === 'watch' && args[0] !== 'stop' && browserManager.isWatching()) {
         const watchInterval = setInterval(async () => {
@@ -1418,8 +1435,12 @@ function emergencyCleanup() {
   } catch { /* state file unparseable — fall through to lock + state cleanup */ }
 
   // Clean Chromium profile locks via the shared helper (defensive guard
-  // refuses to operate on unrecognized profile dirs).
-  cleanSingletonLocks(resolveChromiumProfile());
+  // refuses to operate on unrecognized profile dirs). Only a headed daemon
+  // owns the shared profile; a headless one deleting its locks would break
+  // the user's open headed browser.
+  if (activeBrowserManager?.getConnectionMode() === 'headed' || process.env.BROWSE_HEADED === '1') {
+    cleanSingletonLocks(resolveChromiumProfile());
+  }
   safeUnlinkQuiet(config.stateFile);
 }
 // Same import.meta.main gate as SIGINT/SIGTERM — embedders register their
@@ -1612,7 +1633,9 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
 
     await cfgBrowserManager.close();
 
-    cleanSingletonLocks(resolveChromiumProfile());
+    if (cfgBrowserManager.getConnectionMode() === 'headed') {
+      cleanSingletonLocks(resolveChromiumProfile());
+    }
     safeUnlinkQuiet(config.stateFile);
     process.exit(exitCode);
   }
@@ -2318,6 +2341,13 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
       if (url.pathname === '/tunnel/start' && req.method === 'POST') {
         if (!isRootRequest(req)) {
           return new Response(JSON.stringify({ error: 'Root token required' }), {
+            status: 403, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        // Consent is enforced here, not only in the /pair-agent prose: a
+        // direct API caller gets the same hint instead of a tunnel.
+        if (!isPairAgentEnabled()) {
+          return new Response(JSON.stringify({ error: 'pair-agent is off', hint: PAIR_AGENT_OFF_HINT }), {
             status: 403, headers: { 'Content-Type': 'application/json' },
           });
         }
@@ -3065,7 +3095,9 @@ export async function start() {
   // Start ngrok tunnel if BROWSE_TUNNEL=1 is set.  Uses the dual-listener
   // pattern: bind a dedicated tunnel listener on an ephemeral port and
   // point ngrok.forward() at IT, not the local daemon port.
-  if (process.env.BROWSE_TUNNEL === '1') {
+  if (process.env.BROWSE_TUNNEL === '1' && !isPairAgentEnabled()) {
+    console.error(`[browse] BROWSE_TUNNEL=1 ignored: ${PAIR_AGENT_OFF_HINT}`);
+  } else if (process.env.BROWSE_TUNNEL === '1') {
     const authtoken = resolveNgrokAuthtoken();
     if (!authtoken) {
       console.error('[browse] BROWSE_TUNNEL=1 but no NGROK_AUTHTOKEN found. Set it via env var or ~/.vibestack/ngrok.env');

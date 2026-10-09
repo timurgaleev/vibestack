@@ -37,10 +37,31 @@ VIBE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 DEP_DIR="$VIBE_HOME/browse"
 
 # Tunnel / pairing (no node, no browser): expose a local port for a remote agent
-# via ngrok — detect-and-use, the same mechanism the reference pairs through.
+# via ngrok, detected and used when installed.
+#
+# A tunnel exposes the local browser beyond this machine, so it stays off until
+# the user consented with `vibe-config set pair_agent on` (/pair-agent asks once).
+# VIBESTACK_PAIR_AGENT=on|off overrides the file. Fails closed: a missing or
+# unreadable config, or no python3 to read it, is off — same as the daemon.
+pair_agent_enabled() {
+  case "${VIBESTACK_PAIR_AGENT:-}" in on) return 0 ;; off) return 1 ;; esac
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I - "$VIBE_HOME/config.json" <<'PY' >/dev/null 2>&1
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get("pair_agent")
+except Exception:
+    sys.exit(1)
+sys.exit(0 if v in ("on", True) else 1)
+PY
+}
 case "${1:-}" in
   tunnel)
     port="${2:-3000}"
+    if ! pair_agent_enabled; then
+      echo "TUNNEL_REFUSED: pair-agent is off (a tunnel exposes this browser beyond the machine). Enable once with: vibe-config set pair_agent on — or run /pair-agent, which asks for consent and sets it."
+      exit 1
+    fi
     command -v ngrok >/dev/null 2>&1 || { echo "TUNNEL_NOT_AVAILABLE: ngrok not installed (e.g. brew install ngrok)"; exit 0; }
     mkdir -p "$DEP_DIR"
     nohup ngrok http "$port" --log stdout >"$DEP_DIR/ngrok.log" 2>&1 &

@@ -48,6 +48,15 @@ export const META_COMMANDS = new Set([
   'memory',
 ]);
 
+/**
+ * Meta commands that replace or stop the browser itself. Every other meta
+ * command can read or navigate a tab, so the server runs it under the
+ * navigation guard (failIfNavigationBlocked).
+ */
+export const META_COMMANDS_WITHOUT_PAGE = new Set([
+  'stop', 'restart', 'connect', 'disconnect', 'handoff',
+]);
+
 export const ALL_COMMANDS = new Set([...READ_COMMANDS, ...WRITE_COMMANDS, ...META_COMMANDS]);
 
 /** Commands that return untrusted third-party page content */

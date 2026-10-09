@@ -19,7 +19,7 @@ import { chromium, type Browser, type BrowserContext, type BrowserContextOptions
 import { writeSecureFile, mkdirSecure } from './file-permissions';
 import { addConsoleEntry, addNetworkEntry, addDialogEntry, networkBuffer, type DialogEntry } from './buffers';
 import { emitActivity } from './activity';
-import { validateNavigationUrl } from './url-validation';
+import { validateNavigationUrl, blockedNavigationReason } from './url-validation';
 import { TabSession, type RefEntry } from './tab-session';
 import { resolveChromiumProfile, cleanSingletonLocks } from './config';
 import { withCdpSession } from './cdp-bridge';
@@ -146,6 +146,13 @@ export interface BrowserState {
   }>;
 }
 
+/** In-flight guard checks for one page; mainFrame holds the subset for top-level navigations. */
+interface NavigationGuard {
+  pending: Set<Promise<void>>;
+  mainFrame: Set<Promise<void>>;
+  blocked: string | null;
+}
+
 export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
@@ -182,6 +189,11 @@ export class BrowserManager {
 
   // ─── Cookie Origin Tracking ────────────────────────────────
   private cookieImportedDomains: Set<string> = new Set();
+
+  // ─── Navigation Guard (redirect hops + page-driven navigations) ─────
+  private navigationGuards = new WeakMap<Page, NavigationGuard>();
+  /** Upper bound on waiting for in-flight navigation guard checks after a command. */
+  navigationGuardTimeoutMs = 15_000;
 
   // ─── Handoff State ─────────────────────────────────────────
   private isHeaded: boolean = false;
@@ -1681,8 +1693,101 @@ export class BrowserManager {
     return null;
   }
 
+  /**
+   * Run a command and surface any navigation the guard blocked while it ran.
+   * Waits for the guard checks already in flight when the command finished, so
+   * no command reads a page that is about to be reset. The block reason
+   * replaces the command's own result or error (often "navigation
+   * interrupted"), so the caller learns why the tab is blank.
+   */
+  async failIfNavigationBlocked<T>(page: Page, work: Promise<T>): Promise<T> {
+    const outcome = await work.then((value) => ({ value }), (error) => ({ error }));
+    const unfinished = await this.awaitGuardChecks(page);
+    const guard = this.navigationGuards.get(page);
+    const blocked = guard?.blocked ?? null;
+    if (guard) guard.blocked = null;
+    if (blocked) {
+      // The block may predate this command (a timer or meta refresh fired
+      // while the agent was idle), so name its source instead of letting it
+      // read as this command's own failure.
+      throw new Error(`${blocked} (a navigation the page started, possibly before this command; the tab was reset to about:blank)`);
+    }
+    if (unfinished) throw new Error(unfinished);
+    if ('error' in outcome) throw (outcome as { error: unknown }).error;
+    return (outcome as { value: T }).value;
+  }
+
+  /**
+   * Wait for the guard checks in flight on the page. A command that reads or
+   * captures the page calls this before it starts, so it never reads a
+   * blocked response during the window before the guard blanks the tab.
+   */
+  async settleNavigationGuard(page: Page): Promise<void> {
+    const unfinished = await this.awaitGuardChecks(page);
+    if (unfinished) throw new Error(unfinished);
+  }
+
+  /**
+   * Wait, at most navigationGuardTimeoutMs, for the checks pending right now;
+   * checks a page starts later (a frame that keeps reloading) are not waited
+   * for. A frame's check that is still running is let go. A main-frame check
+   * that is still running fails closed: the returned reason refuses the page.
+   */
+  private async awaitGuardChecks(page: Page): Promise<string | null> {
+    const guard = this.navigationGuards.get(page);
+    const started = guard ? [...guard.pending] : [];
+    if (started.length === 0) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finished = await Promise.race([
+      Promise.all(started).then(() => true),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), this.navigationGuardTimeoutMs); }),
+    ]);
+    clearTimeout(timer);
+    if (finished) return null;
+    const mainFrameUnchecked = started.some((check) => guard!.pending.has(check) && guard!.mainFrame.has(check));
+    return mainFrameUnchecked
+      ? `Blocked: the address check for this tab's navigation did not finish within ${this.navigationGuardTimeoutMs} ms, so the page is not read`
+      : null;
+  }
+
+  /**
+   * validateNavigationUrl only sees explicit navigations. Redirect hops and
+   * page-driven navigations (links, scripts, forms, frames) arrive here as
+   * navigation requests; one that targets a blocked address blanks the tab and
+   * is reported by failIfNavigationBlocked. A route handler cannot do this
+   * job: Playwright calls it only for the first URL of a redirect chain.
+   */
+  private guardNavigations(page: Page): void {
+    if (this.navigationGuards.has(page)) return;
+    const guard: NavigationGuard = { pending: new Set(), mainFrame: new Set(), blocked: null };
+    this.navigationGuards.set(page, guard);
+    page.on('request', (req) => {
+      if (!req.isNavigationRequest()) return;
+      const check: Promise<void> = blockedNavigationReason(req.url()).then(async (reason) => {
+        if (!reason || page.isClosed()) return;
+        guard.blocked = reason;
+        console.warn(`[browse] ${reason} (navigation from ${req.frame().url() || 'a new page'}; tab reset to about:blank)`);
+        // A target that fails fast commits its error page around the reset, so
+        // let it settle (bounded; a hanging target is cut off by the reset),
+        // then blank the tab until it stays blank.
+        await Promise.race([req.response().catch(() => null), new Promise((resolve) => setTimeout(resolve, 1_000))]);
+        for (let attempt = 0; attempt < 3 && !page.isClosed(); attempt++) {
+          await page.goto('about:blank', { waitUntil: 'load', timeout: 5_000 }).catch(() => {});
+          const late = await page.waitForEvent('framenavigated', { predicate: (frame) => frame === page.mainFrame(), timeout: 250 })
+            .then(() => true, () => false);
+          if (!late && page.url() === 'about:blank') break;
+        }
+      }).finally(() => { guard.pending.delete(check); guard.mainFrame.delete(check); });
+      guard.pending.add(check);
+      let mainFrame = true;
+      try { mainFrame = req.frame() === page.mainFrame(); } catch {}
+      if (mainFrame) guard.mainFrame.add(check);
+    });
+  }
+
   // ─── Console/Network/Dialog/Ref Wiring ────────────────────
   private wirePageEvents(page: Page) {
+    this.guardNavigations(page);
     // Track tab close — remove from pages and sessions maps, switch to another tab
     page.on('close', () => {
       for (const [id, p] of this.pages) {

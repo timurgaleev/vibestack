@@ -12,16 +12,18 @@
  * Security invariants:
  *   1. All paths resolved to absolute before checking
  *   2. Symlinks resolved to catch traversal via symlink inside safe dir
- *   3. SAFE_DIRECTORIES = [TEMP_DIR, cwd] for local commands
+ *   3. SAFE_DIRECTORIES = [...TEMP_DIRS, cwd] for local commands (TEMP_DIRS =
+ *      TEMP_DIR plus os.tmpdir(), which differ on macOS and under
+ *      TMPDIR-honoring CI/sandbox environments)
  *   4. TEMP_ONLY = [TEMP_DIR] for remote file serving (prevents project file exfil)
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { TEMP_DIR, isPathWithin } from './platform';
+import { TEMP_DIR, TEMP_DIRS, isPathWithin } from './platform';
 
 // Resolve safe directories through realpathSync to handle symlinks (e.g., macOS /tmp → /private/tmp)
-export const SAFE_DIRECTORIES = [TEMP_DIR, process.cwd()].map(d => {
+export const SAFE_DIRECTORIES = [...TEMP_DIRS, process.cwd()].map(d => {
   try { return fs.realpathSync(d); } catch { return d; }
 });
 
@@ -29,48 +31,41 @@ const TEMP_ONLY = [TEMP_DIR].map(d => {
   try { return fs.realpathSync(d); } catch { return d; }
 });
 
-/** Validate a file path for writing (screenshot, pdf, download, scrape, archive). */
+/**
+ * Validate a file path for writing (screenshot, pdf, download, scrape, archive).
+ *
+ * Walks the path one component at a time the way the kernel will, resolving
+ * every existing component (symlinks included) before applying the next, so
+ * `link/../x` follows `link` first. A component that does not exist yet must
+ * already sit inside a safe directory; a dangling symlink is rejected because
+ * a write would create its target. Both the caller's spelling and its lexical
+ * normalization are checked, since callers write with either.
+ */
 export function validateOutputPath(filePath: string): void {
-  const resolved = path.resolve(filePath);
-
-  // If the target already exists and is a symlink, resolve through it.
-  // Without this, a symlink at /tmp/evil.png → /etc/crontab passes the
-  // parent-directory check (parent is /tmp, which is safe) but the actual
-  // write follows the symlink to /etc/crontab.
-  try {
-    const stat = fs.lstatSync(resolved);
-    if (stat.isSymbolicLink()) {
-      const realTarget = fs.realpathSync(resolved);
-      const isSafe = SAFE_DIRECTORIES.some(dir => isPathWithin(realTarget, dir));
-      if (!isSafe) {
-        throw new Error(`Path must be within: ${SAFE_DIRECTORIES.join(', ')}`);
+  const reject = () => { throw new Error(`Path must be within: ${SAFE_DIRECTORIES.join(', ')}`); };
+  for (const spelling of new Set([filePath, path.resolve(filePath)])) {
+    const root = path.parse(spelling).root;
+    let resolved = path.resolve(root || '.');
+    for (const component of spelling.slice(root.length).split(process.platform === 'win32' ? /[\\/]+/ : /\/+/)) {
+      if (!component || component === '.') continue;
+      if (component === '..') {
+        resolved = path.dirname(resolved);
+        continue;
       }
-      return; // symlink target verified, no need to check parent
+      resolved = path.join(resolved, component);
+      try {
+        fs.lstatSync(resolved);
+      } catch (err: any) {
+        if (err?.code === 'ENOENT' && SAFE_DIRECTORIES.some(dir => isPathWithin(resolved, dir))) continue;
+        reject();
+      }
+      try {
+        resolved = fs.realpathSync.native(resolved);
+      } catch {
+        reject();
+      }
     }
-  } catch (e: any) {
-    // ENOENT = file doesn't exist yet, fall through to parent-dir check
-    if (e.code !== 'ENOENT') throw e;
-  }
-
-  // For new files (no existing symlink), verify the parent directory.
-  // The file itself may not exist yet (e.g., screenshot output).
-  // This also handles macOS /tmp → /private/tmp transparently.
-  let dir = path.dirname(resolved);
-  let realDir: string;
-  try {
-    realDir = fs.realpathSync(dir);
-  } catch {
-    try {
-      realDir = fs.realpathSync(path.dirname(dir));
-    } catch {
-      throw new Error(`Path must be within: ${SAFE_DIRECTORIES.join(', ')}`);
-    }
-  }
-
-  const realResolved = path.join(realDir, path.basename(resolved));
-  const isSafe = SAFE_DIRECTORIES.some(dir => isPathWithin(realResolved, dir));
-  if (!isSafe) {
-    throw new Error(`Path must be within: ${SAFE_DIRECTORIES.join(', ')}`);
+    if (!SAFE_DIRECTORIES.some(dir => isPathWithin(resolved, dir))) reject();
   }
 }
 

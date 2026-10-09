@@ -7,8 +7,10 @@
  * No cookie values exposed anywhere.
  */
 
-export function getCookiePickerHTML(serverPort: number): string {
+export function getCookiePickerHTML(serverPort: number, pickerInstance: string = ''): string {
   const baseUrl = `http://127.0.0.1:${serverPort}`;
+  // Escape anything that could close the script element; the value is a UUID today.
+  const instanceLiteral = JSON.stringify(pickerInstance).replace(/[<>&\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -341,6 +343,7 @@ export function getCookiePickerHTML(serverPort: number): string {
 <script>
 (function() {
   const BASE = '${baseUrl}';
+  const PICKER_INSTANCE = ${instanceLiteral};
   let activeBrowser = null;
   let activeProfile = 'Default';
   let allProfiles = [];
@@ -383,7 +386,9 @@ export function getCookiePickerHTML(serverPort: number): string {
 
   // ─── API ────────────────────────────────
   async function api(path, opts) {
-    const res = await fetch(BASE + '/cookie-picker' + path, { ...opts, credentials: 'same-origin' });
+    const headers = new Headers(opts && opts.headers);
+    headers.set('X-Vibestack-Picker-Instance', PICKER_INSTANCE);
+    const res = await fetch(BASE + '/cookie-picker' + path, { ...opts, headers, credentials: 'same-origin' });
     const data = await res.json();
     if (!res.ok) {
       const err = new Error(data.error || 'Request failed');

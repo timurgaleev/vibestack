@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.48.0 — 2026-10-09
+
+### Fixed
+
+- **`/land-and-deploy` merges only what it verified.** The target PR, head and
+  base are resolved once and bound to the merge with `--match-head-commit`.
+  Every check run and check suite on that head gates the merge, required or
+  not; no checks, all-skipped checks and an API error never count as a pass.
+  Blockers stop before the approval question, the merge method comes from your
+  config or the repo settings instead of a guess, and an untracked file counts
+  as a dirty checkout. A moved head or base cancels an armed auto-merge or
+  merge-queue entry and confirms it is gone.
+- **Rollback reverts the whole PR or says it did not.** The revert matches the
+  merge shape, and a single-commit revert requires proof that the commit is the
+  whole PR; anything unproven is reported as `ROLLBACK PENDING`. The final
+  verdict reports deploy status and canary health separately.
+- **The version drift check works under zsh.** Its `--exclude-pr` flag was
+  passed as one argument there, so the check silently reported itself offline.
+- **The browse daemon cannot be used to read a blocked address.** Every
+  page-touching command runs inside the navigation guard, so a redirect to a
+  cloud metadata endpoint cannot come back through `diff` or similar commands.
+  Host checks include `/etc/hosts` and DNS search domains, frame checks are
+  time-bounded, and a headed connect never kills another project's live
+  browser.
+- **Browser skills ask first.** Cookie import, tunnels and pairing require
+  consent, and `/health` keeps a failing tool's exit code in the score.
+
 ## 1.47.0 — 2026-10-09
 
 ### Security

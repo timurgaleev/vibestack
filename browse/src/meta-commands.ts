@@ -717,12 +717,15 @@ export async function handleMetaCommand(
       if (!url1 || !url2) throw new Error('Usage: browse diff <url1> <url2>');
 
       const page = bm.getPage();
+      // A redirect or script can carry either load to a blocked address, and
+      // the guard blanks the tab only after its check settles: wait for it and
+      // fail on a block before reading any text.
       const normalizedUrl1 = await validateNavigationUrl(url1);
-      await page.goto(normalizedUrl1, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await bm.failIfNavigationBlocked(page, page.goto(normalizedUrl1, { waitUntil: 'domcontentloaded', timeout: 15000 }));
       const text1 = await getCleanText(page);
 
       const normalizedUrl2 = await validateNavigationUrl(url2);
-      await page.goto(normalizedUrl2, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await bm.failIfNavigationBlocked(page, page.goto(normalizedUrl2, { waitUntil: 'domcontentloaded', timeout: 15000 }));
       const text2 = await getCleanText(page);
 
       const changes = Diff.diffLines(text1, text2);

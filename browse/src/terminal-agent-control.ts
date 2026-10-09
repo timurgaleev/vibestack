@@ -40,6 +40,13 @@ export function resolveTerminalAgentScript(searchHints: { metaDir?: string; exec
 }
 
 /**
+ * Flags for every `bun` child the daemon spawns. Children run with the user's
+ * project as cwd, and Bun would otherwise load that project's .env (which can
+ * set VIBESTACK_CHROMIUM_NO_SANDBOX) and bunfig.toml (whose preload runs code).
+ */
+export const BUN_CHILD_FLAGS = ['--no-env-file', `--config=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`];
+
+/**
  * Spawn a fresh terminal-agent as a detached child. Handles the standard
  * three steps: kill any prior agent recorded at `<stateDir>/terminal-agent-pid`,
  * clear the stale record, then `Bun.spawn(['bun', 'run', script], ...)` with
@@ -68,7 +75,7 @@ export function spawnTerminalAgent(opts: {
   }
   const script = opts.scriptPath || resolveTerminalAgentScript();
   if (!script || !fs.existsSync(script)) return null;
-  const proc = (Bun as any).spawn(['bun', 'run', script], {
+  const proc = (Bun as any).spawn(['bun', 'run', ...BUN_CHILD_FLAGS, script], {
     cwd: opts.cwd || process.cwd(),
     env: {
       ...process.env,
