@@ -57,18 +57,23 @@ Same detection as other vibestack skills.
 BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || \
               gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null || \
               echo main)
-echo "Base branch: $BASE_BRANCH"
+echo "BASE_BRANCH: $BASE_BRANCH"
 ```
+
+Each block runs in a fresh shell. Later blocks start with `BASE_BRANCH='<BASE_BRANCH>'`
+and `BASE_VERSION='<BASE_VERSION>'`: replace each placeholder with the value printed
+under that label.
 
 ---
 
 ## Step 2: Read current state
 
 ```bash
+BASE_BRANCH='<BASE_BRANCH>'
 CURRENT_VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo "0.0.0.0")
 git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
 BASE_VERSION=$(git show "origin/$BASE_BRANCH:VERSION" 2>/dev/null | tr -d '[:space:]' || echo "$CURRENT_VERSION")
-echo "origin/$BASE_BRANCH VERSION: $BASE_VERSION"
+echo "BASE_VERSION: $BASE_VERSION"
 echo "branch HEAD VERSION: $CURRENT_VERSION"
 ```
 
@@ -81,6 +86,8 @@ patch/minor/major. Versions are `MAJOR.MINOR.PATCH`; there is no separate micro
 level (the util treats `micro` as `patch`).
 
 ```bash
+BASE_BRANCH='<BASE_BRANCH>'
+BASE_VERSION='<BASE_VERSION>'
 for LEVEL in patch minor major; do
   ~/.vibestack/bin/vibe-next-version \
     --base "$BASE_BRANCH" \

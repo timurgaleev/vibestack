@@ -188,7 +188,9 @@ run_block() { # NEEDLE PROMPT_TEXT -> stdout+stderr of the block
   printf '%s' "$2" > "$REPO/.vibestack/tmp/$name"
   block=${block//<prompt-file-name>/$name}
   block=${block//<new|resume>/new}
-  (cd "$REPO" && PATH="$TMP/bin:$PATH" BASE=main TMP_ROOT="$TMP" STUB_ARGV="$TMP/argv" bash -c "$block" 2>&1) || true
+  block=${block//<BASE>/main}
+  block=${block//<TMPERR>/$(mktemp "$TMP/codex-err-XXXXXX")}
+  (cd "$REPO" && env -u BASE -u TMPERR -u TMP_ROOT PATH="$TMP/bin:$PATH" STUB_ARGV="$TMP/argv" bash -c "$block" 2>&1) || true
 }
 
 echo "end to end"

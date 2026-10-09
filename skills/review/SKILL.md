@@ -895,6 +895,7 @@ If `CODEX_MODE` is `ready`:
 
 ```bash
 TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
+echo "TMPERR_ADV: $TMPERR_ADV"
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 _TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)
 # An array, not ${_TIMEOUT:+$_TIMEOUT 540}: zsh does not word-split that expansion, so the
@@ -906,8 +907,9 @@ _TO=(); [ -n "$_TIMEOUT" ] && _TO=("$_TIMEOUT" 540)
 Set the Bash tool's `timeout` parameter to `600000` (10 minutes). It sits deliberately
 ABOVE the 540-second wrapper so the wrapper fires first: a stall then surfaces as a
 diagnosable exit 124 with whatever Codex had already written, instead of a harness kill
-that returns nothing at all. After the command completes, read stderr:
+that returns nothing at all. After the command completes, read stderr, replacing `<TMPERR_ADV>` with the path printed above:
 ```bash
+TMPERR_ADV='<TMPERR_ADV>'
 cat "$TMPERR_ADV"
 ```
 
@@ -919,7 +921,7 @@ are not merely printed: queue each one for Step 5 Fix-First alongside the Claude
 - **Timeout (exit 124):** "Codex adversarial timed out after 9 minutes — this pass produced NO coverage." Say the second half. A timeout reported as a bare "timed out" reads like a clean pass to anyone skimming, and the diff then lands as cross-model reviewed when one of the two models never finished.
 - **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
 
-**Cleanup:** Run `rm -f "$TMPERR_ADV"` after processing.
+**Cleanup:** Run `rm -f '<TMPERR_ADV>'` with the printed path after processing.
 
 If `CODEX_MODE` is `not_installed`: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
 
