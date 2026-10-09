@@ -130,7 +130,7 @@ readiness first.
 - **Pre-merge readiness gate (Step 3.5)** — reviews, tests, docs check before merge
 - GitHub CLI not authenticated
 - No PR found for this branch
-- The local checkout is not the PR's head commit, or has uncommitted changes
+- The local checkout is not the PR's head commit, or has uncommitted changes or untracked files
 - CI that is red, still pending, or never ran on the PR's head commit
 - Merge conflicts
 - A configured or detected merge method that is unknown or not allowed by the repo
@@ -179,7 +179,8 @@ If not authenticated, **STOP**: "I need GitHub CLI access to merge your PR. Run 
    URL in Step 7.
 
 3. Resolve the target once — repository, PR number, head commit, base — and check that
-   the local checkout is exactly that head, with no uncommitted changes, before any
+   the local checkout is exactly that head, with no uncommitted changes or untracked
+   (non-ignored) files, before any
    evidence (tests, diff, version) is gathered from it:
 ```bash
 PR_NUMBER=""   # digits of a #NNN argument; empty = the PR for the current branch
@@ -200,8 +201,10 @@ case "$BASE_BRANCH" in *[!A-Za-z0-9._/-]*) echo "TARGET_UNKNOWN: unusual base br
 echo "PR_STATE=$PR_STATE"
 [ "$PR_STATE" = OPEN ] || exit 0
 LOCAL_HEAD=$(git rev-parse HEAD) || exit 1
-# Untracked files are not part of what merges; tracked edits are, and the tests below run on them.
-LOCAL_DIRTY=$(git status --porcelain --untracked-files=no) || exit 1
+# Tracked edits and untracked (non-ignored) files both count: neither merges, and the
+# readiness tests below run on this checkout, so either can make them pass for code
+# that is not the PR head.
+LOCAL_DIRTY=$(git status --porcelain) || exit 1
 if [ "$LOCAL_HEAD" != "$PR_HEAD" ] || [ -n "$LOCAL_DIRTY" ]; then
   echo "LOCAL_TARGET_MISMATCH: local HEAD $LOCAL_HEAD, PR head $PR_HEAD"
   [ -n "$LOCAL_DIRTY" ] && printf 'uncommitted:\n%s\n' "$LOCAL_DIRTY"
@@ -230,7 +233,7 @@ echo "SCOPE KNOWN=$SCOPE_KNOWN DOCS_ONLY=$DOCS_ONLY FRONTEND=${SCOPE_FRONTEND:-f
    - `TARGET_UNKNOWN`: **STOP** with the line it printed. A failed query is unknown, not an empty PR.
    - `PR_STATE=MERGED`: "This PR is already merged — nothing to merge or deploy." Run §4a-release (tag and release) for it first, so a PR merged outside this skill still gets its tag and release, then stop: "If you need to verify the deploy, run `/canary <url>` instead."
    - `PR_STATE=CLOSED`: "This PR was closed without merging. Reopen it on GitHub first, then try again."
-   - `LOCAL_TARGET_MISMATCH`: **STOP.** "Your checkout isn't PR #NNN's head commit (or has uncommitted changes), and I run the readiness checks on this checkout. Commit or stash your work, check out the PR branch at its latest commit (`gh pr checkout NNN`), and run `/land-and-deploy` again." Do not switch, reset or stash for them.
+   - `LOCAL_TARGET_MISMATCH`: **STOP.** "Your checkout isn't PR #NNN's head commit (or has uncommitted changes or untracked files), and I run the readiness checks on this checkout. Commit, stash or remove them, check out the PR branch at its latest commit (`gh pr checkout NNN`), and run `/land-and-deploy` again." Do not switch, reset or stash for them.
    - `PR_STATE=OPEN` with a `TARGET` line: continue. Keep the `TARGET` and `SCOPE` lines —
      later steps use them. `KNOWN=false` means the scope is unknown, and unknown is never
      docs-only.
@@ -467,9 +470,12 @@ Continue to Step 2.
 Tell the user: "Checking CI status and merge readiness..."
 
 The CI gate reads **every** check run and commit status on `PR_HEAD` itself — required
-or not. A repo with no branch protection declares no required checks, and "nothing is
-required" is not "CI passed". It prints `VERDICT <verdict> <sha>` on its first line, then
-one `CHECK <pass|fail|pending> <name>` line per check:
+or not — and every check suite on it, because a suite that is still queued or running
+may not have created all its check runs yet, so a green list read at that moment is a
+partial snapshot. A repo with no branch protection declares no required checks, and
+"nothing is required" is not "CI passed". It prints `VERDICT <verdict> <sha>` on its
+first line, then one `CHECK <pass|fail|pending|skip> <name>` line per check (an
+unfinished suite shows as `CHECK pending suite:<app>`):
 
 ```bash
 REPO="<REPO>"; PR_NUMBER="<PR_NUMBER>"; PR_HEAD="<PR_HEAD>"   # from Step 1's TARGET line
@@ -485,12 +491,18 @@ ci_gate() {
   _stats=$(gh api --paginate "repos/$REPO/commits/$PR_HEAD/status?per_page=100" \
             --jq '.statuses[] | [.state, .context] | @tsv' 2>"$_err") \
     || { echo "VERDICT ERROR $PR_HEAD"; head -3 "$_err"; rm -f "$_err"; return 0; }
+  # A suite still queued or running may not have created all its check runs yet.
+  _suites=$(gh api --paginate "repos/$REPO/commits/$PR_HEAD/check-suites?per_page=100" \
+            --jq '.check_suites[] | [.status, (.app.slug // "unknown-app")] | @tsv' 2>"$_err") \
+    || { echo "VERDICT ERROR $PR_HEAD"; head -3 "$_err"; rm -f "$_err"; return 0; }
   rm -f "$_err"
-  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($1 != "completed") ? "pending" : (($2 ~ /^(success|neutral|skipped)$/) ? "pass" : "fail"); print b " " $3 }'
-             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($1 == "success") ? "pass" : (($1 == "pending") ? "pending" : "fail"); print b " " $2 }'; } )
+  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($1 != "completed") ? "pending" : (($2 == "skipped") ? "skip" : (($2 ~ /^(success|neutral)$/) ? "pass" : "fail")); print b " " $3 }'
+             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($1 == "success") ? "pass" : (($1 == "pending") ? "pending" : "fail"); print b " " $2 }'
+             printf '%s\n' "$_suites" | awk -F'\t' 'NF >= 2 && $1 != "completed" { print "pending suite:" $2 }'; } )
   if [ -z "$_rows" ]; then _v=NO_CHECKS
   elif printf '%s\n' "$_rows" | grep -q '^fail '; then _v=FAIL
   elif printf '%s\n' "$_rows" | grep -q '^pending '; then _v=PENDING
+  elif ! printf '%s\n' "$_rows" | grep -q '^pass '; then _v=ALL_SKIPPED
   else _v=PASS
   fi
   echo "VERDICT $_v $PR_HEAD"
@@ -523,6 +535,8 @@ Act on the `VERDICT` line, never on the exit code:
    Go to Step 3.
 5. `NO_CHECKS`: no CI ran on this commit at all. That is not green. Carry it to the
    readiness gate (Step 3.5e), where merging it needs an explicit approval for this head.
+   `ALL_SKIPPED`: checks exist but every one was skipped, so nothing actually ran. Treat
+   it exactly like `NO_CHECKS` — never as `PASS`.
 6. `PASS`: Tell the user "CI passed on `<sha7>` — {N} checks." Skip Step 3.
 
 Also check for merge conflicts:
@@ -542,7 +556,7 @@ the verdict is no longer `PENDING`, up to **15 minutes** in total. Record the CI
 time for the deploy report, and report progress between calls: "CI still running on
 `<sha7>` ({X}m so far): {pending checks}."
 
-- `PASS` / `NO_CHECKS`: Tell the user "CI finished after {duration}." Continue as Step 2 says.
+- `PASS` / `NO_CHECKS` / `ALL_SKIPPED`: Tell the user "CI finished after {duration}." Continue as Step 2 says.
 - `FAIL`, `ERROR`, `HEAD_CHANGED`: **STOP** as in Step 2.
 - Still `PENDING` at 15 minutes: list the pending checks and use AskUserQuestion:
   A) wait up to 15 more minutes (same bounded loop), B) stop here and rerun
@@ -575,10 +589,13 @@ fi
 # --exclude-pr is not optional here: this PR is itself open and its title
 # carries the version being landed, so counting it as a claim would advance
 # NEXT_SLOT past BRANCH_VERSION and report drift on every single PR.
+# An array, not ${PR_NUMBER:+--exclude-pr "$PR_NUMBER"}: zsh does not word-split
+# that expansion, so the flag and its value would arrive as one argument.
+_X=(); [ -n "$PR_NUMBER" ] && _X=(--exclude-pr "$PR_NUMBER")
 QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
   --base "$BASE_BRANCH" \
   --bump "$_BUMP" \
-  ${PR_NUMBER:+--exclude-pr "$PR_NUMBER"} \
+  "${_X[@]}" \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
 NEXT_SLOT=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
 OFFLINE=$(echo "$QUEUE_JSON" | jq -r '.offline // false')
@@ -801,7 +818,7 @@ Build the full readiness report:
 ║  PR: #NNN — title                                        ║
 ║  Branch: feature → main                                  ║
 ║  Head:   <sha7>                                          ║
-║  CI:     PASS (N checks) / NO CI RAN (needs approval)    ║
+║  CI:     PASS (N checks) / NO CI RAN / ALL SKIPPED       ║
 ║                                                          ║
 ║  REVIEWS                                                 ║
 ║  ├─ Eng Review:    CURRENT / STALE (N commits) / —       ║
@@ -832,7 +849,7 @@ instructions for each one. Do not ask the question below and do not offer A or C
 blocker is a fact about the code, and no answer to a question changes it; the user fixes
 it and reruns `/land-and-deploy`.
 
-**No CI ran on this head (`NO_CHECKS`)** is not a blocker the user can't clear, but it is
+**No CI ran on this head (`NO_CHECKS`, or `ALL_SKIPPED`: every check skipped)** is not a blocker the user can't clear, but it is
 never implied by "merge it": before the question below, ask a separate one-way question
 naming the commit — "No CI ran on `<sha7>`. Merge this exact commit without CI?" —
 A) yes, this commit only, B) stop. A records `NO_CI_APPROVED_HEAD=<PR_HEAD>` for this
@@ -957,6 +974,10 @@ case "$PR_STATE" in
 esac
 echo "MERGE_ACTION $ACTION"
 echo "STATE=$PR_STATE AUTO_MERGE=$AUTO_MERGE QUEUE=$QUEUE MERGE_SHA=${MERGE_SHA:-none}"
+# An armed request outlives this run: it would merge whatever head or base the PR has now.
+case "$ACTION" in HEAD_CHANGED|BASE_CHANGED)
+  { [ "$AUTO_MERGE" = true ] || [ "$QUEUE" != none ]; } && echo "DISARM_REQUIRED: a merge request is still armed for a target this run did not approve" ;;
+esac
 ```
 
 Dispatch on `MERGE_ACTION`:
@@ -967,11 +988,52 @@ Dispatch on `MERGE_ACTION`:
 - `MERGED` — go to §4a-postfail's `MERGED` branch (it applies after any attempt).
 - `HEAD_CHANGED` / `BASE_CHANGED` — the approval is void: **STOP** and rerun
   `/land-and-deploy` so Step 1 and the readiness gate cover the new head or destination.
+  If the readback also printed `DISARM_REQUIRED`, run the disarm block below **before**
+  stopping: an armed auto-merge or a queue entry left behind would land the new,
+  unverified head on its own.
 - `MERGED_CHANGED` — merged on GitHub, but not the head/base that was approved. Report
   the external merge and **STOP**; this run's scope and approval don't describe it.
 - `REMOVED` — after waiting, both the auto-merge request and the queue entry are gone
   and the PR is still open: **STOP** (see §4a).
 - `CLOSED`, `STOP`, `UNKNOWN` — **STOP** with the merge command's error and the readback.
+
+**The disarm block.** Run it whenever this run stops while a merge request it armed
+may still be live — `DISARM_REQUIRED` from the readback, or §4a's queue timeout. It
+cancels the auto-merge request (`gh pr merge --disable-auto`), takes a merge-queue entry
+out of the queue (GraphQL `dequeuePullRequest`), then reads the PR back and only says
+`DISARMED` when neither is left:
+
+```bash
+REPO="<REPO>"; PR_NUMBER="<PR_NUMBER>"   # Step 1
+_q='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){id state autoMergeRequest{enabledAt} mergeQueueEntry{state}}}}'
+_armed() {  # prints "<node id> <auto true|false> <queue state|none> <PR state>", or fails
+  gh api graphql -f query="$_q" -f owner="${REPO%%/*}" -f name="${REPO#*/}" -F number="$PR_NUMBER" 2>/dev/null \
+    | jq -er 'select((.errors // []) | length == 0) | .data.repository.pullRequest
+              | select(type == "object" and has("id") and has("autoMergeRequest") and has("mergeQueueEntry"))
+              | "\(.id) \(.autoMergeRequest != null) \(.mergeQueueEntry.state // "none") \(.state)"'
+}
+_s=$(_armed) || { echo "DISARM_FAILED: cannot read PR #$PR_NUMBER — check by hand that auto-merge is off and it is not queued"; exit 1; }
+read -r _ID _AUTO _QS _ST <<< "$_s"
+if [ "$_AUTO" = true ]; then
+  gh pr merge "$PR_NUMBER" --repo "$REPO" --disable-auto || echo "WARN: --disable-auto exited non-zero"
+fi
+if [ "$_QS" != none ]; then
+  gh api graphql -f query='mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}' -f id="$_ID" >/dev/null \
+    || echo "WARN: dequeuePullRequest failed"
+fi
+_s=$(_armed) || { echo "DISARM_FAILED: cannot read PR #$PR_NUMBER back — check by hand that auto-merge is off and it is not queued"; exit 1; }
+read -r _ID _AUTO _QS _ST <<< "$_s"
+if [ "$_AUTO" = true ] || [ "$_QS" != none ]; then
+  echo "DISARM_FAILED: PR #$PR_NUMBER is still armed (auto-merge=$_AUTO queue=$_QS) — disable auto-merge / remove it from the queue on GitHub NOW"; exit 1
+fi
+echo "DISARMED: PR #$PR_NUMBER has no auto-merge request and no queue entry (state=$_ST)"
+```
+
+`DISARM_FAILED` is the loudest line this skill prints: tell the user at the top of the
+reply, in plain words, that the PR can still merge on its own and that they must cancel
+auto-merge or dequeue it on GitHub now. Never re-arm or merge from here. A `MERGED` state
+in the `DISARMED` line means it landed before the cancel did — report it as an external
+merge and **STOP**.
 
 **The merge block.** It re-checks the local checkout and re-runs the Step 2 CI gate
 immediately before the merge command — `--auto` waits only on *required* checks, so it
@@ -984,7 +1046,7 @@ MERGE_METHOD="<MERGE_METHOD>"   # squash, merge or rebase — from the merge-met
 MERGE_ATTEMPT=auto              # direct only for the one fallback the readback permits
 NO_CI_APPROVED_HEAD=""          # PR_HEAD only if the user approved "no CI ran" for it in Step 3.5e
 case "$MERGE_METHOD" in squash|merge|rebase) ;; *) echo "MERGE_REFUSED: unknown merge method '$MERGE_METHOD'"; exit 1 ;; esac
-if [ "$(git rev-parse HEAD)" != "$PR_HEAD" ] || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+if [ "$(git rev-parse HEAD)" != "$PR_HEAD" ] || [ -n "$(git status --porcelain)" ]; then
   echo "MERGE_REFUSED: LOCAL_TARGET_MISMATCH — the checkout changed since the readiness gate"; exit 1
 fi
 ci_gate() {
@@ -998,12 +1060,18 @@ ci_gate() {
   _stats=$(gh api --paginate "repos/$REPO/commits/$PR_HEAD/status?per_page=100" \
             --jq '.statuses[] | [.state, .context] | @tsv' 2>"$_err") \
     || { echo "VERDICT ERROR $PR_HEAD"; head -3 "$_err"; rm -f "$_err"; return 0; }
+  # A suite still queued or running may not have created all its check runs yet.
+  _suites=$(gh api --paginate "repos/$REPO/commits/$PR_HEAD/check-suites?per_page=100" \
+            --jq '.check_suites[] | [.status, (.app.slug // "unknown-app")] | @tsv' 2>"$_err") \
+    || { echo "VERDICT ERROR $PR_HEAD"; head -3 "$_err"; rm -f "$_err"; return 0; }
   rm -f "$_err"
-  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($1 != "completed") ? "pending" : (($2 ~ /^(success|neutral|skipped)$/) ? "pass" : "fail"); print b " " $3 }'
-             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($1 == "success") ? "pass" : (($1 == "pending") ? "pending" : "fail"); print b " " $2 }'; } )
+  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($1 != "completed") ? "pending" : (($2 == "skipped") ? "skip" : (($2 ~ /^(success|neutral)$/) ? "pass" : "fail")); print b " " $3 }'
+             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($1 == "success") ? "pass" : (($1 == "pending") ? "pending" : "fail"); print b " " $2 }'
+             printf '%s\n' "$_suites" | awk -F'\t' 'NF >= 2 && $1 != "completed" { print "pending suite:" $2 }'; } )
   if [ -z "$_rows" ]; then _v=NO_CHECKS
   elif printf '%s\n' "$_rows" | grep -q '^fail '; then _v=FAIL
   elif printf '%s\n' "$_rows" | grep -q '^pending '; then _v=PENDING
+  elif ! printf '%s\n' "$_rows" | grep -q '^pass '; then _v=ALL_SKIPPED
   else _v=PASS
   fi
   echo "VERDICT $_v $PR_HEAD"
@@ -1013,7 +1081,7 @@ _out=$(ci_gate)
 printf '%s\n' "$_out"
 case "$_out" in
   "VERDICT PASS $PR_HEAD"*) ;;
-  "VERDICT NO_CHECKS $PR_HEAD"*)
+  "VERDICT NO_CHECKS $PR_HEAD"*|"VERDICT ALL_SKIPPED $PR_HEAD"*)
     [ "$NO_CI_APPROVED_HEAD" = "$PR_HEAD" ] || { echo "MERGE_REFUSED: no CI ran on $PR_HEAD and merging it without CI was not approved"; exit 1; } ;;
   *) echo "MERGE_REFUSED: CI is not green on $PR_HEAD"; exit 1 ;;
 esac
@@ -1120,7 +1188,8 @@ open state is expected — go to §4a.
 **If the readback says `CLOSED`:** PR was closed without merging. **STOP.**
 
 **Hard rule: never call `gh pr merge` again after `MERGED`, `WAIT` or a direct attempt**,
-and never for an unknown state. Server state is authoritative. No `--admin` bypass.
+and never for an unknown state. Server state is authoritative. No `--admin` bypass. (The
+disarm block's `gh pr merge --disable-auto` cancels a request; it never merges.)
 
 ### 4a: Merge queue detection and messaging
 
@@ -1147,7 +1216,10 @@ Poll every 30 seconds, up to 30 minutes. Show a progress message every 2 minutes
   Never re-arm or merge it from here.
 - `HEAD_CHANGED`, `BASE_CHANGED`, `CLOSED`, `UNKNOWN`: **STOP** as dispatched above.
 
-If timeout (30 min): **STOP.** "The merge queue has been processing for 30 minutes. Something might be stuck — check the GitHub Actions tab and the merge queue page." Say that the request is still active and may merge later; do not cancel it.
+If timeout (30 min): run the disarm block, then **STOP.** "The merge queue has been processing for 30 minutes. Something might be stuck — check the GitHub Actions tab and the merge queue page. I took the PR out of the queue and turned auto-merge off, so nothing lands without a fresh `/land-and-deploy`." If the disarm block printed `DISARM_FAILED`, say instead — first and loudly — that the request is **still armed** and can merge later on its own.
+
+`HEAD_CHANGED` or `BASE_CHANGED` while waiting: run the disarm block (the readback prints
+`DISARM_REQUIRED`), then **STOP** as dispatched above.
 
 ### 4a-release: Tag and release the merged version
 
@@ -1475,12 +1547,16 @@ Tell the user: "Reverting the merge now. This adds commits that undo this PR's c
 The revert needs a clean checkout and an up-to-date base, and it must match the shape
 of the commit that actually landed: a merge commit needs `-m 1`, a squash is one commit,
 and a rebase merge landed one commit per PR commit — reverting only the last one would
-leave the rest live.
+leave the rest live. The shape is proven, not assumed: a single commit is reverted only
+when the PR had one commit or the landed patch equals the PR's whole diff (`git
+patch-id`), and under `MERGE_PATH=queue` (or `external`) the queue's own method decided
+the shape, so `MERGE_METHOD` counts as unknown. Anything unproven is `ROLLBACK_PENDING`.
 
 ```bash
 REPO="<REPO>"; PR_NUMBER="<PR_NUMBER>"; BASE_BRANCH="<BASE_BRANCH>"   # from Step 1
 MERGE_SHA="<MERGE_SHA>"       # from the readback
 MERGE_METHOD="<MERGE_METHOD>" # squash / merge / rebase as Step 4 merged it; unknown if this run didn't merge it
+MERGE_PATH="<MERGE_PATH>"     # direct / auto / queue / external, as recorded in Step 4
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "ROLLBACK_PENDING: this checkout has uncommitted changes — commit or stash them, then revert"; exit 1
 fi
@@ -1489,13 +1565,27 @@ git switch "$BASE_BRANCH" 2>/dev/null || git switch -c "$BASE_BRANCH" FETCH_HEAD
   || { echo "ROLLBACK_PENDING: cannot check out $BASE_BRANCH"; exit 1; }
 git merge --ff-only FETCH_HEAD || { echo "ROLLBACK_PENDING: local $BASE_BRANCH has diverged from origin — not touching it"; exit 1; }
 git merge-base --is-ancestor "$MERGE_SHA" HEAD || { echo "ROLLBACK_PENDING: $MERGE_SHA is not on $BASE_BRANCH"; exit 1; }
+# Only a method this run chose and saw land is evidence of the shape. A merge queue
+# lands with its own configured method, and an external merge with whatever was used.
+case "$MERGE_PATH" in direct|auto) ;; *) MERGE_METHOD=unknown ;; esac
 _PARENTS=$(git show --no-patch --format='%P' "$MERGE_SHA" | wc -w | tr -d ' ')
 _N=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits | length' 2>/dev/null) || _N=""
+# A single landed commit is the whole PR only if the PR had one commit, or if its patch
+# is the PR's whole diff. A squash assumed but a rebase landed would revert only the tip.
+_ONE=false
+if [ "$_PARENTS" = 1 ]; then
+  if [ "$_N" = 1 ]; then _ONE=true
+  else
+    _LANDED=$(git diff "$MERGE_SHA^" "$MERGE_SHA" | git patch-id --stable | cut -d' ' -f1)
+    _PRDIFF=$(gh pr diff "$PR_NUMBER" --repo "$REPO" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
+    [ -n "$_LANDED" ] && [ "$_LANDED" = "$_PRDIFF" ] && _ONE=true
+  fi
+fi
 if [ "$_PARENTS" = 2 ]; then
   echo "REVERT: merge commit — reverting against its first parent (the base side)"
   git revert -m 1 --no-edit "$MERGE_SHA" || { echo "ROLLBACK_PENDING: revert conflicts"; git status --short; exit 1; }
-elif [ "$_PARENTS" = 1 ] && { [ "$MERGE_METHOD" = squash ] || [ "$_N" = 1 ]; }; then
-  echo "REVERT: single commit"
+elif [ "$_ONE" = true ]; then
+  echo "REVERT: single commit (proven: the PR's whole change)"
   git revert --no-edit "$MERGE_SHA" || { echo "ROLLBACK_PENDING: revert conflicts"; git status --short; exit 1; }
 elif [ "$_PARENTS" = 1 ] && [ "$MERGE_METHOD" = rebase ] && [ -n "$_N" ] && [ "$_N" -gt 1 ]; then
   _RANGE="$MERGE_SHA~$_N..$MERGE_SHA"
@@ -1507,7 +1597,7 @@ elif [ "$_PARENTS" = 1 ] && [ "$MERGE_METHOD" = rebase ] && [ -n "$_N" ] && [ "$
   echo "REVERT: rebase merge — reverting $_N commits, newest first"
   git revert --no-edit "$_RANGE" || { echo "ROLLBACK_PENDING: revert conflicts"; git status --short; exit 1; }
 else
-  echo "ROLLBACK_PENDING: unknown merge shape (parents=$_PARENTS method=$MERGE_METHOD commits=${_N:-?}) — revert by hand"; exit 1
+  echo "ROLLBACK_PENDING: unproven merge shape (parents=$_PARENTS method=$MERGE_METHOD path=$MERGE_PATH commits=${_N:-?}) — revert by hand"; exit 1
 fi
 echo "REVERT_SHA=$(git rev-parse HEAD)"
 ```

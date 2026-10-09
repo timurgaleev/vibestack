@@ -17,8 +17,17 @@
 #     disallowed method, or unreadable repo settings with none configured, stops;
 #   - the readback tells a queued PR (OPEN + queue entry) from one removed from
 #     the queue (OPEN, nothing armed) instead of polling PR state;
+#   - the CI gate also reads check suites (one still queued or running is PENDING)
+#     and reports every-check-skipped as ALL_SKIPPED, which merges only like NO_CHECKS;
+#   - untracked non-ignored files count as a dirty checkout;
+#   - a HEAD_CHANGED / BASE_CHANGED readback with a request still armed demands a
+#     disarm, and the disarm block cancels auto-merge / dequeues, then reads it back;
 #   - the revert handles merge commits (-m 1) and rebase merges (the whole range),
-#     and refuses a dirty tree;
+#     reverts a single commit only when the shape is proven (one PR commit, or the
+#     landed patch-id equals the PR diff's), never trusts the method on a queue
+#     landing, and refuses a dirty tree;
+#   - the VERSION drift block passes --exclude-pr and its value as two arguments
+#     under zsh as well as bash;
 #   - the test command's exit status survives (no pipe into tail);
 #   - static contract: no bun default, no "merge anyway" past blockers, PR body
 #     through vibe-untrusted, every merge bound to the head, honest verdicts.
@@ -86,6 +95,8 @@ block '**Readback — the only dispatcher.**' > "$TMP/readback.sh" || no "no rea
 block '**The merge block.**' > "$TMP/merge.sh" || no "no merge block"
 block '## Step 8: Revert' > "$TMP/revert.sh" || no "no revert block"
 block '### 3.5b: Test results' > "$TMP/tests.sh" || no "no test-command block"
+block '**The disarm block.**' > "$TMP/disarm.sh" || no "no disarm block"
+block '## Step 3.4: VERSION drift' > "$TMP/drift.sh" || no "no VERSION drift block"
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
@@ -110,7 +121,10 @@ serve() {  # serve FILE: emit it through the filter, or fail like an API error
 case "${args[0]} ${args[1]:-}" in
   "repo view") serve repo-view.json ;;
   "pr view") serve pr.json ;;
-  "pr merge") printf '%s\n' "${args[*]}" >> "$FX/merges.log"; exit "$(cat "$FX/merge.exit" 2>/dev/null || echo 0)" ;;
+  "pr merge") printf '%s\n' "${args[*]}" >> "$FX/merges.log"
+    case " ${args[*]} " in *" --disable-auto "*) [ -f "$FX/disarm.works" ] && cp "$FX/graphql-after-auto.json" "$FX/graphql.json" ;; esac
+    exit "$(cat "$FX/merge.exit" 2>/dev/null || echo 0)" ;;
+  "pr diff") serve pr.diff ;;
   "pr create") printf '%s\n' "${args[*]}" >> "$FX/creates.log" ;;
   api\ *)
     ep=""
@@ -120,9 +134,16 @@ case "${args[0]} ${args[1]:-}" in
       case "$a" in -f|-F|--field|--raw-field|-H) skip=1 ;; -*) ;; *) [ -z "$ep" ] && ep="$a" ;; esac
     done
     case "$ep" in
-      graphql) serve graphql.json; exit "$(cat "$FX/graphql.exit" 2>/dev/null || echo 0)" ;;
+      graphql)
+        case "${args[*]}" in
+          *"query=mutation"*) printf '%s\n' "${args[*]}" >> "$FX/mutations.log"
+            [ -f "$FX/disarm.works" ] && cp "$FX/graphql-after-queue.json" "$FX/graphql.json"
+            echo '{}'; exit 0 ;;
+        esac
+        serve graphql.json; exit "$(cat "$FX/graphql.exit" 2>/dev/null || echo 0)" ;;
       repos/*/commits/*/check-runs*) serve check-runs.json ;;
       repos/*/commits/*/status*) serve status.json ;;
+      repos/*/commits/*/check-suites*) serve check-suites.json ;;
       repos/*/*) serve repo.json ;;
       *) exit 1 ;;
     esac ;;
@@ -155,9 +176,10 @@ repo() {
 prjson() {  # prjson DIR STATE HEAD
   printf '{"number":12,"state":"%s","title":"Add thing","url":"https://x/pr/12","mergeable":"MERGEABLE","baseRefName":"main","headRefName":"feature","headRefOid":"%s","commits":[{"messageHeadline":"feature"}]}\n' "$2" "$3" > "$1.fx/pr.json"
 }
-checks() {  # checks DIR RUNS_JSON_ARRAY STATUSES_JSON_ARRAY
+checks() {  # checks DIR RUNS_JSON_ARRAY STATUSES_JSON_ARRAY [SUITES_JSON_ARRAY]
   printf '{"check_runs":%s}\n' "$2" > "$1.fx/check-runs.json"
   printf '{"statuses":%s}\n' "$3" > "$1.fx/status.json"
+  printf '{"check_suites":%s}\n' "${4:-[]}" > "$1.fx/check-suites.json"
 }
 run() {  # run SHELL DIR SCRIPT
   ( cd "$2" && FX="$2.fx" "$1" "$3" ) 2>&1
@@ -185,6 +207,10 @@ for SH in $SHELLS; do
   out=$(run "$SH" "$d" "$d.t.sh"); rc=$?
   case "$out" in *LOCAL_TARGET_MISMATCH*) ok "[$SH] tracked edits abort" ;; *) no "[$SH] dirty tree accepted: $out" ;; esac
   git -C "$d" checkout -q -- app.js
+  echo scratch > "$d/notes.txt"
+  out=$(run "$SH" "$d" "$d.t.sh"); rc=$?
+  case "$out" in *LOCAL_TARGET_MISMATCH*notes.txt*) ok "[$SH] untracked non-ignored file aborts" ;; *) no "[$SH] untracked file accepted: $out" ;; esac
+  rm -f "$d/notes.txt"
 
   rm -f "$d.fx/pr.json"
   out=$(run "$SH" "$d" "$d.t.sh"); rc=$?
@@ -207,6 +233,18 @@ for SH in $SHELLS; do
   [ "$v" = "VERDICT PENDING $H" ] && ok "[$SH] running check -> PENDING" || no "[$SH] pending: $v"
   v=$(gate '[{"status":"completed","conclusion":"success","name":"build"},{"status":"completed","conclusion":"skipped","name":"deploy"}]' '[{"state":"success","context":"ci/legacy"}]')
   [ "$v" = "VERDICT PASS $H" ] && ok "[$SH] all green -> PASS" || no "[$SH] green: $v"
+  # green runs read while a suite is still queued: a partial snapshot, not PASS
+  checks "$d" '[{"status":"completed","conclusion":"success","name":"build"}]' '[]' '[{"status":"completed","app":{"slug":"github-actions"}},{"status":"queued","app":{"slug":"github-actions"}}]'
+  v=$(run "$SH" "$d" "$d.g.sh" | head -1)
+  [ "$v" = "VERDICT PENDING $H" ] && ok "[$SH] a queued check suite -> PENDING, not PASS" || no "[$SH] queued suite: $v"
+  checks "$d" '[{"status":"completed","conclusion":"success","name":"build"}]' '[]' '[{"status":"in_progress","app":{"slug":"ci-app"}}]'
+  v=$(run "$SH" "$d" "$d.g.sh" | head -1)
+  [ "$v" = "VERDICT PENDING $H" ] && ok "[$SH] an in-progress check suite -> PENDING" || no "[$SH] running suite: $v"
+  checks "$d" '[{"status":"completed","conclusion":"success","name":"build"}]' '[]'; rm -f "$d.fx/check-suites.json"
+  v=$(run "$SH" "$d" "$d.g.sh" | head -1)
+  [ "$v" = "VERDICT ERROR $H" ] && ok "[$SH] unreadable check suites -> ERROR" || no "[$SH] suites api failure: $v"
+  v=$(gate '[{"status":"completed","conclusion":"skipped","name":"build"},{"status":"completed","conclusion":"skipped","name":"deploy"}]' '[]')
+  [ "$v" = "VERDICT ALL_SKIPPED $H" ] && ok "[$SH] every check skipped -> ALL_SKIPPED, not PASS" || no "[$SH] all skipped: $v"
   v=$(gate '[{"status":"completed","conclusion":"success","name":"build"}]' '[{"state":"failure","context":"ci/legacy"}]')
   [ "$v" = "VERDICT FAIL $H" ] && ok "[$SH] failing commit status -> FAIL" || no "[$SH] status failure: $v"
   checks "$d" '[]' '[]'; rm -f "$d.fx/status.json"
@@ -233,6 +271,11 @@ for SH in $SHELLS; do
   checks "$d" '[{"status":"completed","conclusion":"failure","name":"optional"}]' '[]'
   out=$(mb MERGE_METHOD=squash NO_CI_APPROVED_HEAD="$H")
   [ "$(merges "$d")" = 0 ] && ok "[$SH] red CI at merge time -> no merge" || no "[$SH] merged over red CI"
+  checks "$d" '[{"status":"completed","conclusion":"skipped","name":"build"}]' '[]'
+  out=$(mb MERGE_METHOD=squash)
+  case "$out" in *MERGE_REFUSED*) ok "[$SH] all checks skipped, not approved -> refused" ;; *) no "[$SH] merged over all-skipped CI: $out" ;; esac
+  [ "$(merges "$d")" = 0 ] || no "[$SH] gh pr merge ran with every check skipped"
+  : > "$d.fx/merges.log"
   checks "$d" '[{"status":"queued","conclusion":null,"name":"build"}]' '[]'
   out=$(mb MERGE_METHOD=squash)
   [ "$(merges "$d")" = 0 ] && ok "[$SH] pending CI at merge time -> no merge" || no "[$SH] merged over pending CI"
@@ -247,6 +290,12 @@ for SH in $SHELLS; do
   out=$(mb MERGE_METHOD=squash)
   case "$out" in *LOCAL_TARGET_MISMATCH*) ok "[$SH] checkout moved after approval -> refused" ;; *) no "[$SH] moved checkout: $out" ;; esac
   git -C "$d" reset -q --hard "$H"
+  echo scratch > "$d/untracked.txt"
+  out=$(mb MERGE_METHOD=squash)
+  case "$out" in *LOCAL_TARGET_MISMATCH*) ok "[$SH] untracked file in the checkout -> refused" ;; *) no "[$SH] untracked file at merge: $out" ;; esac
+  [ "$(merges "$d")" = 0 ] || no "[$SH] merged with an untracked file in the checkout"
+  : > "$d.fx/merges.log"
+  rm -f "$d/untracked.txt"
   out=$(mb MERGE_METHOD=rebase MERGE_ATTEMPT=direct)
   grep -qx -- "pr merge 12 --repo acme/app --rebase --delete-branch --match-head-commit $H" "$d.fx/merges.log" \
     && ok "[$SH] green CI, direct attempt: bound merge without --auto" || no "[$SH] direct merge args: $(cat "$d.fx/merges.log" 2>/dev/null)"
@@ -291,6 +340,11 @@ for SH in $SHELLS; do
   [ "$(rbk OPEN "$H" null null MERGE_ATTEMPT=direct)" = "MERGE_ACTION STOP" ] && ok "[$SH] no fallback after a direct attempt" || no "[$SH] direct fallback"
   [ "$(rbk MERGED "$H" null null MERGE_ATTEMPT=auto)" = "MERGE_ACTION MERGED" ] && ok "[$SH] MERGED head -> MERGED" || no "[$SH] merged"
   [ "$(rbk OPEN 0123456789abcdef0123456789abcdef01234567 null null)" = "MERGE_ACTION HEAD_CHANGED" ] && ok "[$SH] moved head -> HEAD_CHANGED" || no "[$SH] readback head"
+  # a moved head with auto-merge still armed: the request must be disarmed, not just abandoned
+  rbk OPEN 0123456789abcdef0123456789abcdef01234567 '{"enabledAt":"x"}' null WAITED=true MERGE_ATTEMPT=auto >/dev/null
+  case "$(run "$SH" "$d" "$d.r.sh")" in *DISARM_REQUIRED*) ok "[$SH] HEAD_CHANGED with auto-merge armed -> DISARM_REQUIRED" ;; *) no "[$SH] armed request left behind on HEAD_CHANGED" ;; esac
+  rbk OPEN 0123456789abcdef0123456789abcdef01234567 null null >/dev/null
+  case "$(run "$SH" "$d" "$d.r.sh")" in *DISARM_REQUIRED*) no "[$SH] DISARM_REQUIRED with nothing armed" ;; *) ok "[$SH] nothing armed -> no disarm demanded" ;; esac
   # a rerun with the carried values left unfilled must not read as a fresh START
   printf '{"data":{"repository":{"pullRequest":{"state":"OPEN","headRefOid":"%s","baseRefName":"main","mergeCommit":null,"autoMergeRequest":null,"mergeQueueEntry":null}}}}\n' "$H" > "$d.fx/graphql.json"
   fill "$TMP/readback.sh" "$d.r.sh" REPO=acme/app PR_NUMBER=12 PR_HEAD="$H" BASE_BRANCH=main
@@ -307,7 +361,7 @@ for SH in $SHELLS; do
   git -C "$d" checkout -q main && git -C "$d" merge -q --no-ff feature -m "Merge PR 12" && git -C "$d" push -q origin main
   MS=$(git -C "$d" rev-parse main); git -C "$d" checkout -q feature
   prjson "$d" MERGED x
-  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=merge
+  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=merge MERGE_PATH=direct
   out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
   if [ "$rc" = 0 ] && case "$out" in *REVERT_SHA=*) true ;; *) false ;; esac && [ "$(git -C "$d" show HEAD:app.js)" = 'let a = 1' ]; then
     ok "[$SH] merge commit reverted with -m 1"
@@ -319,7 +373,7 @@ for SH in $SHELLS; do
   git -C "$d" checkout -q main && git -C "$d" merge -q --no-ff feature -m "Merge PR 12" && git -C "$d" push -q origin main
   MS=$(git -C "$d" rev-parse main); git -C "$d" checkout -q feature; echo wip >> "$d/README.md"
   prjson "$d" MERGED x
-  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=merge
+  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=merge MERGE_PATH=direct
   out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
   if [ "$rc" != 0 ] && case "$out" in *ROLLBACK_PENDING*) true ;; *) false ;; esac \
      && [ "$(git -C "$d" branch --show-current)" = feature ] && [ "$(git -C "$d" rev-parse main)" = "$MS" ]; then
@@ -334,7 +388,7 @@ for SH in $SHELLS; do
     && git push -q origin main )
   MS=$(git -C "$d" rev-parse main)
   echo '{"commits":[{"messageHeadline":"first change"},{"messageHeadline":"second change"}]}' > "$d.fx/pr.json"
-  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=rebase
+  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=rebase MERGE_PATH=direct
   out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
   if [ "$rc" = 0 ] && [ "$(git -C "$d" show HEAD:a.txt)" = one ] && ! git -C "$d" cat-file -e HEAD:b.txt 2>/dev/null; then
     ok "[$SH] rebase merge: every landed commit reverted"
@@ -342,7 +396,7 @@ for SH in $SHELLS; do
     no "[$SH] rebase revert: rc=$rc $out"
   fi
   git -C "$d" reset -q --hard "$MS"
-  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=unknown
+  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=unknown MERGE_PATH=direct
   out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
   if [ "$rc" != 0 ] && [ "$(git -C "$d" rev-parse HEAD)" = "$MS" ]; then
     ok "[$SH] unknown shape of a multi-commit PR -> ROLLBACK_PENDING, nothing reverted"
@@ -351,12 +405,102 @@ for SH in $SHELLS; do
   fi
   # rebase merge whose landed subjects differ from the PR's commits: wrong range, no revert
   echo '{"commits":[{"messageHeadline":"first change"},{"messageHeadline":"some other change"}]}' > "$d.fx/pr.json"
-  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=rebase
+  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=rebase MERGE_PATH=direct
   out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
   if [ "$rc" != 0 ] && case "$out" in *ROLLBACK_PENDING*) true ;; *) false ;; esac && [ "$(git -C "$d" rev-parse HEAD)" = "$MS" ]; then
     ok "[$SH] rebase range whose subjects differ from the PR -> ROLLBACK_PENDING, nothing reverted"
   else
     no "[$SH] rebase subject mismatch: rc=$rc $out"
+  fi
+
+  # squash assumed, rebase landed (a queue picks its own method): reverting the tip
+  # alone would leave the first commit live
+  d="$TMP/vq-$SH"; git init -q --bare "$d.git"; git init -q -b main "$d"; mkdir -p "$d.fx"
+  ( cd "$d" && echo one > a.txt && git add -A && git commit -q -m init && git remote add origin "$d.git" \
+    && echo two > a.txt && git commit -qam "first change" && echo three > b.txt && git add -A && git commit -qm "second change" \
+    && git push -q origin main )
+  MS=$(git -C "$d" rev-parse main)
+  echo '{"commits":[{"messageHeadline":"first change"},{"messageHeadline":"second change"}]}' > "$d.fx/pr.json"
+  git -C "$d" diff "$MS~2" "$MS" > "$d.fx/pr.diff"
+  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=squash MERGE_PATH=queue
+  out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
+  if [ "$rc" != 0 ] && case "$out" in *ROLLBACK_PENDING*) true ;; *) false ;; esac && [ "$(git -C "$d" rev-parse HEAD)" = "$MS" ]; then
+    ok "[$SH] queue landing assumed squash but rebased -> ROLLBACK_PENDING, nothing reverted"
+  else
+    no "[$SH] queue partial revert: rc=$rc $out"
+  fi
+  git -C "$d" reset -q --hard "$MS"
+  fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=squash MERGE_PATH=direct
+  out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
+  if [ "$rc" != 0 ] && [ "$(git -C "$d" rev-parse HEAD)" = "$MS" ]; then
+    ok "[$SH] squash method but the tip is not the PR's whole diff -> no single-commit revert"
+  else
+    no "[$SH] unproven squash reverted: rc=$rc $out"
+  fi
+  # a real squash of a two-commit PR: the landed patch is the PR diff, so it is proven
+  d="$TMP/vs-$SH"; git init -q --bare "$d.git"; git init -q -b main "$d"; mkdir -p "$d.fx"
+  ( cd "$d" && echo one > a.txt && git add -A && git commit -q -m init && git remote add origin "$d.git" \
+    && echo two > a.txt && echo three > b.txt && git add -A && git commit -qm "Add thing (#12)" && git push -q origin main )
+  MS=$(git -C "$d" rev-parse main)
+  echo '{"commits":[{"messageHeadline":"first change"},{"messageHeadline":"second change"}]}' > "$d.fx/pr.json"
+  git -C "$d" diff "$MS~1" "$MS" > "$d.fx/pr.diff"
+  for P in direct queue; do
+    git -C "$d" reset -q --hard "$MS"
+    fill "$TMP/revert.sh" "$d.v.sh" REPO=acme/app PR_NUMBER=12 BASE_BRANCH=main MERGE_SHA="$MS" MERGE_METHOD=squash MERGE_PATH=$P
+    out=$(run "$SH" "$d" "$d.v.sh"); rc=$?
+    if [ "$rc" = 0 ] && [ "$(git -C "$d" show HEAD:a.txt)" = one ] && ! git -C "$d" cat-file -e HEAD:b.txt 2>/dev/null; then
+      ok "[$SH] squash proven by patch-id ($P path) -> reverted"
+    else
+      no "[$SH] proven squash ($P): rc=$rc $out"
+    fi
+  done
+
+  echo "[$SH] disarm"
+  d=$(repo "da-$SH" app.js)
+  armed() {  # armed AUTO QUEUE -> graphql.json
+    printf '{"data":{"repository":{"pullRequest":{"id":"PR_kw12","state":"OPEN","autoMergeRequest":%s,"mergeQueueEntry":%s}}}}\n' "$1" "$2"
+  }
+  fill "$TMP/disarm.sh" "$d.da.sh" REPO=acme/app PR_NUMBER=12
+  armed '{"enabledAt":"x"}' null > "$d.fx/graphql.json"; armed null null > "$d.fx/graphql-after-auto.json"; touch "$d.fx/disarm.works"
+  out=$(run "$SH" "$d" "$d.da.sh"); rc=$?
+  if [ "$rc" = 0 ] && grep -qx -- 'pr merge 12 --repo acme/app --disable-auto' "$d.fx/merges.log" 2>/dev/null && case "$out" in *DISARMED*) true ;; *) false ;; esac; then
+    ok "[$SH] armed auto-merge -> --disable-auto, read back, DISARMED"
+  else
+    no "[$SH] auto-merge not disarmed: rc=$rc $out"
+  fi
+  rm -f "$d.fx/merges.log"
+  armed null '{"state":"QUEUED"}' > "$d.fx/graphql.json"; armed null null > "$d.fx/graphql-after-queue.json"
+  out=$(run "$SH" "$d" "$d.da.sh"); rc=$?
+  if [ "$rc" = 0 ] && grep -q 'dequeuePullRequest' "$d.fx/mutations.log" 2>/dev/null && grep -q 'id=PR_kw12' "$d.fx/mutations.log" && case "$out" in *DISARMED*) true ;; *) false ;; esac; then
+    ok "[$SH] queue entry -> dequeuePullRequest for the PR node, DISARMED"
+  else
+    no "[$SH] queue entry not dequeued: rc=$rc $out"
+  fi
+  rm -f "$d.fx/disarm.works"
+  armed '{"enabledAt":"x"}' null > "$d.fx/graphql.json"
+  out=$(run "$SH" "$d" "$d.da.sh"); rc=$?
+  case "$out" in *DISARM_FAILED*) [ "$rc" != 0 ] && ok "[$SH] still armed after the cancel -> DISARM_FAILED" || no "[$SH] DISARM_FAILED exit 0" ;; *) no "[$SH] failed disarm not reported: $out" ;; esac
+  rm -f "$d.fx/graphql.json"
+  out=$(run "$SH" "$d" "$d.da.sh"); rc=$?
+  case "$out" in *DISARM_FAILED*) ok "[$SH] unreadable PR -> DISARM_FAILED, not DISARMED" ;; *) no "[$SH] unreadable disarm state: $out" ;; esac
+
+  echo "[$SH] VERSION drift"
+  d=$(repo "dr-$SH" app.js); H=$(git -C "$d" rev-parse HEAD)
+  mkdir -p "$TMP/home-$SH/.vibestack/bin"
+  cat > "$TMP/home-$SH/.vibestack/bin/vibe-next-version" <<'NV'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$NV_ARGS"
+for a in "$@"; do case "$a" in --*" "*) echo "unknown flag: $a" >&2; exit 2 ;; esac; done
+echo '{"version":"0.0.1","offline":false}'
+NV
+  chmod +x "$TMP/home-$SH/.vibestack/bin/vibe-next-version"
+  { printf 'PR_NUMBER=12; PR_HEAD=%s; BASE_BRANCH=main; BASE_SHA=%s\n' "$H" "$(git -C "$d" rev-parse main)"
+    cat "$TMP/drift.sh"; echo 'echo "DRIFT OFFLINE=$OFFLINE NEXT=$NEXT_SLOT"'; } > "$d.dr.sh"
+  out=$( cd "$d" && HOME="$TMP/home-$SH" NV_ARGS="$d.args" "$SH" "$d.dr.sh" 2>&1 )
+  if case "$out" in *"DRIFT OFFLINE=false NEXT=0.0.1"*) true ;; *) false ;; esac && grep -A1 -x -- '--exclude-pr' "$d.args" | tail -1 | grep -qx 12; then
+    ok "[$SH] --exclude-pr and the PR number reach vibe-next-version as two arguments"
+  else
+    no "[$SH] drift check went offline: $out / args: $(tr '\n' ' ' < "$d.args" 2>/dev/null)"
   fi
 
   echo "[$SH] test command"
@@ -398,7 +542,7 @@ for line in open(sys.argv[1]).read().splitlines():
         print(line)
 PY
 [ -s "$TMP/unbound.txt" ] && no "gh pr commands not bound to the PR number: $(cat "$TMP/unbound.txt")" || ok "every gh pr command is bound to PR_NUMBER"
-grep -E 'gh pr merge ' "$S" | grep -v -- '--match-head-commit' | grep -q 'gh pr merge "\$PR_NUMBER"' \
+grep -E 'gh pr merge ' "$S" | grep -v -- '--match-head-commit' | grep -v -- '--disable-auto' | grep -q 'gh pr merge "\$PR_NUMBER"' \
   && no "a gh pr merge without --match-head-commit" || ok "every merge carries --match-head-commit"
 grep -q 'vibe-diff-scope <base>' "$S" && no "post-merge scope classification survives" || ok "scope classified once, before the merge"
 fn() { awk '/^ci_gate\(\) \{/{on=1} on{print} on&&/^\}/{exit}' "$1"; }
