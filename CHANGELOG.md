@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.50.0 — 2026-10-09
+
+### Fixed
+
+- **Skill bash blocks no longer read values from an earlier shell.** Every
+  block runs in a fresh shell, so a block that used `$B`, `$D`, `$SLUG`,
+  `$REPORT_DIR` or a design directory set by a previous block saw an empty
+  string. Each block now restates what it needs or takes a placeholder the
+  agent fills from the earlier block's output. A new lint
+  (`test/test-fresh-shell-vars.sh`, run in CI) flags any block that reads a
+  variable it never assigns.
+- **Design skills follow their own contracts.** `/design-consultation` asks
+  before writing and verifies every font, and in plan mode writes the plan
+  file only after the final confirmation. `/design-review` records findings,
+  mockups and logs where it says it does. `/design-shotgun` and
+  `/office-hours` hand off the exact approved image path, and `/design-html`
+  builds from that path rather than guessing a file name. `DESIGN.md` is
+  backed up before any overwrite.
+- **`/devex-review` compares against a real plan baseline.**
+  `vibe-review-read --any-branch --skill <name>` returns a skill's newest
+  review across every branch of the project.
+- **Typing into a signed-in remote app needs consent.** `/devex-review` and
+  `/design-review` treat filling a field on a non-local target as a change,
+  since auto-save can persist it without a submit.
+- **`/claude` and `/spec` pass user text, drafts and titles as files**, never
+  as shell values. The Codex block in `/review` and `/ship` cleans up its temp
+  files and runs under an explicit timeout.
+
 ## 1.49.0 — 2026-10-09
 
 ### Changed
