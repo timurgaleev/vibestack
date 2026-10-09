@@ -385,7 +385,7 @@ Minimum 0 per category.
 2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Never read source code.** Test as a user, not a developer.
+5. **Test as a user, not a developer.** The one exception is diff-aware mode: read the branch diff and the route, controller and view files it names only to work out which pages to test. Never read source to explain, diagnose or fix a bug.
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
 7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
@@ -430,5 +430,5 @@ Write to `~/.vibestack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.m
 {{include lib/snippets/capture-learnings.md}}
 ## Additional Rules (qa-only specific)
 
-11. **Never fix bugs.** Find and document only. Do not read source code, edit files, or suggest fixes in the report. Your job is to report what's broken, not to fix it. Use `/qa` for the test-fix-verify loop.
+11. **Never fix bugs.** Find and document only. Do not edit files or suggest fixes in the report, and read source only as rule 5 allows. Your job is to report what's broken, not to fix it. Use `/qa` for the test-fix-verify loop.
 12. **No test framework detected?** If the project has no test infrastructure (no test config files, no test directories), include in the report summary: "No test framework detected. Run `/qa` to bootstrap one and enable regression test generation."
