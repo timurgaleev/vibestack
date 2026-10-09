@@ -57,13 +57,16 @@ listed there and skip auto-detection.
 If no `## Health Stack` section exists, auto-detect available tools:
 
 ```bash
+# A Node tool installed as a devDependency is not on PATH; run it from node_modules/.bin.
+node_tool() { if [ -x "node_modules/.bin/$1" ]; then echo "./node_modules/.bin/$1"; else echo "$1"; fi; }
+
 # Type checker
-[ -f tsconfig.json ] && echo "TYPECHECK: tsc --noEmit"
+[ -f tsconfig.json ] && echo "TYPECHECK: $(node_tool tsc) --noEmit"
 
 # Linter
-[ -f biome.json ] || [ -f biome.jsonc ] && echo "LINT: biome check ."
+[ -f biome.json ] || [ -f biome.jsonc ] && echo "LINT: $(node_tool biome) check ."
 setopt +o nomatch 2>/dev/null || true
-ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | head -1 | xargs -I{} echo "LINT: eslint ."
+ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | head -1 | xargs -I{} echo "LINT: $(node_tool eslint) ."
 [ -f .pylintrc ] || [ -f pyproject.toml ] && grep -q "pylint\|ruff" pyproject.toml 2>/dev/null && echo "LINT: ruff check ."
 
 # Test runner
@@ -163,6 +166,8 @@ failing checker does not stop the later ones.
 - **SKIPPED** — decided *before* running: the tool's binary is absent
   (`command -v <binary>` finds nothing, no local `node_modules/.bin` entry) and no
   `## Health Stack` entry names it. Record the reason. Only a skip redistributes weight.
+  A binary that exists only in `node_modules/.bin` is present: run it as
+  `./node_modules/.bin/<binary>`, including when a `## Health Stack` entry names it bare.
 - **FAILED** — the command ran and could not execute the check: exit 126 or 127
   (typo, missing binary in a configured `## Health Stack` command, no permission).
   It scores 0. A configured command that does not run is a broken check, not a

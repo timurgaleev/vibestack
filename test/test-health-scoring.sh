@@ -54,6 +54,26 @@ PY
 
 section() { awk -v a="$1" -v b="$2" 'index($0,a)==1 {on=1} on && index($0,b)==1 && index($0,a)!=1 {exit} on' "$SKILL"; }
 
+echo "Step 1: detection"
+if ! block "## Step 1: Detect Health Stack" > "$TMP/detect.sh"; then
+  no "Step 1 detection block found"
+else
+  # A devDependency-only toolchain: the binaries exist only in node_modules/.bin.
+  DP="$TMP/devdeps"
+  mkdir -p "$DP/node_modules/.bin"
+  : > "$DP/tsconfig.json"; : > "$DP/eslint.config.js"
+  for t in tsc eslint; do printf '#!/usr/bin/env bash\necho ok\n' > "$DP/node_modules/.bin/$t"; chmod +x "$DP/node_modules/.bin/$t"; done
+  out=$(cd "$DP" && PATH=/usr/bin:/bin bash "$TMP/detect.sh" 2>/dev/null)
+  grep -qx 'TYPECHECK: ./node_modules/.bin/tsc --noEmit' <<<"$out" \
+    && ok "local-only tsc is detected through node_modules/.bin" || no "local-only tsc detected bare: $out"
+  grep -qx 'LINT: ./node_modules/.bin/eslint .' <<<"$out" \
+    && ok "local-only eslint is detected through node_modules/.bin" || no "local-only eslint detected bare: $out"
+  rm -rf "$DP/node_modules"
+  out=$(cd "$DP" && PATH=/usr/bin:/bin bash "$TMP/detect.sh" 2>/dev/null)
+  grep -qx 'TYPECHECK: tsc --noEmit' <<<"$out" \
+    && ok "without node_modules the command stays bare" || no "bare detection changed: $out"
+fi
+
 echo "Step 2: capture"
 if ! block "## Step 2: Run Tools" > "$TMP/capture.sh"; then
   no "Step 2 capture block found"

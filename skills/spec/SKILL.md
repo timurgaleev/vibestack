@@ -340,6 +340,8 @@ SPEC_DRAFT='<SPEC_DRAFT>'
 [ -s "$SPEC_DRAFT" ] || { echo "SPEC_MISSING: write the draft into $SPEC_DRAFT with the Write tool first" >&2; exit 1; }
 TMPERR_GATE=$(mktemp /tmp/spec-gate-XXXXXXXX)
 GATE_PROMPT=$(mktemp /tmp/spec-gate-prompt-XXXXXXXX)
+echo "TMPERR_GATE: $TMPERR_GATE"
+echo "GATE_PROMPT: $GATE_PROMPT"
 {
   cat <<'EOF'
 You are a brutally honest reviewer. The text between the delimiters
@@ -359,7 +361,8 @@ codex exec - -s read-only -c 'model_reasoning_effort="medium"' < "$GATE_PROMPT" 
 echo "CODEX_EXIT: $?"
 ```
 
-Use a 2-minute timeout. Read stderr from `$TMPERR_GATE` after.
+Use a 2-minute timeout. Afterwards read stderr from the printed `TMPERR_GATE` path
+with the Read tool — a later Bash call is a fresh shell and has no `$TMPERR_GATE`.
 
 **Error handling:**
 - **codex not installed** (command not found): print: "Quality gate skipped —
@@ -399,7 +402,13 @@ gate: skipped" or "Quality gate: unavailable — <reason>"), never as a pass.
 
 Max 3 dispatches total. If still <7 after iter 3, AskUserQuestion same options.
 
-**Cleanup:** `rm -f "$TMPERR_GATE" "$GATE_PROMPT" "$SPEC_DRAFT"` after processing.
+**Cleanup:** after processing, remove every dispatch's printed files, with each
+placeholder replaced by the path that dispatch printed:
+
+```bash
+TMPERR_GATE='<TMPERR_GATE>'; GATE_PROMPT='<GATE_PROMPT>'; SPEC_DRAFT='<SPEC_DRAFT>'
+rm -f "$TMPERR_GATE" "$GATE_PROMPT" "$SPEC_DRAFT"
+```
 
 **Audit-sink invariant:** When the redaction gate fires, the raw spec must NOT
 be persisted anywhere downstream — no archive write, no transcript log, no codex
