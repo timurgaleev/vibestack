@@ -92,7 +92,7 @@ branch name wherever the instructions say "the base branch" or `<default>`.
 
 # /qa: Test → Fix → Verify
 
-You are a QA engineer AND a bug-fix engineer. Test web applications like a real user — click everything, fill every form, check every state. When you find bugs, fix them in source code with atomic commits, then re-verify. Produce a structured report with before/after evidence.
+You are a QA engineer AND a bug-fix engineer. Test web applications like a real user — click everything, fill every form, check every state. When you find bugs, fix them in source code, re-verify, then commit each verified fix atomically. Produce a structured report with before/after evidence.
 
 ## Setup
 
@@ -102,7 +102,7 @@ You are a QA engineer AND a bug-fix engineer. Test web applications like a real 
 |-----------|---------|-----------------:|
 | Target URL | (auto-detect or required) | `https://myapp.com`, `http://localhost:3000` |
 | Tier | Standard | `--quick`, `--exhaustive` |
-| Mode | full | `--regression .vibestack/qa-reports/baseline.json` |
+| Mode | full | `--regression` (compares with the newest earlier run), `--regression <path>/baseline.json` |
 | Output dir | `.vibestack/qa-reports/` | `Output to /tmp/qa` |
 | Scope | Full app (or diff-scoped) | `Focus on the billing page` |
 | Auth | None | `Sign in to user@example.com`, `Import cookies from cookies.json` |
@@ -145,6 +145,8 @@ After the user chooses, execute their choice (commit or stash), then continue wi
 ## SETUP
 
 {{include lib/snippets/browse-detect.md}}
+
+{{include lib/snippets/qa-run-dir.md}}
 
 ## Test Framework Bootstrap
 
@@ -263,7 +265,7 @@ Generate 3-5 real tests for existing code:
 1. **Find recently changed files:** `git log --since=30.days --name-only --format="" | sort | uniq -c | sort -rn | head -10`
 2. **Prioritize by risk:** Error handlers > business logic with conditionals > API endpoints > pure functions
 3. **For each file:** Write one test that tests real behavior with meaningful assertions. Never `expect(x).toBeDefined()` — test what the code DOES.
-4. Run each test. Passes → keep. Fails → fix once. Still fails → delete silently.
+4. Run each test. Passes → keep. Fails on an import or fixture error in the test itself → a test defect: correct it once, or drop it and say which in the report. Fails on its own assertion → a valid red test, never deleted: keep it, record it as a finding with its output, and defer it with the reason.
 5. Generate at least 1 test, cap at 5.
 
 Never import secrets, API keys, or credentials in test files. Use environment variables or test fixtures.
@@ -275,7 +277,7 @@ Never import secrets, API keys, or credentials in test files. Use environment va
 {detected test command}
 ```
 
-If tests fail → debug once. If still failing → revert all bootstrap changes and warn user.
+If tests fail → debug once. If still failing → revert all bootstrap changes and warn user. A valid red test kept in B4.5 is a recorded finding, not a bootstrap failure.
 
 ### B5.5. CI/CD pipeline
 
@@ -328,19 +330,6 @@ git status --porcelain
 
 Only commit if there are changes. Stage all bootstrap files (config, test directory, TESTING.md, CLAUDE.md, .github/workflows/test.yml if created):
 `git commit -m "chore: bootstrap test framework ({framework name})"`
-
----
-
-**Create output directories:**
-
-```bash
-REPORT_DIR=".vibestack/qa-reports"
-mkdir -p "$REPORT_DIR/screenshots"
-echo "REPORT_DIR: $REPORT_DIR"
-```
-
-Later blocks that write screenshots start with `REPORT_DIR='<REPORT_DIR>'`:
-replace `<REPORT_DIR>` with the path printed on the `REPORT_DIR:` line.
 
 ---
 
@@ -418,7 +407,11 @@ Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced
 30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce health score. No detailed issue documentation.
 
 ### Regression (`--regression <baseline>`)
-Run full mode, then load `baseline.json` from a previous run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
+Run full mode, then compare with the prior baseline resolved at setup — `prior-baseline.json` in this run's directory, copied from the `--regression` path or the newest earlier run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
+
+---
+
+{{include lib/snippets/qa-probe-consent.md}}
 
 ---
 
@@ -427,13 +420,13 @@ Run full mode, then load `baseline.json` from a previous run. Diff: which issues
 ### Phase 1: Initialize
 
 1. Find browse binary (see Setup above)
-2. Create output directories
-3. Copy report template from `qa/templates/qa-report-template.md` to output dir
+2. Create this run's report directory (see Setup above)
+3. Copy report template from `qa/templates/qa-report-template.md` to `$REPORT_DIR`
 4. Start timer for duration tracking
 
 ### Phase 2: Authenticate (if needed)
 
-**If the user specified auth credentials:**
+**If the user gave credentials for a throwaway test account on a LOCAL target:**
 
 ```bash
 B='<BROWSE_BIN>'
@@ -453,7 +446,9 @@ $B cookie-import cookies.json
 $B goto <target-url>
 ```
 
-**If 2FA/OTP is required:** Ask the user for the code and wait.
+**On a NON-LOCAL target:** never type credentials. Ask the user to import cookies or sign in themselves in the visible browser, then continue.
+
+**If 2FA/OTP is required:** Ask the user to complete it in the browser, then continue.
 
 **If CAPTCHA blocks you:** Tell the user: "Please complete the CAPTCHA in the browser, then tell me to continue."
 
@@ -493,8 +488,8 @@ $B console --errors
 Then follow the **per-page exploration checklist** (see `qa/references/issue-taxonomy.md`):
 
 1. **Visual scan** — Look at the annotated screenshot for layout issues
-2. **Interactive elements** — Click buttons, links, controls. Do they work?
-3. **Forms** — Fill and submit. Test empty, invalid, edge cases
+2. **Interactive elements** — Click buttons, links, controls. Do they work? (NON-LOCAL: consent first; never the logout/delete link class)
+3. **Forms** — Fill and submit. Test empty, invalid, edge cases (NON-LOCAL: consent first; never the logout/delete link class)
 4. **Navigation** — Check all paths in and out
 5. **States** — Empty state, loading, error, overflow
 6. **Console** — Any new JS errors after interactions?
@@ -552,7 +547,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 3. **Write console health summary** — aggregate all console errors seen across pages
 4. **Update severity counts** in the summary table
 5. **Fill in report metadata** — date, duration, pages visited, screenshot count, framework
-6. **Save baseline** — write `baseline.json` with:
+6. **Save baseline** — write `$REPORT_DIR/baseline.json` with:
    ```json
    {
      "date": "YYYY-MM-DD",
@@ -563,7 +558,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
    }
    ```
 
-**Regression mode:** After writing the report, load the baseline file. Compare:
+**Regression mode:** After writing the report, load `$REPORT_DIR/prior-baseline.json` — never the `baseline.json` this run just wrote, so the run never compares with itself. With `PRIOR_BASELINE: none` or `BASELINE_MISSING`, skip the comparison and say why in the report. Compare:
 - Health score delta
 - Issues fixed (in baseline but not current)
 - New issues (in current but not baseline)
@@ -661,18 +656,20 @@ Record baseline health score at end of Phase 6.
 
 ```
 .vibestack/qa-reports/
-├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
-├── screenshots/
-│   ├── initial.png                        # Landing page annotated screenshot
-│   ├── issue-001-step-1.png               # Per-issue evidence
-│   ├── issue-001-result.png
-│   ├── issue-001-before.png               # Before fix (if fixed)
-│   ├── issue-001-after.png                # After fix (if fixed)
-│   └── ...
-└── baseline.json                          # For regression mode
+└── run-<UTC>/                             # One directory per run, never overwritten
+    ├── qa-report.md                       # Structured report
+    ├── baseline.json                      # This run's baseline, for later runs
+    ├── prior-baseline.json                # The baseline this run compares with (if any)
+    └── screenshots/
+        ├── initial.png                    # Landing page annotated screenshot
+        ├── issue-001-step-1.png           # Per-issue evidence
+        ├── issue-001-result.png
+        ├── issue-001-before.png           # Before fix (if fixed)
+        ├── issue-001-after.png            # After fix (if fixed)
+        └── ...
 ```
 
-Report filenames use the domain and date: `qa-report-myapp-com-2026-03-12.md`
+`<UTC>` is the run's start time, e.g. `run-20260312T141500Z`.
 
 ---
 
@@ -716,51 +713,15 @@ For each fixable issue, in severity order:
 - Find the source file(s) responsible for the bug
 - ONLY modify files directly related to the issue
 
-### 8b. Fix
+### 8b. Regression test (before the fix)
 
-- Read the source code, understand the context
-- Make the **minimal fix** — smallest change that resolves the issue
-- Do NOT refactor surrounding code, add features, or "improve" unrelated things
+Write the regression test first, at the boundary where the bug lived, and prove it red before touching the source.
 
-### 8c. Commit
-
-```bash
-git add <only-changed-files>
-git commit -m "fix(qa): ISSUE-NNN — short description"
-```
-
-- One commit per fix. Never bundle multiple fixes.
-- Message format: `fix(qa): ISSUE-NNN — short description`
-
-### 8d. Re-test
-
-- Navigate back to the affected page
-- Take **before/after screenshot pair**
-- Check console for errors
-- Use `snapshot -D` to verify the change had the expected effect
-
-```bash
-B='<BROWSE_BIN>'
-REPORT_DIR='<REPORT_DIR>'
-$B goto <affected-url>
-$B screenshot "$REPORT_DIR/screenshots/issue-NNN-after.png"
-$B console --errors
-$B snapshot -D
-```
-
-### 8e. Classify
-
-- **verified**: re-test confirms the fix works, no new errors introduced
-- **best-effort**: fix applied but couldn't fully verify (e.g., needs auth state, external service)
-- **reverted**: regression detected → `git revert HEAD` → mark issue as "deferred"
-
-### 8e.5. Regression Test
-
-Skip if: classification is not "verified", OR the fix is purely visual/CSS with no JS behavior, OR no test framework was detected AND user declined bootstrap.
+Skip the test (record `Regression proof — unavailable (<reason>)` in the issue's report entry and continue to 8c) if: the fix is purely visual/CSS with no JS behavior, OR no test framework was detected AND user declined bootstrap, OR finding the test boundary takes >2 min of exploration.
 
 **1. Study the project's existing test patterns:**
 
-Read 2-3 test files closest to the fix (same directory, same code type). Match exactly:
+Read 2-3 test files closest to the bug (same directory, same code type). Match exactly:
 - File naming, imports, assertion style, describe/it nesting, setup/teardown patterns
 The regression test must look like it was written by the same developer.
 
@@ -770,11 +731,11 @@ The reproduced bug already answers what the test protects and what makes it fail
 
 **2. Trace the bug's codepath, then write a regression test:**
 
-Before writing the test, trace the data flow through the code you just fixed:
+Before writing the test, trace the data flow through the code you located:
 - What input/state triggered the bug? (the exact precondition)
 - What codepath did it follow? (which branches, which function calls)
 - Where did it break? (the exact line/condition that failed)
-- What other inputs could hit the same codepath? (edge cases around the fix)
+- What other inputs could hit the same codepath? (edge cases around the bug)
 
 The test MUST:
 - Set up the precondition that triggered the bug (the exact state that made it break)
@@ -785,7 +746,7 @@ The test MUST:
   ```
   // Regression: ISSUE-NNN — {what broke}
   // Found by /qa on {YYYY-MM-DD}
-  // Report: .vibestack/qa-reports/qa-report-{domain}-{date}.md
+  // Report: <REPORT_DIR>/qa-report.md
   // Value: protects={...}; fails_when={...}; why_new={...}; seam=none
   ```
 
@@ -799,21 +760,67 @@ Pick the smallest test the project already supports at the boundary where the bu
 
 Use auto-incrementing names to avoid collisions: check existing `{name}.regression-*.test.{ext}` files, take max number + 1.
 
-**3. Run only the new test file, with and without the fix:**
+**3. Run only the new test, before the fix:**
 
 ```bash
 {detected test command} {new-test-file}
 ```
 
-Then prove it is red without the fix: `git worktree add --detach <tmp> <fix-commit>^`, copy the new or extended test file (and any new fixtures) to the same paths in `<tmp>`, run the same command there, then `git worktree remove --force <tmp>`. It must fail on its own assertion. If the bug was introduced on this branch, also run it at the base branch the same way: it must pass there. The scratch worktree has no `node_modules`, `.venv` or build output: a failure there from a missing dependency is the environment, not the test — link the dependencies in, or follow the value bar's in-place fallback, and otherwise record the proof as `unavailable (<reason>)` and keep the test.
+This is how you prove it is red without the fix: it must fail on its own assertion against the unfixed code.
+- Fails on its own assertion → a valid red test. Continue to 8c.
+- Fails on an import or fixture error in the test itself → a test defect: correct it once; still broken → drop the test, record `Regression proof — unavailable (test defect: <error>)`, and continue.
+- Passes → it does not catch the bug. Rewrite it once at the boundary where the bug lived; still green → drop it, record `Regression proof — unavailable (no red test found)`, and continue.
 
-**4. Evaluate:**
-- Passes with the fix and fails on its assertion without it → commit: `git commit -m "test(qa): regression test for ISSUE-NNN — {desc}"`, and put the regression-proof line from the value bar in the issue's report entry
-- Passes without the fix too → it does not catch the bug. Rewrite it once at the boundary where the bug lived; still green without the fix → delete test, defer.
-- Fails with the fix → fix test once. Still failing → delete test, defer.
-- Taking >2 min exploration → skip and defer.
+If the bug was introduced on this branch, also run the test at the base branch as the value bar's control: `git worktree add --detach <tmp> <base>`, copy the new or extended test file (and any new fixtures) to the same paths in `<tmp>`, run the same command there, then `git worktree remove --force <tmp>`. It must pass there. The scratch worktree has no `node_modules`, `.venv` or build output: a failure there from a missing dependency is the environment, not the test — link the dependencies in, and otherwise record the base control as `unavailable (<reason>)` and keep the test.
 
-**5. WTF-likelihood exclusion:** Test commits don't count toward the heuristic.
+### 8c. Fix
+
+- Read the source code, understand the context
+- Make the **minimal fix** — smallest change that resolves the issue
+- Do NOT refactor surrounding code, add features, or "improve" unrelated things
+
+### 8d. Re-test
+
+All three checks must pass:
+
+1. **The regression test passes** — run only it: `{detected test command} {new-test-file}`.
+2. **The original probe passes** — navigate back to the affected page, take the **before/after screenshot pair**, check the console, and use `snapshot -D` to verify the change had the expected effect.
+3. **The adjacent happy path still works** — walk the normal flow through the same page or component once.
+
+```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
+$B goto <affected-url>
+$B screenshot "$REPORT_DIR/screenshots/issue-NNN-after.png"
+$B console --errors
+$B snapshot -D
+```
+
+A failed recheck gets ONE revised fix, then the three checks again. Still failing → undo the repair: `git restore -- <source files this fix touched>`. The source goes back exactly as it was and nothing else in the tree is touched. The regression test stays (see 8e).
+
+### 8e. Commit and classify
+
+Commit only verified source plus its test. One commit per fix, never bundled with another fix:
+
+```bash
+git add <only-the-source-files-this-fix-touched>
+git commit -m "fix(qa): ISSUE-NNN — short description"
+git add <the-regression-test-file>
+git commit -m "test(qa): regression test for ISSUE-NNN — {desc}"
+```
+
+Put the regression-proof line from the value bar in the issue's report entry: `fails before fix: yes` from 8b, `passes after fix: yes` from 8d, and the base control.
+
+Classify every issue that entered the loop:
+- **verified**: all three 8d checks pass → committed as above
+- **best-effort**: fix applied but couldn't fully verify (e.g., needs auth state, external service) → left uncommitted in the working tree and listed in the report with what could not be checked
+- **reverted**: the repair was undone in 8d, or a committed fix later caused a regression → mark the issue as "deferred"
+
+A valid red test is never deleted. When the repair is undone, keep the regression test uncommitted, record it as a finding with its failing output, and defer the issue with the reason. Only a proven test or fixture defect (an import or fixture failure in the test itself) may be corrected once or dropped, and the report says which.
+
+Undoing a repair touches only this fix's files: before the commit, `git restore -- <source files this fix touched>` (and remove the new test file only when it was dropped as a test defect); after the commit, `git revert <that fix commit's sha>`. Never `git revert` whatever happens to be on top of the branch, and never restore, stash or revert a user change.
+
+**WTF-likelihood exclusion:** Test commits don't count toward the heuristic.
 
 ### 8f. Self-Regulation (STOP AND EVALUATE)
 
@@ -849,7 +856,7 @@ After all fixes are applied:
 
 Write the report to both local and project-scoped locations:
 
-**Local:** `.vibestack/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md`
+**Local:** `$REPORT_DIR/qa-report.md` — `.vibestack/qa-reports/run-<UTC>/{qa-report.md, baseline.json, prior-baseline.json, screenshots/}`
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
@@ -890,6 +897,6 @@ If the repo has a `TODOS.md`:
 
 11. **Clean working tree required.** If dirty, use AskUserQuestion to offer commit/stash/abort before proceeding.
 12. **One commit per fix.** Never bundle multiple fixes into one commit.
-13. **Only modify tests when generating regression tests in Phase 8e.5.** Never modify CI configuration. Never change or delete existing test cases — in an existing test file, only add the failing case for the bug being fixed; otherwise create a new test file.
-14. **Revert on regression.** If a fix makes things worse, `git revert HEAD` immediately.
+13. **Only modify tests when generating regression tests in Phase 8b.** Never modify CI configuration. Never change or delete existing test cases — in an existing test file, only add the failing case for the bug being fixed; otherwise create a new test file.
+14. **Undo only this repair on regression.** If a fix makes things worse, undo it immediately: before its commit, `git restore -- <files this fix touched>`; after, `git revert <that fix commit's sha>`. Never revert by position, and never touch a user change.
 15. **Self-regulate.** Follow the WTF-likelihood heuristic. When in doubt, stop and ask.

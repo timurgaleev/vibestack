@@ -76,8 +76,8 @@
 For each page visited during a QA session:
 
 1. **Visual scan** — Take annotated screenshot (`snapshot -i -a -o`). Look for layout issues, broken images, alignment.
-2. **Interactive elements** — Click every button, link, and control. Does each do what it says?
-3. **Forms** — Fill and submit. Test empty submission, invalid data, edge cases (long text, special characters).
+2. **Interactive elements** — Click every button, link, and control. Does each do what it says? (NON-LOCAL: consent first; never the logout/delete link class)
+3. **Forms** — Fill and submit. Test empty submission, invalid data, edge cases (long text, special characters). (NON-LOCAL: consent first; never the logout/delete link class)
 4. **Navigation** — Check all paths in/out. Breadcrumbs, back button, deep links, mobile menu.
 5. **States** — Check empty state, loading state, error state, full/overflow state.
 6. **Console** — Run `console --errors` after interactions. Any new JS errors or failed requests?
