@@ -86,8 +86,20 @@ B='<BROWSE_BIN>'
 
 `NOT_SUPPORTED:skill` means the stateless shim is running — skip this check.
 When a listed browser-skill confidently matches the target host, read it with
-`"$B" skill show <name>`, run it with `"$B" skill run <name> --arg k=v` (one
-`--arg` per input it declares), and return its JSON as the result.
+`"$B" skill show <name>`. Running it is not read-only: the daemon hands its
+script a read+write token, so the script can click, fill, type and submit on
+the page, and nothing in /scrape constrains what it does. The daemon has no
+narrower scope to give it — the read scope lacks `goto`, so a script could not
+even navigate. Before running it, ask with AskUserQuestion:
+
+> "Browser-skill `<name>` matches this site. Its script runs with a read+write
+> browser token — it can click, fill and submit forms, not just read.
+> A) Run it   B) Scrape read-only here instead (recommended unless you trust it)"
+
+Only an explicit A runs it — `"$B" skill run <name> --arg k=v` (one `--arg`
+per input it declares) — and its JSON is the result. On B, no answer, or in a
+spawned or headless session (no human to consent), do not run it; continue to
+Step 1 and prototype read-only.
 
 If a matching slash skill exists, suggest running it (`/that-skill`) instead of
 re-deriving the flow. Only prototype when there's no match.

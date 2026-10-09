@@ -176,6 +176,21 @@ else
 fi
 refute "qa: never reverts blindly with git revert HEAD" 'git revert HEAD' "$Q"
 
+# ── /scrape ──────────────────────────────────────────────────────────────────
+# A browser-skill script runs with a read+write daemon token (it can click, fill
+# and submit), so the read-only /scrape may only run one on an explicit yes.
+echo "scrape: a browser-skill runs only with consent"
+SR="$(render scrape)"
+MATCH="$TMP/sr-match.md"
+section "$SR" '^### 0\. Match' '^### 1\. ' > "$MATCH"
+[ -s "$MATCH" ] || { echo "Step 0 not found in scrape" >&2; exit 1; }
+MATCH1="$(tr '\n' ' ' < "$MATCH")"
+check "scrape: says a browser-skill gets a read+write token" 'read\+write' <(printf '%s\n' "$MATCH1")
+check "scrape: asks before running a browser-skill" 'AskUserQuestion' "$MATCH"
+check "scrape: runs it only on an explicit A" 'Only an explicit A runs' <(printf '%s\n' "$MATCH1")
+check "scrape: never runs one in spawned/headless sessions" 'spawned.*headless.*do not run' <(printf '%s\n' "$MATCH1")
+refute "scrape: no bash block runs a browser-skill unasked" 'skill run' <(fenced_bash "$MATCH")
+
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]
