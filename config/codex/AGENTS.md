@@ -546,6 +546,23 @@ memrain before answering:
 Grep is still right for known exact strings, regex, and file globs in the
 current repo.
 
+### Code Questions
+
+When the repo is indexed into memrain, ask its code graph before Grep:
+
+- "Where is X defined?" → `mcp__memrain__code_def`
+- "Who calls X?" → `mcp__memrain__code_callers`; every other use (imports,
+  type uses) → `mcp__memrain__code_refs`
+- "What does this function call?" → `mcp__memrain__code_callees` with
+  `<path>:<line>`
+- "What breaks if I change X?" → `mcp__memrain__code_blast`; "where does this
+  request end up?" → `mcp__memrain__code_flow`
+
+**Zero hits means unknown, not absent.** An empty result is proof only when its
+`readiness.state` is `ready`. `not_built`, `indexing` or `no_symbols` — or a
+failed call — mean the graph cannot answer: say so, then fall back to Grep.
+Never report "nothing calls X" from an empty or failed query.
+
 ### Saving Information
 
 Save directly to memrain when work produces something worth keeping:

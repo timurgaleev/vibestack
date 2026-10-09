@@ -1,10 +1,11 @@
 ---
 name: vibe
 description: |
-  Router for the vibestack skill suite — name the task and it points you at the right skill. Use when you know vibestack is installed but not which of its skills fits, or when an agent has no slash-command picker (Codex) and needs to find the pack by name.
+  Router for the vibestack skill suite — name the task and it invokes the right skill. Use when you know vibestack is installed but not which of its skills fits, or when an agent has no slash-command picker (Codex) and needs to find the pack by name.
 allowed-tools:
   - Bash
   - Read
+  - Skill
 triggers:
   - which vibestack skill
   - what vibestack skills are there
@@ -41,7 +42,7 @@ implementing, investigate before fixing, review before shipping.
 | Pressure-test the developer experience of a plan | `plan-devex-review` |
 | Debug an error, test failure, or odd behavior | `investigate` |
 | Review a diff before merge | `review` |
-| Get a second opinion from a different model | `codex`, `claude` |
+| Get a second opinion from a different model | `codex` or `claude` — by host, see below |
 | Audit security | `cso` |
 | QA a running web app | `qa` (fixes), `qa-only` (report) |
 | Drive a browser, scrape a page, pair a remote agent | `browse`, `scrape`, `open-browser`, `pair-agent` |
@@ -68,13 +69,49 @@ Anything not listed here is in the full index — read it rather than guessing a
 a skill name:
 
 ```bash
-cat "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/vibe}/skills-index.md" 2>/dev/null \
-  || ls ~/.claude/skills/
+_found=""
+for _d in "${CLAUDE_SKILL_DIR:-}" "$HOME/.agents/skills/vibe" "$HOME/.claude/skills/vibe" \
+          "$HOME/.cursor/skills/vibe" "$HOME/.kiro/skills/vibe" \
+          ".agents/skills/vibe" ".claude/skills/vibe" ".cursor/skills/vibe" ".kiro/skills/vibe"; do
+  if [ -n "$_d" ] && [ -r "$_d/skills-index.md" ]; then
+    cat "$_d/skills-index.md"; _found=1; break
+  fi
+done
+if [ -z "$_found" ]; then
+  for _r in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills"; do
+    [ -d "$_r" ] && { echo "$_r:"; ls "$_r"; }
+  done
+fi
 ```
 
-Two rules when routing:
+The index sits next to this file, so if none of those paths resolve, read
+`skills-index.md` from the directory this `SKILL.md` was loaded from.
 
+**Second opinion — route by host.** The outside voice has to be a different
+model from the one already running:
+
+```bash
+if [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; then echo "HOST: codex"
+elif [ -n "${CLAUDECODE:-}" ]; then echo "HOST: claude"
+else echo "HOST: other"; fi
+```
+
+`HOST: claude` → `codex`. `HOST: codex` → `claude` (`codex` refuses to run
+nested under Codex, and would be the same model anyway). `HOST: other` (Cursor,
+Kiro) → `codex`, unless the session's own model is GPT, then `claude`.
+
+Rules when routing:
+
+- **Invoke it, don't describe it.** Once a skill fits, hand off: invoke it
+  through the Skill tool (Claude Code, Cursor, Kiro), or on Codex load that
+  skill's `SKILL.md` and follow it (users invoke it there as `Use $<name>`). Do not answer with a list of
+  options, and do not do the skill's work freehand when the skill exists.
+- **Answer directly instead** when the request is a quick factual question
+  (including "which skills are there?" — show the table), a small edit the user
+  scoped themselves, or the user asked for a direct answer rather than a
+  workflow.
 - **Pick one.** Don't stack skills; each carries its own full workflow, and a
   skill's own instructions take precedence once invoked.
-- **Don't guess a name.** If nothing above fits, say so and proceed normally —
-  these are workflows, not dependencies.
+- **Only route to a skill that is installed.** Don't guess a name: if the table
+  or the index has nothing that fits, or the skill is not present on this host,
+  say so and proceed normally — these are workflows, not dependencies.

@@ -617,7 +617,7 @@ CODEX SAYS (plan review — outside voice):
 
 On any Codex error, fall back to the Claude adversarial subagent.
 
-**If `CODEX_MODE` is `under_codex`, `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored):**
+**If `CODEX_MODE` is `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored), or `under_codex` with no completed `claude -p` pass:** under `under_codex` the preflight's `OUTSIDE_VOICE` branches govern — `claude -p` runs first, and only its fallback reaches this subagent.
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
 
@@ -625,7 +625,7 @@ Dispatch via the Agent tool. The subagent has fresh context — genuine independ
 
 Subagent prompt: same plan review prompt as above.
 
-Present findings under an `OUTSIDE VOICE (Claude subagent):` header.
+Present findings under an `OUTSIDE VOICE (Claude subagent):` header — under `under_codex`, use `OUTSIDE VOICE (same-model subagent — not cross-model):` instead, since the subagent is Codex too.
 
 If the subagent fails or times out: "Outside voice unavailable. Continuing to outputs."
 
