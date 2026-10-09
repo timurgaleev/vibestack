@@ -1,7 +1,7 @@
 ---
 name: agent-eval
 description: |
-  Build an evaluation harness for an LLM agent, prompt template, or tool-using workflow — a task set, deterministic and judge-based scoring, per-tag metrics, and a regression gate — then run it. Use it when a prompt or model change needs to be measured instead of eyeballed, or when a project ships LLM behavior with no eval set at all.
+  Build and run an eval harness for an LLM agent or prompt, with scoring and a regression gate.
 triggers:
   - agent eval
   - evaluate the agent
@@ -29,13 +29,13 @@ Do not use for web page performance (`/benchmark`) or for comparing several mode
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"

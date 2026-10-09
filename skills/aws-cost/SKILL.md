@@ -1,7 +1,7 @@
 ---
 name: aws-cost
 description: |
-  Read-only AWS cost review for the account at hand: where the money went last month, what changed versus the month before, and the three actions worth taking. Uses the AWS billing MCP tools when the session has them, otherwise the aws CLI (ce, compute-optimizer, budgets). Use when someone asks why the AWS bill went up, wants a FinOps pass, or needs Savings Plans and RI coverage checked.
+  Read-only AWS cost review: where last month's money went, what changed, and the top actions to cut the bill.
 triggers:
   - aws cost
   - aws bill
@@ -23,13 +23,13 @@ Use when: "aws cost", "aws bill", "why did AWS cost go up", "finops review", "co
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -624,7 +624,7 @@ and say plainly that the bill is already lean.
 ## Step 6: Write and print the report
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 REPORT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$REPORT_DIR"
 REPORT="$REPORT_DIR/aws-cost-$(date +%Y-%m-%d).md"
@@ -715,7 +715,7 @@ RECOMMENDATIONS (verified savings first, each ranked by monthly $)
            --query 'Reservations[].Instances[].[InstanceId,LaunchTime,State.Name,Tags]'
    Risk: this is a spend change, not proven waste — it may be a deliberate scale-up.
 
-Report written to: ~/.vibestack/projects/<slug>/aws-cost-2026-08-01.md
+Report written to: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/<slug>/aws-cost-2026-08-01.md
 ```
 
 The header and the linked-account section carry whichever of the four `ORG_ROLE` outcomes

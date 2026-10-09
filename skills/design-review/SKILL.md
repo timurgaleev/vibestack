@@ -1,7 +1,7 @@
 ---
 name: design-review
 description: |
-  Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems, AI slop patterns, and slow interactions — then fixes them. Iteratively fixes issues in source code, committing each fix atomically and re-verifying with before/after screenshots. For plan-mode design review (before implementation), use /plan-design-review.
+  Visual design QA on a live site: find spacing, hierarchy and consistency issues, then fix and re-verify them.
 allowed-tools:
   - Bash
   - Read
@@ -26,13 +26,13 @@ Proactively suggest when the user mentions visual inconsistencies or wants to po
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -312,7 +312,7 @@ Only commit if there are changes. Stage all bootstrap files (config, test direct
 
 ```bash
 # Bind $D to vibe-design (OpenAI image backend) when a key is configured.
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 if [ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ]; then
   echo "DESIGN_AVAILABLE via $D"
 else
@@ -341,7 +341,7 @@ URL, since a baseline for another site or environment is no baseline at all.
 
 ```bash
 _TARGET_URL='<TARGET_URL>'
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 REPORT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/designs/design-audit-$(date +%Y%m%d)"
 mkdir -p "$REPORT_DIR/screenshots"
 echo "REPORT_DIR: $REPORT_DIR"
@@ -804,7 +804,7 @@ Compare screenshots and observations across pages for:
 
 **Project-scoped:**
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 ```
 Write to: `~/.vibestack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md`
 
@@ -990,7 +990,7 @@ Record baseline design score and AI slop score at end of Phase 6.
 ## Output Structure
 
 ```
-~/.vibestack/projects/$SLUG/designs/design-audit-{YYYYMMDD}/
+${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/design-audit-{YYYYMMDD}/
 ├── design-audit-{domain}.md                  # Structured report
 ├── screenshots/
 │   ├── first-impression.png                  # Phase 1
@@ -1129,7 +1129,7 @@ Merge findings into the triage with `[codex]` / `[subagent]` / `[cross-model]` t
 
 **Log the result:**
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","outside_status":"OUTSIDE_STATUS","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","outside_status":"OUTSIDE_STATUS","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Replace the placeholders:
 - **OUTSIDE_STATUS** — what happened to the cross-model voice: `completed` (Codex, or `claude -p` under Codex, returned a review), `unavailable` (it was attempted, or the preflight found it unusable, and no review came back), `disabled` (`codex_reviews` is off), or `skipped` (the section did not run).
@@ -1178,7 +1178,7 @@ Describe the page/component with the finding fixed, referencing DESIGN.md constr
 
 ```bash
 REPORT_DIR='<REPORT_DIR>'
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 FINDING_DIR="$REPORT_DIR/mockups/finding-NNN"
 BRIEF_FILE="$FINDING_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
@@ -1304,7 +1304,7 @@ Write the report to `$REPORT_DIR` (already set up in the setup phase):
 
 **Also write a summary to the project index:**
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 ```
 Write a one-line summary to `~/.vibestack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md` with a pointer to the full report in `$REPORT_DIR`.
 
