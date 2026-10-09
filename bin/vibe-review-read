@@ -69,7 +69,8 @@ def main() -> int:
         rows = [r for r in rows if r.get("skill") == only]
 
     if "--json" in args:
-        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        # One skill's history reads newest first, so rows[0] is its latest run.
+        print(json.dumps(rows[::-1] if only else rows, ensure_ascii=False, indent=2))
         return 0
 
     if not rows:
