@@ -1,10 +1,12 @@
 ## Review Readiness Dashboard
 
-After completing the review, gather the three inputs the dashboard needs — the
-review log, the current commit, and the global skip setting:
+After completing the review, gather the four inputs the dashboard needs — the
+review log, a snapshot of the working tree, the current commit, and the global
+skip setting:
 
 ```bash
 ~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+echo "TREE_NOW: $(~/.vibestack/bin/vibe-review-log --snapshot 2>/dev/null || echo unavailable)"
 git rev-parse --short HEAD
 ~/.vibestack/bin/vibe-config get skip_eng_review 2>/dev/null
 ```
@@ -12,8 +14,8 @@ git rev-parse --short HEAD
 `vibe-review-read --json` prints exactly one of two things: the literal
 `NO_REVIEWS` when this branch has no review log yet, or a single JSON array
 holding every logged entry for the branch, oldest first. Its output carries no
-other sections — take the commit and the skip setting from their own commands
-above, never from a trailer on the review output. Treat `NO_REVIEWS` and an
+other sections — take the tree, the commit and the skip setting from their own
+commands above, never from a trailer on the review output. Treat `NO_REVIEWS` and an
 empty array `[]` the same: every row shows 0 runs and `—`, and the verdict falls
 through to the Eng Review rule below. `vibe-config get` prints `true` when the
 skip is set and nothing at all when it is unset.
@@ -52,12 +54,14 @@ Display:
 **Verdict logic:**
 - **CLEARED**: Eng Review has >= 1 entry within 7 days from either \`review\` or \`plan-eng-review\` with status "clean" (or \`skip_eng_review\` is \`true\`)
 - **NOT CLEARED**: Eng Review missing, stale (>7 days), or has open issues
+- **Tree binding.** A `review` or `plan-eng-review` entry that carries a `tree` field counts toward CLEARED only when that `tree` equals `TREE_NOW`, and neither `completed` nor `converged` is `false`. A different tree shows "CLEAN (tree changed since review)" and does not clear: the content in front of you is not the content that was reviewed, whether or not HEAD moved. `TREE_NOW: unavailable` means no tree-bound entry clears. Status `incomplete` (a reviewer never finished) is never clean. Entries without `tree` (older logs) fall back to the commit-based staleness note below.
 - CEO, Design, and Codex reviews are shown for context but never block shipping
 - If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
 
-**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- Use the short hash from the `git rev-parse --short HEAD` command above as the current commit. The review log does not report HEAD, so there is nothing to parse out of `vibe-review-read` for this
-- For each review entry that has a `commit` field: compare it against the current HEAD. If different, count elapsed commits: `git rev-list --count STORED_COMMIT..HEAD`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
+**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale. Content decides, not commits: a commit, amend or rebase that keeps the bytes keeps the review current, and an uncommitted edit makes it stale even though HEAD never moved.
+- For each review entry that has a `tree` field: compare it with `TREE_NOW`. If different, display: "Note: {skill} review from {date} is stale — the working tree changed since it was logged". If `TREE_NOW` is `unavailable`, display: "Note: {skill} review from {date} — the current tree cannot be fingerprinted, so freshness is unknown". Skip the commit checks below for these entries
+- For the remaining entries, use the short hash from the `git rev-parse --short HEAD` command above as the current commit. The review log does not report HEAD, so there is nothing to parse out of `vibe-review-read` for this
+- For each such entry that has a `commit` field: compare it against the current HEAD. If different, count elapsed commits: `git rev-list --count STORED_COMMIT..HEAD`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
 - If that `git rev-list` fails, the stored commit is no longer in this history — a rebase, squash, or amend rewrote it. Display: "Note: {skill} review from {date} predates a history rewrite — treat it as stale" rather than reporting a commit count
-- For entries without a `commit` field (legacy entries), or whose `commit` is the string `unknown` (git was unreachable when the entry was written): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
-- If all reviews match the current HEAD, do not display any staleness notes
+- For entries with neither `tree` nor `commit` (legacy entries), or whose `commit` is the string `unknown` (git was unreachable when the entry was written): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
+- If every review matches `TREE_NOW` (or, for entries without `tree`, the current HEAD), do not display any staleness notes

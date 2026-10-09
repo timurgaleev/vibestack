@@ -121,7 +121,7 @@ N=$(grep -cF 'ls-files --others --exclude-standard' "$SK")
 hasnt "specialist failure no longer 'partial results'" "partial results are better than no results"
 hasnt "red team failure no longer silent" "skip silently and continue"
 hasnt "all-failed adversarial still persisted" "If all passes failed, do NOT persist"
-has "adversarial record carries completed" '"completed":COMPLETED,"commit"'
+has "adversarial record carries completed" '"completed":COMPLETED,"start_tree":"START_TREE","commit"'
 has "bounded re-review step" "### Step 5e: Re-review the fixes (bounded)"
 has "review record carries the start snapshot" '"start_tree":"START_TREE"'
 has "review record carries convergence" '"converged":CONVERGED'

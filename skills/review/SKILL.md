@@ -1040,9 +1040,9 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","completed":COMPLETED,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
-Substitute: COMPLETED = `true` only if the Claude adversarial subagent finished with its
+Substitute: START_TREE = the Step 3 snapshot of the final pass (drop the field if it printed `unknown`). COMPLETED = `true` only if the Claude adversarial subagent finished with its
 closing `Recommendation:` line AND every Codex pass that was started (adversarial
 challenge, structured review) finished with usable output; otherwise `false`. Codex that
 is not installed or not authenticated was never started and does not make this `false` —
