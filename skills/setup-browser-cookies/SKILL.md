@@ -87,7 +87,8 @@ Cookie import needs the full browse daemon; the stateless fallback shim cannot
 decrypt a real browser's cookie store. If any command below answers
 `NOT_SUPPORTED:cookie-import-browser`, that is what happened: tell the user the
 full daemon is not running in this checkout and stop, rather than reporting a
-half-import that never occurred.
+half-import that never occurred. Point them at `/connect-chrome`, which imports
+cookies into the shim from a Chrome started with a remote debugging port.
 
 ### 2. Open the cookie picker
 
