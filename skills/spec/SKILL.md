@@ -453,7 +453,7 @@ echo "TITLE_FILE: $TITLE_FILE"
 Read each empty file, then **Write the final body into `BODY_FILE` and the one-line
 title into `TITLE_FILE` with the Write tool.**
 
-**Re-scan before filing.** The Phase 4.5a/4.5b gates ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so on `$BODY_FILE` and the title you are about to file: (1) repeat the Phase 4.5a semantic re-read and honor its verdict, and (2) run the same deterministic scanner as the 4.5b gate on both files: `~/.vibestack/bin/vibe-redact scan --file "$BODY_FILE" --file "$TITLE_FILE"; echo "REDACT_EXIT: $?"`. Only `REDACT_EXIT: 0` passes; on any other exit (a finding, or a scan that could not run), **stop**: redact and rotate before filing — never create the issue with a secret in it. Any redaction or edit the scan forces is applied to `$BODY_FILE` and re-scanned there; a fix made only in the conversation is lost the moment the body is rendered again.
+**Re-scan before filing.** The Phase 4.5a/4.5b gates ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so on `$BODY_FILE` and the title you are about to file: (1) repeat the Phase 4.5a semantic re-read and honor its verdict, and (2) run the same deterministic scanner as the 4.5b gate on both files: `${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact scan --file "$BODY_FILE" --file "$TITLE_FILE"; echo "REDACT_EXIT: $?"`. Only `REDACT_EXIT: 0` passes; on any other exit (a finding, or a scan that could not run), **stop**: redact and rotate before filing — never create the issue with a secret in it. Any redaction or edit the scan forces is applied to `$BODY_FILE` and re-scanned there; a fix made only in the conversation is lost the moment the body is rendered again.
 
 If `gh` is available and authenticated, replace `<TITLE_FILE>` and `<BODY_FILE>`
 with the printed paths and run:
@@ -544,7 +544,7 @@ is a sink of its own. It sits on disk under
 `~/.vibestack/projects/<slug>/specs/` and is exactly what a spawned agent reads
 on stdin, so a secret that reaches it has escaped the gate twice over. If the
 body was touched at all between the filing scan and this write, run
-`~/.vibestack/bin/vibe-redact scan --file "$BODY_FILE"` again before writing it —
+`${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact scan --file "$BODY_FILE"` again before writing it —
 on any non-zero exit, do not write the archive.
 
 **Sync default:** spec archives stay local under
