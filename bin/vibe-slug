@@ -1,27 +1,297 @@
 #!/usr/bin/env bash
 # vibe-slug — emit SLUG=<project-slug> for eval
-# Usage: eval "$(vibe-slug)"
-# Slug is derived from the git remote URL or the current directory name.
+# Usage:
+#   eval "$(vibe-slug)"                  sets SLUG
+#   vibe-slug --identity                 prints SLUG, PROJECT_REMOTE, PROJECT_ROOT, LEGACY_SLUG (eval-safe)
+#   vibe-slug --stamp-checkpoint <file>  writes remote:/project_root: into a checkpoint's frontmatter
+#   vibe-slug --classify-checkpoints     reads checkpoint paths on stdin, prints "<match|unstamped|foreign>\t<path>"
+#   vibe-slug --migrate                  copies the old bucket without ownership evidence (see below), prints SLUG
+#
+# The slug names the state bucket ~/.vibestack/projects/<slug>/. It is derived
+# from the origin remote, so two repositories never share a bucket because they
+# happen to have the same name:
+#   github.com/alice/api        -> alice-api
+#   gitlab.com/grp/sub/api      -> sub-api-<8 hex of the canonical remote>
+#   /srv/git/api.git (local)    -> api-<8 hex of the path>
+#   no remote                   -> basename of the repository root (or cwd)
+# VIBESTACK_PROJECT_SLUG overrides all of it.
+#
+# Buckets used to be keyed by the remote's last path segment alone (`api`). The
+# first time a repository resolves to its new slug, the durable files listed in
+# MIGRATE_FILES, MIGRATE_DIRS and MIGRATE_TREES are copied from that old
+# bucket — never moved, never overwritten. A shared name is not proof of
+# ownership (alice/api and bob/api both used `api`), so the copy runs only when
+# the old bucket shows evidence of this repository: a review-log commit that
+# exists here, or a checkpoint stamped with this remote. Without evidence it
+# prints a notice once and copies nothing; `vibe-slug --migrate` copies anyway.
+# The old bucket records which remote claimed it; a different remote that maps
+# to the same old name is warned instead of copied.
+#
+# Limits: without a remote the slug is the directory basename, so two unrelated
+# remote-less repositories with one folder name still share a bucket (only
+# checkpoints are told apart, by project_root). The same owner/repo on two
+# hosts shares one bucket too. VIBESTACK_PROJECT_SLUG separates either case.
 set -euo pipefail
 
-_slug_from_remote() {
-  local url
-  url=$(git remote get-url origin 2>/dev/null) || return 1
-  # strip protocol, user@, .git suffix
+STATE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+
+_lower() { printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
+
+_sanitize() {
+  _lower "$1" | sed -E 's/[^a-z0-9-]/-/g; s/-+/-/g; s/^-|-$//g'
+}
+
+_hash8() {
+  local d=""
+  if command -v shasum >/dev/null 2>&1; then
+    d=$(printf '%s' "$1" | shasum -a 256 2>/dev/null)
+  elif command -v sha256sum >/dev/null 2>&1; then
+    d=$(printf '%s' "$1" | sha256sum 2>/dev/null)
+  elif command -v openssl >/dev/null 2>&1; then
+    d=$(printf '%s' "$1" | openssl dgst -sha256 -r 2>/dev/null)
+  else
+    d=$(printf '%s' "$1" | cksum | awk '{printf "%08x", $1}')
+  fi
+  printf '%s' "$d" | LC_ALL=C tr -cd '0-9a-f' | cut -c1-8
+}
+
+# Canonical remote: one credential-free spelling per repository, whichever way
+# it was cloned. Sets CANON (host/path, or the local path), HOSTED (1/0) and
+# SEGS (the path segments, space separated, for hosted remotes).
+_canonical_remote() {
+  local url="$1" host="" path="" scheme rest auth
+  url=$(printf '%s' "$url" | tr -d '\r\n')
+  CANON=""; HOSTED=0; SEGS=""
+  [ -n "$url" ] || return 0
+  if [[ "$url" =~ ^([A-Za-z][A-Za-z0-9+.-]*)://(.*)$ ]]; then
+    scheme=$(_lower "${BASH_REMATCH[1]}")
+    rest="${BASH_REMATCH[2]}"
+    if [ "$scheme" = "file" ]; then
+      path="$rest"
+    else
+      auth="${rest%%/*}"
+      if [ "$auth" = "$rest" ]; then path=""; else path="${rest#*/}"; fi
+      auth="${auth##*@}"     # drop user:token@
+      host="${auth%%:*}"     # drop :port
+      HOSTED=1
+    fi
+  elif ! [[ "$url" =~ ^[A-Za-z]:[/\\] ]] && [[ "$url" =~ ^([^/:]+):(.*)$ ]]; then
+    host="${BASH_REMATCH[1]##*@}"
+    path="${BASH_REMATCH[2]}"
+    HOSTED=1
+  else
+    path="$url"
+  fi
+  if [ "$HOSTED" = 1 ]; then
+    path=$(printf '%s' "$path" | sed -E 's#/+#/#g; s#^/##; s#/$##; s#\.git$##; s#/$##')
+    # Lowercased whole: the slug folds case anyway, and two spellings of one
+    # repository must compare equal when restore checks a checkpoint's stamp.
+    CANON=$(_lower "$host/$path")
+    SEGS=$(printf '%s' "$path" | tr '/' ' ')
+  else
+    CANON=$(printf '%s' "$path" | sed -E 's#/+$##')
+  fi
+}
+
+_slug_from_canon() {
+  local n last prev
+  if [ "$HOSTED" = 1 ]; then
+    n=$(printf '%s\n' "$SEGS" | awk '{print NF}')
+    last=$(printf '%s\n' "$SEGS" | awk '{print $NF}')
+    prev=$(printf '%s\n' "$SEGS" | awk 'NF > 1 {print $(NF-1)}')
+    if [ "$n" -eq 0 ]; then
+      echo ""
+    elif [ "$n" -eq 2 ]; then
+      _sanitize "$prev-$last"
+    elif [ "$n" -ge 3 ]; then
+      _sanitize "$prev-$last-$(_hash8 "$CANON")"
+    else
+      _sanitize "$last-$(_hash8 "$CANON")"
+    fi
+  else
+    last=$(basename "${CANON%.git}")
+    _sanitize "$last-$(_hash8 "$CANON")"
+  fi
+}
+
+# The slug every bucket was keyed by before owner-aware slugs: the remote's
+# last path segment, or the directory basename when there is no remote.
+_legacy_slug() {
+  local url="$1"
   url=$(echo "$url" | sed -E 's|^.*://||; s|^[^@]+@||; s|\.git$||; s|[^a-zA-Z0-9/_-]|-|g')
-  # last path component
-  echo "$url" | awk -F'/' '{print $NF}' | tr '[:upper:]' '[:lower:]'
+  _sanitize "$(echo "$url" | awk -F'/' '{print $NF}')"
 }
 
-_slug_from_dir() {
-  basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" \
-    | tr '[:upper:]' '[:lower:]' \
-    | sed -E 's/[^a-z0-9-]/-/g; s/-+/-/g; s/^-|-$//g'
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+_canonical_remote "$REMOTE_URL"
+
+if [ -n "${VIBESTACK_PROJECT_SLUG:-}" ]; then
+  SLUG=$(_sanitize "$VIBESTACK_PROJECT_SLUG")
+elif [ -n "$CANON" ]; then
+  SLUG=$(_slug_from_canon)
+else
+  SLUG=$(_sanitize "$(basename "$PROJECT_ROOT")")
+fi
+[ -n "$SLUG" ] || SLUG="unknown"
+
+if [ -n "$REMOTE_URL" ]; then
+  LEGACY_SLUG=$(_legacy_slug "$REMOTE_URL")
+else
+  LEGACY_SLUG="$SLUG"
+fi
+[ -n "$LEGACY_SLUG" ] || LEGACY_SLUG="unknown"
+
+# Read one frontmatter field (first `---` block only).
+_fm_field() {
+  awk -v key="$2" '
+    NR == 1 && $0 != "---" { exit }
+    NR > 1 && $0 == "---" { exit }
+    NR > 1 && index($0, key ":") == 1 { v = substr($0, length(key) + 2); sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v); print v; exit }
+  ' "$1" 2>/dev/null
 }
 
-SLUG=$(_slug_from_remote 2>/dev/null || _slug_from_dir 2>/dev/null || echo "unknown")
-# sanitise
-SLUG=$(echo "$SLUG" | sed -E 's/[^a-z0-9-]/-/g; s/-+/-/g; s/^-|-$//g')
-[ -z "$SLUG" ] && SLUG="unknown"
+# match     stamped for this project
+# unstamped saved before checkpoints carried an identity
+# foreign   stamped for a different remote, or for another root when neither has a remote
+_classify() {
+  local f="$1" r root here_remote="${CANON:-none}"
+  r=$(_fm_field "$f" remote)
+  if [ -z "$r" ]; then echo unstamped; return; fi
+  root=$(_fm_field "$f" project_root)
+  if [ "$r" != "none" ] && [ "$here_remote" != "none" ]; then
+    [ "$r" = "$here_remote" ] && echo match || echo foreign
+  elif [ -n "$root" ] && [ "$root" = "$PROJECT_ROOT" ]; then
+    echo match
+  else
+    echo foreign
+  fi
+}
 
-echo "SLUG=$SLUG"
+# Durable, project-scoped state only. Gate state (review logs, deploy
+# confirmations) is deliberately absent: a confirmation recorded for another
+# project must never satisfy this one's gate.
+MIGRATE_FILES="learnings.jsonl decisions.jsonl timeline.jsonl question-log.jsonl taste-profile.json health-history.jsonl careful-patterns.txt greptile-history.md"
+MIGRATE_DIRS="specs ceo-plans"
+# Copied whole (any depth, any file type): design boards and approved mockups.
+MIGRATE_TREES="designs"
+
+_copy_if_absent() {
+  [ -f "$1" ] || return 0
+  [ -e "$2" ] && return 0
+  mkdir -p "$(dirname "$2")"
+  cp -p "$1" "$2"
+  COPIED=$((COPIED + 1))
+}
+
+# Evidence that this repository wrote the old bucket: a checkpoint stamped with
+# this remote, or a commit a review log recorded that exists in this clone.
+_owns_legacy() {
+  local old="$1" f sha
+  if [ -d "$old/checkpoints" ]; then
+    for f in "$old/checkpoints"/*.md; do
+      [ -f "$f" ] && [ "$(_classify "$f")" = match ] && return 0
+    done
+  fi
+  for sha in $(cat "$old"/*.jsonl 2>/dev/null \
+      | grep -oE '"(commit|commit_full|merge_sha|head_sha|base_sha)"[[:space:]]*:[[:space:]]*"[0-9a-f]{7,40}"' \
+      | grep -oE '[0-9a-f]{7,40}"$' | tr -d '"' | sort -u | head -n 50); do
+    git cat-file -e "$sha^{commit}" 2>/dev/null && return 0
+  done
+  return 1
+}
+
+_migrate_legacy() {
+  local force="${1:-0}"
+  [ -n "$CANON" ] || return 0
+  [ -z "${VIBESTACK_PROJECT_SLUG:-}" ] || return 0
+  [ "$LEGACY_SLUG" != "$SLUG" ] || return 0
+  local old="$STATE_HOME/projects/$LEGACY_SLUG" new="$STATE_HOME/projects/$SLUG"
+  local marker="$new/.slug-migration" claim f name
+  [ "$force" = 1 ] || [ ! -e "$marker" ] || return 0
+  [ -d "$old" ] || return 0
+  mkdir -p "$new"
+  claim="$old/.claimed-by"
+  if [ -f "$claim" ] && [ "$(cat "$claim")" != "$CANON" ]; then
+    printf 'skipped %s: claimed by %s\n' "$LEGACY_SLUG" "$(cat "$claim")" > "$marker"
+    echo "vibe-slug: old bucket projects/$LEGACY_SLUG belongs to $(cat "$claim"); nothing copied to projects/$SLUG" >&2
+    return 0
+  fi
+  if [ "$force" != 1 ] && [ ! -f "$claim" ] && ! _owns_legacy "$old"; then
+    printf 'skipped %s: no evidence it belongs to %s\n' "$LEGACY_SLUG" "$CANON" > "$marker"
+    echo "vibe-slug: projects/$LEGACY_SLUG may belong to another repository named $LEGACY_SLUG; nothing copied to projects/$SLUG. If it holds this repository's state, run: vibe-slug --migrate" >&2
+    return 0
+  fi
+  COPIED=0
+  for name in $MIGRATE_FILES; do
+    _copy_if_absent "$old/$name" "$new/$name"
+  done
+  for name in $MIGRATE_DIRS; do
+    [ -d "$old/$name" ] || continue
+    for f in "$old/$name"/*.md; do
+      [ -f "$f" ] && _copy_if_absent "$f" "$new/$name/$(basename "$f")"
+    done
+  done
+  for name in $MIGRATE_TREES; do
+    [ -d "$old/$name" ] || continue
+    while IFS= read -r f; do
+      _copy_if_absent "$f" "$new/${f#"$old"/}"
+    done < <(find "$old/$name" -type f 2>/dev/null)
+  done
+  for f in "$old"/*.md; do
+    [ -f "$f" ] && _copy_if_absent "$f" "$new/$(basename "$f")"
+  done
+  if [ -d "$old/checkpoints" ]; then
+    for f in "$old/checkpoints"/*.md; do
+      [ -f "$f" ] || continue
+      [ "$(_classify "$f")" = foreign ] && continue
+      _copy_if_absent "$f" "$new/checkpoints/$(basename "$f")"
+    done
+  fi
+  printf '%s\n' "$CANON" > "$claim"
+  printf 'copied %s files from %s\n' "$COPIED" "$LEGACY_SLUG" > "$marker"
+  [ "$COPIED" -eq 0 ] || echo "vibe-slug: copied $COPIED files from projects/$LEGACY_SLUG to projects/$SLUG (the old bucket is left in place)" >&2
+}
+
+# Single-quoted, so a path with spaces or quotes survives eval.
+_q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+case "${1:-}" in
+  "")
+    # A migration failure (read-only home, full disk) must never cost the caller its slug.
+    _migrate_legacy || true
+    echo "SLUG=$SLUG"
+    ;;
+  --migrate)
+    _migrate_legacy 1
+    echo "SLUG=$SLUG"
+    ;;
+  --identity)
+    echo "SLUG=$SLUG"
+    echo "PROJECT_REMOTE=$(_q "${CANON:-none}")"
+    echo "PROJECT_ROOT=$(_q "$PROJECT_ROOT")"
+    echo "LEGACY_SLUG=$LEGACY_SLUG"
+    ;;
+  --stamp-checkpoint)
+    f="${2:-}"
+    [ -n "$f" ] && [ -f "$f" ] || { echo "usage: vibe-slug --stamp-checkpoint <file>" >&2; exit 2; }
+    [ "$(head -1 "$f")" = "---" ] || { echo "vibe-slug: $f has no frontmatter" >&2; exit 1; }
+    tmp="$f.stamp.$$"
+    awk -v remote="${CANON:-none}" -v root="$PROJECT_ROOT" '
+      NR == 1 { print; next }
+      !done && /^(remote|project_root):/ { next }
+      !done && $0 == "---" { print "remote: " remote; print "project_root: " root; done = 1 }
+      { print }
+    ' "$f" > "$tmp" && mv "$tmp" "$f"
+    ;;
+  --classify-checkpoints)
+    while IFS= read -r f; do
+      [ -n "$f" ] && [ -f "$f" ] || continue
+      printf '%s\t%s\n' "$(_classify "$f")" "$f"
+    done
+    ;;
+  *)
+    echo "usage: vibe-slug [--migrate | --identity | --stamp-checkpoint <file> | --classify-checkpoints]" >&2
+    exit 2
+    ;;
+esac

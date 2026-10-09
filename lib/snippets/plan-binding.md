@@ -14,8 +14,8 @@ _REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null)
 _BOUND=$( { gh pr view --json body -q .body 2>/dev/null || glab mr view -F json 2>/dev/null | jq -r '.description // empty' 2>/dev/null; } \
   | tr -d '\r`' | sed -n 's/^[[:space:]]*Plan:[[:space:]]*\([^[:space:]]*\).*/\1/p' | head -1)
 [ -n "$_BOUND" ] && echo "PLAN_BINDING: $_BOUND"
-# Compute project slug for ~/.vibestack/projects/ lookup
-_PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
+# The same ~/.vibestack/projects/ bucket name the skills that write plans use.
+_PLAN_SLUG=$(~/.vibestack/bin/vibe-slug 2>/dev/null | sed -n 's/^SLUG=//p') || true
 _PLAN_SLUG="${_PLAN_SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
 # Candidates: repo design docs this branch added or changed, then plan files that name the branch.
 if [ -n "$_REPOTOP" ]; then

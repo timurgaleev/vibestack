@@ -95,6 +95,20 @@ else
   # Scan the 200 newest so a current-branch save sitting below a burst of
   # sibling-worktree saves is still found; the printed list is capped at 20.
   ALL=$(find "$CHECKPOINT_DIR" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r | head -200)
+  # Drop checkpoints stamped for another project (a different remote, or a
+  # different root when neither has one). Each is named, never loaded.
+  if [ -n "$ALL" ]; then
+    CLASSIFIED=$(printf '%s\n' "$ALL" | ~/.vibestack/bin/vibe-slug --classify-checkpoints 2>/dev/null)
+    TAB=$(printf '\t')
+    if [ -n "$CLASSIFIED" ] && ! printf '%s\n' "$CLASSIFIED" | grep -qvE "^(match|unstamped|foreign)${TAB}"; then
+      printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1 == "foreign" { print $2 }' | while IFS= read -r f; do
+        echo "PROJECT MISMATCH: $f ($(grep -m1 '^remote:' "$f" 2>/dev/null), $(grep -m1 '^project_root:' "$f" 2>/dev/null))"
+      done
+      ALL=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1 != "foreign" { print $2 }')
+    else
+      echo "IDENTITY_CHECK_UNAVAILABLE"
+    fi
+  fi
   if [ -z "$ALL" ]; then
     echo "NO_CHECKPOINTS"
   else
@@ -132,6 +146,19 @@ fi
 frontmatter). Other-branch files stay in the set as the fallback, which keeps
 Conductor workspace handoff working when this branch has no save of its own.
 `NO_CURRENT_BRANCH_CHECKPOINT` means every path printed came from another branch.
+
+**Project identity.** `/context-save` stamps each checkpoint with `remote:` (the
+credential-free origin) and `project_root:`. A checkpoint stamped for a
+different project is never a candidate: Step 1 prints `PROJECT MISMATCH: <path>
+(...)` for it instead. Report every `PROJECT MISMATCH` line to the user **before
+any summary**, e.g. "Skipped 1 checkpoint saved for `github.com/bob/api` — it
+belongs to another project." If that leaves no candidate (`NO_CHECKPOINTS`),
+say the bucket holds only other projects' saves. Never load a mismatched file,
+even when the user names it by title or number — name its project and stop.
+Checkpoints with no `remote:` field were saved before stamping existed; they
+stay candidates. `IDENTITY_CHECK_UNAVAILABLE` means the installed `vibe-slug`
+cannot classify checkpoints — say identity was not checked and suggest
+`/vibe-upgrade`.
 
 ### Step 2: Load the right file
 
@@ -191,6 +218,9 @@ Verify first (inspect read-only before executing anything)
 {notes}
 ```
 
+If the loaded file has no `remote:` field, add one line under the header box:
+"This checkpoint predates project stamps; confirm it belongs to this project."
+
 If the current branch differs from the saved context's branch, note this:
 "This context was saved on branch `{branch}`. You are currently on
 `{current branch}`. You may want to switch branches before continuing."
@@ -231,6 +261,8 @@ state, then `/context-restore` will find it."
 - **Prefer the current branch's own save, but keep all branches in the
   fallback set.** Cross-branch resume (Conductor handoff) works when this branch
   has no save, and a sibling worktree's newer save never shadows this branch's.
+- **Another project's checkpoint is never restored.** A `PROJECT MISMATCH`
+  file is reported and skipped, never presented as "where you left off".
 - **Unverified steps are shown, not run.** An item under Verify first was
   guessed or failed in the saved session; inspect before acting on it.
 - **"Most recent" means the filename `YYYYMMDD-HHMMSS` prefix**, not
