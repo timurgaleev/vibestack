@@ -1,7 +1,7 @@
 ---
 name: landing-report
 description: |
-  Read-only queue dashboard for workspace-aware ship. Shows which VERSION slots are currently claimed by open PRs against the same base branch, and what slot /ship would pick next. No mutations — just a snapshot.
+  Read-only snapshot of the VERSION slots open PRs claim on the base branch and the slot /ship would pick next.
 triggers:
   - landing report
   - version queue
@@ -20,13 +20,13 @@ Use when asked to "landing report", "what's in the queue", "show me open PRs", o
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -70,9 +70,11 @@ under that label.
 
 ```bash
 BASE_BRANCH='<BASE_BRANCH>'
-CURRENT_VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo "0.0.0.0")
+CURRENT_VERSION=$(tr -d '[:space:]' 2>/dev/null < VERSION)
+[ -n "$CURRENT_VERSION" ] || CURRENT_VERSION=0.0.0
 git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
-BASE_VERSION=$(git show "origin/$BASE_BRANCH:VERSION" 2>/dev/null | tr -d '[:space:]' || echo "$CURRENT_VERSION")
+BASE_VERSION=$(git show "origin/$BASE_BRANCH:VERSION" 2>/dev/null | tr -d '[:space:]')
+[ -n "$BASE_VERSION" ] || BASE_VERSION=$CURRENT_VERSION
 echo "BASE_VERSION: $BASE_VERSION"
 echo "branch HEAD VERSION: $CURRENT_VERSION"
 ```
@@ -88,12 +90,14 @@ level (the util treats `micro` as `patch`).
 ```bash
 BASE_BRANCH='<BASE_BRANCH>'
 BASE_VERSION='<BASE_VERSION>'
+LANDING_DIR=$(mktemp -d "${TMPDIR:-/tmp}/landing-XXXXXX")
+echo "LANDING_DIR: $LANDING_DIR"
 for LEVEL in patch minor major; do
-  ~/.vibestack/bin/vibe-next-version \
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version \
     --base "$BASE_BRANCH" \
     --bump "$LEVEL" \
     --current-version "$BASE_VERSION" \
-    > "/tmp/landing-$LEVEL.json" 2>/dev/null || echo '{"offline":true,"reason":"vibe-next-version failed","claimed":[],"warnings":[]}' > "/tmp/landing-$LEVEL.json"
+    > "$LANDING_DIR/$LEVEL.json" 2>/dev/null || echo '{"offline":true,"reason":"vibe-next-version failed","claimed":[],"warnings":[]}' > "$LANDING_DIR/$LEVEL.json"
 done
 ```
 
@@ -101,8 +105,11 @@ done
 
 ## Step 4: Render the dashboard
 
-Build a single table output. Use the `patch`-level JSON as canonical for the
-queue (it is identical across bump levels; only `.version` differs).
+Read `<LANDING_DIR>/patch.json`, `<LANDING_DIR>/minor.json` and
+`<LANDING_DIR>/major.json`, replacing `<LANDING_DIR>` with the path Step 3 printed
+on the `LANDING_DIR:` line. Build a single table output. Use the `patch`-level JSON
+as canonical for the queue (it is identical across bump levels; only `.version`
+differs).
 
 `vibe-next-version` emits exactly these fields — render only what they contain:
 - `.host` — `github` | `gitlab` | `unknown`

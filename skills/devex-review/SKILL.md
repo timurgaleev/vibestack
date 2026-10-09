@@ -1,7 +1,7 @@
 ---
 name: devex-review
 description: |
-  Live developer experience audit. Uses the browse tool to actually TEST the developer experience: navigates docs, tries the getting started flow, times TTHW, screenshots error messages, evaluates CLI help text. Produces a DX scorecard with evidence. Compares against /plan-devex-review scores if they exist (the boomerang: plan said 3 minutes, reality says 8).
+  Live DX audit: test docs, getting-started and CLI help in a browser, time TTHW, and score against the plan.
 triggers:
   - live dx audit
   - test developer experience
@@ -27,13 +27,13 @@ Voice triggers (speech-to-text aliases): "dx audit", "test the developer experie
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -176,7 +176,7 @@ Internalize these; don't enumerate them.
 7. **Upgrade fear** — Will this break my production app? Clear changelogs, migration guides, codemods, deprecation warnings. Upgrades should be boring.
 8. **SDK completeness** — If devs write their own HTTP wrapper, you failed. If the SDK works in 4 of 5 languages, the fifth community hates you.
 9. **Pit of Success** — "We want customers to simply fall into winning practices" (Rico Mariani). Make the right thing easy, the wrong thing hard.
-10. **Progressive disclosure** — Simple case is production-ready, not a toy. Complex case uses the same API. SwiftUI: \`Button("Save") { save() }\` → full customization, same API.
+10. **Progressive disclosure** — Simple case is production-ready, not a toy. Complex case uses the same API. SwiftUI: `Button("Save") { save() }` → full customization, same API.
 
 ## DX Scoring Rubric (0-10 calibration)
 
@@ -202,8 +202,20 @@ Internalize these; don't enumerate them.
 
 ## Hall of Fame Reference
 
-During each review pass, load the relevant section from:
-\`~/.claude/skills/plan-devex-review/dx-hall-of-fame.md\`
+During each review pass, load the relevant section from `dx-hall-of-fame.md`,
+which ships with `plan-devex-review`. Resolve it once:
+
+```bash
+HOF="${CLAUDE_SKILL_DIR}/../plan-devex-review/dx-hall-of-fame.md"
+for _d in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills"; do
+  [ -f "$HOF" ] && break
+  HOF="$_d/plan-devex-review/dx-hall-of-fame.md"
+done
+[ -f "$HOF" ] && echo "HALL_OF_FAME: $HOF" || echo "HALL_OF_FAME_MISSING"
+```
+
+Read from the path printed on the `HALL_OF_FAME:` line. On `HALL_OF_FAME_MISSING`,
+score from the benchmarks in this skill and say the reference was unavailable.
 
 Read ONLY the section for the current pass (e.g., "## Pass 1" for Getting Started).
 Do NOT read the entire file at once. This keeps context focused.
@@ -234,7 +246,7 @@ Check for prior /plan-devex-review scores:
 
 ```bash
 echo "CURRENT_BRANCH: $(git branch --show-current 2>/dev/null)"
-~/.vibestack/bin/vibe-review-read --any-branch --skill plan-devex-review --json 2>/dev/null || echo "NO_REVIEWS"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --any-branch --skill plan-devex-review --json 2>/dev/null || echo "NO_REVIEWS"
 ```
 
 The plan review usually ran on a different branch than this audit (planning on a
@@ -388,7 +400,7 @@ Flag any dimension where live score < plan score - 2 (reality fell short of plan
 **PLAN MODE EXCEPTION — ALWAYS RUN:**
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"devex-review","timestamp":"TIMESTAMP","status":"STATUS","overall_score":N,"product_type":"TYPE","tthw_measured":"TTHW","dimensions_tested":N,"dimensions_inferred":N,"boomerang":"YES_OR_NO","commit":"COMMIT"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"devex-review","timestamp":"TIMESTAMP","status":"STATUS","overall_score":N,"product_type":"TYPE","tthw_measured":"TTHW","dimensions_tested":N,"dimensions_inferred":N,"boomerang":"YES_OR_NO","commit":"COMMIT"}'
 ```
 
 {{include lib/snippets/review-readiness-dashboard.md}}

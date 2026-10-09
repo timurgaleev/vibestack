@@ -1,7 +1,7 @@
 ---
 name: land-and-deploy
 description: |
-  Land and deploy workflow. Merges the PR, waits for CI and deploy, verifies production health via canary checks. Takes over after /ship creates the PR.
+  Merge the PR /ship opened, wait for CI and deploy, and verify production health with canary checks.
 allowed-tools:
   - Bash
   - Read
@@ -21,13 +21,13 @@ Use when: "merge", "land", "deploy", "merge and verify", "land it", "ship it to 
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -216,7 +216,7 @@ echo "TARGET REPO=$REPO PR_NUMBER=$PR_NUMBER PR_HEAD=$PR_HEAD BASE_BRANCH=$BASE_
 # Classify the diff now, against the fetched base: after the merge the checkout moves
 # and the comparison is no longer this PR's.
 CHANGED=$(git diff --name-only "$BASE_SHA...$PR_HEAD" 2>/dev/null) || CHANGED=""
-eval "$(~/.vibestack/bin/vibe-diff-scope "$BASE_SHA" 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope "$BASE_SHA" 2>/dev/null)"
 SCOPE_KNOWN=false; DOCS_ONLY=false
 if [ -n "$CHANGED" ]; then
   SCOPE_KNOWN=true
@@ -248,12 +248,12 @@ Check whether this project has been through a successful `/land-and-deploy` befo
 and whether the deploy configuration has changed since then:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-if [ ! -f ~/.vibestack/projects/$SLUG/land-deploy-confirmed ]; then
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+if [ ! -f ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed ]; then
   echo "FIRST_RUN"
 else
   # Check if deploy config has changed since confirmation
-  SAVED_HASH=$(cat ~/.vibestack/projects/$SLUG/land-deploy-confirmed 2>/dev/null)
+  SAVED_HASH=$(cat ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed 2>/dev/null)
   CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
   # Also hash workflow files that affect deploy behavior
   WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
@@ -423,7 +423,7 @@ Tell the user: "Before I merge any PR, I run a series of readiness checks — co
 Preview the readiness checks that will run at Step 3.5 (without re-running tests):
 
 ```bash
-~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Show a summary of review status: which reviews have been run, how stale they are.
@@ -454,11 +454,11 @@ again here — each bash block is a fresh shell, and a marker written under an e
 `$SLUG` lands in a path Step 1.5's detection never reads, so every run would report
 FIRST_RUN:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
 WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > ~/.vibestack/projects/$SLUG/land-deploy-confirmed
+echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed
 ```
 Continue to Step 2.
 
@@ -576,6 +576,9 @@ Before gathering readiness evidence, verify that the VERSION this PR claims is s
 PR_NUMBER='<PR_NUMBER>'; PR_HEAD='<PR_HEAD>'; BASE_BRANCH='<BASE_BRANCH>'; BASE_SHA='<BASE_SHA>'   # from Step 1's TARGET line
 BRANCH_VERSION=$(git show "$PR_HEAD:VERSION" 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
 BASE_VERSION=$(git show "$BASE_SHA:VERSION" 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
+if [ -z "$BRANCH_VERSION" ] && [ -z "$BASE_VERSION" ]; then echo "VERSION: not applicable"
+elif [ -z "$BRANCH_VERSION" ] || [ -z "$BASE_VERSION" ]; then echo "VERSION: unavailable"
+fi
 
 # Derive the bump level from base vs branch. "patch" is NOT a safe default here:
 # for a PR claiming v1.34.0 off base v1.33.2, a patch query answers "v1.33.3 is
@@ -596,7 +599,7 @@ fi
 # An array, not ${PR_NUMBER:+--exclude-pr "$PR_NUMBER"}: zsh does not word-split
 # that expansion, so the flag and its value would arrive as one argument.
 _X=(); [ -n "$PR_NUMBER" ] && _X=(--exclude-pr "$PR_NUMBER")
-QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
+QUEUE_JSON=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version \
   --base "$BASE_BRANCH" \
   --bump "$_BUMP" \
   "${_X[@]}" \
@@ -606,6 +609,13 @@ OFFLINE=$(echo "$QUEUE_JSON" | jq -r '.offline // false')
 ```
 
 Behavior:
+
+0. If the block printed `VERSION: not applicable`, neither side has a VERSION file:
+   this repo does not version that way. Report `VERSION: not applicable`, skip the
+   drift check, and continue to Step 3.5. If it printed `VERSION: unavailable`,
+   VERSION exists on only one side, so drift cannot be computed: report
+   `VERSION: unavailable` in the readiness report — not green — and continue to
+   Step 3.5 without reading anything into `NEXT_SLOT`.
 
 1. If `OFFLINE=true` or the util fails: print `⚠ VERSION drift check unavailable (util offline) — proceeding with PR version v<BRANCH_VERSION>`. Continue to Step 3.5. CI's version-gate job is the backstop.
 
@@ -640,7 +650,7 @@ Collect evidence for each check below. Track warnings (yellow) and blockers (red
 ### 3.5a: Review staleness check
 
 ```bash
-~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Parse the output. For each review skill (plan-eng-review, plan-ceo-review,
@@ -747,7 +757,7 @@ there is no test suite, record Free tests as `NONE (user confirmed)` — a warni
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ~/.vibestack/evals/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
+ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/evals/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
 ```
 
 For each eval file from today, parse pass/fail counts. Show:
@@ -763,7 +773,7 @@ If E2E results exist but have failures: **WARNING — N tests failed.** List the
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ~/.vibestack/evals/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
+ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/evals/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
 ```
 
 If found, parse and show pass/fail. If not found, note "No LLM evals run today."
@@ -774,7 +784,7 @@ Read the current PR body through the trust envelope:
 ```bash
 set -o pipefail
 REPO='<REPO>'; PR_NUMBER='<PR_NUMBER>'   # from Step 1's TARGET line
-gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | ~/.vibestack/bin/vibe-untrusted --source pr-body
+gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source pr-body
 ```
 If the command fails, the body was not read — report PR body accuracy as UNKNOWN
 (warning), not as current.
@@ -812,9 +822,12 @@ Also check if key doc files were modified:
 ```bash
 BASE_SHA='<BASE_SHA>'; PR_HEAD='<PR_HEAD>'   # from Step 1's TARGET line
 git diff --name-only "$BASE_SHA...$PR_HEAD" -- README.md CHANGELOG.md ARCHITECTURE.md CONTRIBUTING.md CLAUDE.md VERSION
+git cat-file -e "$PR_HEAD:VERSION" 2>/dev/null && echo "VERSION_FILE: present" || echo "VERSION_FILE: absent"
 ```
 
-If CHANGELOG.md and VERSION were NOT modified on this branch and the diff includes
+Only when `VERSION_FILE: present` does a missing VERSION change count; a repo with
+no VERSION file never gets the "VERSION not updated" warning, and the CHANGELOG
+half of the check stands on its own. If CHANGELOG.md and VERSION were NOT modified on this branch and the diff includes
 new features (new files, new commands, new skills): **WARNING — /document-release
 likely not run. CHANGELOG and VERSION not updated despite new features.**
 
@@ -1171,7 +1184,18 @@ assume:
 
 ```bash
 REPO='<REPO>'; PR_NUMBER='<PR_NUMBER>'   # from Step 1's TARGET line
-BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName -q .headRefName)
+gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName,isCrossRepository,headRepositoryOwner \
+  -q '"BRANCH: \(.headRefName)", "CROSS_REPO: \(.isCrossRepository)", "HEAD_OWNER: \(.headRepositoryOwner.login)"'
+```
+
+If `CROSS_REPO: true`, the branch lives in the contributor's fork (`HEAD_OWNER`),
+not in `origin`. Report "Head branch `<BRANCH>` is in `<HEAD_OWNER>`'s fork — not
+ours to delete" and never offer deletion; a same-named branch on `origin` is a
+different branch. If the lookup failed, report the remote branch as **unknown**.
+Otherwise check `origin`, replacing `<BRANCH>` with the printed value:
+
+```bash
+BRANCH='<BRANCH>'
 git ls-remote --heads origin "$BRANCH"
 ```
 
@@ -1735,8 +1759,8 @@ Save report to `.vibestack/deploy-reports/{date}-pr{number}-deploy.md`.
 Log to the review dashboard:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 ```
 
 Write a JSONL entry with timing data. `status` is SUCCESS only for DEPLOYED AND VERIFIED

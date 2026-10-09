@@ -1,7 +1,7 @@
 ---
 name: design-shotgun
 description: |
-  Design shotgun: generate multiple AI design variants, review them side by side, collect structured feedback, and iterate. Standalone design exploration you can run anytime.
+  Generate several AI design variants, compare them side by side, collect structured feedback, and iterate.
 triggers:
   - explore design variants
   - show me design options
@@ -25,13 +25,13 @@ Proactively suggest when the user describes a UI feature but hasn't seen what it
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -63,7 +63,7 @@ the critique for /design-review.
 
 ```bash
 # Bind $D to vibe-design (OpenAI image backend) when a key is configured.
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 if [ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ]; then
   echo "DESIGN_AVAILABLE via $D"
 else
@@ -169,9 +169,9 @@ else a few taps away with an obvious path to get there.
 Check for prior design exploration sessions for this project:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_PREV=$(find ~/.vibestack/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
+_PREV=$(find ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
 [ -n "$_PREV" ] && echo "PREVIOUS_SESSIONS_FOUND" || echo "NO_PREVIOUS_SESSIONS"
 echo "$_PREV"
 ```
@@ -224,9 +224,9 @@ ls src/ app/ pages/ components/ 2>/dev/null | head -30
 ```
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-ls ~/.vibestack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ```
 
 If DESIGN.md exists, tell the user: "I'll follow your design system in DESIGN.md by
@@ -262,69 +262,20 @@ Two rounds max of context gathering, then proceed with what you have and note as
 
 ## Step 2: Taste Memory
 
-Read both the persistent taste profile (cross-session) AND the per-session approved
-designs to bias generation toward the user's demonstrated taste.
-
-**Persistent taste profile (v1 schema at `~/.vibestack/projects/$SLUG/taste-profile.json`):**
-
-Read the persistent taste profile if it exists:
-
-```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_TASTE_PROFILE=~/.vibestack/projects/$SLUG/taste-profile.json
-if [ -f "$_TASTE_PROFILE" ]; then
-  # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
-  # Each dimension has approved[] and rejected[] entries with
-  # { value, confidence, approved_count, rejected_count, last_seen }
-  # Confidence decays 5% per week of inactivity — computed at read time.
-  cat "$_TASTE_PROFILE" 2>/dev/null | head -200
-  echo "TASTE_PROFILE_FOUND"
-else
-  echo "NO_TASTE_PROFILE"
-fi
-```
-
-**If TASTE_PROFILE_FOUND:** Summarize the strongest signals (top 3 approved entries
-per dimension by confidence * approved_count). Include them in the design brief:
-
-"Based on \${SESSION_COUNT} prior sessions, this user's taste leans toward:
-fonts [top-3], colors [top-3], layouts [top-3], aesthetics [top-3]. Bias
-generation toward these unless the user explicitly requests a different direction.
-Also avoid their strong rejections: [top-3 rejected per dimension]."
-
-**If NO_TASTE_PROFILE:** Fall through to per-session approved.json files (legacy).
-
-**Conflict handling:** If the current user request contradicts a strong persistent
-signal (e.g., "make it playful" when taste profile strongly prefers minimal), flag
-it: "Note: your taste profile strongly prefers minimal. You're asking for playful
-this time — I'll proceed, but want me to update the taste profile, or treat this
-as a one-off?"
-
-**Decay:** Confidence scores decay 5% per week. A font approved 6 months ago with
-10 approvals has less weight than one approved last week. The decay calculation
-happens at read time, not write time, so the file only grows on change.
-
-**Legacy files:** If the file has no `version` field or `version: 0`, it is the
-older per-session `approved.json` aggregate rather than a v1 profile. Nothing
-migrates it for you — read what it does carry (approved values, dates) and treat
-the confidence and count fields as absent instead of assuming they are there.
-
-The profile itself is maintained outside this skill, so it may simply not exist.
-When it doesn't, the project's learnings log is the cross-session taste signal —
-the preamble already loaded it.
+Read the per-session approved designs, alongside the taste entries in the learnings
+log the preamble already loaded, to bias generation toward the user's demonstrated
+taste.
 
 **Per-session approved.json files (legacy, still supported):**
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_TASTE=$(find ~/.vibestack/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
+_TASTE=$(find ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
 ```
 
 If prior sessions exist, read each `approved.json` and extract patterns from the
-approved variants. Merge these into the taste-profile.json-derived signal — if the
-profile already says "user prefers Geist font" (from aggregated history), the
-approved.json files add the specific recent approval context.
+approved variants.
 
 Limit to last 10 sessions. Try/catch JSON parse on each (skip corrupted files).
 
@@ -335,19 +286,18 @@ the serif display over two sans variants", not "picked B" — because the letter
 nothing in the next session and the quality is what should bias the next brief.
 
 ```bash
-~/.vibestack/bin/vibe-learnings-log '{"skill":"design-shotgun","type":"taste","key":"<dimension: fonts|colors|layouts|aesthetics>","insight":"<approved|rejected: the quality, in one line>","confidence":<1-10>,"source":"design-shotgun"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"design-shotgun","type":"taste","key":"<dimension: fonts|colors|layouts|aesthetics>","insight":"<approved|rejected: the quality, in one line>","confidence":<1-10>,"source":"design-shotgun"}'
 ```
 
-The preamble reads these back on every future run, which is how taste accumulates
-here. Nothing in this skill writes `taste-profile.json`.
+The preamble reads these back on every future run.
 
 ## Step 3: Generate Variants
 
 Set up the output directory:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.vibestack/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -538,7 +488,7 @@ With more than three variants this list exceeds the four-option cap. Batch or sp
 per the 5+-option rule at the end of this skill — never drop a variant the user paid
 to generate just to make the call fit.
 
-**If the user picks a variant with no changes:** that's the approval. Go to Step 5.
+**If the user picks a variant with no changes:** that's the approval. Confirm and save it below.
 
 **If the user asks for a remix, a regeneration, or "more like B":** rebuild the
 briefs from what they said — which variant's layout, which one's palette, what to
@@ -601,18 +551,7 @@ VIBE_PY_EOF
 
 ## Step 5: Feedback Confirmation
 
-After the user has chosen, output a clear summary confirming what was understood:
-
-"Here's what I understood from your feedback:
-
-PREFERRED: Variant [X]
-RATINGS: whatever they ranked, if they ranked anything
-YOUR NOTES: [full text of per-variant and overall comments]
-DIRECTION: [regenerate action if any]
-
-Is this right?"
-
-Use AskUserQuestion to confirm before saving.
+The feedback is confirmed once, in Step 4, before the save. Do not ask again here.
 
 ## Step 6: Save & Next Steps
 

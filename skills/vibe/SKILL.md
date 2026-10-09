@@ -1,7 +1,7 @@
 ---
 name: vibe
 description: |
-  Router for the vibestack skill suite — name the task and it invokes the right skill. Use when you know vibestack is installed but not which of its skills fits, or when an agent has no slash-command picker (Codex) and needs to find the pack by name.
+  Router for the vibestack skills: name the task and it picks the right skill, also where there is no / picker.
 allowed-tools:
   - Bash
   - Read
@@ -40,15 +40,23 @@ implementing, investigate before fixing, review before shipping.
 | Weigh product scope or the bigger problem | `plan-ceo-review` |
 | Plan a UI change, or review a design before it is built | `plan-design-review` |
 | Pressure-test the developer experience of a plan | `plan-devex-review` |
+| Audit the live developer experience of a shipped product | `devex-review` |
 | Debug an error, test failure, or odd behavior | `investigate` |
 | Review a diff before merge | `review` |
+| Rewrite a PR description from its actual changes | `pr-summary` |
 | Get a second opinion from a different model | `codex` or `claude` — by host, see below |
 | Audit security | `cso` |
 | QA a running web app | `qa` (fixes), `qa-only` (report) |
 | Drive a browser, scrape a page, pair a remote agent | `browse`, `scrape`, `open-browser`, `pair-agent` |
+| Test logged-in pages with your real browser's cookies | `connect-chrome`, `setup-browser-cookies` |
+| Turn a browse or scrape flow that worked into a skill | `skillify` |
 | Read, transcribe or send Telegram messages as yourself | `telegram` |
 | Review a shipped UI, or explore design directions | `design-review`, `design-shotgun`, `design-consultation` |
+| Turn an approved mockup into production HTML/CSS | `design-html` |
+| Render a Mermaid diagram to HTML and PNG | `diagram` |
+| Render markdown or HTML to a polished PDF | `make-pdf` |
 | Ship: tests, version, changelog, PR | `ship` |
+| See which VERSION slots open PRs already claim | `landing-report` |
 | Address PR review threads and failing CI | `address-pr-review` |
 | Merge, deploy, and confirm production health | `land-and-deploy`, `canary` (`setup-deploy` configures it once) |
 | Measure page performance against a baseline | `benchmark` |
@@ -63,6 +71,9 @@ implementing, investigate before fixing, review before shipping.
 | Evaluate an agent or prompt | `agent-eval` |
 | Review an MCP server | `mcp-review` |
 | Save or restore working context across sessions | `context-save`, `context-restore` |
+| Review, search or prune what the pack has learned | `learn` |
+| Run a retrospective from git history | `retro` |
+| Tune which questions the skills ask you | `plan-tune` |
 | Guard a risky session | `careful`, `freeze`, `guard` (and `unfreeze` to release) |
 | Update the pack itself | `vibe-upgrade` |
 

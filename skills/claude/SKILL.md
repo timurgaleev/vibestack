@@ -1,7 +1,7 @@
 ---
 name: claude
 description: |
-  Claude Code CLI wrapper for getting an independent second opinion. Three modes: Review (diff review via claude --print), Challenge (adversarial failure-mode review), Consult (ask Claude about the repo with read-only file tools).
+  Independent second opinion from the Claude Code CLI: review a diff, challenge it adversarially, or consult.
 triggers:
   - claude review
   - claude challenge
@@ -20,13 +20,13 @@ Use when asked for "claude review", "claude challenge", "ask claude", "second op
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -366,7 +366,7 @@ _cl() {
 _cl 540 claude -p --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --tools "" --disallowedTools 'mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"claude-review","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-review","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -411,7 +411,7 @@ Recommendation: <action> because <one-line reason that names the most actionable
 5. Log the result, unless step 4 skipped it for a timeout:
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"claude-review","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-review","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
 ```
 
    Substitute STATUS — `pass` on `GATE: PASS`, `findings` on `GATE: FAIL (N critical
@@ -498,7 +498,7 @@ _cl() {
 _cl 540 claude -p --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --tools "" --disallowedTools 'mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"claude-challenge","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-challenge","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -543,7 +543,7 @@ Recommendation: <action> because <one-line reason that names the most actionable
 5. Log the result, unless step 4 skipped it for a timeout:
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"claude-challenge","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-challenge","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
 ```
 
    Substitute STATUS — `pass` on `GATE: PASS`, `findings` on `GATE: FAIL (N critical
@@ -631,7 +631,7 @@ _cl() {
 _cl 540 claude -p --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --allowedTools Read,Grep,Glob --disallowedTools 'Bash,Edit,Write,mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -673,7 +673,7 @@ _cl() {
 _cl 540 claude -p --resume "<session-id>" --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --allowedTools Read,Grep,Glob --disallowedTools 'Bash,Edit,Write,mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -687,26 +687,7 @@ if grep -qiE "auth|login|unauthorized" "$ERR_FILE" 2>/dev/null; then
 fi
 ```
 
-4. Parse and save the session id:
-
-```bash
-RESP_FILE='<RESP_FILE>'
-SESSION_ID=$(python3 - "$RESP_FILE" <<'PY'
-import json, sys
-try:
-    obj = json.load(open(sys.argv[1]))
-    print(obj.get("session_id") or "")
-except Exception:
-    print("")
-PY
-)
-if [ -n "$SESSION_ID" ]; then
-  mkdir -p .context
-  printf "%s\n" "$SESSION_ID" > .context/claude-session-id
-fi
-```
-
-5. Run the parser from Shared Helpers with `CLAUDE_MODE='consult'` — unless the
+4. Run the parser from Shared Helpers with `CLAUDE_MODE='consult'` — unless the
    run block printed `CLAUDE_RESULT: TIMEOUT`: that run is already logged, so skip
    the parser and the log step and say Claude timed out. On
    `CLAUDE_STATUS: unavailable` or `CLAUDE_RESULT: FAILED`, say so with the reason
@@ -729,10 +710,31 @@ Recommendation: <action> because <one-line reason that names the most actionable
    The reason must engage with a specific point Claude made and compare it against
    an alternative (a different recommendation, the status quo, or another point).
 
-6. Log the result, unless step 5 skipped it for a timeout:
+5. Save the session id — only when step 4's parser printed `CLAUDE_STATUS: answered`.
+   An errored, timed-out or unavailable run saves nothing, so the next run does
+   not resume from a broken session:
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"claude-consult","status":"STATUS","completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
+RESP_FILE='<RESP_FILE>'
+SESSION_ID=$(python3 - "$RESP_FILE" <<'PY'
+import json, sys
+try:
+    obj = json.load(open(sys.argv[1]))
+    print(obj.get("session_id") or "")
+except Exception:
+    print("")
+PY
+)
+if [ -n "$SESSION_ID" ]; then
+  mkdir -p .context
+  printf "%s\n" "$SESSION_ID" > .context/claude-session-id
+fi
+```
+
+6. Log the result, unless step 4 skipped it for a timeout:
+
+```bash
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-consult","status":"STATUS","completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
 ```
 
    Substitute STATUS — `answered` on `CLAUDE_STATUS: answered`, `unavailable`
@@ -753,11 +755,10 @@ rm -f "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ## Error Handling
 
 - **Binary not found:** Stop with install instructions.
-- **Auth missing:** Stop with login/API key instructions.
-- **Auth failure from stderr:** Surface the stderr line and ask the user to re-authenticate.
+- **Auth error in stderr from the actual run:** Surface the line and ask the user to re-authenticate. Never gate on credentials up front (Step 0).
 - **Timeout (exit 124):** The run block logs it and prints the stall message; report the run as unavailable.
 - **Parse failure, error result, empty or truncated response:** The parser prints `CLAUDE_STATUS: unavailable (<reason>)`. Show stderr from `$ERR_FILE` and report the run as unavailable — never as a review that found nothing.
-- **Resume failure:** Delete `.context/claude-session-id` and retry with a fresh session.
+- **Resume failure:** Only when the error names an invalid, expired or missing session id, delete `.context/claude-session-id` and retry with a fresh session. On any other error, report it and keep `.context/claude-session-id`.
 
 ---
 

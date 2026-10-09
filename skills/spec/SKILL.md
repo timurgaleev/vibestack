@@ -1,7 +1,7 @@
 ---
 name: spec
 description: |
-  Turn vague intent into a precise, executable spec in five phases. Files the issue, optionally spawns a Claude Code agent in a fresh worktree, and lets /ship close the source issue on merge.
+  Turn vague intent into a precise, executable spec, file it as an issue, and optionally hand it to an agent.
 allowed-tools:
   - Bash
   - Read
@@ -25,13 +25,13 @@ Use when asked to "spec this out", "file an issue", "write up a ticket", "make t
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -114,12 +114,12 @@ read what comes back through the trust envelope:
 ```bash
 # Namespaced per repo and branch, not per process: $$ differs in every Bash
 # call, but two /spec runs in different checkouts must not share one file.
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG=unknown
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG=unknown
 _DD="${TMPDIR:-/tmp}/vibestack-spec-dedupe-${SLUG}-$(git branch --show-current 2>/dev/null | tr "/" "-")"
 gh issue list --search "<keywords>" --state open --limit 10 --json number,title,url \
   --jq '.[] | "#\(.number) \(.title) — \(.url)"' > "$_DD.out" 2> "$_DD.err"
 echo "GH_EXIT: $?"
-~/.vibestack/bin/vibe-untrusted --source issue-dedupe --file "$_DD.out"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source issue-dedupe --file "$_DD.out"
 ```
 
 **Read `GH_EXIT` before you read the envelope.** The envelope cannot tell you the
@@ -241,7 +241,7 @@ Look for:
 Resolve repo visibility first (cache and reuse it):
 
 ```bash
-SPEC_VIS=$(~/.vibestack/bin/vibe-config get redact_repo_visibility 2>/dev/null | tr 'A-Z' 'a-z')
+SPEC_VIS=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get redact_repo_visibility 2>/dev/null | tr 'A-Z' 'a-z')
 case "$SPEC_VIS" in private|public) ;; *) SPEC_VIS="" ;; esac
 [ -z "$SPEC_VIS" ] && SPEC_VIS=$(gh repo view --json visibility -q .visibility 2>/dev/null | tr 'A-Z' 'a-z')
 [ -z "$SPEC_VIS" ] && SPEC_VIS=$(glab repo view -F json 2>/dev/null | grep -o '"visibility":"[^"]*"' | head -1 | sed 's/.*:"//;s/"//' | tr 'A-Z' 'a-z')
@@ -290,7 +290,7 @@ you fill in):
 
 ```bash
 SPEC_SCAN='<SPEC_SCAN>'
-~/.vibestack/bin/vibe-redact scan --file "$SPEC_SCAN"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact scan --file "$SPEC_SCAN"
 echo "REDACT_EXIT: $?"
 rm -f "$SPEC_SCAN"
 ```
@@ -356,6 +356,7 @@ EOF
   printf '\n<<<END_USER_SPEC>>>\n'
 } > "$GATE_PROMPT"
 codex exec - -s read-only -c 'model_reasoning_effort="medium"' < "$GATE_PROMPT" 2>"$TMPERR_GATE"
+echo "CODEX_EXIT: $?"
 ```
 
 Use a 2-minute timeout. Read stderr from `$TMPERR_GATE` after.
@@ -372,6 +373,14 @@ Use a 2-minute timeout. Read stderr from `$TMPERR_GATE` after.
   2 minutes. Skipping ensures `/spec` stays usable. Run `codex doctor` to
   diagnose, or use `--no-gate` to disable permanently. Continuing." Skip.
 - **Malformed response** (no SCORE: line): treat as timeout. Skip.
+- **Any other failure shape — the gate is unavailable, never PASS:** a non-zero
+  `CODEX_EXIT` (even when the output carries a SCORE line), a refusal or a
+  usage-limit / rate-limit message, empty output, or a SCORE that is not an
+  integer from 0 to 10. Print: "Quality gate unavailable — <the reason>.
+  Continuing to Phase 5." Skip; do not read a score out of that output.
+
+A skipped or unavailable gate is reported as such in the spec header ("Quality
+gate: skipped" or "Quality gate: unavailable — <reason>"), never as a pass.
 
 **Scoring outcomes:**
 
@@ -473,7 +482,7 @@ issue that was never created is worse than no entry: `/ship` reads it later and
 follows a dead reference.
 
 ```bash
-~/.vibestack/bin/vibe-decision-log '{"decision":"Spec filed #<N>: <title>","rationale":"<the approach the spec settled on, one line>","scope":"repo","source":"user"}' 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log '{"decision":"Spec filed #<N>: <title>","rationale":"<the approach the spec settled on, one line>","scope":"repo","source":"user"}' 2>/dev/null || true
 ```
 
 If the issue could not be filed, record the decision without an issue reference
@@ -496,7 +505,7 @@ BODY_FILE='<BODY_FILE>'
 ISSUE_NUMBER='<ISSUE_NUMBER>'
 ISSUE_URL='<ISSUE_URL>'
 if [ -n "${CLAUDE_PLAN_FILE:-}" ]; then PLAN_MODE=active; else PLAN_MODE=inactive; fi
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 ARCHIVE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/specs"
 mkdir -p "$ARCHIVE_DIR"
 SLUG_TITLE=$(head -n1 "$TITLE_FILE" | tr ' ' '-' | tr -cd 'a-zA-Z0-9-' | tr A-Z a-z | cut -c1-60)
