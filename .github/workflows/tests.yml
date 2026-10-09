@@ -39,6 +39,7 @@ jobs:
           - test-browse-shim.sh
           - test-evidence-bins.sh
           - test-dispatch-flags.sh
+          - test-state-root.sh
           - test-update-check.sh
           - test-vibe-upgrade-flow.sh
           - test-plan-tune-profile.sh
@@ -203,21 +204,14 @@ jobs:
       - uses: actions/checkout@v4
 
       # Codex lists every skill's name + description up front and shortens or
-      # drops skills once the listing passes 8,000 chars. The pack is over that
-      # today, so this reports the table and turns the over-budget exit (1)
-      # into a warning annotation; make exit 1 fatal once the descriptions are
-      # trimmed to fit.
+      # drops skills once the listing passes 8,000 chars, so an over-budget
+      # listing (exit 1) fails the job.
       - name: Measure the rendered skill listing
         run: |
           status=0
-          bin/vibe-context-budget --runtime codex --top 15 > /tmp/context-budget.txt || status=$?
-          cat /tmp/context-budget.txt
+          bin/vibe-context-budget --runtime codex --top 15 | tee /tmp/context-budget.txt || status="${PIPESTATUS[0]}"
           { echo '```'; cat /tmp/context-budget.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          case "$status" in
-            0) ;;
-            1) echo "::warning::$(grep '^OVER BUDGET' /tmp/context-budget.txt)" ;;
-            *) exit "$status" ;;
-          esac
+          exit "$status"
 
   drift:
     name: installed skills match sources

@@ -101,6 +101,13 @@ real_skills=$(ls -d "$ROOT"/skills/*/SKILL.md | wc -l | tr -d ' ')
   || bad "every skill in skills/ is counted (want $real_skills, got $(field SKILLS))" "$OUT"
 printf '%s\n' "$OUT" | grep -q '^warning:' && bad "no frontmatter warnings on the real pack" "$OUT" \
   || ok "no frontmatter warnings on the real pack"
+# Codex shortens or drops skills once the listing passes its cap, so the pack
+# itself must fit the default codex budget, not just measure cleanly.
+run --config-dir ""
+real_total="$(field TOTAL)"
+[ "$RC" = 0 ] && [ -n "$real_total" ] && [ "$real_total" -le 8000 ] \
+  && ok "the pack fits the default codex budget ($real_total <= 8000)" \
+  || bad "the pack fits the default codex budget (TOTAL ${real_total:-?}, rc=$RC)" "$(printf '%s\n' "$OUT" | grep -E '^(TOTAL|BUDGET|OVER BUDGET)')"
 
 echo
 echo "$pass passed, $fail failed"
