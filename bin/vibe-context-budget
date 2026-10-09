@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+# vibe-context-budget — measure the fixed context cost of the pack.
+#
+# Every runtime lists each installed skill's name and description up front, on
+# every session, before any skill is used. Codex caps that listing (2% of the
+# context window, 8,000 chars by default); past the cap it shortens
+# descriptions and may drop skills from the list entirely, so a skill silently
+# stops triggering while every test still passes. This prints what the listing
+# costs, per skill, and fails when the total is over the runtime's budget.
+#
+# It also reports, without gating on them, the other always-loaded payload the
+# pack ships: config/claude/CLAUDE.md + rules/ (read every session) and the
+# agent descriptions under config/claude/agents/.
+#
+# Skills are measured as rendered (include directives expanded), which is what
+# lands in the runtime's skills directory.
+#
+# Usage:
+#   vibe-context-budget [options]
+#
+# Options:
+#   --runtime NAME     codex (default), claude, cursor, kiro
+#   --budget N         listing budget in chars; overrides the runtime default
+#                      (also VIBESTACK_CONTEXT_BUDGET)
+#   --skills-dir DIR   source skills to render and measure (default: <repo>/skills)
+#   --rendered DIR     measure an already-rendered skills dir as-is (e.g.
+#                      ~/.agents/skills); skips rendering
+#   --config-dir DIR   config payload to report (default: <repo>/config/claude;
+#                      pass "" to skip)
+#   --top N            how many of the heaviest skills to rank (default 10)
+#   --target-len N     per-description length the savings column assumes
+#                      (default 200)
+#   --warn-only        report an over-budget total but exit 0
+#
+# Exit 0 within budget (or --warn-only, or no budget known for the runtime),
+# 1 over budget, 2 usage or input error.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+RUNTIME="codex"
+BUDGET="${VIBESTACK_CONTEXT_BUDGET:-}"
+SKILLS_DIR="$ROOT/skills"
+RENDERED=""
+CONFIG_DIR="$ROOT/config/claude"
+TOP=10
+TARGET_LEN=200
+WARN_ONLY=0
+
+usage() { sed -n '2,36p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+need() { [ $# -ge 2 ] && [ -n "${2+x}" ] || { echo "vibe-context-budget: $1 needs a value" >&2; exit 2; }; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --runtime)    need "$@"; RUNTIME="$2"; shift 2 ;;
+    --budget)     need "$@"; BUDGET="$2"; shift 2 ;;
+    --skills-dir) need "$@"; SKILLS_DIR="$2"; shift 2 ;;
+    --rendered)   need "$@"; RENDERED="$2"; shift 2 ;;
+    --config-dir) need "$@"; CONFIG_DIR="$2"; shift 2 ;;
+    --top)        need "$@"; TOP="$2"; shift 2 ;;
+    --target-len) need "$@"; TARGET_LEN="$2"; shift 2 ;;
+    --warn-only)  WARN_ONLY=1; shift ;;
+    -h|--help)    usage ;;
+    *) echo "vibe-context-budget: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+case "$RUNTIME" in
+  codex|claude|cursor|kiro) ;;
+  *) echo "vibe-context-budget: unknown runtime: $RUNTIME (codex, claude, cursor, kiro)" >&2; exit 2 ;;
+esac
+# Only Codex documents a hard listing cap. The others get a budget only when
+# one is passed; without it they are reported, not gated.
+if [ -z "$BUDGET" ] && [ "$RUNTIME" = codex ]; then BUDGET=8000; fi
+for pair in "budget:$BUDGET" "top:$TOP" "target-len:$TARGET_LEN"; do
+  val="${pair#*:}"
+  [ -z "$val" ] && continue
+  case "$val" in
+    *[!0-9]*) echo "vibe-context-budget: --${pair%%:*} must be a non-negative integer: $val" >&2; exit 2 ;;
+  esac
+done
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/vibe-context-budget.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT INT TERM
+
+if [ -n "$RENDERED" ]; then
+  [ -d "$RENDERED" ] || { echo "vibe-context-budget: not a directory: $RENDERED" >&2; exit 2; }
+  MEASURE_DIR="$RENDERED"
+else
+  [ -d "$SKILLS_DIR" ] || { echo "vibe-context-budget: not a directory: $SKILLS_DIR" >&2; exit 2; }
+  MEASURE_DIR="$WORK/skills"
+  found=0
+  for src in "$SKILLS_DIR"/*/SKILL.md; do
+    [ -f "$src" ] || continue
+    found=1
+    name="$(basename "$(dirname "$src")")"
+    if ! "$ROOT/bin/vibe-render-skill" "$src" "$MEASURE_DIR/$name/SKILL.md" >/dev/null 2>"$WORK/render.err"; then
+      echo "vibe-context-budget: cannot render $src:" >&2
+      cat "$WORK/render.err" >&2
+      exit 2
+    fi
+  done
+  [ "$found" = 1 ] || { echo "vibe-context-budget: no */SKILL.md under $SKILLS_DIR" >&2; exit 2; }
+fi
+
+if [ -n "$CONFIG_DIR" ] && [ ! -d "$CONFIG_DIR" ]; then
+  echo "vibe-context-budget: not a directory: $CONFIG_DIR" >&2; exit 2
+fi
+
+# Frontmatter is parsed here rather than with a YAML library so the tool has no
+# dependency beyond python3. It understands what the pack writes: plain and
+# quoted scalars, and | / > block scalars.
+PY='
+import os, sys
+
+measure_dir, config_dir, runtime, budget, top, target_len, warn_only = sys.argv[1:8]
+budget = int(budget) if budget else None
+top, target_len, warn_only = int(top), int(target_len), warn_only == "1"
+
+def frontmatter(path):
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+    out = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return out
+        out.append(line)
+    return None
+
+def field(fm, key):
+    for i, line in enumerate(fm):
+        if not line.startswith(key + ":"):
+            continue
+        rest = line[len(key) + 1:].strip()
+        if rest[:1] in ("|", ">"):
+            body = []
+            for nxt in fm[i + 1:]:
+                if nxt.strip() and not nxt[:1].isspace():
+                    break
+                body.append(nxt.strip())
+            while body and not body[-1]:
+                body.pop()
+            if rest[0] == "|":
+                return "\n".join(body)
+            return " ".join(b for b in body if b)
+        if len(rest) >= 2 and rest[0] == rest[-1] and rest[0] in "\"\x27":
+            rest = rest[1:-1]
+        return rest
+    return None
+
+skills, problems = [], []
+for name in sorted(os.listdir(measure_dir)):
+    path = os.path.join(measure_dir, name, "SKILL.md")
+    if not os.path.isfile(path):
+        continue
+    fm = frontmatter(path)
+    if fm is None:
+        problems.append(f"{name}: no frontmatter")
+        continue
+    sname = field(fm, "name") or name
+    desc = field(fm, "description")
+    if desc is None:
+        problems.append(f"{name}: no description")
+        desc = ""
+    skills.append((sname, len(sname), len(desc)))
+
+if not skills:
+    print(f"vibe-context-budget: no skills found under {measure_dir}", file=sys.stderr)
+    sys.exit(2)
+
+total = sum(n + d for _, n, d in skills)
+ranked = sorted(skills, key=lambda s: (-(s[1] + s[2]), s[0]))
+
+print(f"Skill listing ({runtime}): name + description chars, as rendered")
+print()
+save_hdr = "save@" + str(target_len)
+hdr = ("skill", "name", "desc", "total", save_hdr)
+print("  %-28s %5s %6s %6s %9s" % hdr)
+for sname, n, d in ranked[:top] if top else ranked:
+    print(f"  {sname:<28} {n:>5} {d:>6} {n + d:>6} {max(0, d - target_len):>9}")
+if top and len(ranked) > top:
+    print(f"  ... {len(ranked) - top} more")
+savings = sum(max(0, d - target_len) for _, _, d in skills)
+print()
+print(f"SKILLS {len(skills)}")
+print(f"TOTAL {total}")
+print("BUDGET", budget if budget is not None else "none")
+print(f"SAVINGS_AT_{target_len} {savings}")
+
+if config_dir:
+    always, agents = [], []
+    claude_md = os.path.join(config_dir, "CLAUDE.md")
+    if os.path.isfile(claude_md):
+        always.append(("CLAUDE.md", os.path.getsize(claude_md)))
+    rules = os.path.join(config_dir, "rules")
+    if os.path.isdir(rules):
+        for f in sorted(os.listdir(rules)):
+            p = os.path.join(rules, f)
+            if f.endswith(".md") and os.path.isfile(p):
+                always.append((f"rules/{f}", os.path.getsize(p)))
+    adir = os.path.join(config_dir, "agents")
+    if os.path.isdir(adir):
+        for f in sorted(os.listdir(adir)):
+            p = os.path.join(adir, f)
+            if not f.endswith(".md") or f == "README.md" or not os.path.isfile(p):
+                continue
+            fm = frontmatter(p) or []
+            agents.append((f[:-3], len(field(fm, "description") or "")))
+    print()
+    print("Always-loaded config (bytes, reported only)")
+    for label, size in sorted(always, key=lambda a: (-a[1], a[0]))[:top or None]:
+        print(f"  {label:<36} {size:>7}")
+    print(f"CONFIG_BYTES {sum(s for _, s in always)}")
+    if agents:
+        print(f"AGENT_DESC_CHARS {sum(c for _, c in agents)} ({len(agents)} agents)")
+
+for p in problems:
+    print(f"warning: {p}", file=sys.stderr)
+
+if budget is None:
+    print(f"\nNo listing budget is known for {runtime}; pass --budget to gate.")
+    sys.exit(0)
+if total <= budget:
+    print(f"\nOK: {total} / {budget} chars")
+    sys.exit(0)
+over = total - budget
+print(f"\nOVER BUDGET: {total} / {budget} chars ({over} over). Trim the heaviest descriptions above.")
+sys.exit(0 if warn_only else 1)
+'
+
+status=0
+python3 -I -c "$PY" "$MEASURE_DIR" "$CONFIG_DIR" "$RUNTIME" "$BUDGET" "$TOP" "$TARGET_LEN" "$WARN_ONLY" || status=$?
+exit "$status"
