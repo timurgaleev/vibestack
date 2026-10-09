@@ -1,7 +1,7 @@
 ---
 name: design-html
 description: |
-  Design finalization: generates production-quality Pretext-native HTML/CSS. Works with approved mockups from /design-shotgun, CEO plans from /plan-ceo-review, design review context from /plan-design-review, or from scratch with a user description. Text actually reflows, heights are computed, layouts are dynamic. 30KB overhead, zero deps. Smart API routing: picks the right Pretext patterns for each design type.
+  Design finalization: generates production-quality Pretext-native HTML/CSS. Works with approved mockups from /design-shotgun, CEO plans from /plan-ceo-review, design review context from /plan-design-review, or from scratch with a user description. Text actually reflows, heights are computed, layouts are dynamic. One ~30KB library (Pretext), imported from esm.sh or the project's own dependencies. Smart API routing: picks the right Pretext patterns for each design type.
 triggers:
   - build the design
   - code the mockup
@@ -211,8 +211,13 @@ Now route based on what was found. Check these cases in order:
 
 ### Case A: approved.json exists (design-shotgun ran)
 
-If `APPROVED` was found, read it. Extract: approved variant PNG path, user feedback,
-screen name. Also read the CEO plan if one exists (it adds strategic context).
+If `APPROVED` was found, read it. Extract: the approved image, user feedback, screen
+name. The approved image is the file the record's `approved_path` names. An older
+record without `approved_path` points at `variant-<approved_variant>.png` in the
+directory that holds `approved.json`. If that file does not exist, stop and tell the
+user the approved image is gone and they need to reselect with /design-shotgun; never
+substitute another variant. Also read the CEO plan if one exists (it adds strategic
+context).
 
 Read `DESIGN.md` if it exists in the repo root. These tokens take priority for
 system-level values (fonts, brand colors, spacing scale).
@@ -346,28 +351,19 @@ If no framework detected: default to vanilla HTML, no question needed.
 
 ### Pretext Source Embedding
 
-For **vanilla HTML output**, check for the vendored Pretext bundle:
-```bash
-_PRETEXT_VENDOR=""
-# The installed skill directory is the portable location — it resolves the same
-# way under every runtime this pack installs into. The repo-local and
-# ~/.claude paths are checked after it for older layouts.
-_SKILL_DIR="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/design-html}"
-[ -f "$_SKILL_DIR/vendor/pretext.js" ] && _PRETEXT_VENDOR="$_SKILL_DIR/vendor/pretext.js"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-[ -z "$_PRETEXT_VENDOR" ] && [ -n "$_ROOT" ] && [ -f "$_ROOT/.claude/skills/design-html/vendor/pretext.js" ] && _PRETEXT_VENDOR="$_ROOT/.claude/skills/design-html/vendor/pretext.js"
-[ -z "$_PRETEXT_VENDOR" ] && [ -f ~/.claude/skills/design-html/vendor/pretext.js ] && _PRETEXT_VENDOR=~/.claude/skills/design-html/vendor/pretext.js
-[ -n "$_PRETEXT_VENDOR" ] && echo "VENDOR: $_PRETEXT_VENDOR" || echo "VENDOR_MISSING"
+For **vanilla HTML output**: no Pretext bundle ships with this skill, so the page
+imports Pretext from the CDN as an ES module. Pretext is ESM-only and sets no global,
+so the import and all page code that calls it go in the same `<script type="module">`:
+```html
+<script type="module">
+  import { prepare, layout, prepareWithSegments, walkLineRanges, layoutNextLine, layoutWithLines } from 'https://esm.sh/@chenglou/pretext'
+  // page code (the wiring patterns below) goes here, after the import
+</script>
 ```
-
-- If `VENDOR` found: read the file and inline it in a `<script>` tag. The HTML file
-  is fully self-contained with zero network dependencies.
-- If `VENDOR_MISSING`: no bundle ships with this skill yet, so fall back to the CDN
-  import — and say so to the user, because it costs them the zero-dependency promise:
-  the page needs the network to lay itself out, and a strict CSP or an offline machine
-  will render it unlaid-out.
-  `<script type="module">import { prepare, layout, prepareWithSegments, walkLineRanges, layoutNextLine, layoutWithLines } from 'https://esm.sh/@chenglou/pretext'</script>`
-  Add a comment: `<!-- FALLBACK: vendor/pretext.js missing, using CDN -->`
+Tell the user the page needs the network to lay itself out: on an offline machine or
+behind a CSP that blocks esm.sh it renders unlaid-out. If they need a fully
+self-contained file, they install `@chenglou/pretext` in their own project and use
+framework output (or their bundler) instead.
 
 For **framework output**, add to the project's dependencies instead:
 ```bash
@@ -388,7 +384,7 @@ For framework output, save to:
 `~/.vibestack/projects/$SLUG/designs/<screen-name>-YYYYMMDD/finalized.[tsx|svelte|vue]`
 
 **Always include in vanilla HTML:**
-- Pretext source (inlined or CDN, see above)
+- Pretext imported from esm.sh in a `<script type="module">` (see above)
 - CSS custom properties for design tokens from DESIGN.md / Step 1 extraction
 - Google Fonts via `<link>` tags + `document.fonts.ready` gate before first `prepare()`
 - Semantic HTML5 (`<header>`, `<nav>`, `<main>`, `<section>`, `<footer>`)
@@ -416,12 +412,13 @@ For framework output, save to:
 ### Pretext Wiring Patterns
 
 Use these patterns based on the tier selected in Step 2. These are the correct
-Pretext API usage patterns. Follow them exactly.
+Pretext API usage patterns. Follow them exactly. The imports below are for framework
+output; in vanilla HTML, import the same names from `'https://esm.sh/@chenglou/pretext'`
+once, at the top of the page's `<script type="module">`.
 
 **Pattern 1: Basic height computation (Simple layout, Card/grid)**
 ```js
-import { prepare, layout } from './pretext-inline.js'
-// Or if inlined: const { prepare, layout } = window.Pretext
+import { prepare, layout } from '@chenglou/pretext'
 
 // 1. PREPARE — one-time, after fonts load
 await document.fonts.ready
@@ -460,37 +457,26 @@ for (const el of elements) {
 
 **Pattern 2: Shrinkwrap / tight-fit containers (Chat bubbles)**
 ```js
-import { prepareWithSegments, walkLineRanges } from './pretext-inline.js'
+import { prepareWithSegments, walkLineRanges } from '@chenglou/pretext'
 
-// Find the tightest width that produces the same line count
-function shrinkwrap(text, font, maxWidth, lineHeight) {
+// Tight-fit width: lay out at maxWidth, then shrink the bubble to its widest line
+function shrinkwrap(text, font, maxWidth) {
   const segs = prepareWithSegments(text, font)
-  let bestWidth = maxWidth
-  walkLineRanges(segs, maxWidth, (lineCount, startIdx, endIdx) => {
-    // walkLineRanges calls back with progressively narrower widths
-    // The first call gives us the line count at maxWidth
-    // We want the narrowest width that still produces this line count
+  let widest = 0
+  const lineCount = walkLineRanges(segs, maxWidth, (line) => {
+    widest = Math.max(widest, line.width)
   })
-  // Binary search for tightest width with same line count
-  const { lineCount: targetLines } = layout(prepare(text, font), maxWidth, lineHeight)
-  let lo = 0, hi = maxWidth
-  while (hi - lo > 1) {
-    const mid = (lo + hi) / 2
-    const { lineCount } = layout(prepare(text, font), mid, lineHeight)
-    if (lineCount === targetLines) hi = mid
-    else lo = mid
-  }
-  return hi
+  return { width: Math.ceil(widest), lineCount }
 }
 ```
 
 **Pattern 3: Text around obstacles (Editorial layout)**
 ```js
-import { prepareWithSegments, layoutNextLine } from './pretext-inline.js'
+import { prepareWithSegments, layoutNextLine } from '@chenglou/pretext'
 
 function layoutAroundObstacles(text, font, containerWidth, lineHeight, obstacles) {
   const segs = prepareWithSegments(text, font)
-  let state = null
+  let cursor = { segmentIndex: 0, graphemeIndex: 0 }
   let y = 0
   const lines = []
 
@@ -503,11 +489,11 @@ function layoutAroundObstacles(text, font, containerWidth, lineHeight, obstacles
       }
     }
 
-    const result = layoutNextLine(segs, state, availWidth, lineHeight)
+    const result = layoutNextLine(segs, cursor, availWidth)
     if (!result) break
 
     lines.push({ text: result.text, width: result.width, x: 0, y })
-    state = result.state
+    cursor = result.end
     y += lineHeight
   }
 
@@ -517,21 +503,21 @@ function layoutAroundObstacles(text, font, containerWidth, lineHeight, obstacles
 
 **Pattern 4: Full line-by-line rendering (Complex editorial)**
 ```js
-import { prepareWithSegments, layoutWithLines } from './pretext-inline.js'
+import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'
 
 const segs = prepareWithSegments(text, font)
 const { lines, height } = layoutWithLines(segs, containerWidth, lineHeight)
 
-// lines = [{ text, width, x, y }, ...]
+// lines = [{ text, width, start, end }, ...] (no x/y: line i sits at y = i * lineHeight)
 // Use for Canvas/SVG rendering or custom DOM positioning
-for (const line of lines) {
+lines.forEach((line, i) => {
   const span = document.createElement('span')
   span.textContent = line.text
   span.style.position = 'absolute'
-  span.style.left = `${line.x}px`
-  span.style.top = `${line.y}px`
+  span.style.left = '0px'
+  span.style.top = `${i * lineHeight}px`
   container.appendChild(span)
-}
+})
 ```
 
 ### Pretext API Reference
@@ -549,16 +535,17 @@ layout(prepared, maxWidth, lineHeight) → { height, lineCount }
 prepareWithSegments(text, font) → handle
   Like prepare() but enables line-level APIs below.
 
-layoutWithLines(segs, maxWidth, lineHeight) → { lines: [{text, width, x, y}...], height }
-  Full line-by-line breakdown. For Canvas/SVG rendering.
+layoutWithLines(segs, maxWidth, lineHeight) → { lineCount, height, lines: [{text, width, start, end}...] }
+  Full line-by-line breakdown (no x/y: line i is at y = i * lineHeight). For Canvas/SVG rendering.
 
-walkLineRanges(segs, maxWidth, onLine) → void
-  Calls onLine(lineCount, startIdx, endIdx) for each possible layout.
-  Find minimum width for N lines. For tight-fit containers.
+walkLineRanges(segs, maxWidth, onLine) → lineCount
+  Calls onLine({ width, start, end }) once per line at maxWidth (no text built).
+  The widest line's width is the tight-fit container width. For chat bubbles.
 
-layoutNextLine(segs, state, maxWidth, lineHeight) → { text, width, state } | null
+layoutNextLine(segs, cursor, maxWidth) → { text, width, start, end } | null
   Iterator. Different maxWidth per line = text around obstacles.
-  Pass null as initial state. Returns null when text is exhausted.
+  Start with cursor { segmentIndex: 0, graphemeIndex: 0 }; pass result.end next.
+  Returns null when text is exhausted. Takes no lineHeight: advance y yourself.
 
 clearCache() → void
   Clears internal measurement caches. Use when cycling many fonts.
@@ -579,22 +566,33 @@ _OUTPUT_DIR=$(dirname <path-to-finalized.html>)
 cd "$_OUTPUT_DIR"
 python3 -m http.server 0 --bind 127.0.0.1 &
 _SERVER_PID=$!
-_PORT=$(lsof -i -P -n | grep "$_SERVER_PID" | grep LISTEN | awk '{print $9}' | cut -d: -f2 | head -1)
-echo "SERVER: http://localhost:$_PORT/finalized.html"
+# The server needs a moment to bind; wait for its listening socket before reading the port.
+_PORT=""
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  _PORT=$(lsof -a -p "$_SERVER_PID" -iTCP -sTCP:LISTEN -P -n -Fn 2>/dev/null | sed -n 's/^n.*:\([0-9][0-9]*\)$/\1/p' | head -1)
+  [ -n "$_PORT" ] && break
+  sleep 0.2
+done
+[ -n "$_PORT" ] || { echo "SERVER_FAILED: no listening port after 2s" >&2; kill "$_SERVER_PID" 2>/dev/null; exit 1; }
+echo "SERVER: http://127.0.0.1:$_PORT/finalized.html"
 echo "PID: $_SERVER_PID"
 ```
+
+Remember the printed `SERVER:` URL and `PID:` value. Each bash block is a fresh
+shell, so `$_PORT` and `$_SERVER_PID` are empty in later blocks: restate the URL and
+PID literally wherever they are needed.
 
 If python3 is not available, fall back to:
 ```bash
 open <path-to-finalized.html>
 ```
 
-Tell the user: "Live preview running at http://localhost:$_PORT/finalized.html.
+Tell the user: "Live preview running at <SERVER URL>.
 After each edit, just refresh the browser (Cmd+R) to see changes."
 
 When the refinement loop ends (Step 4 exits), kill the server:
 ```bash
-kill $_SERVER_PID 2>/dev/null || true
+kill <PID> 2>/dev/null || true
 ```
 
 ---
@@ -603,14 +601,25 @@ kill $_SERVER_PID 2>/dev/null || true
 
 ### Verification Screenshots
 
-If `$B` is available (browse binary), take verification screenshots at 3 viewports:
+If SETUP printed `BROWSE_AVAILABLE`, take verification screenshots at 3 viewports.
+`screenshot` has no width flag, so set the viewport before each capture. Load the
+page through the live-reload server's `SERVER:` URL (not `file://`), so the module
+import and relative assets resolve. This is a fresh shell, so rebind `$B`:
 
 ```bash
-$B goto "file://<path-to-finalized.html>"
-$B screenshot /tmp/vibestack-verify-mobile.png --width 375
-$B screenshot /tmp/vibestack-verify-tablet.png --width 768
-$B screenshot /tmp/vibestack-verify-desktop.png --width 1440
+B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/design-html}/../browse/bin/vibe-browse"
+[ -x "$B" ] || B="$(command -v vibe-browse)"
+$B goto "<SERVER URL>"
+$B viewport 375x812
+$B screenshot /tmp/vibestack-verify-mobile.png
+$B viewport 768x1024
+$B screenshot /tmp/vibestack-verify-tablet.png
+$B viewport 1440x900
+$B screenshot /tmp/vibestack-verify-desktop.png
 ```
+
+If the live-reload server is not running (no python3), skip the screenshots rather
+than pointing the browser at a `file://` path.
 
 Show all three screenshots inline using the Read tool. Check for:
 - Text overflow (text cut off or extending beyond containers)
@@ -619,14 +628,14 @@ Show all three screenshots inline using the Read tool. Check for:
 
 If issues are found, note them and fix before presenting to the user.
 
-If `$B` is not available, skip verification and note:
+If SETUP printed `BROWSE_NOT_AVAILABLE`, skip verification and note:
 "Browse binary not available. Skipping automated viewport verification."
 
 ### Refinement Loop
 
 ```
 LOOP:
-  1. If server is running, tell user to open http://localhost:PORT/finalized.html
+  1. If server is running, tell user to open the printed `SERVER:` URL
      Otherwise: open <path>/finalized.html
 
   2. If an approved mockup PNG exists, show it inline (Read tool) for visual comparison.
