@@ -21,11 +21,17 @@
  * lost result line) is booked at its full allowance. The sessions load only project and local
  * settings, so the host's own CLAUDE.md, rules and hooks do not leak into the
  * neutral level; a rule spec's source becomes the sandbox CLAUDE.md.
+ *
+ * Safety: sessions run with --dangerously-skip-permissions. Every one of them,
+ * the judge calls included, runs with its working directory AND HOME set to a
+ * throwaway fixture directory under the OS temp dir, never the user's HOME or
+ * this repository. Authenticate with ANTHROPIC_API_KEY or
+ * CLAUDE_CODE_OAUTH_TOKEN in the environment; the real ~/.claude is not read.
  */
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runSkillTest, hasClaudeCli } from "../session-runner";
+import { runSkillTest, hasClaudeCli, isolatedHome } from "../session-runner";
 import { Budget } from "./budget";
 import { FIXTURES, FIXTURE_NAMES } from "./fixtures";
 import {
@@ -139,7 +145,7 @@ function shimEnv(shimDir: string, allowance: number): Record<string, string> {
 async function askClaude(shimDir: string, allowance: number, model: string, prompt: string) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "vibe-compliance-ask-"));
   try {
-    const env = { ...process.env, ...shimEnv(shimDir, allowance) } as Record<string, string>;
+    const env = { ...process.env, ...shimEnv(shimDir, allowance), ...isolatedHome(cwd) } as Record<string, string>;
     delete env.CLAUDECODE;
     const proc = Bun.spawn([path.join(shimDir, "claude"),
       "-p", "--model", model, "--output-format", "json", "--max-turns", "1",

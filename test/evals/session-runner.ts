@@ -16,6 +16,11 @@
  * Sandboxing: skills are rendered from this repo's sources into the sandbox's
  * project-level `.claude/skills/` (the path real installs resolve), and
  * VIBESTACK_HOME points into the sandbox so evals never touch real state.
+ * The child runs with --dangerously-skip-permissions, so its working directory
+ * is the throwaway sandbox and HOME (and CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME)
+ * is a fresh directory inside it — never the user's HOME or this repository.
+ * Authenticate with ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN; nothing
+ * under the real HOME is read.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -79,6 +84,7 @@ function installSkill(sandbox: string, skill: string) {
 export function makeSandbox(skills: string[]): string {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "vibe-eval-"));
   fs.mkdirSync(path.join(sandbox, "home"), { recursive: true });
+  fs.mkdirSync(path.join(sandbox, "user-home"), { recursive: true });
   for (const s of skills) installSkill(sandbox, s);
   return sandbox;
 }
@@ -103,6 +109,20 @@ export function hasClaudeCli(): boolean {
   try { execSync("command -v claude", { stdio: "pipe" }); return true; } catch { return false; }
 }
 
+/**
+ * Environment that confines an unattended session to a throwaway directory:
+ * HOME and the config dirs point inside it, so a session with every
+ * permission skipped cannot reach the user's dotfiles or credentials.
+ */
+export function isolatedHome(dir: string): Record<string, string> {
+  return {
+    HOME: dir,
+    USERPROFILE: dir,
+    CLAUDE_CONFIG_DIR: path.join(dir, ".claude"),
+    XDG_CONFIG_HOME: path.join(dir, ".config"),
+  };
+}
+
 /** Child env: scrub host-session context so the eval is hermetic-ish. */
 function childEnv(sandbox: string, extra?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
@@ -121,6 +141,8 @@ function childEnv(sandbox: string, extra?: Record<string, string>): Record<strin
     VIBESTACK_HOME: path.join(sandbox, "home"),
     VIBESTACK_HEADLESS: "1", // evals classify as headless: block, don't prose-ask
     ...extra,
+    // Last, so no caller's env can point the session back at the real HOME.
+    ...isolatedHome(path.join(sandbox, "user-home")),
   };
 }
 

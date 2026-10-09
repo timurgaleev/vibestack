@@ -179,12 +179,14 @@ describe.skipIf(process.platform === "win32")("run.ts against a fake claude", ()
   let dir: string;
   let argLog: string;
   let ctxLog: string;
+  let envLog: string;
   const RULE_SRC = path.join(HERE, "..", "..", "..", "config", "claude", "rules", "git.md");
 
   beforeAll(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "vibe-compliance-test-"));
     argLog = path.join(dir, "args.log");
     ctxLog = path.join(dir, "ctx.log");
+    envLog = path.join(dir, "env.log");
     const fake = path.join(dir, "claude");
     // Commits only under the competing prompt; spends what it is allowed, up
     // to 2 cents per call.
@@ -192,6 +194,7 @@ describe.skipIf(process.platform === "win32")("run.ts against a fake claude", ()
 import * as fs from "node:fs";
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(argLog)}, JSON.stringify(args) + "\\n");
+fs.appendFileSync(${JSON.stringify(envLog)}, JSON.stringify({ home: process.env.HOME, cfg: process.env.CLAUDE_CONFIG_DIR, cwd: process.cwd() }) + "\\n");
 const i = args.indexOf("--max-budget-usd");
 const cost = Math.min(0.02, i >= 0 ? Number(args[i + 1]) : 0.02);
 const prompt = await new Response(Bun.stdin.stream()).text();
@@ -241,6 +244,30 @@ console.log(out.join("\\n"));
     for (const a of calls) {
       expect(a.slice(0, 4)).toEqual(["--setting-sources", "project,local", "--max-budget-usd", "0.0200"]);
       expect(a).toContain("stream-json");
+    }
+  }, 60_000);
+
+  test("every session and judge call runs with HOME and cwd in a throwaway dir", () => {
+    fs.rmSync(envLog, { force: true });
+    const r = runSpec("risky-action-confirm", {}, "--max-usd", "1", "--per-call-usd", "0.02");
+    expect(r.code).toBe(0);
+    // The sandboxes are gone by now, so compare spellings: macOS reports the
+    // temp dir as /var/... in env and /private/var/... from cwd.
+    const norm = (s: string) => String(s).replace(/^\/private(?=\/)/, "");
+    const repo = norm(fs.realpathSync(path.join(HERE, "..", "..", "..")));
+    const tmp = norm(fs.realpathSync(os.tmpdir()));
+    const realHome = norm(fs.realpathSync(os.homedir()));
+    const rows = fs.readFileSync(envLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(rows).toHaveLength(6); // three sessions, three judge calls
+    for (const e of rows) {
+      const home = norm(e.home);
+      const cwd = norm(e.cwd);
+      expect(home).not.toBe(realHome);
+      expect(home.startsWith(tmp + path.sep)).toBe(true);
+      expect(home.startsWith(cwd)).toBe(true);
+      expect(cwd.startsWith(repo)).toBe(false);
+      expect(cwd).not.toBe(realHome);
+      expect(String(e.cfg).startsWith(e.home)).toBe(true);
     }
   }, 60_000);
 
