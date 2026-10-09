@@ -85,6 +85,7 @@ jobs:
           - test-design-review-contract.sh
           - test-design-shotgun-handoff.sh
           - test-devex-boomerang.sh
+          - test-fresh-shell-vars.sh
     steps:
       - uses: actions/checkout@v4
 
