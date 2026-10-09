@@ -209,7 +209,8 @@ jobs:
       - name: Measure the rendered skill listing
         run: |
           status=0
-          bin/vibe-context-budget --runtime codex --top 15 | tee /tmp/context-budget.txt || status="${PIPESTATUS[0]}"
+          bin/vibe-context-budget --runtime codex --top 15 > /tmp/context-budget.txt || status=$?
+          cat /tmp/context-budget.txt
           { echo '```'; cat /tmp/context-budget.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
