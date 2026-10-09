@@ -17,8 +17,8 @@ triggers:
 ## When to invoke
 
 Use right after a browse/scrape flow worked and the user wants it reusable —
-"skillify this", "make this a skill", "save this flow". It writes a new skill in
-the local repo so future invocations just run `/the-new-name`.
+"skillify this", "make this a skill", "save this flow". It writes a new skill into
+your skills dir (user scope by default) so future invocations just run `/the-new-name`.
 
 # /skillify — Codify a flow into a skill
 
@@ -74,14 +74,40 @@ REPO="$(cd "$(dirname "$(readlink "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-
 [ -f "$REPO/install" ] && echo "REPO: $REPO" || echo "REPO_NOT_FOUND"
 ```
 
-If `REPO_NOT_FOUND`, ask the user where they cloned vibestack.
+If `REPO_NOT_FOUND`, ask the user where they cloned vibestack. The repo is
+needed for its renderer and snippets wherever the skill ends up.
+
+**Choose where the skill lives (ask before staging).** A recorded flow often
+carries internal URLs and selectors for a private site, and the pack checkout is
+a public repo, so the pack is never the default. Use AskUserQuestion: "Where
+should `/<name>` live?
+A) User scope — `~/.claude/skills/<name>` (on Codex, `~/.agents/skills/<name>`).
+   Recommended: only you see it.
+B) Project scope — `<project root>/.claude/skills/<name>`, for this project only.
+C) The vibestack pack — `$REPO/skills/<name>`. This goes into a public repo: it
+   will be brand-audited and shipped as a PR for everyone."
+Default to A unless the user explicitly picks B or C. Resolve the chosen
+directory, replacing `<CHOICE>` with `user` (`codex-user` on Codex), `project`
+or `pack` and `<REPO>` with the printed repo path:
+
+```bash
+CHOICE='<CHOICE>'
+REPO='<REPO>'
+case "$CHOICE" in
+  user)       TARGET_DIR="$HOME/.claude/skills/<name>" ;;
+  codex-user) TARGET_DIR="$HOME/.agents/skills/<name>" ;;
+  project)    _TOP=$(git rev-parse --show-toplevel) && TARGET_DIR="$_TOP/.claude/skills/<name>" ;;
+  pack)       TARGET_DIR="$REPO/skills/<name>" ;;
+esac
+echo "TARGET_DIR: ${TARGET_DIR:?}"
+```
 
 Every Bash call starts a fresh shell, so the blocks below begin by restating
-the paths they use: replace `<REPO>`, `<STAGE_ROOT>` and `<STAGE>` with the
-values printed on the `REPO:`, `STAGE_ROOT:` and `STAGE:` lines (or the clone
-path the user gave).
+the paths they use: replace `<REPO>`, `<TARGET_DIR>`, `<STAGE_ROOT>` and
+`<STAGE>` with the values printed on the `REPO:`, `TARGET_DIR:`, `STAGE_ROOT:`
+and `STAGE:` lines (or the clone path the user gave).
 
-**Draft outside the repo.** Nothing reaches `skills/` until it has rendered,
+**Draft outside the target.** Nothing reaches `TARGET_DIR` until it has rendered,
 passed the brand audit, and re-run clean, so the draft lives in a staging dir
 until then — a validation failure must never be able to damage what is already on
 disk:
@@ -102,8 +128,8 @@ expands to the wrong value.
 overwrite an existing one:
 
 ```bash
-REPO='<REPO>'
-[ -e "$REPO/skills/<name>" ] && echo "NAME_TAKEN" || echo "NAME_FREE"
+TARGET_DIR='<TARGET_DIR>'
+[ -e "$TARGET_DIR" ] && echo "NAME_TAKEN" || echo "NAME_FREE"
 ```
 
 If `NAME_TAKEN`, use AskUserQuestion: "A skill named `<name>` already exists.
@@ -113,9 +139,9 @@ an explicit overwrite, copy the existing skill aside first — the user agreed t
 replace a working skill, not to lose one if the new draft fails validation:
 
 ```bash
-REPO='<REPO>'
+TARGET_DIR='<TARGET_DIR>'
 STAGE_ROOT='<STAGE_ROOT>'
-cp -R "$REPO/skills/<name>" "$STAGE_ROOT/backup-<name>"
+cp -R "$TARGET_DIR" "$STAGE_ROOT/backup-<name>"
 ```
 
 Write `$STAGE/SKILL.md` with: frontmatter (`name`, one-sentence
@@ -129,7 +155,7 @@ project names.
 ### 3. Validate the staged skill (nothing lands until it's clean)
 
 All three checks run against the staged file. Any failure stops here with the
-repo untouched — there is no half-installed state to clean up:
+target untouched — there is no half-installed state to clean up:
 
 ```bash
 REPO='<REPO>'
@@ -158,45 +184,68 @@ wrong or the page changed since the prototype, and neither is worth installing
 over. A wrong selector renders perfectly and fails the first time someone invokes
 the skill for real — this gate is the only thing that catches it before then.
 
-**Move into the repo once all three pass:**
+**Land it once all three pass.** For user or project scope (A/B) the rendered
+file is what lands — those directories are read as-is, with no install step to
+expand the include directives:
 
 ```bash
 REPO='<REPO>'
 STAGE='<STAGE>'
-rm -rf "$REPO/skills/<name>"   # only on the explicit-overwrite path
-mv "$STAGE" "$REPO/skills/<name>"
+TARGET_DIR='<TARGET_DIR>'
+cd "$REPO"
+rm -rf "$TARGET_DIR"   # only on the explicit-overwrite path
+mkdir -p "$TARGET_DIR"
+bin/vibe-render-skill "$STAGE/SKILL.md" "$TARGET_DIR/SKILL.md" && echo "LANDED: $TARGET_DIR"
+```
+
+For the pack (C) the source lands and the install renders it:
+
+```bash
+REPO='<REPO>'
+STAGE='<STAGE>'
+TARGET_DIR='<TARGET_DIR>'
+cd "$REPO"
+rm -rf "$TARGET_DIR"   # only on the explicit-overwrite path
+mv "$STAGE" "$TARGET_DIR"
 bin/vibe-lint-sources
 ```
 
-If `vibe-lint-sources` reports a finding, back the move out — restore
-`$STAGE_ROOT/backup-<name>` on the overwrite path, otherwise remove the directory
-you just created — and report the finding.
+If the render or `vibe-lint-sources` fails, back the move out — restore
+`$STAGE_ROOT/backup-<name>` to `$TARGET_DIR` on the overwrite path, otherwise
+remove the directory you just created — and report the finding.
 
-**Approval gate (STOP — do not install without it).** Installing writes into the
-user's live skills dir. Use AskUserQuestion: "New skill `/<name>` validated
-(render OK, brand clean, re-run matches the prototype). Install it into your
-skills dir now? A) Install, B) Keep the source only — I'll `/ship` it myself."
-Only run `./install` on A.
+**Approval gate, pack only (STOP — do not install without it).** Installing
+writes into the user's live skills dir. Use AskUserQuestion: "New skill `/<name>`
+validated (render OK, brand clean, re-run matches the prototype). Install it into
+your skills dir now? A) Install, B) Keep the source only — I'll `/ship` it myself."
+Only run `./install` on A, from `$REPO`:
 
 ```bash
+REPO='<REPO>'
+cd "$REPO"
 ./install --yes
 ```
 
 ### 4. Verify and hand off
 
-Confirm install reports the new count, then verify what landed:
+For the pack, confirm install reports the new count. Then verify what landed:
 
-1. **Resolvable** — `bin/vibe-render-skill` on the installed path succeeds and the
-   frontmatter `name` matches `<name>`.
+1. **Resolvable** — the frontmatter `name` in `$TARGET_DIR/SKILL.md` (or, for
+   the pack, the installed copy) matches `<name>`, and for the pack
+   `bin/vibe-render-skill` on the installed path succeeds.
 2. **Still reproduces the flow** — invoke the new `/<name>` once and compare its
    output with the prototype's. If it drifts, show the user both outputs and say
    which step diverged. Do NOT silently roll back or reinstall: synthesis drifting
    between the staged file and the installed one is exactly what they need to see
    before deciding what to do about it.
 
-Tell the user the new `/<name>` is installed; a new agent session may be needed
-if the host doesn't hot-reload. Suggest they bump the skill count in the README
-and `docs/skills.md`, and `/ship` the change when ready.
+For user or project scope, tell the user where `/<name>` landed (the printed
+`TARGET_DIR`) and that a new agent session may be needed if the host doesn't
+hot-reload. Nothing entered the pack repo.
+
+For the pack, tell the user the new `/<name>` is installed; a new agent session
+may be needed if the host doesn't hot-reload. Suggest they bump the skill count
+in the README and `docs/skills.md`, and `/ship` the change when ready.
 
 ## Limits
 

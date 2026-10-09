@@ -110,7 +110,8 @@ Ask the user to confirm the production URL. Some Fly apps use custom domains.
 If `render.yaml` detected:
 
 1. Extract service name and type from render.yaml
-2. Check for Render API key: `echo $RENDER_API_KEY | head -c 4` (don't expose the full key)
+2. Check for Render API key: `[ -n "${RENDER_API_KEY:-}" ] && echo "RENDER_API_KEY: set" || echo "RENDER_API_KEY: not set"`.
+   Never print any key bytes, not even a prefix (see rule 4 under third-party actions).
 3. Infer URL: `https://{service-name}.onrender.com`
 4. Render deploys automatically on push to the connected branch — no deploy workflow needed
 5. Set health check: the inferred URL
@@ -200,8 +201,12 @@ curl -sf "{health-check-url}" -o /dev/null -w "%{http_code}" 2>/dev/null || echo
 
 2. If a deploy status command was configured, try it:
 ```bash
-{deploy-status-command} 2>/dev/null | head -5 || echo "COMMAND_FAILED"
+_OUT=$({deploy-status-command} 2>&1); _RC=$?; printf '%s\n' "$_OUT" | head -5; [ "$_RC" -eq 0 ] || echo "COMMAND_FAILED (exit $_RC)"
 ```
+
+A `COMMAND_FAILED` status command is not recorded as verified: /land-and-deploy
+trusts what is written in CLAUDE.md, so ask the user to fix the command or leave
+the deploy-status line out of CLAUDE.md.
 
 3. Read back the merge method you wrote:
 ```bash
@@ -211,7 +216,7 @@ It must name exactly one of `squash`, `merge` or `rebase`. /land-and-deploy stop
 with `MERGE_METHOD_UNKNOWN` on anything else, the unfilled `{squash/merge/rebase}`
 placeholder included, so fix the line before finishing.
 
-Report results. If a health check or status command failed, note it but don't
+Report results. If a health check failed, note it but don't
 block — the config is still useful even if the health check is temporarily
 unreachable.
 
