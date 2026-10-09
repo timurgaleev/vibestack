@@ -79,25 +79,45 @@ needed for its renderer and snippets wherever the skill ends up.
 
 **Choose where the skill lives (ask before staging).** A recorded flow often
 carries internal URLs and selectors for a private site, and the pack checkout is
-a public repo, so the pack is never the default. Use AskUserQuestion: "Where
-should `/<name>` live?
-A) User scope — `~/.claude/skills/<name>` (on Codex, `~/.agents/skills/<name>`).
-   Recommended: only you see it.
-B) Project scope — `<project root>/.claude/skills/<name>`, for this project only.
+a public repo, so the pack is never the default.
+
+The user and project skill roots depend on the runtime you are running in — a
+skill written to another runtime's root is never discovered. Pick the row for
+the active runtime:
+
+| Runtime | `<RUNTIME>` | User root | Project root (relative) |
+|---|---|---|---|
+| Claude Code | `claude` | `~/.claude/skills` | `.claude/skills` |
+| Cursor | `cursor` | `~/.cursor/skills` | `.cursor/skills` |
+| Kiro | `kiro` | `~/.kiro/skills` | `.kiro/skills` |
+| Codex CLI | `codex` | `~/.agents/skills` | `.agents/skills` |
+
+Use AskUserQuestion: "Where should `/<name>` live?
+A) User scope — `<user root>/<name>`. Recommended: only you see it.
+B) Project scope — `<project root>/<project root relative>/<name>`, for this
+   project only.
 C) The vibestack pack — `$REPO/skills/<name>`. This goes into a public repo: it
    will be brand-audited and shipped as a PR for everyone."
 Default to A unless the user explicitly picks B or C. Resolve the chosen
-directory, replacing `<CHOICE>` with `user` (`codex-user` on Codex), `project`
-or `pack` and `<REPO>` with the printed repo path:
+directory, replacing `<RUNTIME>` with the runtime's value from the table,
+`<CHOICE>` with `user`, `project` or `pack`, and `<REPO>` with the printed repo
+path:
 
 ```bash
+RUNTIME='<RUNTIME>'
 CHOICE='<CHOICE>'
 REPO='<REPO>'
+case "$RUNTIME" in
+  claude) USER_ROOT="$HOME/.claude/skills";  PROJECT_REL=".claude/skills" ;;
+  cursor) USER_ROOT="$HOME/.cursor/skills";  PROJECT_REL=".cursor/skills" ;;
+  kiro)   USER_ROOT="$HOME/.kiro/skills";    PROJECT_REL=".kiro/skills" ;;
+  codex)  USER_ROOT="$HOME/.agents/skills";  PROJECT_REL=".agents/skills" ;;
+  *)      echo "unknown runtime: $RUNTIME" >&2; exit 1 ;;
+esac
 case "$CHOICE" in
-  user)       TARGET_DIR="$HOME/.claude/skills/<name>" ;;
-  codex-user) TARGET_DIR="$HOME/.agents/skills/<name>" ;;
-  project)    _TOP=$(git rev-parse --show-toplevel) && TARGET_DIR="$_TOP/.claude/skills/<name>" ;;
-  pack)       TARGET_DIR="$REPO/skills/<name>" ;;
+  user)    TARGET_DIR="$USER_ROOT/<name>" ;;
+  project) _TOP=$(git rev-parse --show-toplevel) && TARGET_DIR="$_TOP/$PROJECT_REL/<name>" ;;
+  pack)    TARGET_DIR="$REPO/skills/<name>" ;;
 esac
 echo "TARGET_DIR: ${TARGET_DIR:?}"
 ```
