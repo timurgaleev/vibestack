@@ -284,21 +284,23 @@ git show "${_FIRST}^:VERSION" 2>/dev/null || git show "${_FIRST}:VERSION" 2>/dev
 git show origin/<default>:VERSION 2>/dev/null
 
 # 16. Merged PRs/MRs in window (hosting data), from the platform Step 0
-#     detected — replace <PLATFORM> with github, gitlab or unknown. glab has no
-#     merged-date filter, so the window is applied to merged_at here; each MR
-#     prints as "!<iid> <merged_at> <title>".
+#     detected — replace <PLATFORM> with github, gitlab or unknown. The window
+#     is bounded at both ends: <start-date> is its first day and <end-date> its
+#     last (today for a normal run). glab has no merged-date filter, so the
+#     window is applied to merged_at here; each MR prints as
+#     "!<iid> <merged_at> <title>".
 RETRO_PLATFORM='<PLATFORM>'
 case "$RETRO_PLATFORM" in
   github)
-    gh pr list --state merged --base <default> --search "merged:>=<start-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE ;;
+    gh pr list --state merged --base <default> --search "merged:<start-date>..<end-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE ;;
   gitlab)
     glab mr list --merged --target-branch <default> --per-page 100 -F json 2>/dev/null \
       | python3 -I -c 'import json, sys
-start = sys.argv[1]
+start, end = sys.argv[1], sys.argv[2]
 for m in json.load(sys.stdin):
     day = (m.get("merged_at") or "")[:10]
-    if day and day >= start:
-        print("!%s %s %s" % (m["iid"], m["merged_at"], m["title"]))' '<start-date>' 2>/dev/null \
+    if day and start <= day <= end:
+        print("!%s %s %s" % (m["iid"], m["merged_at"], m["title"]))' '<start-date>' '<end-date>' 2>/dev/null \
       || echo PRS_UNAVAILABLE ;;
   *) echo PRS_UNAVAILABLE ;;
 esac
@@ -755,7 +757,7 @@ Small, practical, realistic. Each must be something that takes <5 minutes to ado
 When the user runs `/retro compare` (or `/retro compare 14d`):
 
 1. Compute metrics for the current window (default 7d) using the midnight-aligned start date (same logic as the main retro — e.g., if today is 2026-03-18 and window is 7d, use `--since="2026-03-11T00:00:00"`)
-2. Compute metrics for the immediately prior same-length window using both `--since` and `--until` with midnight-aligned dates. `--until` is inclusive, so the prior window ends one second before the current start (e.g., for a 7d window starting 2026-03-11: prior window is `--since="2026-03-04T00:00:00" --until="2026-03-10T23:59:59"`). Streaks, the Step 0.5 freshness guard and the history ledger apply to the current window only; where a prior value is zero, the delta shows "N/A" instead of a percentage.
+2. Compute metrics for the immediately prior same-length window using both `--since` and `--until` with midnight-aligned dates. `--until` is inclusive, so the prior window ends one second before the current start (e.g., for a 7d window starting 2026-03-11: prior window is `--since="2026-03-04T00:00:00" --until="2026-03-10T23:59:59"`). Run command 16 for the prior window with `<start-date>` 2026-03-04 and `<end-date>` 2026-03-10, so its merged PRs/MRs stop where the current window starts. Streaks, the Step 0.5 freshness guard and the history ledger apply to the current window only; where a prior value is zero, the delta shows "N/A" instead of a percentage.
 3. Show a side-by-side comparison table with deltas and arrows
 4. Write a brief narrative highlighting the biggest improvements and regressions
 5. Save only the current-window snapshot to `.context/retros/` (same as a normal retro run); do **not** persist the prior-window metrics.

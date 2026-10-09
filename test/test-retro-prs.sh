@@ -4,7 +4,9 @@
 #
 # Step 1 command 16 is executed against stub `gh` and `glab` binaries: a GitLab
 # repo must be read through `glab mr list --merged`, never through gh, and an
-# unknown platform must say PRS_UNAVAILABLE rather than ask either CLI.
+# unknown platform must say PRS_UNAVAILABLE rather than ask either CLI. Both
+# ends of the window bound the count, so a compare-mode prior window does not
+# absorb the current window's merges.
 #
 # Usage: test-retro-prs.sh
 set -uo pipefail
@@ -64,6 +66,8 @@ grep -q -- '--target-branch main' "$TMP/stub.log" \
   && ok "GitLab MRs are limited to the default branch" || no "glab call lacks --target-branch main: $(cat "$TMP/stub.log")"
 echo "$out" | grep -q '!4 ' && ok "GitLab keeps an MR merged inside the window" || no "GitLab output lost !4: $out"
 echo "$out" | grep -q '!3 ' && no "GitLab kept an MR merged before the window: $out" || ok "GitLab drops an MR merged before the window"
+echo "$out" | grep -q '!5 ' && ok "GitLab keeps an MR merged on the window's last day" || no "GitLab output lost !5: $out"
+echo "$out" | grep -q '!6 ' && no "GitLab kept an MR merged after the window ends: $out" || ok "GitLab drops an MR merged after the window ends"
 
 out="$(run_cmd github)"
 if grep -q '^gh pr list --state merged --base main' "$TMP/stub.log" && ! grep -q '^glab ' "$TMP/stub.log"; then
@@ -71,6 +75,15 @@ if grep -q '^gh pr list --state merged --base main' "$TMP/stub.log" && ! grep -q
 else
   no "GitHub calls: $(tr '\n' ';' < "$TMP/stub.log")"
 fi
+grep -q -- '--search merged:2026-03-04..2026-03-10 ' "$TMP/stub.log" \
+  && ok "GitHub search is bounded at both ends of the window" || no "gh search is not merged:<start>..<end>: $(cat "$TMP/stub.log")"
+
+# Compare mode reruns command 16 for the prior window; its end date must be the
+# day before the current window starts, or the prior count includes this week.
+COMPARE="$(awk '/^## Compare Mode/{on=1;next} /^## /{on=0} on' "$SK" | tr '\n' ' ')"
+printf '%s' "$COMPARE" | grep -q 'command 16' && printf '%s' "$COMPARE" | grep -q '<end-date>' \
+  && ok "compare mode bounds the prior window's merged PRs with <end-date>" \
+  || no "compare mode never bounds command 16 at the prior window's end"
 
 out="$(run_cmd unknown)"
 [ ! -s "$TMP/stub.log" ] && echo "$out" | grep -q '^PRS_UNAVAILABLE$' \
