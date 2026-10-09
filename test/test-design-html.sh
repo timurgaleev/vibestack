@@ -152,7 +152,7 @@ echo "approved.json handoff"
 present "Case A opens the image approved_path names" "the file the record's \`approved_path\` names"
 present "Case A stops when the approved image is gone" 'substitute another variant'
 # Every skill that writes approved.json for design-html to read records the image path.
-for w in design-shotgun design-consultation; do
+for w in design-shotgun design-consultation office-hours; do
   grep -Fq '"approved_path": image' "$SRC/skills/$w/SKILL.md" \
     && ok "$w records approved_path" || no "$w writes approved.json without approved_path"
 done

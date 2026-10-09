@@ -650,20 +650,27 @@ If `"regenerated": false`: proceed with the approved variant.
 The user's feedback reaches the shell the same way the brief does: **write the
 feedback summary with the Write tool** to `approved-feedback.txt` inside DESIGN_DIR
 (Read it first if it exists), then run this block, replacing `<DESIGN_DIR>` with the
-DESIGN_DIR path and `<V>` with the approved variant letter:
+DESIGN_DIR path, `<V>` with the approved variant letter and `<IMAGE>` with the
+`saved:` path of that variant (a same-day rerun saves `variant-A-2.png`, so never
+assume the name). The record keeps the image's absolute path in `approved_path`,
+which is what /design-html opens:
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
 _FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
-python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
+python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "<IMAGE>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
 import datetime, json, os, re, sys
-d, fb_file, variant, branch = sys.argv[1:5]
+d, fb_file, variant, image, branch = sys.argv[1:6]
 if not re.fullmatch(r"[A-J]", variant):
     sys.exit("approved variant must be one letter A-J, got %r" % variant)
+image = os.path.realpath(image)
+if os.path.commonpath([image, os.path.realpath(d)]) != os.path.realpath(d) or not os.path.isfile(image):
+    sys.exit("approved image %s is not a saved: path under %s; reselect from the paths this run printed" % (image, d))
 feedback = open(fb_file, encoding="utf-8").read().strip() if os.path.isfile(fb_file) else ""
 if not feedback:
     sys.exit("write the feedback into %s with the Write tool first" % fb_file)
 rec = {"approved_variant": variant,
+       "approved_path": image,
        "feedback": feedback,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
        "screen": "mockup", "branch": branch}

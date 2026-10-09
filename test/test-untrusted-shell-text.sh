@@ -513,16 +513,26 @@ echo "/office-hours: approved.json is built from the feedback file"
 fresh_cap
 if block_with "$R/office-hours/SKILL.md" 'approved-feedback.txt' > "$TMP/oh-approve.sh" 2>"$TMP/err"; then
   od="$TMP/oh-design"; mkdir -p "$od"; cp "$HOSTILE" "$od/approved-feedback.txt"
-  subst "$TMP/oh-approve.sh" '"<V>"' '"B"' "<DESIGN_DIR>" "$od"
+  # A same-day rerun saved variant-B-2.png; the record must name it, not variant-B.png.
+  : > "$od/variant-B.png"; : > "$od/variant-B-2.png"
+  cp "$TMP/oh-approve.sh" "$TMP/oh-approve-out.sh"
+  subst "$TMP/oh-approve.sh" '"<V>"' '"B"' "<IMAGE>" "$od/variant-B-2.png" "<DESIGN_DIR>" "$od"
   run_block "$TMP/oh-approve.sh" -u _DESIGN_DIR
-  if python3 -I -c 'import json,sys
+  if python3 -I -c 'import json,os,sys
 rec=json.load(open(sys.argv[1])); fb=open(sys.argv[2]).read().strip()
-sys.exit(not (rec["approved_variant"]=="B" and rec["feedback"]==fb and rec["screen"]=="mockup"))' "$od/approved.json" "$HOSTILE" 2>/dev/null \
+sys.exit(not (rec["approved_variant"]=="B" and rec["feedback"]==fb and rec["screen"]=="mockup"
+              and rec.get("approved_path")==os.path.realpath(sys.argv[3])))' "$od/approved.json" "$HOSTILE" "$od/variant-B-2.png" 2>/dev/null \
      && no_sentinel; then
-    ok "the feedback lands in approved.json verbatim and none of it ran"
+    ok "the feedback lands in approved.json verbatim, approved_path names the saved image, and none of it ran"
   else
     no "approved.json ($(head -3 "$TMP/run.out")); sentinels: $(ls "$SENT")"
   fi
+  # An image outside the design dir is refused and no record is written.
+  rm -f "$od/approved.json"; : > "$TMP/outside.png"
+  subst "$TMP/oh-approve-out.sh" '"<V>"' '"B"' "<IMAGE>" "$TMP/outside.png" "<DESIGN_DIR>" "$od"
+  run_block "$TMP/oh-approve-out.sh" -u _DESIGN_DIR
+  [ ! -e "$od/approved.json" ] && ok "an image outside the design dir is refused" \
+    || no "approved.json written for an image outside the design dir"
 else
   no "office-hours approve: $(cat "$TMP/err")"
 fi
