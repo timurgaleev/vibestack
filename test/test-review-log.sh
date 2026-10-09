@@ -125,7 +125,7 @@ has "adversarial record carries completed" '"completed":COMPLETED,"start_tree":"
 has "bounded re-review step" "### Step 5e: Re-review the fixes (bounded)"
 has "review record carries the start snapshot" '"start_tree":"START_TREE"'
 has "review record carries convergence" '"converged":CONVERGED'
-has "Step 3 captures the snapshot" "vibe-review-log --snapshot"
+has "Step 3 captures the snapshot" 'vibe-review-log" --snapshot'
 # Plan discovery lives in a shared snippet, so read the rendered skill.
 RSK="$TMP/review-rendered.md"
 if "$BIN/vibe-render-skill" "$SK" "$RSK" >/dev/null 2>&1; then
@@ -139,7 +139,7 @@ has "codex structured gate says untracked files are outside it" "Untracked files
 echo "ship dashboard honours the tree binding"
 SHIP="$SRC/skills/ship/SKILL.md"
 DASH=$(awk '/^## Review Readiness Dashboard/{on=1;next} on&&/^## Step 2:/{exit} on' "$SHIP")
-printf '%s' "$DASH" | grep -qF 'vibe-review-log --snapshot' && ok "ship snapshots the tree it ships" || no "ship dashboard takes no snapshot"
+printf '%s' "$DASH" | grep -qF 'vibe-review-log" --snapshot' && ok "ship snapshots the tree it ships" || no "ship dashboard takes no snapshot"
 printf '%s' "$DASH" | grep -qF 'tree changed since review' && ok "ship refuses a review of a different tree" || no "ship clears a review of a different tree"
 printf '%s' "$DASH" | grep -qF '`incomplete`' && ok "ship treats incomplete as not clean" || no "ship ignores the incomplete status"
 

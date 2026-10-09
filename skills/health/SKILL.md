@@ -23,13 +23,13 @@ Use when: "health check", "code quality", "how healthy is the codebase", "run al
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -57,13 +57,16 @@ listed there and skip auto-detection.
 If no `## Health Stack` section exists, auto-detect available tools:
 
 ```bash
+# A Node tool installed as a devDependency is not on PATH; run it from node_modules/.bin.
+node_tool() { if [ -x "node_modules/.bin/$1" ]; then echo "./node_modules/.bin/$1"; else echo "$1"; fi; }
+
 # Type checker
-[ -f tsconfig.json ] && echo "TYPECHECK: tsc --noEmit"
+[ -f tsconfig.json ] && echo "TYPECHECK: $(node_tool tsc) --noEmit"
 
 # Linter
-[ -f biome.json ] || [ -f biome.jsonc ] && echo "LINT: biome check ."
+[ -f biome.json ] || [ -f biome.jsonc ] && echo "LINT: $(node_tool biome) check ."
 setopt +o nomatch 2>/dev/null || true
-ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | head -1 | xargs -I{} echo "LINT: eslint ."
+ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | head -1 | xargs -I{} echo "LINT: $(node_tool eslint) ."
 [ -f .pylintrc ] || [ -f pyproject.toml ] && grep -q "pylint\|ruff" pyproject.toml 2>/dev/null && echo "LINT: ruff check ."
 
 # Test runner
@@ -163,6 +166,8 @@ failing checker does not stop the later ones.
 - **SKIPPED** — decided *before* running: the tool's binary is absent
   (`command -v <binary>` finds nothing, no local `node_modules/.bin` entry) and no
   `## Health Stack` entry names it. Record the reason. Only a skip redistributes weight.
+  A binary that exists only in `node_modules/.bin` is present: run it as
+  `./node_modules/.bin/<binary>`, including when a `## Health Stack` entry names it bare.
 - **FAILED** — the command ran and could not execute the check: exit 126 or 127
   (typo, missing binary in a configured `## Health Stack` command, no permission).
   It scores 0. A configured command that does not run is a broken check, not a
@@ -295,11 +300,12 @@ DETAILS: Lint (3 warnings)
 ## Step 5: Persist to Health History
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
 
 Only when the composite is numeric, append one JSONL line to
-`~/.vibestack/projects/$SLUG/health-history.jsonl`. A run with no checks or a capture
+`<PROJECT_DIR>/health-history.jsonl` (where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line). A run with no checks or a capture
 ERROR writes nothing and leaves the existing history as it is:
 
 ```json
@@ -319,12 +325,12 @@ If a category was skipped, set its value to `null`.
 
 ## Step 6: Trend Analysis + Recommendations
 
-Read the last 10 entries from `~/.vibestack/projects/$SLUG/health-history.jsonl` (if the
+Read the last 10 entries from `<PROJECT_DIR>/health-history.jsonl` (if the
 file exists and has prior entries).
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
-tail -10 ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+tail -10 "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/health-history.jsonl" 2>/dev/null || echo "NO_HISTORY"
 ```
 
 **Compare like-for-like coverage only.** For each history row, the scored set is the

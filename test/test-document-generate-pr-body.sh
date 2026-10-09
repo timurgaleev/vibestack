@@ -29,11 +29,11 @@ else
 fi
 
 # 2. Attribution is gated on the shared ship_attribution key, default off.
-grep -q 'vibe-config get ship_attribution' "$STEP9" && ok "reads ship_attribution" || no "ship_attribution not read"
+grep -q 'vibe-config" get ship_attribution' "$STEP9" && ok "reads ship_attribution" || no "ship_attribution not read"
 grep -Eq '`off` or unset \(the default\)' "$STEP9" && ok "attribution defaults to off" || no "default-off wording missing"
 
 # 3. The body is read through the trust envelope and snapshotted.
-grep -q 'vibe-untrusted --source pr-body --file <body-file>' "$STEP9" && ok "envelope read" || no "envelope read missing"
+grep -q 'vibe-untrusted" --source pr-body --file <body-file>' "$STEP9" && ok "envelope read" || no "envelope read missing"
 grep -q 'cp <body-file> <body-orig>' "$STEP9" && ok "snapshot taken" || no "snapshot missing"
 grep -q 'already contains a `## Documentation Generated` section' "$STEP9" && ok "idempotent section replace" || no "idempotent replace missing"
 

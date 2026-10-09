@@ -28,13 +28,13 @@ Voice triggers (speech-to-text aliases): "quality check", "test the app", "run Q
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -353,11 +353,11 @@ If `git diff --cached --name-only` shows any path outside that list, stop: tell 
 
 Before falling back to git diff heuristics, check for richer test plan sources:
 
-1. **Project-scoped test plans:** Check `~/.vibestack/projects/` for recent `*-test-plan-*.md` files for this repo
+1. **Project-scoped test plans:** Check the project dir under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/` for recent `*-test-plan-*.md` files for this repo
    ```bash
    setopt +o nomatch 2>/dev/null || true  # zsh compat
-   eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-   ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+   ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-test-plan-*.md 2>/dev/null | head -1
    ```
 2. **Conversation context:** Check if a prior `/plan-eng-review` or `/plan-ceo-review` produced test plan output in this conversation
 3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
@@ -704,7 +704,7 @@ For each component you are about to fix, pick ONE keyword: the component or page
 Worked examples: good keywords are `checkout-button`, `signup-form`, `payment`. Bad: `tests are failing`, `<failing-test>`, `app/views/checkout.erb`.
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<your-keyword>" --limit 5 2>/dev/null || true
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --query "<your-keyword>" --limit 5 2>/dev/null || true
 ```
 
 If any learnings come back, name which one applies to the fix in one sentence before writing it. If none come back, continue — the absence of a prior learning for this component is itself worth knowing.
@@ -724,6 +724,14 @@ For each fixable issue, in severity order:
 
 - Find the source file(s) responsible for the bug
 - ONLY modify files directly related to the issue
+
+Before touching them, check that no earlier fix left uncommitted work in those files — a best-effort fix or a kept red test (8e). Name every source file and any existing test file you plan to extend:
+
+```bash
+git status --porcelain -- <source files this fix will touch> <existing test file to extend, if any>
+```
+
+Empty output → continue to 8b. Any line → defer this issue with the reason "file holds an uncommitted earlier fix (ISSUE-NNN)", and do not edit those files. 8d's `git restore` and 8e's `git add` work on whole files, so sharing a file would either wipe the earlier fix or commit it under this issue.
 
 ### 8b. Regression test (before the fix)
 
@@ -874,9 +882,10 @@ Write the report to both local and project-scoped locations:
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
-Write to `~/.vibestack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
+Write to `<PROJECT_DIR>/{user}-{branch}-test-outcome-{datetime}.md`, where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line.
 
 **Per-issue additions** (beyond standard report template):
 - Fix Status: verified / best-effort / reverted / deferred

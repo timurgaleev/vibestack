@@ -16,10 +16,11 @@ PLATFORM=""
 gh repo view --json url -q .url >/dev/null 2>&1 && PLATFORM="github"
 [ -z "$PLATFORM" ] && glab repo view -F json >/dev/null 2>&1 && PLATFORM="gitlab"
 
-# "<STATE> <merge-commit-sha>"; a squash merge still lands one commit on the base.
+# "<STATE> <merge-commit-sha>"; a squash merge still lands one commit on the base, and a
+# GitLab fast-forward merge lands the MR head itself (no merge commit), so .sha is that commit.
 case "$PLATFORM" in
   github) PR_STATE=$(gh pr view $PR_REF --json state,mergeCommit -q '.state + " " + (.mergeCommit.oid // "")' 2>/dev/null) ;;
-  gitlab) PR_STATE=$(glab mr view $PR_REF -F json 2>/dev/null | jq -r '(.state | ascii_upcase) + " " + (.merge_commit_sha // .squash_commit_sha // "")' 2>/dev/null) ;;
+  gitlab) PR_STATE=$(glab mr view $PR_REF -F json 2>/dev/null | jq -r '(.state | ascii_upcase) + " " + (.merge_commit_sha // .squash_commit_sha // .sha // "")' 2>/dev/null) ;;
   *)      PR_STATE="" ;;
 esac
 STATE=$(printf '%s' "$PR_STATE" | awk '{print $1}')

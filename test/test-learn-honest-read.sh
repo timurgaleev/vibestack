@@ -24,7 +24,7 @@ for f in "$SKILL" "$SNIP"; do
   else
     ok "$name keeps search failures visible"
   fi
-  n_calls=$(grep -c '/bin/vibe-learnings-search ' "$f")
+  n_calls=$(grep -c '/bin/vibe-learnings-search" ' "$f")
   n_honest=$(grep -c 'LEARNINGS: unavailable (vibe-learnings-search exited \$?)' "$f")
   [ "$n_calls" -gt 0 ] && [ "$n_calls" -eq "$n_honest" ] \
     && ok "$name: every search ($n_calls) reports unavailable on failure" \

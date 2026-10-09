@@ -47,9 +47,9 @@ no() { fail=$((fail+1)); echo "  FAIL $1"; }
 # Justified exceptions: <doc or *> | <text the flagged line contains> | <reason>.
 # Matched by content, so they survive line moves; an entry nothing matches fails.
 cat > "$TMP/allow.txt" <<'ALLOW'
-* | vibe-question-check --id "<skill>:<question-id>" | the summary is the model's own one-line question, not user text
-skills/plan-tune/SKILL.md | vibe-question-check --id "<id>" --summary "<question text>" | the summary is the model's own one-line question, not user text
-skills/spec/SKILL.md | vibe-decision-log '{"decision":"Spec filed | model-authored one-line ledger entry
+* | vibe-question-check" --id "<skill>:<question-id>" | the summary is the model's own one-line question, not user text
+skills/plan-tune/SKILL.md | vibe-question-check" --id "<id>" --summary "<question text>" | the summary is the model's own one-line question, not user text
+skills/spec/SKILL.md | vibe-decision-log" '{"decision":"Spec filed | model-authored one-line ledger entry
 skills/kb-review/SKILL.md | --arg text '<question only tenant B can answer>' | a probe question the model invents; jq --arg takes it as data
 skills/bedrock-guardrails/SKILL.md | <<'PROBE' | a fixed helper; <control-label> is in a comment of trusted code
 skills/ship/SKILL.md | git commit -m "$(cat <<'EOF' | model-authored commit message
@@ -448,6 +448,21 @@ if block_with "$SP" 'GATE_PROMPT=$(mktemp' > "$TMP/sp-gate.sh" 2>"$TMP/err"; the
     ok "quality gate: codex reads the spec verbatim on stdin and none of it ran"
   else
     no "quality gate ($(head -3 "$TMP/run.out")); sentinels: $(ls "$SENT")"
+  fi
+  # The cleanup runs in a later, fresh shell: it can only reach the printed paths.
+  tg="$(sed -n 's/^TMPERR_GATE: //p' "$TMP/run.out")"; gp="$(sed -n 's/^GATE_PROMPT: //p' "$TMP/run.out")"
+  if [ -n "$tg" ] && [ -f "$tg" ] && [ -n "$gp" ] && [ -f "$gp" ] \
+     && block_with "$SP" 'rm -f "$TMPERR_GATE"' > "$TMP/sp-clean.sh" 2>"$TMP/err"; then
+    fill "$TMP/sp-clean.sh" "<TMPERR_GATE>" "$tg" "<GATE_PROMPT>" "$gp" "<SPEC_DRAFT>" "$TMP/draft.txt"
+    run_block "$TMP/sp-clean.sh"
+    if [ ! -e "$tg" ] && [ ! -e "$gp" ] && [ ! -e "$TMP/draft.txt" ]; then
+      ok "quality gate: printed temp paths are removed by the cleanup block"
+    else
+      no "quality gate cleanup left files behind"; rm -f "$tg" "$gp"
+    fi
+  else
+    no "quality gate: temp paths not printed or no cleanup block (${tg:-no TMPERR_GATE} ${gp:-no GATE_PROMPT}; $(cat "$TMP/err" 2>/dev/null))"
+    rm -f "${tg:-}" "${gp:-}"
   fi
 else
   no "quality gate: $(cat "$TMP/err")"

@@ -26,13 +26,13 @@ Proactively suggest when the user mentions visual inconsistencies or wants to po
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -329,7 +329,7 @@ invent a subcommand: anything other than `status` and `variants` either reports
 that it is unsupported or exits with a usage error.
 
 **CRITICAL PATH RULE:** All design artifacts (target mockups, screenshots, the audit
-report) MUST be saved under `~/.vibestack/projects/$SLUG/designs/`, NEVER to
+report) MUST be saved under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/`, NEVER to
 `.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled
 directory. Design artifacts are USER data, not project files — and this skill commits
 after every fix, so anything left in the repo gets swept into the user's diff.
@@ -341,7 +341,7 @@ URL, since a baseline for another site or environment is no baseline at all.
 
 ```bash
 _TARGET_URL='<TARGET_URL>'
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 REPORT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/designs/design-audit-$(date +%Y%m%d)"
 mkdir -p "$REPORT_DIR/screenshots"
 echo "REPORT_DIR: $REPORT_DIR"
@@ -804,9 +804,10 @@ Compare screenshots and observations across pages for:
 
 **Project-scoped:**
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
-Write to: `~/.vibestack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md`
+Write to: `<PROJECT_DIR>/{user}-{branch}-design-audit-{datetime}.md`, where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line.
 
 **Baseline:** Write `design-baseline.json` for regression mode, at `$REPORT_DIR/design-baseline.json`. Write it to `design-baseline.json.tmp` in the same directory first, then `mv` it into place, so a later regression compare never reads a half-written file:
 ```json
@@ -1129,7 +1130,7 @@ Merge findings into the triage with `[codex]` / `[subagent]` / `[cross-model]` t
 
 **Log the result:**
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","outside_status":"OUTSIDE_STATUS","commit":"'"$(git rev-parse --short HEAD)"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","outside_status":"OUTSIDE_STATUS","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Replace the placeholders:
 - **OUTSIDE_STATUS** — what happened to the cross-model voice: `completed` (Codex, or `claude -p` under Codex, returned a review), `unavailable` (it was attempted, or the preflight found it unusable, and no review came back), `disabled` (`codex_reviews` is off), or `skipped` (the section did not run).
@@ -1304,9 +1305,10 @@ Write the report to `$REPORT_DIR` (already set up in the setup phase):
 
 **Also write a summary to the project index:**
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
-Write a one-line summary to `~/.vibestack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md` with a pointer to the full report in `$REPORT_DIR`.
+Write a one-line summary to `<PROJECT_DIR>/{user}-{branch}-design-audit-{datetime}.md` (where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line) with a pointer to the full report in `$REPORT_DIR`.
 
 **Per-finding additions** (beyond standard design audit report):
 - Fix Status: verified / best-effort / reverted / deferred

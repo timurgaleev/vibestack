@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.53.0 — 2026-10-09
+
+### Fixed
+
+- **`/scrape` asks before running a saved browser-skill.** Those scripts get a
+  read+write daemon token, so running one silently broke the read-only promise.
+  Spawned and headless sessions never run them.
+- **`vibestack doctor` checks the installed `bin/` against the installer's
+  tool inventory** and reads the installed version stamp, so a missing tool or
+  stamp is reported instead of passing.
+- **Skills use the resolved state root everywhere.** Prose Write and Read
+  targets name the directory the block printed, every
+  `${VIBESTACK_HOME:-$HOME/.vibestack}` path is quoted (a state root with a
+  space no longer breaks commands), and `test/test-state-root.sh` rejects both
+  regressions, including in inline prose commands.
+- **`/retro` merged-PR metrics are correct**: GitLab repositories are queried
+  with `glab` across every page, each window is bounded at its end date, and
+  GitHub reads up to 1000 merged PRs.
+- **`/freeze` denies an edit whose target cannot be resolved** (a missing
+  parent directory no longer lets `..` or a symlink slip past the boundary),
+  and **`/codex` treats a failed or empty diff as an unavailable review**,
+  never a pass.
+- **`/cso` keeps a secret whose remote exposure is unknown** instead of
+  excluding it as local-only.
+- **`/ship` treats commits made after a merged PR as new work** — it only
+  skips to the release when the merged PR's head is `HEAD`. On GitLab, a
+  fast-forward merge without a merge commit is tagged at the MR head instead
+  of deferring forever.
+- **`/land-and-deploy` keeps deploy reports in the state root**, and the
+  browse daemon ignores its directory through `.git/info/exclude` rather than
+  editing a tracked `.gitignore`, so the next run's clean-checkout gate passes.
+- **`/review`'s gate prose matches the fail-closed gate block**; `/health`
+  runs project-local tools from `node_modules/.bin`; `/spec` cleans up its gate
+  temp files; `/qa` defers a fix whose files still hold an earlier uncommitted
+  fix.
+- **The Cursor rules and agents use the test value bar** and current skill
+  routing, matching the Claude configuration.
+
 ## 1.52.0 — 2026-10-09
 
 ### Changed

@@ -14,13 +14,13 @@ session would have written down about this subject over the name of the skill yo
 are running.
 
 ```bash
-_CROSS_PROJ=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get cross_project_learnings 2>/dev/null || echo "unset")
+_CROSS_PROJ=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get cross_project_learnings 2>/dev/null || echo "unset")
 echo "CROSS_PROJECT: $_CROSS_PROJ"
 if [ "$_CROSS_PROJ" = "true" ]; then
-  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<topic>" --limit 10 --cross-project \
+  "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --query "<topic>" --limit 10 --cross-project \
     || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 else
-  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<topic>" --limit 10 \
+  "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --query "<topic>" --limit 10 \
     || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 fi
 ```
@@ -36,8 +36,8 @@ Options:
 - A) Enable cross-project learnings (recommended)
 - B) Keep learnings project-scoped only
 
-If A: run `~/.vibestack/bin/vibe-config set cross_project_learnings true`
-If B: run `~/.vibestack/bin/vibe-config set cross_project_learnings false`
+If A: run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set cross_project_learnings true`
+If B: run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set cross_project_learnings false`
 
 Then re-run the search with the appropriate flag.
 

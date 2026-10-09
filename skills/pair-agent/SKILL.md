@@ -19,13 +19,13 @@ Use when asked to "pair agent", "connect agent", "share browser", "remote browse
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -213,7 +213,7 @@ nobody agreed to. Never set the flag yourself to get past that refusal — not
 which overrides it. Only the user's answer below turns it on. Check the standing consent:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get pair_agent 2>/dev/null || echo "unset"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get pair_agent 2>/dev/null || echo "unset"
 ```
 
 If the value is not `on`, ask via AskUserQuestion. This is a one-way door — it
@@ -226,7 +226,7 @@ question preference suppress it:
 > browser it reaches is the one holding your sessions. Enable pair-agent on this
 > machine?"
 
-Options: A) Enable — run `~/.vibestack/bin/vibe-config set pair_agent on`, confirm
+Options: A) Enable — run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set pair_agent on`, confirm
 it reads back `on`, and continue. B) No — stop here; local pairing (option A
 above) still works and exposes nothing.
 

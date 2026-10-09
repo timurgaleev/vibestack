@@ -109,7 +109,7 @@ chk "a recorded tree the object store no longer has is STALE, never a match" "$?
 echo "dashboard snapshot (shared snippet)"
 SNIP="$SRC/lib/snippets/review-readiness-dashboard.md"
 awk '/^```bash$/{f=1;next} /^```$/{if(f)exit} f' "$SNIP" > "$TMP/dash.sh"
-grep -qF 'vibe-review-log --snapshot' "$TMP/dash.sh" && ok "the snippet snapshots the tree" || no "the snippet takes no snapshot"
+grep -qF 'vibe-review-log" --snapshot' "$TMP/dash.sh" && ok "the snippet snapshots the tree" || no "the snippet takes no snapshot"
 dash_tree() { (cd "$REPO" && HOME="$FH" bash "$TMP/dash.sh" 2>/dev/null | sed -n 's/^TREE_NOW: //p'); }
 (cd "$REPO" && "$BIN/vibe-review-log" '{"skill":"review","status":"clean","completed":true,"converged":true}' >/dev/null)
 LOGGED=$(python3 -I -c 'import json,sys; print(json.loads(open(sys.argv[1]).readlines()[-1])["tree"])' "$(find "$VIBESTACK_HOME/projects" -name '*-reviews.jsonl' | head -1)")
@@ -154,7 +154,7 @@ OUT=$(cd "$REPO" && HOME="$FH" bash "$TMP/lanes.sh" 2>&1)
 case "$OUT" in *"LANE: unit exit=0 "*) ok "a passing lane reports exit=0 through the wrapper" ;; *) no "unit lane: $OUT" ;; esac
 case "$OUT" in *"LANE: e2e exit=3 "*) ok "a failing lane keeps its own exit through the wrapper" ;; *) no "e2e lane: $OUT" ;; esac
 printf '%s\n' "$S16" | awk '/^ *```bash$/{f=1;next} /^ *```$/{if(f)exit} f' | sed 's/^ *//' > "$TMP/gate.sh"
-grep -qF 'vibe-evidence check' "$TMP/gate.sh" && ok "Step 16 checks the ledger" || no "Step 16 has no ledger check"
+grep -qF 'vibe-evidence" check' "$TMP/gate.sh" && ok "Step 16 checks the ledger" || no "Step 16 has no ledger check"
 gate() { # gate LANE CMD -> exit of Step 16's own check line
   python3 -I - "$TMP/gate.sh" "$TMP/gate.$1.sh" "$1" "$2" <<'PY'
 import sys
@@ -176,7 +176,7 @@ printf '%s' "$DASH" | grep -qF 'compare it with \`TREE_NOW\`' && ok "ship stalen
 echo "ship: its own review records are bound to the tree they started on"
 SH="$SRC/skills/ship/SKILL.md"
 S9=$(section '## Step 9: Pre-Landing Review' '## Confidence Calibration')
-printf '%s' "$S9" | grep -qF 'echo "START_TREE: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot' \
+printf '%s' "$S9" | grep -qF 'echo "START_TREE: $("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" --snapshot' \
   && ok "Step 9 snapshots the tree before the diff" || no "Step 9 takes no start snapshot"
 grep -F '"via":"ship"' "$SH" | grep -qF '"start_tree":"START_TREE"' \
   && ok "ship's review record carries start_tree" || no "ship's review record is not tree-bound"
@@ -185,7 +185,7 @@ grep -F '"skill":"adversarial-review"' "$SH" | grep -qF '"start_tree":"START_TRE
 
 echo "codex: review record bound to its start tree"
 CX="$SRC/skills/codex/SKILL.md"
-grep -qF 'echo "START_TREE: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot' "$CX" && ok "review mode snapshots before the run" || no "no start snapshot in review mode"
+grep -qF 'echo "START_TREE: $("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" --snapshot' "$CX" && ok "review mode snapshots before the run" || no "no start snapshot in review mode"
 grep -qF '"skill":"codex-review","timestamp":"TIMESTAMP"' "$CX" && \
   grep -F '"skill":"codex-review","timestamp":"TIMESTAMP"' "$CX" | grep -qF '"completed":COMPLETED,"start_tree":"START_TREE"' \
   && ok "the review record carries completed and start_tree" || no "the review record is not tree-bound"
@@ -195,7 +195,7 @@ grep -F '"skill":"codex-review","status":"timeout"' "$CX" | grep -vqF '"complete
 echo "land-and-deploy: cite a FRESH run first"
 LD="$SRC/skills/land-and-deploy/SKILL.md"
 T35=$(awk '/^### 3.5b: Test results/{on=1;next} on&&/^### /{exit} on' "$LD")
-printf '%s' "$T35" | grep -qF "vibe-evidence check --expect-cmd '<test command>'" && ok "the gate consults the ledger" || no "the gate never consults the ledger"
+printf '%s' "$T35" | grep -qF "vibe-evidence\" check --expect-cmd '<test command>'" && ok "the gate consults the ledger" || no "the gate never consults the ledger"
 FIRST=$(printf '%s\n' "$T35" | awk '/^```bash$/{f=1;next} /^```$/{if(f)exit} f')
 printf '%s' "$FIRST" | grep -qF '_TEXIT=$?' && ok "the run block is still the first block" || no "the run block moved"
 

@@ -34,13 +34,13 @@ pre-review audit → design Step 0 → Step 0.5 mockups.
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -310,7 +310,7 @@ If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-b
 works. The first real generation in Step 0.5 settles that (see its skip list).
 
 **Where design artifacts go.** Every mockup, comparison board, and `approved.json`
-is written under `~/.vibestack/projects/$SLUG/designs/` — never to `.context/`,
+is written under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/` — never to `.context/`,
 `docs/`, `/tmp/`, or anywhere inside the repo. They are the user's data, not the
 project's: they have to survive a reboot, outlive the branch they were made on, and
 never end up in a commit.
@@ -359,13 +359,13 @@ The ONLY time you skip mockups is when:
 If the user explicitly says "skip mockups" or "text only", respect that. Otherwise, generate.
 
 **PLAN MODE EXCEPTION — ALWAYS RUN:** These commands write design artifacts to
-`~/.vibestack/projects/$SLUG/designs/` (user config directory, not project files).
+`${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/` (user config directory, not project files).
 Mockups are design artifacts that inform the plan, not code changes. The vibestack
 designer outputs PNGs and HTML comparison boards for human review during the
 planning phase. Generating mockups during planning is the whole point.
 
 Allowed commands under this exception:
-- `mkdir -p ~/.vibestack/projects/$SLUG/designs/...`
+- `mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/..."`
 - Writing the brief and feedback files, and `approved.json`, inside `$_DESIGN_DIR`
 - `$D variants`, `$D check`, `$D compare`
 - `open` (to view a board or a mockup when no browser is already showing it)
@@ -373,7 +373,7 @@ Allowed commands under this exception:
 First, set up the output directory. Name it after the screen/feature being designed and today's date:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 _DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
@@ -676,7 +676,7 @@ Fill in each cell from the Codex and subagent outputs. CONFIRMED = both agree. D
 
 **Log the result:**
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".
 
@@ -708,7 +708,7 @@ The description of what 10/10 looks like reaches `$D` through a file, as in Step
 First create the directory:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 _IDEAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
 mkdir -p "$_IDEAL_DIR"
 echo "IDEAL_DIR: $_IDEAL_DIR"
@@ -718,7 +718,7 @@ Then **write the description with the Write tool** to `brief.txt` inside the IDE
 just printed, and run:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 _IDEAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
 D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 BRIEF_FILE="$_IDEAL_DIR/brief.txt"
@@ -998,7 +998,7 @@ After producing the Completion Summary above, persist the review result.
 depends on this data. Skipping this command breaks the review readiness dashboard in /ship.
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"unresolved":N,"decisions_made":N,"commit":"COMMIT"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"unresolved":N,"decisions_made":N,"commit":"COMMIT"}'
 ```
 
 Substitute values from the Completion Summary:

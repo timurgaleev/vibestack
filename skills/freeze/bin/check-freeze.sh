@@ -216,15 +216,36 @@ _resolve_path() {
   done
   _dir="$(dirname "$_p")"
   _base="$(basename "$_p")"
-  _dir="$(cd "$_dir" 2>/dev/null && pwd -P || printf '%s' "$_dir")"
+  # Write creates missing parent directories, so the parent may not exist yet.
+  # Resolve the nearest existing ancestor and append the missing components
+  # verbatim. A "." or ".." among them, or a dangling symlink, cannot be
+  # resolved without guessing what the write will create, so the whole path is
+  # unresolvable (empty output) and the caller denies.
+  local _tail="$_base" _c
+  case "$_base" in .|..) return 1 ;; esac
+  while [ ! -d "$_dir" ]; do
+    [ -L "$_dir" ] && return 1
+    _c="$(basename "$_dir")"
+    case "$_c" in .|..) return 1 ;; esac
+    _tail="$_c/$_tail"
+    _dir="$(dirname "$_dir")"
+  done
+  _dir="$(cd "$_dir" 2>/dev/null && pwd -P)" || return 1
   if [ "$_dir" = "/" ]; then
-    printf '/%s' "$_base"
+    printf '/%s' "$_tail"
   else
-    printf '%s/%s' "$_dir" "$_base"
+    printf '%s/%s' "$_dir" "$_tail"
   fi
 }
-FILE_PATH=$(_resolve_path "$FILE_PATH")
-FREEZE_DIR=$(_resolve_path "$FREEZE_DIR")
+FILE_PATH=$(_resolve_path "$FILE_PATH") || FILE_PATH=""
+FREEZE_DIR=$(_resolve_path "$FREEZE_DIR") || FREEZE_DIR=""
+if [ -z "$FILE_PATH" ] || [ -z "$FREEZE_DIR" ]; then
+  _vibestack_log freeze deny unresolvable-path "$FILE_PATH"
+  _vibestack_analytics deny unresolvable_path
+  vibe_hook_decision deny "[freeze] Blocked: the $PATH_FIELD (or the freeze boundary) runs through a directory that does not exist yet via '.', '..' or a dangling symlink, so it cannot be checked against the boundary. Use a plain path. Freeze boundary: $(sed -n '1p' "$FREEZE_FILE")"
+  _FREEZE_DECIDED=1
+  exit 0
+fi
 
 # A boundary of / contains every absolute path; matching "${FREEZE_DIR}/"*
 # there would build the pattern "//"* and deny everything.

@@ -603,6 +603,37 @@ cp "$BIN"/vibe-* "$DOCV/bin/"; cp "$ROOT/VERSION" "$DOCV/version"
 out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCV" env PATH="$DOCV/bin:/usr/bin:/bin" "$BIN/vibestack" doctor 2>&1)"; rc=$?
 [ "$rc" = 0 ] && ! echo "$out" | grep -Eq '^  (MISS|FAIL|warn) ' \
   && ok "doctor: a complete install with only optional CLIs absent exits 0" || no "doctor: complete install rc=$rc: $out"
+# Run from the installed copy, the doctor has no repo bin/ next to it; it must
+# check against the inventory the installer wrote, not against its own dir.
+DOCI="$TMP/doctor-installed"
+mkdir -p "$DOCI/bin"
+cp "$BIN"/vibe-* "$BIN/vibestack" "$DOCI/bin/"; cp "$ROOT/VERSION" "$DOCI/version"
+(cd "$BIN" && ls -1 vibe-*) > "$DOCI/bin/.vibestack-tools"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$DOCI/bin/vibestack" doctor 2>&1)"; rc=$?
+echo "$out" | grep -Eq '^  ok   .*has every pack tool' \
+  && ok "doctor (installed): a complete bin is ok" || no "doctor (installed): complete bin rc=$rc: $out"
+rm -f "$DOCI/bin/vibe-redact"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$DOCI/bin/vibestack" doctor 2>&1)"; rc=$?
+[ "$rc" = 1 ] && echo "$out" | grep -Eq '^  MISS .*vibe-redact' \
+  && ok "doctor (installed): a tool deleted from the installed bin is a MISS" \
+  || no "doctor (installed): deleted vibe-redact not reported, rc=$rc: $out"
+rm -f "$DOCI/bin/.vibestack-tools"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$DOCI/bin/vibestack" doctor 2>&1)"; rc=$?
+[ "$rc" = 1 ] && echo "$out" | grep -Eq '^  MISS .*inventory' \
+  && ok "doctor (installed): no tool inventory is a MISS, never an ok" \
+  || no "doctor (installed): missing inventory not reported, rc=$rc: $out"
+# The installed copy reads the lowercase stamp install writes. It must not lean
+# on $VIBESTACK_HOME/bin/../VERSION, which only resolves to that stamp on a
+# case-insensitive filesystem: with no stamp at all it has to say so.
+rm -f "$DOCI/version"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$DOCI/bin/vibestack" doctor 2>&1)"
+echo "$out" | grep -Eq "^  warn no version stamp at $DOCI/version" \
+  && ok "doctor (installed): a missing version stamp is a warn row naming \$VIBESTACK_HOME/version" \
+  || no "doctor (installed): missing stamp not reported: $out"
+echo "1.2.3" > "$DOCI/version"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$DOCI/bin/vibestack" doctor 2>&1)"
+echo "$out" | grep -Eq '^  ok   version 1\.2\.3 \(stamp\)' \
+  && ok "doctor (installed): reports the installed stamp" || no "doctor (installed): stamp not reported: $out"
 
 echo
 echo "== summary =="

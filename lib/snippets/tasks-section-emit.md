@@ -40,7 +40,7 @@ aggregator in `/autoplan` iterates over `ceo-review`, `design-review`,
 `eng-review`, `devex-review` and reads `tasks-<phase>-*.jsonl` files.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 PHASE="${SKILL_NAME:-{SKILL_NAME}}"
 PHASE="${PHASE#plan-}"
 TASKS_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"

@@ -23,13 +23,13 @@ Use when asked to "resume", "restore context", "where was I", or "pick up where 
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -82,7 +82,7 @@ Parse the user's input:
 ### Step 1: Find saved contexts
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 CHECKPOINT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/checkpoints"
 if [ ! -d "$CHECKPOINT_DIR" ]; then
   echo "NO_CHECKPOINTS"
@@ -98,7 +98,7 @@ else
   # Drop checkpoints stamped for another project (a different remote, or a
   # different root when neither has one). Each is named, never loaded.
   if [ -n "$ALL" ]; then
-    CLASSIFIED=$(printf '%s\n' "$ALL" | ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug --classify-checkpoints 2>/dev/null)
+    CLASSIFIED=$(printf '%s\n' "$ALL" | "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" --classify-checkpoints 2>/dev/null)
     TAB=$(printf '\t')
     if [ -n "$CLASSIFIED" ] && ! printf '%s\n' "$CLASSIFIED" | grep -qvE "^(match|unstamped|foreign)${TAB}"; then
       printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1 == "foreign" { print $2 }' | while IFS= read -r f; do

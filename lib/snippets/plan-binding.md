@@ -17,7 +17,7 @@ _BOUND=$( { gh pr view --json body -q .body 2>/dev/null || glab mr view -F json 
 # The same ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/ bucket name the skills that write plans use
 # (owner--repo from the origin remote). Without vibe-slug there is no safe
 # guess: a folder name can be another repository's bucket, so skip it.
-_PLAN_SLUG=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null | sed -n 's/^SLUG=//p') || true
+_PLAN_SLUG=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null | sed -n 's/^SLUG=//p') || true
 # Candidates: repo design docs this branch added or changed, then plan files that name the branch.
 if [ -n "$_REPOTOP" ]; then
   _MB=$(git merge-base "origin/<base>" HEAD 2>/dev/null)

@@ -95,25 +95,43 @@ export function ensureStateDir(config: BrowseConfig): void {
     throw err;
   }
 
-  // Ensure .vibestack/ is in the project's .gitignore
-  const gitignorePath = path.join(config.projectDir, '.gitignore');
+  // Ignore .vibestack/ through the clone-local exclude file. Editing the tracked
+  // .gitignore would leave a modified file in the user's work tree.
+  let excludePath: string | null = null;
   try {
-    const content = fs.readFileSync(gitignorePath, 'utf-8');
-    if (!content.match(/^\.vibestack\/?$/m)) {
-      const separator = content.endsWith('\n') ? '' : '\n';
-      fs.appendFileSync(gitignorePath, `${separator}.vibestack/\n`);
+    const proc = Bun.spawnSync(['git', 'rev-parse', '--git-path', 'info/exclude'], {
+      cwd: config.projectDir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 2_000,
+    });
+    const out = proc.exitCode === 0 ? proc.stdout.toString().trim() : '';
+    if (out) excludePath = path.resolve(config.projectDir, out);
+  } catch {
+    // git unavailable — nothing to ignore against
+  }
+  if (!excludePath) return; // not a git checkout
+
+  try {
+    let content = '';
+    try {
+      content = fs.readFileSync(excludePath, 'utf-8');
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') throw err;
+      fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+    }
+    if (!content.match(/^\/?\.vibestack\/?$/m)) {
+      const separator = content === '' || content.endsWith('\n') ? '' : '\n';
+      fs.appendFileSync(excludePath, `${separator}.vibestack/\n`);
     }
   } catch (err: any) {
-    if (err.code !== 'ENOENT') {
-      // Write warning to server log (visible even in daemon mode)
-      const logPath = path.join(config.stateDir, 'browse-server.log');
-      try {
-        fs.appendFileSync(logPath, `[${new Date().toISOString()}] Warning: could not update .gitignore at ${gitignorePath}: ${err.message}\n`);
-      } catch {
-        // stateDir write failed too — nothing more we can do
-      }
+    // Write warning to server log (visible even in daemon mode)
+    const logPath = path.join(config.stateDir, 'browse-server.log');
+    try {
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] Warning: could not update ${excludePath}: ${err.message}\n`);
+    } catch {
+      // stateDir write failed too — nothing more we can do
     }
-    // ENOENT (no .gitignore) — skip silently
   }
 }
 

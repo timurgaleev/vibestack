@@ -207,6 +207,21 @@ git -C "$XB" tag -d v-leak >/dev/null
 G "$XR" remote set-url origin "$TMP/no-such-remote.git"
 X="$(expose)"
 [ "$X" = "EXPOSURE: unknown" ] && ok "unreachable remote is unknown, not local only" || no "unreachable remote is unknown, not local only (got: ${X:-nothing})"
+G "$XR" remote set-url origin "$XB"
+# Only a pull-request ref on the remote holds the commit.
+G "$XR" push -q origin "$XSHA:refs/pull/1/head"
+X="$(expose)"
+[ "$X" = "EXPOSURE: remote" ] && ok "remote PR ref is remote exposure" || no "remote PR ref is remote exposure (got: ${X:-nothing})"
+git -C "$XB" update-ref -d refs/pull/1/head
+# Pushed with an upstream, then the remote branch was deleted and pruned.
+G "$XR" checkout -q -b feat "$XSHA"
+G "$XR" push -q -u origin feat
+git -C "$XB" update-ref -d refs/heads/feat
+G "$XR" fetch -q --prune origin
+X="$(expose)"
+[ "$X" = "EXPOSURE: remote" ] && ok "pushed branch whose remote ref was pruned is remote exposure" || no "pushed branch whose remote ref was pruned is remote exposure (got: ${X:-nothing})"
+G "$XR" checkout -q --detach HEAD~1
+G "$XR" branch -q -D feat
 
 echo "recheck scope"
 has   "recheck runs Phase 1 (rule 6)"      "(Phases 0-1, the finding's own phase, 12-14)"

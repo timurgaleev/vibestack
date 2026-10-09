@@ -70,8 +70,8 @@ After the loop completes (PASS, max iterations, or convergence guard):
 
 3. Append metrics:
 ```bash
-mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics
-echo '{"skill":"{SKILL_NAME}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/spec-review.jsonl \
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/analytics"
+echo '{"skill":"{SKILL_NAME}","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/spec-review.jsonl" \
   || echo "SPEC_REVIEW_METRICS_NOT_PERSISTED (exit $?)"
 ```
 Replace ITERATIONS, FOUND, FIXED, REMAINING, SCORE with actual values from the review;

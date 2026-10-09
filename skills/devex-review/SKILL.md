@@ -27,13 +27,13 @@ Voice triggers (speech-to-text aliases): "dx audit", "test the developer experie
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -246,7 +246,7 @@ Check for prior /plan-devex-review scores:
 
 ```bash
 echo "CURRENT_BRANCH: $(git branch --show-current 2>/dev/null)"
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --any-branch --skill plan-devex-review --json 2>/dev/null || echo "NO_REVIEWS"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read" --any-branch --skill plan-devex-review --json 2>/dev/null || echo "NO_REVIEWS"
 ```
 
 The plan review usually ran on a different branch than this audit (planning on a
@@ -400,7 +400,7 @@ Flag any dimension where live score < plan score - 2 (reality fell short of plan
 **PLAN MODE EXCEPTION — ALWAYS RUN:**
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"devex-review","timestamp":"TIMESTAMP","status":"STATUS","overall_score":N,"product_type":"TYPE","tthw_measured":"TTHW","dimensions_tested":N,"dimensions_inferred":N,"boomerang":"YES_OR_NO","commit":"COMMIT"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"devex-review","timestamp":"TIMESTAMP","status":"STATUS","overall_score":N,"product_type":"TYPE","tthw_measured":"TTHW","dimensions_tested":N,"dimensions_inferred":N,"boomerang":"YES_OR_NO","commit":"COMMIT"}'
 ```
 
 {{include lib/snippets/review-readiness-dashboard.md}}

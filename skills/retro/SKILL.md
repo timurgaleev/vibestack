@@ -123,10 +123,11 @@ Usage: /retro [window | compare]
 Check for non-git context that should be included in the retro:
 
 ```bash
+echo "STATE_ROOT: ${VIBESTACK_HOME:-$HOME/.vibestack}"
 [ -f "${VIBESTACK_HOME:-$HOME/.vibestack}/retro-context.md" ] && echo "RETRO_CONTEXT_FOUND" || echo "NO_RETRO_CONTEXT"
 ```
 
-If `RETRO_CONTEXT_FOUND`: read `~/.vibestack/retro-context.md`. This file is user-authored and may contain meeting notes, calendar events, decisions, and other context that doesn't appear in git history. Incorporate this context into the retro narrative where relevant.
+If `RETRO_CONTEXT_FOUND`: read `<STATE_ROOT>/retro-context.md`, where `<STATE_ROOT>` is the path the block printed on its `STATE_ROOT:` line (every `<STATE_ROOT>` below means the same path). This file is user-authored and may contain meeting notes, calendar events, decisions, and other context that doesn't appear in git history. Incorporate this context into the retro narrative where relevant.
 
 ### Step 0.5: Stale-base + bad-today-anchor pre-flight guard
 
@@ -282,8 +283,39 @@ _FIRST=$(git log origin/<default> --since="<window>" --format=%H | tail -1)
 git show "${_FIRST}^:VERSION" 2>/dev/null || git show "${_FIRST}:VERSION" 2>/dev/null
 git show origin/<default>:VERSION 2>/dev/null
 
-# 16. Merged PRs in window (hosting data)
-gh pr list --state merged --base <default> --search "merged:>=<start-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE
+# 16. Merged PRs/MRs in window (hosting data), from the platform Step 0
+#     detected — replace <PLATFORM> with github, gitlab or unknown. The window
+#     is bounded at both ends: <start-date> is its first day and <end-date> its
+#     last (today for a normal run). glab has no merged-date filter, so the
+#     window is applied to merged_at here, reading page after page until a
+#     short one; each MR prints as "!<iid> <merged_at> <title>", and a failure
+#     on any page prints nothing but PRS_UNAVAILABLE.
+RETRO_PLATFORM='<PLATFORM>'
+case "$RETRO_PLATFORM" in
+  github)
+    gh pr list --state merged --base <default> --search "merged:<start-date>..<end-date>" --json number,title,mergedAt --limit 1000 2>/dev/null || echo PRS_UNAVAILABLE ;;
+  gitlab)
+    python3 -I -c 'import json, subprocess, sys
+base, start, end = sys.argv[1:4]
+found = []
+for page in range(1, 201):
+    out = subprocess.run(["glab", "mr", "list", "--merged", "--target-branch", base,
+                          "--per-page", "100", "--page", str(page), "-F", "json"],
+                         capture_output=True, text=True, check=True).stdout
+    mrs = json.loads(out)
+    for m in mrs:
+        day = (m.get("merged_at") or "")[:10]
+        if day and start <= day <= end:
+            found.append("!%s %s %s" % (m["iid"], m["merged_at"], m["title"]))
+    if len(mrs) < 100:
+        break
+else:
+    sys.exit(1)
+if found:
+    print("\n".join(found))' '<default>' '<start-date>' '<end-date>' 2>/dev/null \
+      || echo PRS_UNAVAILABLE ;;
+  *) echo PRS_UNAVAILABLE ;;
+esac
 
 # 17. CHANGELOG entries added in window
 git log origin/<default> --since="<window>" --format= -p -- CHANGELOG.md | grep '^+' | grep -v '^+++' || true
@@ -321,7 +353,7 @@ lines of a good fix is not less shipping than ten thousand lines of scaffold.
 See docs/designs/PLAN_TUNING_V1.md §Workstream C.
 
 Logical SLOC comes from command 14, version range from command 15. PRs merged
-comes from command 16; on `PRS_UNAVAILABLE` the row reads "unavailable (no gh)" —
+comes from command 16; on `PRS_UNAVAILABLE` the row reads "unavailable (no gh/glab)" —
 never infer it from `#NNN` in subjects, which is what PRs referenced (command 5)
 counts. Features shipped is the deduplicated CHANGELOG entry lines from command 17
 plus the merged PR titles from command 16; when both sources are empty or
@@ -341,7 +373,7 @@ bob                       3   +120/-40     tests/
 
 Sort by commits descending. The current user (from `git config user.name`) always appears first, labeled "You (name)".
 
-**Greptile signal (if history exists):** Read `~/.vibestack/greptile-history.md` (fetched in Step 1, command 8). Filter entries within the retro time window by date. Count entries by type: `fix`, `fp`, `already-fixed`. Compute signal ratio: `(fix + already-fixed) / (fix + already-fixed + fp)`. If no entries exist in the window or the file doesn't exist, skip the Greptile metric row. Skip unparseable lines silently.
+**Greptile signal (if history exists):** Read `<STATE_ROOT>/greptile-history.md` (fetched in Step 1, command 8). Filter entries within the retro time window by date. Count entries by type: `fix`, `fp`, `already-fixed`. Compute signal ratio: `(fix + already-fixed) / (fix + already-fixed + fp)`. If no entries exist in the window or the file doesn't exist, skip the Greptile metric row. Skip unparseable lines silently.
 
 **Backlog Health (if TODOS.md exists):** Read `TODOS.md` (fetched in Step 1, command 9). Compute:
 - Total open TODOs (exclude items in `## Completed` section)
@@ -357,7 +389,7 @@ Include in the metrics table:
 
 If TODOS.md doesn't exist, skip the Backlog Health row.
 
-**Skill Usage (if analytics exist):** Read `~/.vibestack/analytics/skill-usage.jsonl` if it exists. Filter entries within the retro time window by `ts` field. Separate skill activations (no `event` field) from hook fires (`event: "hook_fire"`). Aggregate by skill name. Present as:
+**Skill Usage (if analytics exist):** Read `<STATE_ROOT>/analytics/skill-usage.jsonl` if it exists. Filter entries within the retro time window by `ts` field. Separate skill activations (no `event` field) from hook fires (`event: "hook_fire"`). Aggregate by skill name. Present as:
 
 ```
 | Skill Usage | /ship(12) /qa(8) /review(5) · 3 safety hook fires |
@@ -365,7 +397,7 @@ If TODOS.md doesn't exist, skip the Backlog Health row.
 
 If the JSONL file doesn't exist or has no entries in the window, skip the Skill Usage row.
 
-**Eureka Moments (if logged):** Read `~/.vibestack/analytics/eureka.jsonl` if it exists. Filter entries within the retro time window by `ts` field. For each eureka moment, show the skill that flagged it, the branch, and a one-line summary of the insight. Present as:
+**Eureka Moments (if logged):** Read `<STATE_ROOT>/analytics/eureka.jsonl` if it exists. Filter entries within the retro time window by `ts` field. For each eureka moment, show the skill that flagged it, the branch, and a one-line summary of the insight. Present as:
 
 ```
 | Eureka Moments | 2 this period |
@@ -587,7 +619,7 @@ Use the Write tool to save the JSON file with this schema:
 
 When command 16 printed `PRS_UNAVAILABLE`, write `"prs_merged": null`, never `0`: a zero reads as a window with no merges, and a later trend comparison would count it as a real drop.
 
-**Note:** Only include the `greptile` field if `~/.vibestack/greptile-history.md` exists and has entries within the time window. Only include the `backlog` field if `TODOS.md` exists. Only include the `test_health` field if test files were found (command 10 returns > 0). If any has no data, omit the field entirely.
+**Note:** Only include the `greptile` field if `<STATE_ROOT>/greptile-history.md` exists and has entries within the time window. Only include the `backlog` field if `TODOS.md` exists. Only include the `test_health` field if test files were found (command 10 returns > 0). If any has no data, omit the field entirely.
 
 Include test health data in the JSON when test files exist:
 ```json
@@ -737,7 +769,7 @@ Small, practical, realistic. Each must be something that takes <5 minutes to ado
 When the user runs `/retro compare` (or `/retro compare 14d`):
 
 1. Compute metrics for the current window (default 7d) using the midnight-aligned start date (same logic as the main retro — e.g., if today is 2026-03-18 and window is 7d, use `--since="2026-03-11T00:00:00"`)
-2. Compute metrics for the immediately prior same-length window using both `--since` and `--until` with midnight-aligned dates. `--until` is inclusive, so the prior window ends one second before the current start (e.g., for a 7d window starting 2026-03-11: prior window is `--since="2026-03-04T00:00:00" --until="2026-03-10T23:59:59"`). Streaks, the Step 0.5 freshness guard and the history ledger apply to the current window only; where a prior value is zero, the delta shows "N/A" instead of a percentage.
+2. Compute metrics for the immediately prior same-length window using both `--since` and `--until` with midnight-aligned dates. `--until` is inclusive, so the prior window ends one second before the current start (e.g., for a 7d window starting 2026-03-11: prior window is `--since="2026-03-04T00:00:00" --until="2026-03-10T23:59:59"`). Run command 16 for the prior window with `<start-date>` 2026-03-04 and `<end-date>` 2026-03-10, so its merged PRs/MRs stop where the current window starts. Streaks, the Step 0.5 freshness guard and the history ledger apply to the current window only; where a prior value is zero, the delta shows "N/A" instead of a percentage.
 3. Show a side-by-side comparison table with deltas and arrows
 4. Write a brief narrative highlighting the biggest improvements and regressions
 5. Save only the current-window snapshot to `.context/retros/` (same as a normal retro run); do **not** persist the prior-window metrics.

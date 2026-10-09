@@ -300,7 +300,7 @@ if [ -d "$VIBE_BIN" ]; then
     rm -f "$bin_file"
     bin_removed=$((bin_removed + 1))
   done
-  rm -f "$VIBE_HOME/version"
+  rm -f "$VIBE_HOME/version" "$VIBE_BIN/.vibestack-tools"
   echo "Binaries: $bin_removed removed from $VIBE_BIN"
   if [ -z "$(ls -A "$VIBE_BIN" 2>/dev/null)" ]; then
     rmdir "$VIBE_BIN" 2>/dev/null || true

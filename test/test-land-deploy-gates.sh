@@ -519,6 +519,15 @@ open(sys.argv[2], "w").write(t)
 PY
   out=$(run "$SH" "$d" "$d.tc.sh")
   case "$out" in *"TEST_EXIT=3 "*) ok "[$SH] failing suite's exit status is reported" ;; *) no "[$SH] test exit masked: $out" ;; esac
+
+  echo "[$SH] deploy report location"
+  d=$(repo "rp-$SH" app.js)
+  block "Create the deploy report directory:" > "$d.rp.sh" || no "[$SH] report-dir block not found"
+  out=$(run "$SH" "$d" "$d.rp.sh")
+  rdir=$(printf '%s\n' "$out" | sed -n 's/^REPORT_DIR: //p')
+  case "$rdir" in "$HOME/.vibestack/projects/"*/deploy-reports) [ -d "$rdir" ] && ok "[$SH] reports go under the state root" || no "[$SH] report dir not created: $rdir" ;;
+    *) no "[$SH] report dir outside the state root: $out" ;; esac
+  [ -z "$(git -C "$d" status --porcelain)" ] && ok "[$SH] report dir leaves the work tree clean" || no "[$SH] report dir dirtied the checkout: $(git -C "$d" status --porcelain)"
 done
 
 echo "static contract"
@@ -526,7 +535,7 @@ S="$SKILL"
 grep -q 'bun test' "$S" && no "a bun test default survives" || ok "no bun test default"
 grep -qi 'merge anyway' "$S" && no "'merge anyway' still offered" || ok "no 'merge anyway' option"
 grep -q 'Do not ask the question below and do not offer A or C' "$S" && ok "blockers stop the gate" || no "blockers can still reach A/C"
-grep -qF 'gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source pr-body' "$S" \
+grep -qF 'gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted" --source pr-body' "$S" \
   && ok "PR body goes through vibe-untrusted" || no "PR body read raw"
 grep -q 'gh pr checks --watch' "$S" && no "unbounded gh pr checks --watch survives" || ok "no unbounded CI watch"
 grep -q 'Mark it as healthy' "$S" && no "'Mark it as healthy' survives" || ok "accepted issues report DEGRADED"
@@ -551,6 +560,7 @@ PY
 [ -s "$TMP/unbound.txt" ] && no "gh pr commands not bound to the PR number: $(cat "$TMP/unbound.txt")" || ok "every gh pr command is bound to PR_NUMBER"
 grep -E 'gh pr merge ' "$S" | grep -v -- '--match-head-commit' | grep -v -- '--disable-auto' | grep -q 'gh pr merge "\$PR_NUMBER"' \
   && no "a gh pr merge without --match-head-commit" || ok "every merge carries --match-head-commit"
+grep -q '\.vibestack/deploy-reports' "$S" && no "deploy reports still written into the work tree" || ok "no deploy report path in the work tree"
 grep -q 'vibe-diff-scope <base>' "$S" && no "post-merge scope classification survives" || ok "scope classified once, before the merge"
 fn() { awk '/^ci_gate\(\) \{/{on=1} on{print} on&&/^\}/{exit}' "$1"; }
 fn "$TMP/gate.sh" > "$TMP/fn1"; fn "$TMP/merge.sh" > "$TMP/fn2"

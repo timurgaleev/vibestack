@@ -175,6 +175,27 @@ else
   no "qa: regression test (line ${test_line:-none}) must precede the commit (line ${commit_line:-none})"
 fi
 refute "qa: never reverts blindly with git revert HEAD" 'git revert HEAD' "$Q"
+# A best-effort fix stays uncommitted, and 8d/8e restore and stage whole files,
+# so a later fix sharing a file would wipe or commit it. 8a must check first.
+LOCATE="$TMP/qa-8a.md"
+section "$Q" '^### 8a\. ' '^### 8b\. ' > "$LOCATE"
+check "qa: 8a checks the fix's files for uncommitted changes" 'git status --porcelain --' "$LOCATE"
+check "qa: 8a defers a fix whose file holds an earlier uncommitted change" 'defer this issue' "$LOCATE"
+
+# ── /scrape ──────────────────────────────────────────────────────────────────
+# A browser-skill script runs with a read+write daemon token (it can click, fill
+# and submit), so the read-only /scrape may only run one on an explicit yes.
+echo "scrape: a browser-skill runs only with consent"
+SR="$(render scrape)"
+MATCH="$TMP/sr-match.md"
+section "$SR" '^### 0\. Match' '^### 1\. ' > "$MATCH"
+[ -s "$MATCH" ] || { echo "Step 0 not found in scrape" >&2; exit 1; }
+MATCH1="$(tr '\n' ' ' < "$MATCH")"
+check "scrape: says a browser-skill gets a read+write token" 'read\+write' <(printf '%s\n' "$MATCH1")
+check "scrape: asks before running a browser-skill" 'AskUserQuestion' "$MATCH"
+check "scrape: runs it only on an explicit A" 'Only an explicit A runs' <(printf '%s\n' "$MATCH1")
+check "scrape: never runs one in spawned/headless sessions" 'spawned.*headless.*do not run' <(printf '%s\n' "$MATCH1")
+refute "scrape: no bash block runs a browser-skill unasked" 'skill run' <(fenced_bash "$MATCH")
 
 echo
 echo "passed: $pass  failed: $fail"

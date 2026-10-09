@@ -33,13 +33,13 @@ You are a **brainstorming partner**. Your job is to ensure the problem is unders
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -65,7 +65,7 @@ fi
 Understand the project and the area the user wants to change.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 ```
 
 1. Read `CLAUDE.md`, `TODOS.md` (if they exist).
@@ -73,9 +73,9 @@ eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    ```bash
-   eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+   eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
    setopt +o nomatch 2>/dev/null || true  # zsh compat
-   ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-design-*.md 2>/dev/null
+   ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null
    ```
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
@@ -329,9 +329,9 @@ After the user states the problem (first question in Phase 2A or 2B), search exi
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-grep -li "<keyword1>\|<keyword2>\|<keyword3>" ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-design-*.md 2>/dev/null
+grep -li "<keyword1>\|<keyword2>\|<keyword3>" "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null
 ```
 
 If matches found, read the matching design docs and surface them:
@@ -588,7 +588,7 @@ Generating visual mockups of the proposed design... (say "skip" if you don't nee
 **Step 1: Set up the design directory**
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 _DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
@@ -836,21 +836,22 @@ after resource selection in Phase 6.
 Write the design document to the project directory.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
 
 **Design lineage:** Before writing, check for existing design docs on this branch:
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 BRANCH=$(git branch --show-current 2>/dev/null)
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-PRIOR=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+PRIOR=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
+echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
 If `$PRIOR` exists, the new doc gets a `Supersedes:` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
-Write to `~/.vibestack/projects/{slug}/{user}-{branch}-design-{datetime}.md`.
+Write to `<PROJECT_DIR>/{user}-{branch}-design-{datetime}.md`, where `<PROJECT_DIR>` is the path the lineage block printed on its `PROJECT_DIR:` line.
 
 **Decision-record concision.** The doc records decisions, not the conversation.
 One bullet per decision with its reason. An approach the user ruled out during
@@ -1031,7 +1032,7 @@ The profile is derived from the append-only log Phase 4.5 writes — this sessio
 entry is already in it, so the counts include the session you are closing.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 PROFILE=$(python3 - "${SLUG:-unknown}" <<'PY'
 import json, os, sys
 home = os.environ.get("VIBESTACK_HOME") or os.path.expanduser("~/.vibestack")
@@ -1154,7 +1155,11 @@ Design trajectory with interpretation:
 **Accumulated signal visibility:** Read ACCUMULATED_SIGNALS from the profile.
 "Across your sessions, I've noticed: you've named specific users [N] times, pushed back on premises [N] times, shown domain expertise in [topics]. These patterns mean something."
 
-**Builder Journey Summary** (session 5+): Auto-generate `~/.vibestack/builder-journey.md`
+**Builder Journey Summary** (session 5+): print the state root first:
+```bash
+echo "STATE_ROOT: ${VIBESTACK_HOME:-$HOME/.vibestack}"
+```
+Then auto-generate `<STATE_ROOT>/builder-journey.md` (the path that line printed)
 with a narrative arc (not a data table). The arc tells the STORY of their journey in
 second person, referencing specific things they said across sessions. Then open it:
 ```bash
@@ -1171,7 +1176,7 @@ Then proceed to Resources below.
 
 Full accumulated signal summary from the profile.
 
-Auto-generate updated `~/.vibestack/builder-journey.md` with narrative arc. Open it.
+Print the state root with `echo "STATE_ROOT: ${VIBESTACK_HOME:-$HOME/.vibestack}"`, auto-generate updated `<STATE_ROOT>/builder-journey.md` (the path that line printed) with narrative arc, and open it.
 
 Then proceed to Resources below.
 
@@ -1182,7 +1187,7 @@ Then proceed to Resources below.
 **Standing opt-out — check this first:**
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get founder_resources 2>/dev/null || echo "unset"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get founder_resources 2>/dev/null || echo "unset"
 ```
 
 If the value is `false`, skip this entire section silently and go to the
@@ -1218,14 +1223,14 @@ If WebSearch is unavailable, skip this section entirely.
 
 1. Log the selected resource URLs to the builder profile:
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 echo '{"date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","mode":"resources","project_slug":"'"${SLUG:-unknown}"'","signal_count":0,"signals":[],"design_doc":"","assignment":"","resources_shown":["URL1","URL2","URL3"],"topics":[]}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
 ```
 
 2. Log to analytics:
 ```bash
-mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics
-echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl 2>/dev/null || true
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/analytics"
+echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl" 2>/dev/null || true
 ```
 
 3. Use AskUserQuestion to offer opening the resources:
@@ -1248,8 +1253,8 @@ just for this session — and confirm the write landed, because a preference tha
 silently failed to save is worse than never offering the switch:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config set founder_resources false
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get founder_resources
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set founder_resources false
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get founder_resources
 ```
 
 ### Next-skill handoff

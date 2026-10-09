@@ -187,6 +187,7 @@ run_block() { # NEEDLE PROMPT_TEXT -> stdout+stderr of the block
   name="codex-prompt.test$RANDOM"
   printf '%s' "$2" > "$REPO/.vibestack/tmp/$name"
   block=${block//<prompt-file-name>/$name}
+  block=${block//<focus-file-name>/$name}
   block=${block//<new|resume>/new}
   block=${block//<BASE>/main}
   block=${block//<TMPERR>/$(mktemp "$TMP/codex-err-XXXXXX")}
@@ -225,6 +226,29 @@ if printf '%s' "$out" | grep -q '^VERDICT: unavailable'; then ok "review: sandbo
 else no "review: sandbox-not-started run not unavailable"; printf '%s\n' "$out" | sed 's/^/    /'; fi
 if ls "$REPO/.vibestack/tmp/" | grep -qE 'codex-resp|\.resp$|\.events$'; then no "response/event files left behind"
 else ok "response and event files are removed"; fi
+
+# Custom-instructions path: the diff is built locally, so a base that does not
+# resolve or an empty diff must make the review unavailable before Codex runs.
+# An empty DIFF_START/DIFF_END block let Codex answer NO_FINDINGS -> clean -> PASS.
+CUSTOM='codex exec - -s read-only'
+git -C "$REPO" branch -M trunk
+: > "$TMP/argv"
+out=$(STUB_RESP=$'Nothing to review.\nNO_FINDINGS' run_block "$CUSTOM" 'focus on auth')
+if printf '%s' "$out" | grep -q '^VERDICT: unavailable' && [ ! -s "$TMP/argv" ]; then ok "custom review: unresolvable base is unavailable, Codex not run"
+else no "custom review: unresolvable base not reported unavailable"; printf '%s\n' "$out" | sed 's/^/    /'; fi
+git -C "$REPO" branch main
+: > "$TMP/argv"
+out=$(STUB_RESP=$'Nothing to review.\nNO_FINDINGS' run_block "$CUSTOM" 'focus on auth')
+if printf '%s' "$out" | grep -q '^VERDICT: unavailable' && [ ! -s "$TMP/argv" ]; then ok "custom review: empty diff is unavailable, Codex not run"
+else no "custom review: empty diff not reported unavailable"; printf '%s\n' "$out" | sed 's/^/    /'; fi
+echo change > "$REPO/f.txt"
+git -C "$REPO" add f.txt
+git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m change
+git -C "$REPO" update-ref refs/remotes/origin/main "$(git -C "$REPO" rev-parse main)"
+git -C "$REPO" branch -D -q main
+out=$(STUB_RESP=$'NO_FINDINGS' run_block "$CUSTOM" 'focus on auth')
+if printf '%s' "$out" | grep -q '^VERDICT: clean' && [ -s "$TMP/argv" ]; then ok "custom review: diff against origin/<base> reaches Codex"
+else no "custom review: diff against origin/<base> did not reach Codex"; printf '%s\n' "$out" | sed 's/^/    /'; fi
 
 echo
 echo "$pass passed, $fail failed"
