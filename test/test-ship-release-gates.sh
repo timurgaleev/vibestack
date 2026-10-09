@@ -10,7 +10,8 @@
 #     ALREADY_PUSHED off a stale origin/<branch> ref.
 #   - Step 2 raises the pipeline question only for ADDED artifacts.
 #   - Step 19 reads a merged PR as PR_MERGED (never NO_PR), so a re-run opens
-#     no second PR and goes to the release step.
+#     no second PR and goes to the release step; a branch with commits past its
+#     merged PR's head reads as NO_PR in Step 19 and not MERGED in Step 1.
 # Then static checks: no tag or release before merge, no WIP checkpoint
 # machinery, plan binding instead of newest-file fallback (in /ship and /review,
 # through the same block), the test value bar.
@@ -229,12 +230,36 @@ if block '**Idempotency check:** Check if a PR/MR already exists' > "$IBLOCK"; t
 else
   no "Step 19 idempotency block not found"; : > "$IBLOCK"
 fi
-runi() { printf '{"state":"%s","number":7,"url":"https://x/pull/7"}\n' "$1" > "$TMP/pr.json"
-         PATH="$TMP/stub:$PATH" STUB_PR="$TMP/pr.json" bash "$IBLOCK" 2>&1; }
+PBLOCK="$TMP/preflight.sh"
+if block "Then check whether this branch's PR/MR already merged" > "$PBLOCK"; then
+  ok "Step 1 merged-PR block extracted"
+else
+  no "Step 1 merged-PR block not found"; : > "$PBLOCK"
+fi
+# A branch whose PR merged at OLD, with one more commit (HEAD) made after the merge.
+REPO="$TMP/reuse"
+git init -q "$REPO"
+git -C "$REPO" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m merged
+OLD_HEAD=$(git -C "$REPO" rev-parse HEAD)
+git -C "$REPO" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m "new work"
+NEW_HEAD=$(git -C "$REPO" rev-parse HEAD)
+runb() { printf '{"state":"%s","number":7,"url":"https://x/pull/7","headRefOid":"%s"}\n' "$2" "${3:-$NEW_HEAD}" > "$TMP/pr.json"
+         ( cd "$REPO" && PATH="$TMP/stub:$PATH" STUB_PR="$TMP/pr.json" bash "$1" 2>&1 ); }
+runi() { runb "$IBLOCK" "$@"; }
 if command -v jq >/dev/null 2>&1; then
   out=$(runi MERGED)
   case "$out" in *PR_MERGED*) ok "merged PR is detected as merged" ;; *) no "merged PR reads as: $out" ;; esac
   case "$out" in *NO_PR*) no "merged PR falls into NO_PR (a new PR would be created)" ;; *) ok "merged PR is not NO_PR" ;; esac
+  out=$(runi MERGED "$OLD_HEAD")
+  case "$out" in *PR_MERGED*) no "branch reused after its merge reads as PR_MERGED (new commits never shipped): $out" ;;
+    *NO_PR*) ok "branch reused after its merge gets a new PR" ;; *) no "reused branch reads as: $out" ;; esac
+  out=$(runb "$PBLOCK" MERGED)
+  case "$out" in MERGED*) ok "pre-flight: PR merged at HEAD reads MERGED" ;; *) no "pre-flight: PR merged at HEAD reads as: $out" ;; esac
+  out=$(runb "$PBLOCK" MERGED "$OLD_HEAD")
+  case "$out" in MERGED*) no "pre-flight: commits after the merge read MERGED (they would skip the whole ship): $out" ;;
+    *) ok "pre-flight: commits after the merge are shipped, not released" ;; esac
+  out=$(runb "$PBLOCK" OPEN)
+  case "$out" in MERGED*) no "pre-flight: open PR reads MERGED" ;; *) ok "pre-flight: open PR is not MERGED" ;; esac
   out=$(runi OPEN)
   case "$out" in "PR #7"*) ok "open PR still updated in place" ;; *) no "open PR reads as: $out" ;; esac
   out=$(runi CLOSED)

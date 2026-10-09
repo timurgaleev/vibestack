@@ -14,7 +14,8 @@
 #     where it is;
 #   - a repo with no VERSION file at the merge commit is skipped; an unreadable
 #     PR state defers with retry guidance and is never reported as skipped;
-#   - a merge commit that is not on the base branch is refused.
+#   - a merge commit that is not on the base branch is refused;
+#   - a GitLab MR merged by fast-forward (no merge commit) is tagged at its head.
 #
 # Usage: test-release-after-merge.sh   (SHIP_SKILL / LAND_SKILL override the sources)
 set -uo pipefail
@@ -86,7 +87,7 @@ cat > "$TMP/bin/gh" <<'SH'
 printf 'gh %s\n' "$*" >> "$STUB_DIR/log"
 sub="$1 ${2:-}"; shift 2 2>/dev/null || shift $#
 case "$sub" in
-  "repo view") echo "https://github.com/o/r" ;;
+  "repo view") [ -f "$STUB_DIR/mr.json" ] && exit 1; echo "https://github.com/o/r" ;;
   "pr view")
     q=""
     while [ $# -gt 0 ]; do case "$1" in -q) q="$2"; shift 2 ;; *) shift ;; esac; done
@@ -107,7 +108,20 @@ case "$sub" in
   *) exit 1 ;;
 esac
 SH
-printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/bin/glab"
+# Stub glab: answers only when the fixture holds an MR (mr.json, GitLab's JSON shape).
+cat > "$TMP/bin/glab" <<'SH'
+#!/usr/bin/env bash
+printf 'glab %s\n' "$*" >> "$STUB_DIR/log"
+[ -f "$STUB_DIR/mr.json" ] || exit 1
+sub="$1 ${2:-}"; shift 2 2>/dev/null || shift $#
+case "$sub" in
+  "repo view") echo '{}' ;;
+  "mr view") cat "$STUB_DIR/mr.json" ;;
+  "release view") [ -f "$STUB_DIR/release-$1" ] ;;
+  "release create"|"release update") touch "$STUB_DIR/release-$1" ;;
+  *) exit 1 ;;
+esac
+SH
 chmod +x "$TMP/bin/gh" "$TMP/bin/glab"
 export PATH="$TMP/bin:$PATH"
 
@@ -222,6 +236,16 @@ for s in land ship; do
   out=$(run "$d" "$B"); rc=$?
   case "$out" in *BLOCKED*"not on origin/main"*) ok "$s: merge commit off the base is refused" ;; *) no "$s: off-base commit not refused: $out" ;; esac
   [ -z "$(git -C "$d" ls-remote --tags origin)" ] && ok "$s: off-base commit gets no tag" || no "$s: off-base commit was tagged"
+
+  # GitLab fast-forward merge: no merge or squash commit, the base now points at the MR head.
+  d=$(fixture "$s-ff" 1.2.0); FF=$(git -C "$d" rev-parse feature)
+  ( cd "$d" && git checkout -q main && git reset -q --hard "$FF" && git push -q -f origin main && git checkout -q feature )
+  printf '{"state":"merged","merge_commit_sha":null,"squash_commit_sha":null,"sha":"%s"}\n' "$FF" > "$d.stub/mr.json"
+  out=$(run "$d" "$B"); rc=$?
+  [ "$rc" = 0 ] && ok "$s: fast-forward MR exits 0" || no "$s: fast-forward MR exit $rc: $out"
+  [ "$(remote_tag "$d" v1.2.0)" = "$FF" ] && ok "$s: fast-forward MR is tagged at its head commit" \
+    || no "$s: fast-forward MR not tagged: $out"
+  grep -q '^glab release create v1.2.0' "$d.stub/log" && ok "$s: fast-forward MR gets a release" || no "$s: fast-forward MR got no release"
 done
 
 echo "no force anywhere"

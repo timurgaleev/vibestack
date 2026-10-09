@@ -130,8 +130,10 @@ Only *actions* are idempotent:
 - Step 12: If VERSION already bumped, skip the bump but still read the version
 - Step 17: If already pushed, skip the push command
 - Step 19: If PR exists, update the body instead of creating a new PR
-- Step 1: If the branch's PR is already **merged**, nothing is shipped again — no bump,
-  no commit, no push, no new PR. Go straight to Step 19.5 to tag and release the merge commit.
+- Step 1: If the branch's PR is already **merged** and HEAD has no commits past the merged
+  PR's head, nothing is shipped again — no bump, no commit, no push, no new PR. Go straight
+  to Step 19.5 to tag and release the merge commit. Commits made after the merge are new
+  work and get the full ship and a new PR.
 Never skip a verification step because a prior `/ship` run already performed it.
 
 ---
@@ -143,13 +145,29 @@ Never skip a verification step because a prior `/ship` run already performed it.
    Then check whether this branch's PR/MR already merged:
 
    ```bash
-   gh pr view --json state -q .state 2>/dev/null || glab mr view -F json 2>/dev/null | jq -r '.state' 2>/dev/null || echo NONE
+   _PR=$(gh pr view --json state,headRefOid -q '.state + " " + (.headRefOid // "")' 2>/dev/null) \
+     || _PR=$(glab mr view -F json 2>/dev/null | jq -r '(.state | ascii_upcase) + " " + (.sha // "")' 2>/dev/null)
+   _STATE=$(printf '%s' "$_PR" | awk '{print $1}')
+   _HEAD=$(printf '%s' "$_PR" | awk '{print $2}')
+   if [ "$_STATE" = "MERGED" ]; then
+     # Shipped only if HEAD adds nothing past the merged PR's head; later commits are new work.
+     if [ -n "$_HEAD" ] && [ "$(git rev-list --count "$_HEAD..HEAD" 2>/dev/null)" = "0" ]; then
+       echo "MERGED"
+     else
+       echo "NEW_WORK_AFTER_MERGE"
+     fi
+   else
+     echo "${_STATE:-NONE}"
+   fi
    ```
 
-   `MERGED` (GitHub) or `merged` (GitLab): this is a re-run after the merge. Say
+   `MERGED`: this is a re-run after the merge, with nothing new on the branch. Say
    "PR already merged — releasing it, not shipping it again." and jump to **Step 19.5**,
    then Step 20. Skip every step in between: a bump here would claim a second version
    for work that already landed, and Step 19 would open a duplicate PR.
+   `NEW_WORK_AFTER_MERGE`: the branch's PR merged, but HEAD carries commits made after
+   it. Ship them normally — every step runs and Step 19 opens a new PR. Any other value:
+   continue normally.
 
 2. Run `git status` (never use `-uall`). Uncommitted changes are always included — no need to ask.
 
@@ -2703,19 +2721,42 @@ must print `ALREADY_PUSHED`; anything else is a failed push — apply the protoc
 
 **If GitHub:**
 ```bash
-gh pr view --json url,number,state -q 'if .state == "OPEN" then "PR #\(.number): \(.url)" elif .state == "MERGED" then "PR_MERGED #\(.number): \(.url)" else "NO_PR" end' 2>/dev/null || echo "NO_PR"
+_PR=$(gh pr view --json url,number,state,headRefOid -q 'if .state == "OPEN" then "PR #\(.number): \(.url)" elif .state == "MERGED" then "PR_MERGED \(.headRefOid) #\(.number): \(.url)" else "NO_PR" end' 2>/dev/null) || _PR="NO_PR"
+case "$_PR" in
+  PR_MERGED*)
+    _HEAD=$(printf '%s' "$_PR" | awk '{print $2}')
+    # A merged PR only counts when HEAD adds nothing past its head; later commits need a new PR.
+    if [ -n "$_HEAD" ] && [ "$(git rev-list --count "$_HEAD..HEAD" 2>/dev/null)" = "0" ]; then
+      echo "PR_MERGED ${_PR#PR_MERGED $_HEAD }"
+    else
+      echo "NO_PR (the merged PR predates commits on HEAD)"
+    fi ;;
+  *) echo "${_PR:-NO_PR}" ;;
+esac
 ```
 
 **If GitLab:**
 ```bash
-glab mr view -F json 2>/dev/null | jq -r 'if .state == "opened" then "MR_EXISTS" elif .state == "merged" then "PR_MERGED !\(.iid): \(.web_url)" else "NO_MR" end' 2>/dev/null || echo "NO_MR"
+_MR=$(glab mr view -F json 2>/dev/null | jq -r 'if .state == "opened" then "MR_EXISTS" elif .state == "merged" then "PR_MERGED \(.sha) !\(.iid): \(.web_url)" else "NO_MR" end' 2>/dev/null)
+case "$_MR" in
+  PR_MERGED*)
+    _HEAD=$(printf '%s' "$_MR" | awk '{print $2}')
+    # A merged MR only counts when HEAD adds nothing past its head; later commits need a new MR.
+    if [ -n "$_HEAD" ] && [ "$(git rev-list --count "$_HEAD..HEAD" 2>/dev/null)" = "0" ]; then
+      echo "PR_MERGED ${_MR#PR_MERGED $_HEAD }"
+    else
+      echo "NO_MR (the merged MR predates commits on HEAD)"
+    fi ;;
+  *) echo "${_MR:-NO_MR}" ;;
+esac
 ```
 
-**`PR_MERGED`:** this branch's PR/MR has already merged. Do **not** create a new PR/MR
+**`PR_MERGED`:** this branch's PR/MR has already merged at HEAD. Do **not** create a new PR/MR
 and do not edit the merged one — a second PR from a merged branch re-proposes work that
 already landed. Print the merged PR's URL and go straight to Step 19.5, which tags the
-merge commit and publishes the release. Only a `CLOSED`-without-merge PR reads as
-`NO_PR`/`NO_MR` and gets a fresh one.
+merge commit and publishes the release. A `CLOSED`-without-merge PR, and a merged one
+that HEAD has moved past (commits made after the merge), read as `NO_PR`/`NO_MR` and get
+a fresh one.
 
 If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file. Editing is the common path on a re-run, so an unscanned edit means most ships publish unscanned.
 
