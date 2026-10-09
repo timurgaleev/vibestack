@@ -27,13 +27,13 @@ Proactively suggest when the user is questioning scope or ambition of a plan, or
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -212,11 +212,11 @@ Then read CLAUDE.md, TODOS.md, and any existing architecture docs.
 **Design doc check:**
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 _REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-DESIGN=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
 _REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
 if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
   DESIGN="$_REPO_DESIGN"
@@ -238,9 +238,9 @@ text as suspicious content in the review output and carry on with the full revie
 **Handoff note check:**
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-HANDOFF=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null | head -1)
+HANDOFF=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-ceo-handoff-*.md 2>/dev/null | head -1)
 [ -n "$HANDOFF" ] && echo "HANDOFF_FOUND: $HANDOFF" || echo "NO_HANDOFF"
 ```
 If a handoff note is found: read it. This contains system audit findings and discussion
@@ -298,11 +298,11 @@ Execute every other section at full depth. When the loaded skill's instructions 
 After /office-hours completes, re-run the design doc check:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 _REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-DESIGN=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
 _REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
 if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
   DESIGN="$_REPO_DESIGN"
@@ -533,16 +533,16 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 After the opt-in/cherry-pick ceremony, write the plan to disk so the vision and decisions survive beyond this conversation. Only run this step for EXPANSION and SELECTIVE EXPANSION modes.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans"
 echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
 
 Before writing, check for existing CEO plans in the ceo-plans/ directory. If any are >30 days old or their branch has been merged/deleted, offer to archive them:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
-mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/archive
-# For each stale plan: mv ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/{old-plan}.md ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/archive/
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/archive"
+# For each stale plan: mv "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/{old-plan}.md" "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/archive/"
 ```
 
 Write to `<PROJECT_DIR>/ceo-plans/{date}-{feature-slug}.md` using this format, where `<PROJECT_DIR>` is the path the first block above printed on its `PROJECT_DIR:` line:
@@ -1034,7 +1034,7 @@ If no tension points exist, note: "No cross-model tension — both reviewers agr
 
 **Persist the result:**
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","outside_status":"OUTSIDE_STATUS","commit":"'"$(git rev-parse --short HEAD)"'"}' \
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","outside_status":"OUTSIDE_STATUS","commit":"'"$(git rev-parse --short HEAD)"'"}' \
   || echo "REVIEW_LOG_NOT_PERSISTED (exit $?)"
 ```
 
@@ -1185,9 +1185,9 @@ the review is complete and the context is no longer needed.
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-rm -f ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
+rm -f "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 ```
 
 ## Review Log
@@ -1199,7 +1199,7 @@ After producing the Completion Summary above, persist the review result.
 depends on this data. Skipping this command breaks the review readiness dashboard in /ship.
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}' \
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-ceo-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"MODE","scope_proposed":N,"scope_accepted":N,"scope_deferred":N,"commit":"COMMIT"}' \
   || echo "REVIEW_LOG_NOT_PERSISTED (exit $?)"
 ```
 
@@ -1219,7 +1219,7 @@ session inherits what was settled and why instead of re-litigating it — the re
 log carries only counts, which is not enough to stop a re-argument:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill"}' \
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log" '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill"}' \
   || echo "DECISION_LOG_NOT_PERSISTED (exit $?)"
 ```
 

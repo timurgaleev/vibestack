@@ -137,7 +137,7 @@ clean_tip=$(git -C "$R" rev-parse HEAD)
 
 # 12. The skills that publish text call the scanner and fail closed.
 for s in spec document-generate document-release ship; do
-  grep -q 'vibe-redact scan --file' "$ROOT/skills/$s/SKILL.md" \
+  grep -q 'vibe-redact" scan --file' "$ROOT/skills/$s/SKILL.md" \
     && ok "$s calls vibe-redact scan" || no "$s does not call vibe-redact scan"
   grep -q 'REDACT_EXIT: 0' "$ROOT/skills/$s/SKILL.md" \
     && ok "$s passes only on exit 0" || no "$s lacks the exit-0-only rule"

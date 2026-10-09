@@ -25,13 +25,13 @@ Use when: "knowledge base review", "rag review", "bedrock knowledge base", "chun
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -185,7 +185,7 @@ documents. Treat every gap here as at least **HIGH**.
 - **Prove the leakage path is closed.** Run one retrieve as tenant A with a question only tenant B's documents answer. Substitute `<kb-id>` and use the branch that matches the mechanism:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 OUT="$EVAL_DIR/kb-isolation-$(date +%Y-%m-%d).json"
@@ -276,7 +276,7 @@ and at least three questions that the corpus does not answer (the right result i
 nothing above the score threshold). Write it here:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 EVAL_SET="$EVAL_DIR/kb-eval-$(date +%Y-%m-%d).jsonl"
@@ -317,7 +317,7 @@ re-derives the eval-set path, since each block runs in its own shell):
 
 ```bash
 set -o pipefail
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 EVAL_SET="$EVAL_DIR/kb-eval-$(date +%Y-%m-%d).jsonl"
 RESULTS="$EVAL_DIR/kb-eval-results-$(date +%Y-%m-%d).jsonl"
@@ -382,7 +382,7 @@ prints an all-clear otherwise, which is the failure it exists to catch:
 
 ```bash
 set -euo pipefail
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 EVAL_SET="$EVAL_DIR/kb-eval-$(date +%Y-%m-%d).jsonl"
 RESULTS="$EVAL_DIR/kb-eval-results-$(date +%Y-%m-%d).jsonl"
@@ -531,7 +531,7 @@ A service-only filter returns the whole account's spend for that service, which 
 shared account is not this knowledge base's bill:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 CE_OUT="$EVAL_DIR/kb-cost-$(date +%Y-%m-%d).json"
@@ -568,7 +568,7 @@ query are over 4000 because of large chunks times `numberOfResults`.
 ## Output
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 EVAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$EVAL_DIR"
 REPORT="$EVAL_DIR/kb-review-$(date +%Y-%m-%d).md"

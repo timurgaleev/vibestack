@@ -20,13 +20,13 @@ Use when asked to "landing report", "what's in the queue", "show me open PRs", o
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -93,7 +93,7 @@ BASE_VERSION='<BASE_VERSION>'
 LANDING_DIR=$(mktemp -d "${TMPDIR:-/tmp}/landing-XXXXXX")
 echo "LANDING_DIR: $LANDING_DIR"
 for LEVEL in patch minor major; do
-  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version \
+  "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
     --base "$BASE_BRANCH" \
     --bump "$LEVEL" \
     --current-version "$BASE_VERSION" \

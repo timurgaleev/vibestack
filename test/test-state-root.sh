@@ -59,6 +59,23 @@ for path in sys.argv[1:]:
 PY
 }
 
+# unquoted FILE... -> prints `file:line` for each line that runs a pack tool
+# through an unquoted `${VIBESTACK_HOME:-$HOME/.vibestack}/bin/...` in command
+# position (line start, after `$(`, a pipe, `;`, `&&`, `then`, an inline-code
+# backtick, ...). Unquoted, a VIBESTACK_HOME or HOME with a space in it splits
+# into two words and the command never runs.
+unquoted() {
+  python3 -I - "$@" <<'PY'
+import re, sys
+cmd = re.compile(r"(^|[;&|({`!]|\$\(|\bthen|\bdo|\belse)\s*\$\{VIBESTACK_HOME:-\$HOME/\.vibestack\}/bin/")
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if cmd.search(line):
+                print(f"{path}:{n}")
+PY
+}
+
 echo "self-test"
 CLEAN="$TMP/clean.md"; DIRTY="$TMP/dirty.md"
 cat > "$CLEAN" <<'EOF'
@@ -92,6 +109,21 @@ out="$(prose "$PROSE")"
 [ "$out" = "$PROSE:3" ] && ok "a prose Write to a literal ~/.vibestack path is flagged; a description is not" \
   || no "prose fixture: want $PROSE:3, got '$out'"
 
+QUOTE="$TMP/quote.md"
+cat > "$QUOTE" <<'EOF'
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get proactive
+_VC="${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-update-check || true
+```
+Run `${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config set x y`.
+EOF
+out="$(unquoted "$QUOTE" | tr '\n' ' ')"
+[ "$out" = "$QUOTE:5 $QUOTE:6 $QUOTE:8 " ] && ok "an unquoted pack tool in command position is flagged; quoted forms pass" \
+  || no "quote fixture: want lines 5 6 8, got '$out'"
+
 echo "repo"
 # skills/*/*.md covers every SKILL.md and its sub-docs; symlinked sub-docs
 # point at another skill's file, which is scanned under its own name.
@@ -111,6 +143,15 @@ if [ -z "$hits" ]; then
 else
   no "fenced commands hardcode the state root ($(printf '%s\n' "$hits" | wc -l | tr -d ' ') lines):"
   printf '%s\n' "$hits" | sed "s|^$ROOT/|       |"
+fi
+
+qhits=""
+[ "${#files[@]}" -gt 0 ] && qhits="$(unquoted "${files[@]}")"
+if [ -z "$qhits" ]; then
+  ok "every pack tool in command position is quoted"
+else
+  no "unquoted pack tools in command position ($(printf '%s\n' "$qhits" | wc -l | tr -d ' ') lines):"
+  printf '%s\n' "$qhits" | sed "s|^$ROOT/|       |"
 fi
 
 phits=""

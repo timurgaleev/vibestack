@@ -28,13 +28,13 @@ Voice triggers (speech-to-text aliases): "auto plan", "automatic review".
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -104,11 +104,11 @@ branch name wherever the instructions say "the base branch" or `<default>`.
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 _REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-DESIGN=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
 _REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
 if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
   DESIGN="$_REPO_DESIGN"
@@ -312,8 +312,8 @@ never retype the plan through the Write tool, which can truncate or reformat it.
 ```bash
 _PLAN='<plan_path>'
 [ -f "$_PLAN" ] || { echo "ERROR: plan file not found: $_PLAN" >&2; exit 1; }
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
-mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG || { echo "ERROR: cannot create ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG" >&2; exit 1; }
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG" || { echo "ERROR: cannot create ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG" >&2; exit 1; }
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-')
 DATETIME=$(date +%Y%m%d-%H%M%S)
 RESTORE_PATH="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/${BRANCH}-autoplan-restore-${DATETIME}.md"
@@ -416,8 +416,8 @@ then confirm the configured model actually answers. This is infrastructure for a
 Voice inputs re-declares the same `_cx` timeout wrapper before every run.
 
 ```bash
-_TEL=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get telemetry 2>/dev/null || echo off)
-_CODEX_CFG=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
+_TEL=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get telemetry 2>/dev/null || echo off)
+_CODEX_CFG=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get codex_reviews 2>/dev/null || echo enabled)
 # Portable timeout (gtimeout → timeout → unwrapped). Bare `timeout` is absent
 # on stock macOS (exit 127).
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
@@ -1184,23 +1184,23 @@ STATUS is "clean" if no unresolved issues, "issues_open" otherwise.
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"plan-ceo-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"SELECTIVE_EXPANSION","via":"autoplan","commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-ceo-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"mode":"SELECTIVE_EXPANSION","via":"autoplan","commit":"'"$COMMIT"'"}'
 
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"plan-eng-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"FULL_REVIEW","via":"autoplan","commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-eng-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"FULL_REVIEW","via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
 If Phase 2 ran (UI scope):
 ```bash
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"plan-design-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-design-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
 If Phase 2.5 ran (DX scope):
 ```bash
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
 Dual voice logs — one record for EVERY phase, including a Design or DX phase that
@@ -1212,13 +1212,13 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
 RUN_ID="autoplan-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"ceo","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"ceo","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"design","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"dx","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"eng","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"autoplan-voices","timestamp":"'"$TIMESTAMP"'","run_id":"'"$RUN_ID"'","status":"STATUS","source":"SOURCE","phase":"eng","via":"autoplan","consensus_confirmed":N,"consensus_disagree":N,"commit":"'"$COMMIT"'"}'
 ```
 
 SOURCE = "codex+subagent", "codex-only", "subagent-only", or "unavailable" — the

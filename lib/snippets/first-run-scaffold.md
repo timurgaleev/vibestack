@@ -3,10 +3,10 @@ On the first-ever skill run in a project, offer one concrete next move — never
 ```bash
 # Each fenced block runs in its own shell — re-derive SLUG here so the state
 # file is keyed per project, not the shared `unknown` bucket.
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _FRS_STATE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/.first-run-seen"
 if [ ! -f "$_FRS_STATE" ] && [ -z "${CI:-}" ]; then
-  _BUCKET=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-first-task-detect 2>/dev/null)
+  _BUCKET=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-first-task-detect" 2>/dev/null)
   mkdir -p "$(dirname "$_FRS_STATE")" 2>/dev/null && : > "$_FRS_STATE" 2>/dev/null || true
   echo "FIRST_RUN_BUCKET: ${_BUCKET:-none}"
 fi

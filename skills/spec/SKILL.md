@@ -25,13 +25,13 @@ Use when asked to "spec this out", "file an issue", "write up a ticket", "make t
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -114,12 +114,12 @@ read what comes back through the trust envelope:
 ```bash
 # Namespaced per repo and branch, not per process: $$ differs in every Bash
 # call, but two /spec runs in different checkouts must not share one file.
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG=unknown
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG=unknown
 _DD="${TMPDIR:-/tmp}/vibestack-spec-dedupe-${SLUG}-$(git branch --show-current 2>/dev/null | tr "/" "-")"
 gh issue list --search "<keywords>" --state open --limit 10 --json number,title,url \
   --jq '.[] | "#\(.number) \(.title) — \(.url)"' > "$_DD.out" 2> "$_DD.err"
 echo "GH_EXIT: $?"
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source issue-dedupe --file "$_DD.out"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted" --source issue-dedupe --file "$_DD.out"
 ```
 
 **Read `GH_EXIT` before you read the envelope.** The envelope cannot tell you the
@@ -241,7 +241,7 @@ Look for:
 Resolve repo visibility first (cache and reuse it):
 
 ```bash
-SPEC_VIS=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get redact_repo_visibility 2>/dev/null | tr 'A-Z' 'a-z')
+SPEC_VIS=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get redact_repo_visibility 2>/dev/null | tr 'A-Z' 'a-z')
 case "$SPEC_VIS" in private|public) ;; *) SPEC_VIS="" ;; esac
 [ -z "$SPEC_VIS" ] && SPEC_VIS=$(gh repo view --json visibility -q .visibility 2>/dev/null | tr 'A-Z' 'a-z')
 [ -z "$SPEC_VIS" ] && SPEC_VIS=$(glab repo view -F json 2>/dev/null | grep -o '"visibility":"[^"]*"' | head -1 | sed 's/.*:"//;s/"//' | tr 'A-Z' 'a-z')
@@ -290,7 +290,7 @@ you fill in):
 
 ```bash
 SPEC_SCAN='<SPEC_SCAN>'
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact scan --file "$SPEC_SCAN"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$SPEC_SCAN"
 echo "REDACT_EXIT: $?"
 rm -f "$SPEC_SCAN"
 ```
@@ -453,7 +453,7 @@ echo "TITLE_FILE: $TITLE_FILE"
 Read each empty file, then **Write the final body into `BODY_FILE` and the one-line
 title into `TITLE_FILE` with the Write tool.**
 
-**Re-scan before filing.** The Phase 4.5a/4.5b gates ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so on `$BODY_FILE` and the title you are about to file: (1) repeat the Phase 4.5a semantic re-read and honor its verdict, and (2) run the same deterministic scanner as the 4.5b gate on both files: `${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact scan --file "$BODY_FILE" --file "$TITLE_FILE"; echo "REDACT_EXIT: $?"`. Only `REDACT_EXIT: 0` passes; on any other exit (a finding, or a scan that could not run), **stop**: redact and rotate before filing — never create the issue with a secret in it. Any redaction or edit the scan forces is applied to `$BODY_FILE` and re-scanned there; a fix made only in the conversation is lost the moment the body is rendered again.
+**Re-scan before filing.** The Phase 4.5a/4.5b gates ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so on `$BODY_FILE` and the title you are about to file: (1) repeat the Phase 4.5a semantic re-read and honor its verdict, and (2) run the same deterministic scanner as the 4.5b gate on both files: `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$BODY_FILE" --file "$TITLE_FILE"; echo "REDACT_EXIT: $?"`. Only `REDACT_EXIT: 0` passes; on any other exit (a finding, or a scan that could not run), **stop**: redact and rotate before filing — never create the issue with a secret in it. Any redaction or edit the scan forces is applied to `$BODY_FILE` and re-scanned there; a fix made only in the conversation is lost the moment the body is rendered again.
 
 If `gh` is available and authenticated, replace `<TITLE_FILE>` and `<BODY_FILE>`
 with the printed paths and run:
@@ -482,7 +482,7 @@ issue that was never created is worse than no entry: `/ship` reads it later and
 follows a dead reference.
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log '{"decision":"Spec filed #<N>: <title>","rationale":"<the approach the spec settled on, one line>","scope":"repo","source":"user"}' 2>/dev/null || true
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log" '{"decision":"Spec filed #<N>: <title>","rationale":"<the approach the spec settled on, one line>","scope":"repo","source":"user"}' 2>/dev/null || true
 ```
 
 If the issue could not be filed, record the decision without an issue reference
@@ -505,7 +505,7 @@ BODY_FILE='<BODY_FILE>'
 ISSUE_NUMBER='<ISSUE_NUMBER>'
 ISSUE_URL='<ISSUE_URL>'
 if [ -n "${CLAUDE_PLAN_FILE:-}" ]; then PLAN_MODE=active; else PLAN_MODE=inactive; fi
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 ARCHIVE_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/specs"
 mkdir -p "$ARCHIVE_DIR"
 SLUG_TITLE=$(head -n1 "$TITLE_FILE" | tr ' ' '-' | tr -cd 'a-zA-Z0-9-' | tr A-Z a-z | cut -c1-60)
@@ -544,7 +544,7 @@ is a sink of its own. It sits on disk under
 `~/.vibestack/projects/<slug>/specs/` and is exactly what a spawned agent reads
 on stdin, so a secret that reaches it has escaped the gate twice over. If the
 body was touched at all between the filing scan and this write, run
-`${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact scan --file "$BODY_FILE"` again before writing it —
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$BODY_FILE"` again before writing it —
 on any non-zero exit, do not write the archive.
 
 **Sync default:** spec archives stay local under

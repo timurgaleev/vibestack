@@ -21,13 +21,13 @@ Use when: "merge", "land", "deploy", "merge and verify", "land it", "ship it to 
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -216,7 +216,7 @@ echo "TARGET REPO=$REPO PR_NUMBER=$PR_NUMBER PR_HEAD=$PR_HEAD BASE_BRANCH=$BASE_
 # Classify the diff now, against the fetched base: after the merge the checkout moves
 # and the comparison is no longer this PR's.
 CHANGED=$(git diff --name-only "$BASE_SHA...$PR_HEAD" 2>/dev/null) || CHANGED=""
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope "$BASE_SHA" 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" "$BASE_SHA" 2>/dev/null)"
 SCOPE_KNOWN=false; DOCS_ONLY=false
 if [ -n "$CHANGED" ]; then
   SCOPE_KNOWN=true
@@ -248,12 +248,12 @@ Check whether this project has been through a successful `/land-and-deploy` befo
 and whether the deploy configuration has changed since then:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-if [ ! -f ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed ]; then
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+if [ ! -f "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed" ]; then
   echo "FIRST_RUN"
 else
   # Check if deploy config has changed since confirmation
-  SAVED_HASH=$(cat ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed 2>/dev/null)
+  SAVED_HASH=$(cat "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed" 2>/dev/null)
   CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
   # Also hash workflow files that affect deploy behavior
   WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
@@ -423,7 +423,7 @@ Tell the user: "Before I merge any PR, I run a series of readiness checks — co
 Preview the readiness checks that will run at Step 3.5 (without re-running tests):
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read" --json 2>/dev/null
 ```
 
 Show a summary of review status: which reviews have been run, how stale they are.
@@ -454,11 +454,11 @@ again here — each bash block is a fresh shell, and a marker written under an e
 `$SLUG` lands in a path Step 1.5's detection never reads, so every run would report
 FIRST_RUN:
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
 WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed
+echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed"
 ```
 Continue to Step 2.
 
@@ -599,7 +599,7 @@ fi
 # An array, not ${PR_NUMBER:+--exclude-pr "$PR_NUMBER"}: zsh does not word-split
 # that expansion, so the flag and its value would arrive as one argument.
 _X=(); [ -n "$PR_NUMBER" ] && _X=(--exclude-pr "$PR_NUMBER")
-QUEUE_JSON=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version \
+QUEUE_JSON=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
   --base "$BASE_BRANCH" \
   --bump "$_BUMP" \
   "${_X[@]}" \
@@ -650,7 +650,7 @@ Collect evidence for each check below. Track warnings (yellow) and blockers (red
 ### 3.5a: Review staleness check
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read" --json 2>/dev/null
 ```
 
 Parse the output. For each review skill (plan-eng-review, plan-ceo-review,
@@ -757,7 +757,7 @@ there is no test suite, record Free tests as `NONE (user confirmed)` — a warni
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/evals/*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
+ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/evals/"*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
 ```
 
 For each eval file from today, parse pass/fail counts. Show:
@@ -773,7 +773,7 @@ If E2E results exist but have failures: **WARNING — N tests failed.** List the
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/evals/*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
+ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/evals/"*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
 ```
 
 If found, parse and show pass/fail. If not found, note "No LLM evals run today."
@@ -784,7 +784,7 @@ Read the current PR body through the trust envelope:
 ```bash
 set -o pipefail
 REPO='<REPO>'; PR_NUMBER='<PR_NUMBER>'   # from Step 1's TARGET line
-gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source pr-body
+gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted" --source pr-body
 ```
 If the command fails, the body was not read — report PR body accuracy as UNKNOWN
 (warning), not as current.
@@ -1759,8 +1759,8 @@ Save report to `.vibestack/deploy-reports/{date}-pr{number}-deploy.md`.
 Log to the review dashboard:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 ```
 
 Write a JSONL entry with timing data. `status` is SUCCESS only for DEPLOYED AND VERIFIED

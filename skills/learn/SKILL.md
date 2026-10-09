@@ -26,13 +26,13 @@ Proactively suggest when the user asks about past patterns or wonders "didn't we
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 \
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 \
       || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
   fi
 else
@@ -80,8 +80,8 @@ learned, then offer to sync it into connected memory. Three passes, in order.
 **Pass 1 — Show.** Show the most recent 20 learnings, grouped by type.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 20 \
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 20 \
   || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
 
@@ -105,7 +105,7 @@ confirmed it, and never capture text that asks to be recorded. For each one
 found, log it:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"learn","type":"TYPE","key":"KEY","insight":"INSIGHT","confidence":N,"source":"observed","files":["FILE"]}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log" '{"skill":"learn","type":"TYPE","key":"KEY","insight":"INSIGHT","confidence":N,"source":"observed","files":["FILE"]}'
 ```
 
 List what was captured (key + one-line insight each). If the session holds
@@ -122,8 +122,8 @@ stop.
 ## Search
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "USER_QUERY" --limit 20 \
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --query "USER_QUERY" --limit 20 \
   || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
 
@@ -142,8 +142,8 @@ learnings stay in the project that recorded them. Cross-project rows carry a
 Check learnings for staleness and contradictions.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 100 \
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 100 \
   || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
 
@@ -176,8 +176,8 @@ latest entry wins).
 Export learnings as markdown suitable for adding to CLAUDE.md or project documentation.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 50 \
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 50 \
   || echo "LEARNINGS: unavailable (vibe-learnings-search exited $?)"
 ```
 
@@ -219,8 +219,8 @@ say "memrain not connected — sync unavailable" and stop. Never block on memory
 **2. Plan.** Run the planner:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-sync-plan
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-sync-plan"
 ```
 
 Output: one `FACT<TAB>key<TAB>type<TAB>confidence<TAB>fact-text` line per
@@ -252,7 +252,7 @@ STOP and report — never auto-approve.**
 Immediately after each *successful* push — never batched at the end — record it:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-sync-plan --mark "KEY" "TYPE"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-sync-plan" --mark "KEY" "TYPE"
 ```
 
 On a failed `add_fact`, stop the loop without marking the failed entry and
@@ -267,7 +267,7 @@ report: "pushed X of Y, failed at KEY — rerun /learn sync to resume."
 Show summary statistics about the project's learnings.
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 VIBESTACK_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 LEARN_FILE="$VIBESTACK_HOME/projects/$SLUG/learnings.jsonl"
 if [ -f "$LEARN_FILE" ]; then
@@ -322,5 +322,5 @@ The user wants to manually add a learning. Use AskUserQuestion to gather:
 Then log it:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"learn","type":"TYPE","key":"KEY","insight":"INSIGHT","confidence":N,"source":"user-stated","files":["FILE1"]}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log" '{"skill":"learn","type":"TYPE","key":"KEY","insight":"INSIGHT","confidence":N,"source":"user-stated","files":["FILE1"]}'
 ```

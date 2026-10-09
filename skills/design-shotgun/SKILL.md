@@ -25,13 +25,13 @@ Proactively suggest when the user describes a UI feature but hasn't seen what it
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -169,9 +169,9 @@ else a few taps away with an obvious path to get there.
 Check for prior design exploration sessions for this project:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_PREV=$(find ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
+_PREV=$(find "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/" -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
 [ -n "$_PREV" ] && echo "PREVIOUS_SESSIONS_FOUND" || echo "NO_PREVIOUS_SESSIONS"
 echo "$_PREV"
 ```
@@ -224,9 +224,9 @@ ls src/ app/ pages/ components/ 2>/dev/null | head -30
 ```
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-ls ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*office-hours* 2>/dev/null | head -5
 ```
 
 If DESIGN.md exists, tell the user: "I'll follow your design system in DESIGN.md by
@@ -269,9 +269,9 @@ taste.
 **Per-session approved.json files (legacy, still supported):**
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_TASTE=$(find ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
+_TASTE=$(find "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/" -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
 ```
 
 If prior sessions exist, read each `approved.json` and extract patterns from the
@@ -286,7 +286,7 @@ the serif display over two sans variants", not "picked B" — because the letter
 nothing in the next session and the quality is what should bias the next brief.
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"design-shotgun","type":"taste","key":"<dimension: fonts|colors|layouts|aesthetics>","insight":"<approved|rejected: the quality, in one line>","confidence":<1-10>,"source":"design-shotgun"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log" '{"skill":"design-shotgun","type":"taste","key":"<dimension: fonts|colors|layouts|aesthetics>","insight":"<approved|rejected: the quality, in one line>","confidence":<1-10>,"source":"design-shotgun"}'
 ```
 
 The preamble reads these back on every future run.
@@ -296,7 +296,7 @@ The preamble reads these back on every future run.
 Set up the output directory:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 _DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"

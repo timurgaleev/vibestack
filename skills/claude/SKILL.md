@@ -20,13 +20,13 @@ Use when asked for "claude review", "claude challenge", "ask claude", "second op
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -366,7 +366,7 @@ _cl() {
 _cl 540 claude -p --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --tools "" --disallowedTools 'mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-review","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"claude-review","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -411,7 +411,7 @@ Recommendation: <action> because <one-line reason that names the most actionable
 5. Log the result, unless step 4 skipped it for a timeout:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-review","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"claude-review","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
 ```
 
    Substitute STATUS — `pass` on `GATE: PASS`, `findings` on `GATE: FAIL (N critical
@@ -498,7 +498,7 @@ _cl() {
 _cl 540 claude -p --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --tools "" --disallowedTools 'mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-challenge","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"claude-challenge","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -543,7 +543,7 @@ Recommendation: <action> because <one-line reason that names the most actionable
 5. Log the result, unless step 4 skipped it for a timeout:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-challenge","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"claude-challenge","status":"STATUS","gate":"GATE","findings":N,"completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
 ```
 
    Substitute STATUS — `pass` on `GATE: PASS`, `findings` on `GATE: FAIL (N critical
@@ -631,7 +631,7 @@ _cl() {
 _cl 540 claude -p --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --allowedTools Read,Grep,Glob --disallowedTools 'Bash,Edit,Write,mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -673,7 +673,7 @@ _cl() {
 _cl 540 claude -p --resume "<session-id>" --output-format json --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings '{"disableAllHooks":true}' --allowedTools Read,Grep,Glob --disallowedTools 'Bash,Edit,Write,mcp__*' < "$PROMPT_FILE" 2>"$ERR_FILE" | head -c 33554432 > "$RESP_FILE"
 _CL_EXIT=${PIPESTATUS[0]:-${pipestatus[1]}}
 if [ "$_CL_EXIT" = "124" ]; then
-  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
+  "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"claude-consult","status":"timeout","gate":"fail","completed":false,"timeout_s":540}' >/dev/null 2>&1 || true
   echo "Claude stalled past 9 minutes. Common causes: model API stall, a long prompt, a network issue. Re-run; if it persists, split the diff or the question."
   echo "CLAUDE_RESULT: TIMEOUT"
 elif [ "$_CL_EXIT" != "0" ]; then
@@ -734,7 +734,7 @@ fi
 6. Log the result, unless step 4 skipped it for a timeout:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"claude-consult","status":"STATUS","completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"claude-consult","status":"STATUS","completed":COMPLETED,"commit":"'"$(git rev-parse --short HEAD)"'"}' >/dev/null 2>&1 || true
 ```
 
    Substitute STATUS — `answered` on `CLAUDE_STATUS: answered`, `unavailable`

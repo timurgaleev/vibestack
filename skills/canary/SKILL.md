@@ -21,13 +21,13 @@ Use when: "monitor deploy", "canary", "post-deploy check", "watch production", "
 ## Preamble
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -106,7 +106,7 @@ When the user types `/canary`, run this skill.
 ### Phase 1: Setup
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null || echo "SLUG=unknown")"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null || echo "SLUG=unknown")"
 mkdir -p .vibestack/canary-reports
 mkdir -p .vibestack/canary-reports/baselines
 mkdir -p .vibestack/canary-reports/screenshots
@@ -358,7 +358,7 @@ history. The line holds model-authored summary fields only — `skill`, `timesta
 The file is appended to, never overwritten:
 
 ```bash
-eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null || echo SLUG=unknown)"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null || echo SLUG=unknown)"
 _H="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 mkdir -p "$_H"
 printf '%s\n' '{"skill":"canary","timestamp":"<ISO>","status":"<HEALTHY/DEGRADED/BROKEN>","url":"<url>","duration_min":<N>,"alerts":<N>}' >> "$_H/canary-history.jsonl"

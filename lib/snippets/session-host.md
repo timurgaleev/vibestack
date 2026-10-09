@@ -9,7 +9,7 @@ safe default when absent, so a partial install still yields usable flags.
 # human) / interactive. The helper is the one place the three kinds are
 # classified; the inline fallback keeps detection working where it is not
 # installed, at the cost of not seeing `spawned`.
-_SESSION_KIND=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-session-kind 2>/dev/null || echo "")
+_SESSION_KIND=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-session-kind" 2>/dev/null || echo "")
 if [ -z "$_SESSION_KIND" ]; then
   _SESSION_KIND="interactive"
   { [ -n "${VIBESTACK_HEADLESS:-}" ] || [ -n "${CI:-}" ]; } && _SESSION_KIND="headless"
@@ -36,7 +36,7 @@ echo "PROACTIVE: $("$_VC" get proactive 2>/dev/null || echo true)"
 _EXPLAIN=$("$_VC" get explain_level 2>/dev/null || echo default); [ "$_EXPLAIN" = terse ] || _EXPLAIN=default; echo "EXPLAIN_LEVEL: $_EXPLAIN"
 echo "QUESTION_TUNING: $("$_VC" get question_tuning 2>/dev/null || echo false)"
 # Throttled best-effort update nag (once/day, never blocks).
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-update-check 2>/dev/null || true
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-update-check" 2>/dev/null || true
 echo "MODEL_OVERLAY: ${VIBE_MODEL_OVERLAY:-claude}"
 ```
 

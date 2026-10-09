@@ -5,10 +5,10 @@ review log, a snapshot of the working tree, the current commit, and the global
 skip setting:
 
 ```bash
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
-echo "TREE_NOW: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot 2>/dev/null || echo unavailable)"
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read" --json 2>/dev/null
+echo "TREE_NOW: $("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" --snapshot 2>/dev/null || echo unavailable)"
 git rev-parse --short HEAD
-${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get skip_eng_review 2>/dev/null
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get skip_eng_review 2>/dev/null
 ```
 
 `vibe-review-read --json` prints exactly one of two things: the literal

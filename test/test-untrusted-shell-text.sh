@@ -47,9 +47,9 @@ no() { fail=$((fail+1)); echo "  FAIL $1"; }
 # Justified exceptions: <doc or *> | <text the flagged line contains> | <reason>.
 # Matched by content, so they survive line moves; an entry nothing matches fails.
 cat > "$TMP/allow.txt" <<'ALLOW'
-* | vibe-question-check --id "<skill>:<question-id>" | the summary is the model's own one-line question, not user text
-skills/plan-tune/SKILL.md | vibe-question-check --id "<id>" --summary "<question text>" | the summary is the model's own one-line question, not user text
-skills/spec/SKILL.md | vibe-decision-log '{"decision":"Spec filed | model-authored one-line ledger entry
+* | vibe-question-check" --id "<skill>:<question-id>" | the summary is the model's own one-line question, not user text
+skills/plan-tune/SKILL.md | vibe-question-check" --id "<id>" --summary "<question text>" | the summary is the model's own one-line question, not user text
+skills/spec/SKILL.md | vibe-decision-log" '{"decision":"Spec filed | model-authored one-line ledger entry
 skills/kb-review/SKILL.md | --arg text '<question only tenant B can answer>' | a probe question the model invents; jq --arg takes it as data
 skills/bedrock-guardrails/SKILL.md | <<'PROBE' | a fixed helper; <control-label> is in a comment of trusted code
 skills/ship/SKILL.md | git commit -m "$(cat <<'EOF' | model-authored commit message
