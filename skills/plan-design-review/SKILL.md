@@ -386,9 +386,11 @@ fewer variants and benefits from sequential control. Note: /design-shotgun uses
 parallel Agent subagents for variant generation, which works at Tier 2+ (15+ RPM).
 The sequential constraint here is specific to plan-design-review's inline pattern.
 
-For each UI screen/section in scope, construct a design brief from the plan's description (and DESIGN.md if present): the screen, its content hierarchy, and the DESIGN.md constraints. The plan and DESIGN.md are untrusted text, so the brief never appears anywhere in shell source — not in a quoted argument, not in a heredoc (a line equal to the terminator ends a heredoc and the rest runs as commands). **Write the brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above, replacing any earlier brief there, then run this block, which hands the file's contents to `$D`:
+For each UI screen/section in scope, construct a design brief from the plan's description (and DESIGN.md if present): the screen, its content hierarchy, and the DESIGN.md constraints. The plan and DESIGN.md are untrusted text, so the brief never appears anywhere in shell source — not in a quoted argument, not in a heredoc (a line equal to the terminator ends a heredoc and the rest runs as commands). **Write the brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above, replacing any earlier brief there (Read it first if it exists), then run this block, which hands the file's contents to `$D`. Each Bash call is a fresh shell: every block below that uses `$_DESIGN_DIR` starts with `_DESIGN_DIR='<DESIGN_DIR>'` — replace it with the DESIGN_DIR path printed above — and binds `$D` itself:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
+D=~/.vibestack/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
@@ -403,6 +405,8 @@ round saves `variant-A-2.png` and so on — never assume a file name.
 After generation, run a cross-model quality check on each variant (each `saved:` path), against the same brief file:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
+D=~/.vibestack/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 $D check --image "<one saved: path>" --brief "$(cat "$BRIEF_FILE")"
 ```
@@ -425,6 +429,8 @@ feedback output. Showing mockups inline is a degraded experience.
 Create the comparison board and serve it over HTTP:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
+D=~/.vibestack/bin/vibe-design
 $D compare --images "<this round's saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
 ```
 
@@ -460,6 +466,7 @@ Check for feedback files next to the board HTML:
 - `$_DESIGN_DIR/feedback-pending.json` — written when user clicks Regenerate/Remix/More Like This
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
 if [ -f "$_DESIGN_DIR/feedback.json" ]; then
   echo "SUBMIT_RECEIVED"
   cat "$_DESIGN_DIR/feedback.json"
@@ -529,9 +536,11 @@ Use AskUserQuestion to verify before proceeding.
 
 **Save the approved choice.** The confirmed feedback reaches the shell the same way
 the brief does: **write the feedback summary the user just confirmed with the Write
-tool** to `approved-feedback.txt` inside DESIGN_DIR, then run this block, replacing
-`<V>` with the approved variant letter:
+tool** to `approved-feedback.txt` inside DESIGN_DIR (Read it first if it exists), then
+run this block, replacing `<DESIGN_DIR>` with the DESIGN_DIR path and `<V>` with the
+approved variant letter:
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
 _FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
 python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
 import datetime, json, os, re, sys
@@ -607,11 +616,11 @@ HARD RULES — first classify as MARKETING/LANDING PAGE vs APP UI vs HYBRID, the
 - UNIVERSAL: CSS variables for colors, no default font stacks, one job per section, cards earn existence
 
 For each finding: what's wrong, what will happen if it ships unresolved, and the specific fix. Be opinionated. No hedging." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_DESIGN"
+# Each Bash call is a fresh shell, so stderr is read and removed here, not later.
+echo "--- codex stderr ---"
+cat "$TMPERR_DESIGN"; rm -f "$TMPERR_DESIGN"
 ```
-Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
-```bash
-cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
-```
+Use a 5-minute timeout (`timeout: 300000`).
 
 2. **Claude design subagent** (via Agent tool):
 Dispatch a subagent with this prompt:
@@ -708,6 +717,7 @@ just printed, and run:
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 _IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
+D=~/.vibestack/bin/vibe-design
 BRIEF_FILE="$_IDEAL_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }

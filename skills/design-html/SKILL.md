@@ -176,31 +176,32 @@ else a few taps away with an obvious path to get there.
 
 ## Step 0: Input Detection
 
+Detect what design context exists for this project. Run all four checks — each is a
+fresh shell, so each derives the project slug itself:
+
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-```
-
-Detect what design context exists for this project. Run all four checks:
-
-```bash
 setopt +o nomatch 2>/dev/null || true
 _CEO=$(ls -t ~/.vibestack/projects/$SLUG/ceo-plans/*.md 2>/dev/null | head -1)
 [ -n "$_CEO" ] && echo "CEO_PLAN: $_CEO" || echo "NO_CEO_PLAN"
 ```
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
 _APPROVED=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/approved.json 2>/dev/null | head -1)
 [ -n "$_APPROVED" ] && echo "APPROVED: $_APPROVED" || echo "NO_APPROVED"
 ```
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
 _VARIANTS=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/variant-*.png 2>/dev/null | head -1)
 [ -n "$_VARIANTS" ] && echo "VARIANTS: $_VARIANTS" || echo "NO_VARIANTS"
 ```
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
 _FINALIZED=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/finalized.html 2>/dev/null | head -1)
 [ -n "$_FINALIZED" ] && echo "FINALIZED: $_FINALIZED" || echo "NO_FINALIZED"
@@ -353,10 +354,12 @@ If no framework detected: default to vanilla HTML, no question needed.
 
 For **vanilla HTML output**: no Pretext bundle ships with this skill, so the page
 imports Pretext from the CDN as an ES module. Pretext is ESM-only and sets no global,
-so the import and all page code that calls it go in the same `<script type="module">`:
+so the import and all page code that calls it go in the same `<script type="module">`.
+The import pins an exact version, so a later release cannot change a page that already
+works:
 ```html
 <script type="module">
-  import { prepare, layout, prepareWithSegments, walkLineRanges, layoutNextLine, layoutWithLines } from 'https://esm.sh/@chenglou/pretext'
+  import { prepare, layout, prepareWithSegments, walkLineRanges, layoutNextLine, layoutWithLines } from 'https://esm.sh/@chenglou/pretext@0.0.9'
   // page code (the wiring patterns below) goes here, after the import
 </script>
 ```
@@ -413,7 +416,7 @@ For framework output, save to:
 
 Use these patterns based on the tier selected in Step 2. These are the correct
 Pretext API usage patterns. Follow them exactly. The imports below are for framework
-output; in vanilla HTML, import the same names from `'https://esm.sh/@chenglou/pretext'`
+output; in vanilla HTML, import the same names from `'https://esm.sh/@chenglou/pretext@0.0.9'`
 once, at the top of the page's `<script type="module">`.
 
 **Pattern 1: Basic height computation (Simple layout, Card/grid)**
@@ -604,11 +607,11 @@ kill <PID> 2>/dev/null || true
 If SETUP printed `BROWSE_AVAILABLE`, take verification screenshots at 3 viewports.
 `screenshot` has no width flag, so set the viewport before each capture. Load the
 page through the live-reload server's `SERVER:` URL (not `file://`), so the module
-import and relative assets resolve. This is a fresh shell, so rebind `$B`:
+import and relative assets resolve. This is a fresh shell, so replace `<BROWSE_BIN>`
+with the path SETUP printed on its `BROWSE_BIN:` line:
 
 ```bash
-B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/design-html}/../browse/bin/vibe-browse"
-[ -x "$B" ] || B="$(command -v vibe-browse)"
+B='<BROWSE_BIN>'
 $B goto "<SERVER URL>"
 $B viewport 375x812
 $B screenshot /tmp/vibestack-verify-mobile.png

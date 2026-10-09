@@ -71,8 +71,10 @@ look generic or machine-generated.
 
 **If no URL is given and you're on main/master:** Ask the user for a URL.
 
-**CDP mode detection:** Check if browse is connected to the user's real browser:
+**CDP mode detection:** Check if browse is connected to the user's real browser — run
+this once SETUP below has printed `BROWSE_BIN:`, with `<BROWSE_BIN>` replaced by that path:
 ```bash
+B='<BROWSE_BIN>'
 $B status 2>/dev/null | grep -q "Mode: cdp" && echo "CDP_MODE=true" || echo "CDP_MODE=false"
 ```
 If `CDP_MODE=true`: skip cookie import steps — the real browser already has cookies and auth sessions. Skip headless detection workarounds.
@@ -330,21 +332,42 @@ report) MUST be saved under `~/.vibestack/projects/$SLUG/designs/`, NEVER to
 directory. Design artifacts are USER data, not project files — and this skill commits
 after every fix, so anything left in the repo gets swept into the user's diff.
 
-**Report directory (create it now — every phase writes screenshots and the audit here):**
+**Report directory (create it now — every phase writes screenshots and the audit here).**
+Replace `<TARGET_URL>` with the URL this run audits (in diff-aware mode, the local app
+URL you will test): a previous baseline counts only when it was recorded for that same
+URL, since a baseline for another site or environment is no baseline at all.
 
 ```bash
+_TARGET_URL='<TARGET_URL>'
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 REPORT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/designs/design-audit-$(date +%Y%m%d)"
 mkdir -p "$REPORT_DIR/screenshots"
 echo "REPORT_DIR: $REPORT_DIR"
-setopt +o nomatch 2>/dev/null || true
-_PREV_BASELINE=$(ls -t "$(dirname "$REPORT_DIR")"/design-audit-*/design-baseline.json 2>/dev/null | head -1)
-[ -n "$_PREV_BASELINE" ] && echo "PREVIOUS_BASELINE: $_PREV_BASELINE" || echo "NO_PREVIOUS_BASELINE"
+_PREV_BASELINE=$(python3 -I - "$(dirname "$REPORT_DIR")" "$_TARGET_URL" <<'VIBE_PY_EOF'
+import glob, json, os, sys
+root, target = sys.argv[1], sys.argv[2].rstrip("/")
+found = glob.glob(os.path.join(root, "design-audit-*", "design-baseline.json"))
+for path in sorted(found, key=os.path.getmtime, reverse=True):
+    try:
+        url = json.load(open(path, encoding="utf-8")).get("url")
+    except (OSError, ValueError, AttributeError):
+        continue
+    if isinstance(url, str) and url.rstrip("/") == target:
+        print(path)
+        break
+VIBE_PY_EOF
+)
+[ -n "$_PREV_BASELINE" ] && echo "PREVIOUS_BASELINE: $_PREV_BASELINE" || echo "NO_PREVIOUS_BASELINE for $_TARGET_URL"
 ```
 
 If `PREVIOUS_BASELINE` was printed, read that file now, before this run writes its own:
 a second run on the same day writes to the same path, so the previous baseline only
 exists until Phase 6 replaces it.
+
+Every Bash call is a fresh shell, so `$REPORT_DIR` and `$B` are unset in later blocks.
+A block that uses them starts with `REPORT_DIR='<REPORT_DIR>'` and `B='<BROWSE_BIN>'`:
+replace them with the paths printed on the `REPORT_DIR:` and `BROWSE_BIN:` lines, and
+add those lines yourself to any command you compose.
 
 {{include lib/snippets/prior-learnings.md}}
 ## UX Principles: How Users Actually Behave
@@ -490,6 +513,7 @@ This is the section users read first. Be opinionated. A designer doesn't hedge �
 Extract the actual design system the site uses (not what a DESIGN.md says, but what's rendered):
 
 ```bash
+B='<BROWSE_BIN>'
 # Fonts in use (capped at 500 elements to avoid timeout)
 $B js "JSON.stringify([...new Set([...document.querySelectorAll('*')].slice(0,500).map(e => getComputedStyle(e).fontFamily))])"
 
@@ -521,6 +545,8 @@ After extraction, offer: *"Want me to save this as your DESIGN.md? I can lock in
 For each page in scope:
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B goto <url>
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/{page}-annotated.png"
 $B responsive "$REPORT_DIR/screenshots/{page}"
@@ -536,6 +562,7 @@ compares against it, and an error not in it is a regression.
 
 After the first navigation, check if the URL changed to a login-like path:
 ```bash
+B='<BROWSE_BIN>'
 $B url
 ```
 If URL contains `/login`, `/signin`, `/auth`, or `/sso`: the site requires authentication. AskUserQuestion: "This site requires authentication. Want to import cookies from your browser? Run `/setup-browser-cookies` first if needed." Never fill the sign-in form yourself (Browser Rule 3).
@@ -705,6 +732,7 @@ Polish-level tells, note but do not grade: monotonous spacing, bounce easing, pu
 Walk 2-3 key user flows and evaluate the *feel*, not just the function. Browser Rule 2 applies: on a non-local target, a flow that submits, creates, deletes, or sends anything waits for the one consent question first.
 
 ```bash
+B='<BROWSE_BIN>'
 $B snapshot -i
 $B click @e3           # perform action
 $B snapshot -D          # diff to see what changed
@@ -1035,17 +1063,40 @@ If the write fails, do not run Codex; treat it as a Codex error below. Then run 
 
 ```bash
 _PROMPT_FILE='<prompt-file>'
+TMPERR_DESIGN=""
+# Every exit — an early error included — removes the prompt and the stderr file.
+trap 'rm -f "$TMPERR_DESIGN" "$_PROMPT_FILE"' EXIT
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 [ -s "$_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $_PROMPT_FILE" >&2; exit 1; }
 TMPERR_DESIGN=$(mktemp "${TMPDIR:-/tmp}/codex-design-XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
+# Portable timeout: gtimeout → timeout → a polling watchdog (returns 124 on overrun).
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
+# expansion, so "gtimeout 270" would reach execve as one argument (exit 127).
+_cx() {
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  _cx_s=$1; shift
+  "$@" <&0 & _cx_p=$!
+  while kill -0 "$_cx_p" 2>/dev/null; do
+    if [ "$_cx_s" -le 0 ]; then
+      pkill -TERM -P "$_cx_p" 2>/dev/null; kill -TERM "$_cx_p" 2>/dev/null; sleep 2
+      pkill -KILL -P "$_cx_p" 2>/dev/null; kill -KILL "$_cx_p" 2>/dev/null
+      wait "$_cx_p" 2>/dev/null; return 124
+    fi
+    sleep 1; _cx_s=$((_cx_s - 1))
+  done
+  wait "$_cx_p"
+}
 _CODEX_EXIT=0
-codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_DESIGN" || _CODEX_EXIT=$?
+# 270s sits below the 300s Bash timeout, so a stall ends here as exit 124 instead
+# of a harness kill that would skip the cleanup.
+_cx 270 codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_DESIGN" || _CODEX_EXIT=$?
 echo "CODEX_EXIT: $_CODEX_EXIT"
-# Each Bash call is a fresh shell, so stderr is read and removed here, not later.
+# Each Bash call is a fresh shell, so stderr is read here, not later.
 echo "--- codex stderr ---"
-cat "$TMPERR_DESIGN"; rm -f "$TMPERR_DESIGN"
+cat "$TMPERR_DESIGN"
 ```
-Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT`, a timeout, or an empty response means Codex did not complete: treat it as a Codex error below, never as an audit with no findings. Run `rm -f '<prompt-file>'` once Codex (or the `claude -p` pass) has finished.
+Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT` (124 is the 270-second stall bound), a timeout, or an empty response means Codex did not complete: treat it as a Codex error below, never as an audit with no findings. The block removes the prompt file itself; under `under_codex`, run `rm -f '<prompt-file>'` once the `claude -p` pass has finished.
 
 2. **Claude design subagent** (via Agent tool, `run_in_background: false`):
 Dispatch a subagent with this prompt:
@@ -1117,12 +1168,15 @@ If the vibestack designer is available and the finding involves visual layout, h
 Create the finding directory first, so the Write tool has a parent to write into:
 
 ```bash
+REPORT_DIR='<REPORT_DIR>'
 mkdir -p "$REPORT_DIR/mockups/finding-NNN" && echo "FINDING_DIR: $REPORT_DIR/mockups/finding-NNN"
 ```
 
-Describe the page/component with the finding fixed, referencing DESIGN.md constraints. The description draws on page content and DESIGN.md, so it never appears in shell source — not in a quoted argument, not in a heredoc. **Write it with the Write tool** to `brief.txt` inside `$REPORT_DIR/mockups/finding-NNN/` (the same finding directory), then run:
+Describe the page/component with the finding fixed, referencing DESIGN.md constraints. The description draws on page content and DESIGN.md, so it never appears in shell source — not in a quoted argument, not in a heredoc. **Write it with the Write tool** to `brief.txt` inside `$REPORT_DIR/mockups/finding-NNN/` (the same finding directory; Read it first if it exists — the Write tool will not overwrite an unread file), then run:
 
 ```bash
+REPORT_DIR='<REPORT_DIR>'
+D=~/.vibestack/bin/vibe-design
 FINDING_DIR="$REPORT_DIR/mockups/finding-NNN"
 BRIEF_FILE="$FINDING_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
@@ -1159,6 +1213,8 @@ git commit -m "style(design): FINDING-NNN — short description"
 Navigate back to the affected page and verify the fix:
 
 ```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
 $B goto <affected-url>
 $B screenshot "$REPORT_DIR/screenshots/finding-NNN-after.png"
 $B console --errors

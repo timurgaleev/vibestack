@@ -2,7 +2,9 @@
 # design-shotgun: approved.json is written from a file (never from shell-spliced
 # feedback), records the approved image's absolute path, and refuses a missing
 # image; the evolve path opens the confirmed URL before it screenshots; the
-# anti-convergence rule defers to DESIGN.md.
+# anti-convergence rule defers to DESIGN.md. Every Bash call is a fresh shell, so
+# each block runs with _DESIGN_DIR and B unset and gets them only from the
+# placeholders the model fills with what earlier blocks printed.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,8 +45,8 @@ FB='It'"'"'s "close" — $(touch pwned) `touch pwned2`'
 printf '%s\n' "$FB" > "$DDIR/approved-feedback.txt"
 
 run_save() {  # run_save ROUND_DIR LETTER -> rc; output in $TMP/out
-  sed -e "s|<ROUND_DIR>|$1|" -e "s|<V>|$2|" "$TMP/save.sh" > "$TMP/run.sh"
-  (cd "$TMP" && _DESIGN_DIR="$DDIR" bash "$TMP/run.sh") > "$TMP/out" 2>&1
+  sed -e "s|<ROUND_DIR>|$1|" -e "s|<V>|$2|" -e "s|<DESIGN_DIR>|$DDIR|" "$TMP/save.sh" > "$TMP/run.sh"
+  (cd "$TMP" && env -u _DESIGN_DIR -u B bash "$TMP/run.sh") > "$TMP/out" 2>&1
 }
 
 rc=0; run_save "$DDIR/round-2" B || rc=$?
@@ -82,7 +84,8 @@ chmod +x "$TMP/B"
 run_shot() {  # run_shot URL_FILE_CONTENT
   : > "$TMP/calls"
   printf '%s\n' "$1" > "$DDIR/current-url.txt"
-  (cd "$TMP" && B="$TMP/B" B_CALLS="$TMP/calls" _DESIGN_DIR="$DDIR" bash "$TMP/shot.sh") > "$TMP/out" 2>&1 || true
+  sed -e "s|<DESIGN_DIR>|$DDIR|" -e "s|<BROWSE_BIN>|$TMP/B|" "$TMP/shot.sh" > "$TMP/shot-run.sh"
+  (cd "$TMP" && env -u _DESIGN_DIR -u B B_CALLS="$TMP/calls" bash "$TMP/shot-run.sh") > "$TMP/out" 2>&1 || true
 }
 run_shot "http://localhost:3000/pricing"
 [ "$(sed -n 1p "$TMP/calls")" = "goto http://localhost:3000/pricing" ] \

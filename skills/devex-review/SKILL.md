@@ -230,16 +230,20 @@ If URLs are missing, AskUserQuestion: "What's the URL for the docs/product I sho
 Check for prior /plan-devex-review scores:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-~/.vibestack/bin/vibe-review-read --skill plan-devex-review --json 2>/dev/null || echo "NO_REVIEWS"
+echo "CURRENT_BRANCH: $(git branch --show-current 2>/dev/null)"
+~/.vibestack/bin/vibe-review-read --any-branch --skill plan-devex-review --json 2>/dev/null || echo "NO_REVIEWS"
 ```
 
-The output is `NO_REVIEWS` or a JSON array of /plan-devex-review entries, newest
-first. `NO_REVIEWS` or `[]` means there is no baseline: skip the Boomerang
-Comparison below. Otherwise take the first entry and display its `pass_scores`
+The plan review usually ran on a different branch than this audit (planning on a
+feature branch, auditing after merge), so the read spans every branch log of this
+project. The output is `NO_REVIEWS` or a JSON array holding the newest
+/plan-devex-review entry. `NO_REVIEWS` or `[]` means there is no baseline: skip the
+Boomerang Comparison below. Otherwise display that entry's `branch`, `pass_scores`
 (getting_started, api_design, errors, docs, upgrade, dev_env, community,
 measurement), `overall_score`, `tthw_target`, `tthw_current`, `timestamp` and
-`commit`. These are your baseline for the boomerang comparison.
+`commit`. These are your baseline for the boomerang comparison. Always say which
+branch the baseline came from, and when it differs from `CURRENT_BRANCH`, say so:
+the plan may describe work that has changed since.
 
 ## Step 1: Getting Started Audit
 
@@ -360,6 +364,7 @@ is `—`, not a guess:
 ```
 PLAN vs REALITY
 ================
+Baseline: /plan-devex-review on branch <branch>, <timestamp>
 | Dimension        | Plan Score | Live Score | Delta | Alert |
 |------------------|-----------|-----------|-------|-------|
 | Getting Started  | __/10     | __/10     | __    | ⚠/✓   |

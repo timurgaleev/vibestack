@@ -5,11 +5,15 @@ Usage:
   vibe-review-read                 human summary of this branch's review entries
   vibe-review-read --json          raw entries as a JSON array
   vibe-review-read --skill review  only entries for one skill (latest first)
+  vibe-review-read --any-branch --skill plan-devex-review [--json]
+                                   the newest entry for one skill across every
+                                   branch log of this project, with its branch
 
 Reads ``$VIBESTACK_HOME/projects/<slug>/<branch>-reviews.jsonl`` (written by
 vibe-review-log). Prints ``NO_REVIEWS`` when the log is absent — callers gate on
 that instead of guessing OFFLINE. Latest entry per skill wins in the summary.
 """
+import glob
 import json
 import os
 import re
@@ -54,8 +58,51 @@ def load():
     return rows
 
 
+def read_rows(path):
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows
+
+
+def any_branch(skill, as_json) -> int:
+    # A branch name with a slash puts its log in a subdirectory, so walk them all.
+    root = os.path.join(HOME, "projects", slug())
+    best = None
+    for path in sorted(glob.glob(os.path.join(root, "**", "*-reviews.jsonl"), recursive=True)):
+        name = os.path.relpath(path, root)[: -len("-reviews.jsonl")]
+        for row in read_rows(path):
+            if row.get("skill") != skill:
+                continue
+            row.setdefault("branch", name)
+            if best is None or str(row.get("timestamp", "")) >= str(best.get("timestamp", "")):
+                best = row
+    if as_json:
+        print(json.dumps([best] if best else [], ensure_ascii=False, indent=2))
+    elif best is None:
+        print("NO_REVIEWS")
+    else:
+        print(f"{skill:24} {best.get('status','?'):8} {str(best.get('timestamp',''))[:19]}  branch={best['branch']}")
+    return 0
+
+
 def main() -> int:
     args = sys.argv[1:]
+    if "--any-branch" in args:
+        i = args.index("--skill") if "--skill" in args else -1
+        if i < 0 or i + 1 >= len(args):
+            print("vibe-review-read: --any-branch needs --skill <name>", file=sys.stderr)
+            return 2
+        return any_branch(args[i + 1], "--json" in args)
     rows = load()
     if rows is None:
         print("NO_REVIEWS")

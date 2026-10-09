@@ -147,6 +147,7 @@ everything is memorable for nothing.
 Read the persistent taste profile if it exists:
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 _TASTE_PROFILE=~/.vibestack/projects/$SLUG/taste-profile.json
 if [ -f "$_TASTE_PROFILE" ]; then
   # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
@@ -210,9 +211,10 @@ Use WebSearch to find 5-10 products in their space. Search for:
 
 **Step 2: Visual research via browse (if available)**
 
-If the browse binary is available (`$B` is set), visit the top 3-5 sites in the space and capture visual evidence:
+If the browse binary is available (SETUP printed `BROWSE_AVAILABLE`), visit the top 3-5 sites in the space and capture visual evidence, replacing `<BROWSE_BIN>` with the path SETUP printed:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto "https://example-site.com"
 $B screenshot "/tmp/design-research-site-name.png"
 $B snapshot
@@ -310,18 +312,42 @@ Codex with the prompt on stdin, substituting the shell-quoted path for `<prompt-
 
 ```bash
 _PROMPT_FILE='<prompt-file>'
+TMPERR_DESIGN=""
+# Every exit — an early error included — removes the prompt and the stderr file.
+trap 'rm -f "$TMPERR_DESIGN" "$_PROMPT_FILE"' EXIT
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 [ -s "$_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $_PROMPT_FILE" >&2; exit 1; }
 TMPERR_DESIGN=$(mktemp "${TMPDIR:-/tmp}/codex-design-XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
+# Portable timeout: gtimeout → timeout → a polling watchdog (returns 124 on overrun).
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
+# expansion, so "gtimeout 270" would reach execve as one argument (exit 127).
+_cx() {
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  _cx_s=$1; shift
+  "$@" <&0 & _cx_p=$!
+  while kill -0 "$_cx_p" 2>/dev/null; do
+    if [ "$_cx_s" -le 0 ]; then
+      pkill -TERM -P "$_cx_p" 2>/dev/null; kill -TERM "$_cx_p" 2>/dev/null; sleep 2
+      pkill -KILL -P "$_cx_p" 2>/dev/null; kill -KILL "$_cx_p" 2>/dev/null
+      wait "$_cx_p" 2>/dev/null; return 124
+    fi
+    sleep 1; _cx_s=$((_cx_s - 1))
+  done
+  wait "$_cx_p"
+}
 _CODEX_EXIT=0
-codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_DESIGN" || _CODEX_EXIT=$?
+# 270s sits below the 300s Bash timeout, so a stall ends here as exit 124 instead
+# of a harness kill that would skip the cleanup.
+_cx 270 codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_DESIGN" || _CODEX_EXIT=$?
 echo "CODEX_EXIT: $_CODEX_EXIT"
-# Each Bash call is a fresh shell, so stderr is read and removed here, not later.
+# Each Bash call is a fresh shell, so stderr is read here, not later.
 echo "--- codex stderr ---"
-cat "$TMPERR_DESIGN"; rm -f "$TMPERR_DESIGN" "$_PROMPT_FILE"
+cat "$TMPERR_DESIGN"
 ```
 
-Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT`, a timeout or an
+Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT` (124 is the
+270-second stall bound), a timeout or an
 empty response means Codex did not complete — treat it as a Codex error, never as a
 proposal.
 
@@ -528,13 +554,14 @@ echo "DESIGN_DIR: $_DESIGN_DIR"
 
 Construct a design brief from the Phase 3 proposal (aesthetic, colors, typography, spacing, layout) and the product context from Phase 1, in this shape: "Product name: [name]. Product type: [type]. Aesthetic: [direction]. Colors: primary [hex], secondary [hex], neutrals [range]. Typography: display [font], body [font]. Layout: [approach]. Show a realistic [page type] screen with [specific content for this product]."
 
-The brief carries product and user text, so it never appears in shell source — not in a quoted argument, not in a heredoc (a line equal to the terminator ends a heredoc and the rest runs as commands). **Write the brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above, replacing any earlier brief there, then run:
+The brief carries product and user text, so it never appears in shell source — not in a quoted argument, not in a heredoc (a line equal to the terminator ends a heredoc and the rest runs as commands). **Write the brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above (Read it first if it exists — the Write tool will not overwrite an unread file), replacing any earlier brief there, then run:
 
 Each Bash call is a fresh shell, so replace `<DESIGN_DIR>` with the DESIGN_DIR path
 printed above:
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
+D=~/.vibestack/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
@@ -595,7 +622,8 @@ Use AskUserQuestion to verify before proceeding.
 
 **Save the approved choice.** The user's feedback reaches the shell the same way the
 brief does: **write the feedback summary with the Write tool** to
-`approved-feedback.txt` inside the DESIGN_DIR printed above, then run this block,
+`approved-feedback.txt` inside the DESIGN_DIR printed above (Read it first if it
+exists — the Write tool will not overwrite an unread file), then run this block,
 replacing `<DESIGN_DIR>` with the DESIGN_DIR path printed above, `<V>` with the
 approved variant letter, `<IMAGE>` with the `saved:` path of that variant from the
 round the user picked from, and `<SCREEN>` with a short lowercase slug for the screen
@@ -644,11 +672,14 @@ Generate a polished HTML preview page and open it in the user's browser. This pa
 
 ```bash
 PREVIEW_FILE="/tmp/design-consultation-preview-$(date +%s).html"
+echo "PREVIEW_FILE: $PREVIEW_FILE"
 ```
 
-Write the preview HTML to `$PREVIEW_FILE`, then open it:
+Write the preview HTML to the printed `PREVIEW_FILE` path, then open it — each Bash
+call is a fresh shell, so replace `<PREVIEW_FILE>` with that path:
 
 ```bash
+PREVIEW_FILE='<PREVIEW_FILE>'
 open "$PREVIEW_FILE"
 ```
 
@@ -702,7 +733,19 @@ Wait for the answer. B and C write nothing.
 
 **If in plan mode (after A):** Write the DESIGN.md content into the plan file as a "## Proposed DESIGN.md" section. Do NOT write the actual file — that happens at implementation time.
 
-**If NOT in plan mode (after A):** If Phase 0 chose **start fresh** and a DESIGN.md already exists, first copy it to `DESIGN.md.bak-<YYYYMMDD-HHMMSS>` beside it (never overwrite an existing backup) and name the backup path to the user. On **update**, preserve the decisions the user did not change and add a Decisions Log row for each change. Then write `DESIGN.md` to the repo root with this structure:
+**If NOT in plan mode (after A):** Whenever a DESIGN.md already exists — **start fresh** and **update** alike — back it up before writing over it. Run this from the repo root and name the printed backup path to the user; it never overwrites an existing backup:
+
+```bash
+if [ -f DESIGN.md ]; then
+  _BAK="DESIGN.md.bak-$(date +%Y%m%d-%H%M%S)"; _N=0
+  while [ -e "$_BAK" ]; do _N=$((_N + 1)); _BAK="DESIGN.md.bak-$(date +%Y%m%d-%H%M%S)-$_N"; done
+  cp -p DESIGN.md "$_BAK" && echo "DESIGN_BACKUP: $_BAK" || { echo "BACKUP_FAILED: not writing DESIGN.md" >&2; exit 1; }
+else
+  echo "NO_EXISTING_DESIGN_MD"
+fi
+```
+
+If it prints `BACKUP_FAILED`, stop and tell the user; do not write DESIGN.md. On **update**, preserve the decisions the user did not change and add a Decisions Log row for each change. Then write `DESIGN.md` to the repo root with this structure:
 
 ```markdown
 # Design System — [Project Name]

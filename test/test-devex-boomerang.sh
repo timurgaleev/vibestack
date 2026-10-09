@@ -8,6 +8,9 @@
 #   - the Boomerang Baseline block in the rendered /devex-review, executed
 #     against a fixture log, prints the plan's pass_scores — a grep over the
 #     pretty-printed JSON prints only the "skill" line and fails here;
+#   - --any-branch --skill returns the newest entry across every branch log of
+#     the project (slash branches included) with its branch, and the devex
+#     baseline block uses it, so a plan reviewed on another branch is found;
 #   - /plan-devex-review's DX Trend Check uses the same read;
 #   - /devex-review states the browser rules: LOCAL vs NON-LOCAL consent before
 #     submitting, same-origin browsing, no credential typing, untrusted pages.
@@ -85,6 +88,34 @@ printf '%s' "$BOUT" | grep -q '"tthw_target": "3 min"' \
   && ok "the baseline block prints the TTHW target" || no "no tthw_target in baseline output"
 check "the comparison maps pass_scores to the Plan Score column" 'pass_scores' \
   <(section "$DX" '^## Boomerang Comparison' '^## ')
+
+echo "devex-review: a baseline from another branch"
+# The plan was reviewed on a feature branch; the audit runs on a branch with no log.
+mkdir -p "$LOGDIR/feature"
+echo '{"skill":"plan-devex-review","timestamp":"2026-02-01T00:00:00Z","status":"clean","branch":"feature/plan","overall_score":9,"tthw_target":"2 min","pass_scores":{"getting_started":9}}' \
+  > "$LOGDIR/feature/plan-reviews.jsonl"
+echo '{"skill":"plan-devex-review","timestamp":"2026-01-15T00:00:00Z","status":"clean","pass_scores":{"getting_started":6}}' \
+  > "$LOGDIR/old-reviews.jsonl"
+(cd "$REPO" && git checkout -q -b audit)
+SAME="$(cd "$REPO" && "$BIN/vibe-review-read" --skill plan-devex-review --json | tr -d '[:space:]')"
+[ "$SAME" = "NO_REVIEWS" ] && ok "the per-branch read still sees only this branch" || no "per-branch read changed: $SAME"
+ANY="$(cd "$REPO" && "$BIN/vibe-review-read" --any-branch --skill plan-devex-review --json | python3 -c '
+import json, sys
+rows = json.load(sys.stdin)
+print(len(rows), rows[0]["branch"], rows[0]["pass_scores"]["getting_started"])' 2>&1)"
+[ "$ANY" = "1 feature/plan 9" ] && ok "--any-branch returns the newest entry across branch logs, with its branch" \
+  || no "--any-branch: $ANY"
+BOUT2="$(cd "$REPO" && bash "$TMP/base.sh" 2>&1)"
+printf '%s' "$BOUT2" | grep -q '"getting_started": 9' && printf '%s' "$BOUT2" | grep -q '"branch": "feature/plan"' \
+  && ok "the baseline block finds a plan reviewed on another branch and names it" \
+  || no "baseline from another branch: $(printf '%s' "$BOUT2" | head -4)"
+printf '%s' "$BOUT2" | grep -q '^CURRENT_BRANCH: audit$' && ok "the baseline block prints the current branch to compare" \
+  || no "no CURRENT_BRANCH line"
+NONE2="$(cd "$REPO" && "$BIN/vibe-review-read" --any-branch --skill nothing-here --json | tr -d '[:space:]')"
+[ "$NONE2" = "[]" ] && ok "--any-branch with no entries reads as []" || no "--any-branch empty: $NONE2"
+(cd "$REPO" && "$BIN/vibe-review-read" --any-branch >/dev/null 2>&1); rc=$?
+[ "$rc" = 2 ] && ok "--any-branch without --skill is a usage error" || no "--any-branch without --skill exit $rc"
+(cd "$REPO" && git checkout -q feat)
 
 echo "plan-devex-review: DX trend check"
 PDX="$(render plan-devex-review)"

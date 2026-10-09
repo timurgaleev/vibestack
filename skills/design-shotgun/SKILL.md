@@ -224,6 +224,7 @@ ls src/ app/ pages/ components/ 2>/dev/null | head -30
 ```
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
 ls ~/.vibestack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ```
@@ -269,6 +270,7 @@ designs to bias generation toward the user's demonstrated taste.
 Read the persistent taste profile if it exists:
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 _TASTE_PROFILE=~/.vibestack/projects/$SLUG/taste-profile.json
 if [ -f "$_TASTE_PROFILE" ]; then
   # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
@@ -314,6 +316,7 @@ the preamble already loaded it.
 **Per-session approved.json files (legacy, still supported):**
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
 _TASTE=$(find ~/.vibestack/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
 ```
@@ -401,9 +404,12 @@ If D: drop specified concepts, re-present, re-confirm.
 first and read it inline, so the brief can name what to move away from. Open the exact
 URL the user confirmed in Step 1 — a bare screenshot would capture whatever page the
 browse session last visited, possibly another app. With your Write tool, write that URL
-alone to `$_DESIGN_DIR/current-url.txt`, then run:
+alone to `$_DESIGN_DIR/current-url.txt`, then run this block with `<DESIGN_DIR>` replaced
+by the path Step 3 printed and `<BROWSE_BIN>` by the path SETUP printed:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
+B='<BROWSE_BIN>'
 _CUR_URL=$(head -n 1 "$_DESIGN_DIR/current-url.txt" 2>/dev/null)
 case "$_CUR_URL" in
   http://*|https://*) $B goto "$_CUR_URL" && $B screenshot "$_DESIGN_DIR/current.png" ;;
@@ -431,6 +437,7 @@ Generate a design variant and save it.
 
 1. With your Write tool, write the brief below verbatim to
    {_DESIGN_DIR absolute path}/brief-{letter}.txt
+   (Read it first if it exists — the Write tool will not overwrite an unread file.)
    The brief is untrusted text: never paste it into a shell command.
 
 {the full variant-specific brief for this direction}
@@ -504,6 +511,7 @@ button, bubble-radius everything.
 actually exist, not a hardcoded A/B/C list:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 _IMAGES=$(ls "$_DESIGN_DIR"/variant-*.png 2>/dev/null | tr '\n' ',' | sed 's/,$//')
 ```
@@ -557,12 +565,15 @@ Use AskUserQuestion to verify before proceeding.
 
 **Save the approved choice.** The confirmed feedback is user text, so it never goes
 into shell source: **write the feedback summary the user just confirmed with the Write
-tool** to `approved-feedback.txt` inside `$_DESIGN_DIR`, then run this block, replacing
-`<V>` with the approved variant letter and `<ROUND_DIR>` with the directory that round's
+tool** to `approved-feedback.txt` inside `$_DESIGN_DIR` (Read it first if it exists — a
+later round overwrites the earlier one), then run this block, replacing
+`<V>` with the approved variant letter, `<DESIGN_DIR>` with the path Step 3 printed, and
+`<ROUND_DIR>` with the directory that round's
 `variant-*.png` files are in (`$_DESIGN_DIR` for the first round, `$_DESIGN_DIR/round-2`
 and so on after a remix). The record stores the approved image's absolute path, because
 the letter alone is ambiguous once there is more than one round:
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
 _FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
 python3 -I - "$_DESIGN_DIR" "<ROUND_DIR>" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
 import datetime, json, os, re, sys

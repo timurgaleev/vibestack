@@ -73,14 +73,20 @@ STUB
   git -C "$TMP/repo" init -q
   PROMPT="$TMP/prompt.txt"
   printf '%s\n' 'Review "this" $(touch '"$TMP"'/pwned) `id` it'"'"'s fine' > "$PROMPT"
+  cp "$PROMPT" "$TMP/prompt.want"
   sed "s|'<prompt-file>'|'$PROMPT'|" "$BLOCK" > "$TMP/run.sh"
   out=$(cd "$TMP/repo" && STUB_DIR="$TMP" PATH="$TMP/bin:$PATH" bash "$TMP/run.sh" 2>&1)
   MSG="the block reports a zero CODEX_EXIT";                      check grep -q 'CODEX_EXIT: 0' <<<"$out"
-  MSG="the prompt reaches codex on stdin unchanged";              check cmp -s "$PROMPT" "$TMP/stdin"
+  MSG="the prompt reaches codex on stdin unchanged";              check cmp -s "$TMP/prompt.want" "$TMP/stdin"
   MSG="hostile prompt text never executes";                       check test ! -e "$TMP/pwned"
   MSG="codex reads the prompt from stdin (- argument)";           check grep -qx -- '-' "$TMP/args"
   MSG="codex runs read-only";                                     check grep -qx 'read-only' "$TMP/args"
   MSG="codex gets the web_search config form";                    check grep -qx 'web_search="cached"' "$TMP/args"
+  MSG="the prompt file is removed when the block ends";           check test ! -e "$PROMPT"
+  MSG="codex runs under a 270s bound below the 300s tool timeout";  check grep -q '_cx 270 codex exec' "$BLOCK"
+  echo prompt > "$PROMPT"
+  out=$(cd "$TMP" && bash "$TMP/run.sh" 2>&1)   # $TMP is not a git repo: an early exit
+  MSG="an early exit still removes the prompt file";              check test ! -e "$PROMPT"
 else
   no "the Codex design-voice block is extractable"
 fi
@@ -112,12 +118,29 @@ hits = [b for b in re.findall(r"```bash\n(.*?)\n```", t, re.S) if 'REPORT_DIR=' 
 sys.stdout.write(hits[0] + "\n" if len(hits) == 1 else "")
 PY
 if [ -s "$TMP/rd.sh" ]; then
-  VH="$TMP/vh"; mkdir -p "$VH/projects/demo/designs/design-audit-20200101"
-  echo '{"schemaVersion":1}' > "$VH/projects/demo/designs/design-audit-20200101/design-baseline.json"
-  sed -i.bak '/vibe-slug/d' "$TMP/rd.sh"
-  OUT="$(cd "$TMP" && SLUG=demo VIBESTACK_HOME="$VH" bash "$TMP/rd.sh" 2>&1)"
-  printf '%s\n' "$OUT" | grep -qF "PREVIOUS_BASELINE: $VH/projects/demo/designs/design-audit-20200101/design-baseline.json" \
-    && ok "the report-directory step finds the previous baseline" || no "previous baseline not found: $OUT"
+  VH="$TMP/vh"; D1="$VH/projects/demo/designs/design-audit-20200101"; D2="$VH/projects/demo/designs/design-audit-20200102"
+  mkdir -p "$D1" "$D2"
+  echo '{"schemaVersion":1,"url":"http://localhost:3000/"}' > "$D1/design-baseline.json"
+  # Newer, but recorded for another site: it must not become this run's baseline.
+  echo '{"schemaVersion":1,"url":"https://other.example"}' > "$D2/design-baseline.json"
+  touch -t 202001010000 "$D1/design-baseline.json"
+  # The slug comes from the block's own line, pinned here to the fixture bucket.
+  python3 -I - "$TMP/rd.sh" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+s, n = re.subn(r"^eval .*vibe-slug.*$", "SLUG=demo", s, flags=re.M)
+assert n == 1, "no vibe-slug line"
+open(p, "w").write(s)
+PY
+  sed "s|<TARGET_URL>|http://localhost:3000|" "$TMP/rd.sh" > "$TMP/rd-run.sh"
+  OUT="$(cd "$TMP" && env -u REPORT_DIR VIBESTACK_HOME="$VH" bash "$TMP/rd-run.sh" 2>&1)"
+  printf '%s\n' "$OUT" | grep -qxF "PREVIOUS_BASELINE: $D1/design-baseline.json" \
+    && ok "the report-directory step finds the previous baseline for this run's URL" || no "previous baseline not found: $OUT"
+  sed "s|<TARGET_URL>|http://localhost:4000|" "$TMP/rd.sh" > "$TMP/rd-run.sh"
+  OUT="$(cd "$TMP" && env -u REPORT_DIR VIBESTACK_HOME="$VH" bash "$TMP/rd-run.sh" 2>&1)"
+  printf '%s\n' "$OUT" | grep -q "^NO_PREVIOUS_BASELINE" \
+    && ok "a baseline recorded for another URL is not used" || no "baseline for another URL used: $OUT"
 else
   no "no report-directory block that looks up the previous baseline"
 fi

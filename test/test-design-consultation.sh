@@ -15,6 +15,12 @@
 #     follow the agent's own draft, and never log `clean` without a voice;
 #   - approved.json is built from a feedback file: the block runs with hostile
 #     feedback and that text lands verbatim without executing;
+#   - the Path A brief, Path B preview, codex voice and DESIGN.md backup blocks
+#     run in a fresh shell (D, B, _DESIGN_DIR, PREVIEW_FILE unset): Path A binds
+#     $D itself, the preview path comes from its placeholder, the codex voice
+#     removes its prompt and stderr files on every exit and ends a stall as
+#     exit 124, and every DESIGN.md overwrite keeps a backup that never
+#     replaces an earlier one;
 #   - fonts go through a verification step and the overused list covers the
 #     faces the skill once recommended;
 #   - the Brutalist, Retro-Futuristic and light/dark lines no longer contradict
@@ -151,6 +157,91 @@ sys.exit(not (rec["approved_variant"]=="B" and rec["feedback"]==fb and rec["scre
   grep -Fq "echo '{\"approved_variant\"" "$R" && no "approved.json is still hand-built with echo" \
     || ok "approved.json is not hand-built with echo"
 fi
+
+# Every Bash call is a fresh shell: each block below runs with the variables an
+# earlier block set unset, and gets them only from its own lines or placeholders.
+# block_with FILE NEEDLE -> the one fenced bash block that contains NEEDLE
+block_with() {
+  python3 -I - "$1" "$2" <<'PY'
+import re, sys
+text, needle = open(sys.argv[1], encoding="utf-8").read(), sys.argv[2]
+hits = [b for b in re.findall(r"```bash\n(.*?)\n```", text, re.S) if needle in b]
+if len(hits) != 1:
+    sys.exit("expected one bash block containing %r, found %d" % (needle, len(hits)))
+sys.stdout.write(hits[0] + "\n")
+PY
+}
+FS="$TMP/fs"; mkdir -p "$FS/bin" "$FS/home/.vibestack/bin"
+fresh() { (cd "$FS/work" && env -u D -u B -u _DESIGN_DIR -u PREVIEW_FILE -u _PROMPT_FILE -u TMPERR_DESIGN \
+  HOME="$FS/home" PATH="$FS/bin:$PATH" "$@") > "$FS/out" 2>&1; }
+
+echo "fresh-shell blocks"
+mkdir -p "$FS/work"
+# Path A: $D is bound inside the brief block, not inherited from DESIGN SETUP.
+cat > "$FS/home/.vibestack/bin/vibe-design" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$FS_CALLS"
+SH
+chmod +x "$FS/home/.vibestack/bin/vibe-design"
+if block_with "$R" '--brief-file "$BRIEF_FILE"' > "$FS/brief.sh" 2>"$FS/err"; then
+  mkdir -p "$FS/dd"; echo "a brief" > "$FS/dd/brief.txt"
+  sed -i.bak "s|<DESIGN_DIR>|$FS/dd|" "$FS/brief.sh"
+  fresh env FS_CALLS="$FS/calls" bash "$FS/brief.sh"
+  grep -q "^variants --brief-file $FS/dd/brief.txt " "$FS/calls" 2>/dev/null \
+    && ok "Path A reaches vibe-design with \$D unset in the calling shell" \
+    || no "Path A with \$D unset: $(head -3 "$FS/out")"
+else
+  no "Path A block: $(cat "$FS/err")"
+fi
+# Path B: the preview path comes from the placeholder, not a variable set earlier.
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" > "$FS_CALLS"\n' > "$FS/bin/open"; chmod +x "$FS/bin/open"
+rm -f "$FS/calls"
+if block_with "$R" 'open "$PREVIEW_FILE"' > "$FS/open.sh" 2>"$FS/err"; then
+  sed -i.bak "s|<PREVIEW_FILE>|$FS/preview.html|" "$FS/open.sh"
+  fresh env FS_CALLS="$FS/calls" bash "$FS/open.sh"
+  [ "$(cat "$FS/calls" 2>/dev/null)" = "$FS/preview.html" ] \
+    && ok "Path B opens the printed preview path in a fresh shell" || no "Path B open: $(cat "$FS/calls" 2>/dev/null) $(head -3 "$FS/out")"
+else
+  no "Path B block: $(cat "$FS/err")"
+fi
+# Codex voice: the prompt and stderr files go on every exit, and a stall is bounded.
+if block_with "$R" "_PROMPT_FILE='<prompt-file>'" > "$FS/cx.sh" 2>"$FS/err"; then
+  echo prompt > "$FS/prompt.txt"
+  sed "s|<prompt-file>|$FS/prompt.txt|" "$FS/cx.sh" > "$FS/cx-early.sh"
+  fresh bash "$FS/cx-early.sh"   # $FS/work is not a git repo: the block exits early
+  [ ! -e "$FS/prompt.txt" ] && ok "an early exit still removes the prompt file" \
+    || no "the prompt file survives an early exit: $(head -2 "$FS/out")"
+  git -C "$FS/work" init -q 2>/dev/null
+  printf '#!/usr/bin/env bash\ncat >/dev/null; echo oops >&2; sleep 30\n' > "$FS/bin/codex"; chmod +x "$FS/bin/codex"
+  echo prompt > "$FS/prompt.txt"
+  grep -q '_cx 270 codex exec' "$FS/cx.sh" && ok "codex runs under a 270s bound, below the 300s tool timeout" \
+    || no "codex is not bounded below the tool timeout"
+  # Shrink the bound so the stall is observable; force the watchdog path.
+  sed -e "s|<prompt-file>|$FS/prompt.txt|" -e 's|_cx 270 |_cx 2 |' \
+      -e 's|^_CX_TO=.*|_CX_TO=""|' "$FS/cx.sh" > "$FS/cx-stall.sh"
+  fresh env TMPDIR="$FS" bash "$FS/cx-stall.sh"
+  grep -q '^CODEX_EXIT: 124$' "$FS/out" && [ ! -e "$FS/prompt.txt" ] && [ -z "$(ls "$FS" | grep codex-design- || true)" ] \
+    && ok "a stalled codex ends as exit 124 and leaves no prompt or stderr file" \
+    || no "stall: $(cat "$FS/out" | head -4); left: $(ls "$FS")"
+else
+  no "codex block: $(cat "$FS/err")"
+fi
+# DESIGN.md: every overwrite is preceded by a backup that never replaces another.
+if block_with "$R" 'DESIGN.md.bak-' > "$FS/bak.sh" 2>"$FS/err"; then
+  mkdir -p "$FS/repo"; echo v1 > "$FS/repo/DESIGN.md"
+  (cd "$FS/repo" && bash "$FS/bak.sh" && echo v2 > DESIGN.md && bash "$FS/bak.sh") > "$FS/out" 2>&1
+  baks=$(ls "$FS/repo" | grep -c '^DESIGN.md.bak-' || true)
+  first=$(ls "$FS/repo" | grep '^DESIGN.md.bak-' | sort | head -1)
+  [ "$baks" = 2 ] && [ "$(cat "$FS/repo/$first")" = v1 ] \
+    && ok "two writes in one second keep two backups, the first one intact" \
+    || no "backups: $baks ($(cat "$FS/out" | head -3))"
+  has "$TMP/p6" '**start fresh** and **update** alike' && ok "update backs up DESIGN.md too" \
+    || no "only start fresh backs up DESIGN.md"
+else
+  no "DESIGN.md backup block: $(cat "$FS/err")"
+fi
+has "$R" 'Read it first if it exists' && ok "brief and feedback writes read an existing file first" \
+  || no "the Write steps do not read an existing file first"
 
 echo "fonts"
 section "$R" "## Phase 3: The Complete Proposal" > "$TMP/p3"
