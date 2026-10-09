@@ -78,10 +78,24 @@ doctor_state_root() {
     else echo "  warn version ${have:-none} in $VIBE_HOME/version, pack is $want — re-run ./install"
     fi
   fi
-  for t in "$SELF_DIR"/vibe-*; do
-    [ -f "$t" ] || continue
-    [ -x "$VIBE_HOME/bin/${t##*/}" ] || missing="$missing ${t##*/}"
-  done
+  # The inventory is the pack's own bin/ in a repo checkout, or the list the
+  # installer wrote when this runs from the installed copy — listing the
+  # installed dir would only compare it with itself.
+  if [ -d "$VIBE_HOME/bin" ] && [ "$SELF_DIR" -ef "$VIBE_HOME/bin" ]; then
+    if [ ! -f "$VIBE_HOME/bin/.vibestack-tools" ]; then
+      echo "  MISS $VIBE_HOME/bin has no tool inventory (.vibestack-tools) — re-run ./install"
+      return 1
+    fi
+    while IFS= read -r t; do
+      [ -n "$t" ] || continue
+      [ -x "$VIBE_HOME/bin/$t" ] || missing="$missing $t"
+    done < "$VIBE_HOME/bin/.vibestack-tools"
+  else
+    for t in "$SELF_DIR"/vibe-*; do
+      [ -f "$t" ] || continue
+      [ -x "$VIBE_HOME/bin/${t##*/}" ] || missing="$missing ${t##*/}"
+    done
+  fi
   if [ -n "$missing" ]; then echo "  MISS $VIBE_HOME/bin lacks:$missing — re-run ./install"; bad=1
   else echo "  ok   $VIBE_HOME/bin has every pack tool"
   fi

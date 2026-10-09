@@ -362,6 +362,19 @@ test_install_all_then_uninstall_all_zero_residue() {
     assert_file_missing "$HOME/.cursor/skills/$skill/SKILL.md" || return 1
     assert_file_missing "$HOME/.kiro/skills/$skill/SKILL.md" || return 1
   done
+  assert_file_missing "$VIBESTACK_HOME/bin/.vibestack-tools" || return 1
+}
+
+# --- Install writes the shipped tool inventory the installed doctor checks
+test_install_writes_tool_inventory() {
+  "$INSTALL" --target=claude < /dev/null >/dev/null 2>&1
+  local inv="$VIBESTACK_HOME/bin/.vibestack-tools"
+  assert_file_exists "$inv" || return 1
+  assert_eq "$(cd "$REPO_DIR/bin" && ls -1 vibe-*)" "$(cat "$inv")" "tool inventory" || return 1
+  local out
+  out=$("$VIBESTACK_HOME/bin/vibestack" doctor < /dev/null 2>&1)
+  printf '%s\n' "$out" | grep -q 'has every pack tool' || {
+    echo "    installed doctor did not report a complete bin" >&2; return 1; }
 }
 
 # --- Single-target uninstall doesn't touch other targets (regression
@@ -914,6 +927,7 @@ run_test "dry_run_reports_all_three_targets"                    test_dry_run_rep
 run_test "all_three_targets_byte_identical_per_skill"           test_all_three_targets_byte_identical_per_skill
 run_test "install_idempotent_per_target"                        test_install_idempotent_per_target
 run_test "install_all_then_uninstall_all_zero_residue"          test_install_all_then_uninstall_all_zero_residue
+run_test "install_writes_tool_inventory"                         test_install_writes_tool_inventory
 run_test "uninstall_target_cursor_preserves_claude"             test_uninstall_target_cursor_preserves_claude
 run_test "install_warns_about_hooks_for_non_claude"             test_install_warns_about_hooks_for_non_claude
 run_test "install_no_hook_warning_for_claude_only"              test_install_no_hook_warning_for_claude_only

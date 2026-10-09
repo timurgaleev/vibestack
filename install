@@ -906,6 +906,9 @@ if [ "$DRY_RUN" != "1" ]; then
       cp "$script" "$VIBE_BIN/$name"
       chmod +x "$VIBE_BIN/$name"
     done
+    # The shipped tool list, so `vibestack doctor` run from the installed copy
+    # has something other than its own directory to check against.
+    ( cd "$REPO_DIR/bin" && ls -1 vibe-* ) > "$VIBE_BIN/.vibestack-tools"
     # Umbrella CLI + version stamp so `vibestack` works anywhere once
     # $VIBE_BIN is on PATH (like a server-side CLI).
     if [ -f "$REPO_DIR/bin/vibestack" ]; then
