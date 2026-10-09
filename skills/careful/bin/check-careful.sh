@@ -330,23 +330,39 @@ if [ -n "$_WIN_SCAN" ]; then
   # (Re`move-Item is Remove-Item); dropping both only joins characters.
   _WIN_SCAN="${_WIN_SCAN//^/}"
   _WIN_SCAN="${_WIN_SCAN//\`/}"
+  # PowerShell takes an en dash, em dash or horizontal bar as a parameter
+  # prefix (Remove-Item x –Recurse); fold them to the ASCII hyphen.
+  _WIN_SCAN="${_WIN_SCAN//–/-}"
+  _WIN_SCAN="${_WIN_SCAN//—/-}"
+  _WIN_SCAN="${_WIN_SCAN//―/-}"
   _NL=$'\n'
   # Command position: start of text, a statement or pipeline separator, an
   # opening bracket or quote, or right after a shell launcher and its switches.
   # The same names elsewhere (ord, --del, /rd/) never match.
   _CP="(^|[;&|({}\"'${_NL}]|(powershell|pwsh|cmd)(\.exe)?([[:space:]]+(-|/+)[a-z]+([[:space:]:=]+[a-z0-9_.-]+)?)*)[[:space:]]*"
   _STMT="[^;|${_NL}]*"
+  # One statement's arguments, where a quoted argument may hold ; or |
+  # (Remove-Item 'C:\a;b' -Recurse is one statement, not two).
+  _PS_STMT="([^;|'\"${_NL}]|'[^']*'|\"[^\"]*\")*"
+  # A cmdlet may be module-qualified: Microsoft.PowerShell.Management\Remove-Item.
+  _MOD="([a-z0-9_.]+\\\\)?"
+  # A switch ends at anything that cannot continue its name: whitespace, the
+  # :$true form, or the closing quote, brace, paren or ; of its statement.
+  _SW_END="([^[:alnum:]_-]|$)"
   _CMD_STMT="[^;|&${_NL}]*"
   _WHY_DYNAMIC="/careful cannot see what encoded or evaluated PowerShell will run. Read it before approving."
   # Name, ERE, warning. Parameters match any prefix PowerShell accepts
   # (-r/-rec/-recurse, -fo/-forc/-force; -f alone is ambiguous with -Filter).
   _WIN_RULES=(
     ps_remove_item
-    "${_CP}(remove-item|rm|ri|del|erase|rd|rmdir)[[:space:]](${_STMT}[[:space:]])?-(r|re|rec|recu|recur|recurs|recurse|fo|for|forc|force)([[:space:]:]|$)"
+    "${_CP}${_MOD}(remove-item|rm|ri|del|erase|rd|rmdir)[[:space:]](${_PS_STMT}[[:space:]])?-(r|re|rec|recu|recur|recurs|recurse|fo|for|forc|force)${_SW_END}"
     "Destructive: PowerShell Remove-Item (or rm/ri/del/erase/rd/rmdir) with -Recurse or -Force. This permanently removes files."
     ps_pipe_remove
-    "${_CP}(gci|get-childitem|ls|dir)[[:space:]](${_STMT}[[:space:]])?-(r|re|rec|recu|recur|recurs|recurse)([[:space:]:]${_STMT})?\\|[[:space:]]*((foreach-object|foreach|%)[[:space:]]*\\{[[:space:]]*)?(remove-item|rm|ri|del|erase|rd|rmdir)([[:space:]]|\$)"
+    "${_CP}${_MOD}(gci|get-childitem|ls|dir)[[:space:]](${_PS_STMT}[[:space:]])?-(r|re|rec|recu|recur|recurs|recurse)([^[:alnum:]_|-]${_PS_STMT})?\\|[[:space:]]*((foreach-object|foreach|%)[[:space:]]*\\{[[:space:]]*)?${_MOD}(remove-item|rm|ri|del|erase|rd|rmdir)${_SW_END}"
     "Destructive: Get-ChildItem -Recurse piped into Remove-Item deletes every file it lists."
+    ps_pipe_delete_method
+    "${_CP}${_MOD}(gci|get-childitem|ls|dir)[[:space:]]${_PS_STMT}\\|[^;${_NL}]*\\\$(_|psitem)\\.delete[[:space:]]*\\("
+    "Destructive: Get-ChildItem piped into a .Delete() call removes every item it lists."
     cmd_rd_s
     "${_CP}(rd|rmdir)[[:space:]]${_CMD_STMT}/s([[:space:]/]|$)"
     "Destructive: cmd rd/rmdir /s deletes a whole directory tree."
@@ -362,6 +378,12 @@ if [ -n "$_WIN_SCAN" ]; then
     ps_encoded_command
     "(^|[^a-z0-9_.\$-])(powershell|pwsh)(\\.exe)?[\"']?[[:space:]](${_STMT}[[:space:]])?-(e|ec|en|enc[a-z]*)([[:space:]:]|\$)"
     "PowerShell -EncodedCommand. ${_WHY_DYNAMIC}"
+    ps_start_process_shell
+    "${_CP}${_MOD}(start-process|saps|start)[[:space:]]${_STMT}(cmd|powershell|pwsh)(\\.exe)?[\"']?([[:space:]]|$)"
+    "Start-Process launching cmd or PowerShell. /careful cannot see what its -ArgumentList will run. Read it before approving."
+    ps_scriptblock_create
+    '\[(system\.management\.automation\.)?scriptblock\]::create'
+    "PowerShell [scriptblock]::Create. ${_WHY_DYNAMIC}"
     ps_invoke_expression
     "${_CP}(invoke-expression|iex)([[:space:](]|$)"
     "PowerShell Invoke-Expression (iex). ${_WHY_DYNAMIC}"
@@ -446,7 +468,7 @@ if [ -z "$WARN" ]; then
   # every command — only pay it when project state actually exists.
   if [ -z "$_PAT" ] && [ -d "$_CFG_DIR/projects" ] && [ -x "$HOME/.vibestack/bin/vibe-slug" ]; then
     SLUG=""
-    eval "$("$HOME/.vibestack/bin/vibe-slug" 2>/dev/null || true)" 2>/dev/null || SLUG=""
+    eval "$(VIBESTACK_SLUG_NO_MIGRATE=1 "$HOME/.vibestack/bin/vibe-slug" 2>/dev/null || true)" 2>/dev/null || SLUG=""
     if [ -n "${SLUG:-}" ]; then
       _PAT=$(_match_pattern_file "$_CFG_DIR/projects/$SLUG/careful-patterns.txt") || _PAT=""
     fi

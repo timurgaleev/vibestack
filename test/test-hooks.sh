@@ -173,6 +173,78 @@ assert_decision "PowerShell single-file Remove-Item passes" "$CAREFUL" '{"tool_n
 assert_decision "PowerShell git branch -d passes"  "$CAREFUL" '{"tool_name":"PowerShell","tool_input":{"command":"git branch -d feature"}}' allow
 assert_decision "Bash tool keeps Bash rules"       "$CAREFUL" '{"tool_name":"Bash","tool_input":{"command":"echo PowerShell; del -r x"}}' allow
 assert_decision "commit message naming cmd passes" "$CAREFUL" '{"tool_input":{"command":"git commit -m \"fix cmd parsing\""}}' allow
+# Every case from the PowerShell adversarial review, run outside any git repo
+# (so a force-push asks rather than resolving a default branch). The switch
+# terminator was the bypass: -Recurse as the last token before a closing
+# quote, brace, paren or ; was missed. The allow rows are deliberate: no
+# recursive or forced delete, or nothing PowerShell would run.
+while IFS=$'\t' read -r _want _tool _cmd; do
+  [ -n "$_want" ] || continue
+  _payload=$(python3 -c 'import json,sys;print(json.dumps({"tool_name":sys.argv[1],"tool_input":{"command":sys.argv[2]}}))' "$_tool" "$_cmd")
+  assert_decision_in "$TMPHOME" "[$_tool] $_cmd -> $_want" "$_payload" "$_want"
+done <<'CASES'
+ask	PowerShell	Remove-Item -Path C:\proj -Recurse -Force
+ask	PowerShell	Remove-Item C:\proj -Recurse
+ask	PowerShell	Remove-Item -LiteralPath C:\x -Recurse:$true
+ask	PowerShell	ri C:\x -r
+ask	PowerShell	& { Remove-Item C:\x -Recurse }
+allow	PowerShell	Get-ChildItem C:\x | Remove-Item
+ask	PowerShell	$p="C:\x"; Remove-Item $p -Recurse
+ask	PowerShell	Remove-Item -Recurse C:\x
+ask	PowerShell	Microsoft.PowerShell.Management\Remove-Item C:\x -Recurse
+ask	PowerShell	Remove-Item C:\x\* -Force
+ask	PowerShell	iex "something"
+ask	PowerShell	. ([scriptblock]::Create("Remove-Item x -Recurse"))
+ask	PowerShell	Invoke-Command { Remove-Item x -Recurse }
+ask	PowerShell	Start-Process cmd -ArgumentList "/c rd /s /q C:\x"
+ask	PowerShell	git push --force origin main
+ask	PowerShell	git reset --hard HEAD~3
+ask	PowerShell	Remove-Item x –Recurse
+ask	PowerShell	del /s /q C:\x
+ask	PowerShell	Remove-Item C:\x -ReCurse
+ask	PowerShell	Remove-Item 'C:\a;b' -Recurse
+ask	PowerShell	Remove-Item C:\x -Confirm:$false -Recurse
+ask	PowerShell	gci C:\x -Recurse | % { $_.Delete() }
+ask	PowerShell	Remove-Item (Join-Path C:\ x) -Recurse
+ask	PowerShell	[IO.Directory]::Delete("C:\x", $true)
+ask	PowerShell	[System.IO.Directory]::Delete('C:\x',1)
+ask	PowerShell	Remove-Item C:\x -Recurse -WhatIf
+ask	PowerShell	$x | Remove-Item -Recurse
+ask	PowerShell	Remove-Item C:\x\* -Include *.cs -Recurse
+ask	PowerShell	rmdir C:\x -Recurse
+ask	PowerShell	cmd.exe /c "rd /s /q C:\x"
+allow	PowerShell	Remove-ItemProperty x
+allow	PowerShell	Clear-Content C:\x\important.txt
+allow	PowerShell	Set-Content C:\x\important.txt ''
+ask	Bash	pwsh -c "Remove-Item x -Recurse"
+ask	Bash	pwsh.exe -NoProfile -Command Remove-Item x -Recurse
+ask	Bash	cmd //c "rd /s /q build"
+ask	Bash	powershell -EncodedCommand ZQBjAGgAbwA=
+ask	Bash	"/c/Program Files/PowerShell/7/pwsh.exe" -c "Remove-Item x -Recurse"
+ask	Bash	pwsh -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item x -Recurse"
+allow	Bash	echo pwsh; Remove-Item x -Recurse
+ask	Bash	PWSH -C "REMOVE-ITEM X -RECURSE"
+allow	Bash	pwsh -File evil.ps1
+ask	Bash	pwsh -c 'Remove-Item x -Recurse'
+ask	Bash	env pwsh -c "Remove-Item x -Recurse"
+ask	Bash	pwsh -nop -c "Remove-Item x -Recurse"
+ask	Bash	pwsh -Command "& {Remove-Item x -Recurse}"
+ask	Bash	pwsh -e ZQBjAGgAbwA=
+ask	Bash	pwsh -ec ZQBjAGgAbwA=
+ask	Bash	pwsh -NoProfile -e ZQBjAGgAbwA=
+ask	PowerShell	Remove-Item C:\x -Recurse; Write-Host done
+ask	PowerShell	Remove-Item C:\x -Force; Write-Host done
+ask	PowerShell	Invoke-Command {Remove-Item C:\x -Recurse}
+ask	PowerShell	if ($true) { Remove-Item C:\x -Recurse}
+ask	PowerShell	Remove-Item C:\x -Recurse -Force
+ask	Bash	pwsh -c "Remove-Item C:\x -Recurse -Force"
+ask	Bash	pwsh -c "Remove-Item C:\x -Force"
+ask	Bash	cmd /c "rd /s build"
+ask	Bash	cmd /c rd /s/q build
+ask	PowerShell	Remove-Item C:\x -Recurse
+allow	Bash	echo hi | pwsh -Command -
+ask	PowerShell	rd C:\x /s
+CASES
 for _skill in careful guard; do
   if grep -q 'matcher: "PowerShell"' "$ROOT/skills/$_skill/SKILL.md"; then
     ok "$_skill registers a PowerShell matcher"
