@@ -113,7 +113,7 @@ When creating PRs:
 ### Feature Implementation Workflow
 
 1. **Plan First**
-   - Use **task-planner** agent to create implementation plan
+   - Run `/plan-eng-review` (or `/autoplan`) to lock the implementation plan
    - Identify dependencies and risks
    - Break down into phases
 
@@ -121,10 +121,11 @@ When creating PRs:
    - Write tests for new functionality
    - Implement functionality
    - Run tests to verify correctness
-   - Verify 80%+ test coverage
+   - Every new test answers the value bar: what behavior it protects, what
+     regression makes it fail
 
 3. **Code Review**
-   - Use **quality-guard** agent for quality and security review
+   - Run `/review` for quality and security review
    - Address CRITICAL and HIGH issues
    - Fix MEDIUM issues when possible
 
@@ -401,11 +402,20 @@ Add tests for new behavior and every bug fix. Tests are *Fast / Isolated /
 Deterministic / Readable / Focused*. If you could not run the verification, say
 so and name the residual risk.
 
-### Minimum Test Coverage: 80%
+### Test Value Bar
 
-Test Types (ALL required):
-1. **Unit Tests** - Individual functions, utilities, components
-2. **Integration Tests** - API endpoints, database operations
+A test earns its place by protecting behavior a real regression would break.
+Write one only when all four questions have an answer:
+
+1. What observable behavior, invariant or contract does it protect?
+2. What credible regression makes it fail?
+3. Why does existing coverage not already catch that?
+4. Does it need a production seam no production caller needs? If so, test at
+   the real boundary instead.
+
+Weak tests are not coverage: a smoke test, an existence check, or "it doesn't
+throw" never counts as covering a path. A regression test is proven red against
+the code before the fix, then green after it.
 
 ### Testing Workflow
 
@@ -415,7 +425,6 @@ Recommended workflow:
 3. Implement functionality
 4. Run tests to verify they pass
 5. Refactor as needed while keeping tests green
-6. Verify coverage meets 80%+ target
 
 ### Troubleshooting Test Failures
 
@@ -501,9 +510,9 @@ If security issue found:
   one pass.
 - Run independent searches, file reads, and commands in parallel to save time.
 - Prefer a matching skill over improvising. Skills live in
-  `~/.agents/skills/<name>/` — `/plan-eng-review` to plan, `/investigate` to
-  debug, `/code-review` before merge, `/ship` to ship. Never guess at a skill
-  that is not installed; if none matches, proceed normally.
+  `~/.agents/skills/<name>/` — `$plan-eng-review` to plan, `$investigate` to
+  debug, `$review` before merge, `$ship` to ship, `$vibe` when unsure. Never
+  guess at a skill that is not installed; if none matches, proceed normally.
 - For library, framework, SDK, and CLI questions, check current official docs
   rather than relying on training data.
 - Share the context and judgment calls you are making, briefly, as you go.

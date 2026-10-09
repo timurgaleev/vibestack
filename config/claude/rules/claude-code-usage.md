@@ -27,6 +27,9 @@ conventions; `CLAUDE.md` carries only the one-line summary.
 - A subagent does not see this file or `CLAUDE.md`. Put the criteria, exclusion
   patterns, and expected output format directly in its prompt.
 - Launch independent agents in a single message so they run concurrently.
+- When the next step reads a subagent's result, pass `run_in_background: false`
+  and wait. A backgrounded dispatch returns before the result exists, so the
+  next step would read a missing result as an empty one.
 
 ## Skills
 

@@ -52,6 +52,7 @@ jobs:
           - test-config-sync.sh
           - test-config-phase.sh
           - test-config-uninstall-keys.sh
+          - test-config-skills-routing.sh
           - test-claude-gate.sh
           - test-document-release.sh
           - test-document-generate-pr-body.sh
