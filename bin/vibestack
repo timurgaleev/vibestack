@@ -24,10 +24,17 @@ tool_path() {
   return 1
 }
 
+# True when this script is the installed copy in $VIBE_HOME/bin. There,
+# "$SELF_DIR/../VERSION" is "$VIBE_HOME/VERSION", which is the lowercase stamp
+# only on a case-insensitive filesystem; the installed copy reads the stamp.
+running_installed() {
+  [ -d "$VIBE_HOME/bin" ] && [ "$SELF_DIR" -ef "$VIBE_HOME/bin" ]
+}
+
 pack_version() {
   # Repo checkout: VERSION sits one level above bin/. Installed: install drops
   # a copy at $VIBE_HOME/version.
-  if [ -f "$SELF_DIR/../VERSION" ]; then tr -d '[:space:]' < "$SELF_DIR/../VERSION"
+  if ! running_installed && [ -f "$SELF_DIR/../VERSION" ]; then tr -d '[:space:]' < "$SELF_DIR/../VERSION"
   elif [ -f "$VIBE_HOME/version" ]; then tr -d '[:space:]' < "$VIBE_HOME/version"
   else printf 'unknown'
   fi
@@ -71,7 +78,12 @@ doctor_state_root() {
   local bad=0 want have t missing=""
   [ -d "$VIBE_HOME" ] || return 0
   if [ -w "$VIBE_HOME" ]; then echo "  ok   home writable"; else echo "  FAIL home not writable ($VIBE_HOME)"; bad=1; fi
-  if [ -f "$SELF_DIR/../VERSION" ]; then
+  if running_installed; then
+    # No pack checkout to compare with: report the stamp install wrote.
+    if [ -f "$VIBE_HOME/version" ]; then echo "  ok   version $(tr -d '[:space:]' < "$VIBE_HOME/version") (stamp)"
+    else echo "  warn no version stamp at $VIBE_HOME/version — re-run ./install"
+    fi
+  elif [ -f "$SELF_DIR/../VERSION" ]; then
     want="$(tr -d '[:space:]' < "$SELF_DIR/../VERSION")"
     have="$( [ -f "$VIBE_HOME/version" ] && tr -d '[:space:]' < "$VIBE_HOME/version" )"
     if [ "$have" = "$want" ]; then echo "  ok   version $want"
@@ -81,7 +93,7 @@ doctor_state_root() {
   # The inventory is the pack's own bin/ in a repo checkout, or the list the
   # installer wrote when this runs from the installed copy — listing the
   # installed dir would only compare it with itself.
-  if [ -d "$VIBE_HOME/bin" ] && [ "$SELF_DIR" -ef "$VIBE_HOME/bin" ]; then
+  if running_installed; then
     if [ ! -f "$VIBE_HOME/bin/.vibestack-tools" ]; then
       echo "  MISS $VIBE_HOME/bin has no tool inventory (.vibestack-tools) — re-run ./install"
       return 1

@@ -622,6 +622,18 @@ out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$
 [ "$rc" = 1 ] && echo "$out" | grep -Eq '^  MISS .*inventory' \
   && ok "doctor (installed): no tool inventory is a MISS, never an ok" \
   || no "doctor (installed): missing inventory not reported, rc=$rc: $out"
+# The installed copy reads the lowercase stamp install writes. It must not lean
+# on $VIBESTACK_HOME/bin/../VERSION, which only resolves to that stamp on a
+# case-insensitive filesystem: with no stamp at all it has to say so.
+rm -f "$DOCI/version"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$DOCI/bin/vibestack" doctor 2>&1)"
+echo "$out" | grep -Eq "^  warn no version stamp at $DOCI/version" \
+  && ok "doctor (installed): a missing version stamp is a warn row naming \$VIBESTACK_HOME/version" \
+  || no "doctor (installed): missing stamp not reported: $out"
+echo "1.2.3" > "$DOCI/version"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$DOCI/bin/vibestack" doctor 2>&1)"
+echo "$out" | grep -Eq '^  ok   version 1\.2\.3 \(stamp\)' \
+  && ok "doctor (installed): reports the installed stamp" || no "doctor (installed): stamp not reported: $out"
 
 echo
 echo "== summary =="
