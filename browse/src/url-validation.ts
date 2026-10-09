@@ -10,6 +10,7 @@ import { validateReadPath } from './path-security';
 
 /** Metadata services reached by name rather than address. */
 const BLOCKED_METADATA_HOSTNAMES = new Set([
+  'metadata',                 // bare name, reached through a GCP search domain
   'metadata.google.internal', // GCP metadata
   'metadata.azure.internal',  // Azure IMDS
 ]);
@@ -69,21 +70,35 @@ function expandIpv6(addr: string): number[] | null {
   return groups.every(g => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null;
 }
 
+/** The resolver calls the guard makes; injectable so tests need no real DNS. */
+export interface HostResolver {
+  resolve4(hostname: string): Promise<string[]>;
+  resolve6(hostname: string): Promise<string[]>;
+  lookup(hostname: string, options: { all: true; verbatim: true }): Promise<Array<{ address: string }>>;
+}
+
+async function systemResolver(): Promise<HostResolver> {
+  return (await import('node:dns')).promises as unknown as HostResolver;
+}
+
 /**
- * Resolve a hostname and report whether any A or AAAA answer is blocked.
- * Each family is tried independently; a missing family is not a risk. DNS
- * infrastructure failure fails open. Connection-time rebinding (a different
- * answer when Chromium connects) is out of scope.
+ * Resolve a hostname and report whether any answer is blocked. DNS queries
+ * (A, AAAA) and the system resolver (getaddrinfo: /etc/hosts, search domains,
+ * mDNS) can disagree, and the browser connects through the latter, so both are
+ * checked. Each source is tried independently; a missing answer is not a risk.
+ * Resolver infrastructure failure fails open. Connection-time rebinding (a
+ * different answer when Chromium connects) is out of scope.
  */
-async function resolvesToBlockedIp(hostname: string): Promise<boolean> {
+async function resolvesToBlockedIp(hostname: string, resolver?: HostResolver): Promise<boolean> {
   try {
-    const { resolve4, resolve6 } = (await import('node:dns')).promises;
-    const check = (lookup: Promise<string[]>) => lookup.then(
+    const dns = resolver ?? await systemResolver();
+    const check = (answers: Promise<string[]>) => answers.then(
       (addresses) => addresses.some(addr => classifyAddress(addr) === 'blocked'),
       () => false,
     );
-    const [v4, v6] = await Promise.all([check(resolve4(hostname)), check(resolve6(hostname))]);
-    return v4 || v6;
+    const viaLookup = dns.lookup(hostname, { all: true, verbatim: true }).then(rows => rows.map(r => r.address));
+    const results = await Promise.all([check(dns.resolve4(hostname)), check(dns.resolve6(hostname)), check(viaLookup)]);
+    return results.some(Boolean);
   } catch {
     return false;
   }
@@ -95,7 +110,7 @@ async function resolvesToBlockedIp(hostname: string): Promise<boolean> {
  * navigation request the browser makes, including redirect hops and
  * page-driven navigations (BrowserManager's navigation guard).
  */
-export async function blockedNavigationReason(url: string): Promise<string | null> {
+export async function blockedNavigationReason(url: string, resolver?: HostResolver): Promise<string | null> {
   let parsed: URL;
   try { parsed = new URL(url); } catch { return null; }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
@@ -105,7 +120,7 @@ export async function blockedNavigationReason(url: string): Promise<string | nul
     return `Blocked: ${parsed.hostname} is a cloud metadata or link-local address. Access is denied for security.`;
   }
   if (kind !== null || hostname === 'localhost') return null;
-  if (await resolvesToBlockedIp(hostname)) {
+  if (await resolvesToBlockedIp(hostname, resolver)) {
     return `Blocked: ${parsed.hostname} resolves to a cloud metadata or link-local address. Possible DNS rebinding attack.`;
   }
   return null;

@@ -49,6 +49,10 @@ section "$OB" '^## Step 0:' '^## Step 1:' > "$STEP0"
 
 refute "Step 0 runs no kill" '(^|[^[:alnum:]_-])kill([[:space:]]|$)' <(fenced_bash "$STEP0")
 refute "Step 0 deletes no browse state file" 'rm[[:space:]].*(browse\.json|_BROWSE_STATE)' "$STEP0"
+fenced_bash "$STEP0" > "$TMP/ob-step0.sh"; fenced_bash "$OB" > "$TMP/ob-all.sh"
+refute "Step 0 deletes no Chromium profile lock" 'rm[[:space:]].*(Singleton|_LF|_PROFILE_DIR)' "$TMP/ob-step0.sh"
+refute "the skill never deletes profile locks itself" 'SingletonLock|SingletonSocket|SingletonCookie' "$TMP/ob-all.sh"
+check "Step 0 leaves another project's browser to the CLI's refusal" "another project's" "$STEP0"
 check "Step 0 probes with BROWSE_NO_AUTOSTART=1" 'BROWSE_NO_AUTOSTART=1 \$B status' "$STEP0"
 check "Step 0 asks before replacing a live daemon" 'AskUserQuestion' "$STEP0"
 check "Step 0 never replaces the daemon in spawned/headless sessions" 'spawned.*headless.*do not ask' <(tr '\n' ' ' < "$STEP0")

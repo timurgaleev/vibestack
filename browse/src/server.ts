@@ -719,7 +719,7 @@ if (BROWSE_PARENT_PID > 0 && !IS_HEADED_WATCHDOG) {
 }
 
 // ─── Command Sets (from commands.ts — single source of truth) ───
-import { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS } from './commands';
+import { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS, META_COMMANDS_WITHOUT_PAGE } from './commands';
 export { READ_COMMANDS, WRITE_COMMANDS, META_COMMANDS };
 
 /** Meta commands that capture the active page's content. */
@@ -1162,6 +1162,10 @@ async function handleCommandInternalImpl(
         const page = session.getPage();
         await browserManager.settleNavigationGuard(page);
         result = await browserManager.failIfNavigationBlocked(page, runMeta());
+      } else if (!META_COMMANDS_WITHOUT_PAGE.has(command)) {
+        // diff, cdp, ux-audit, tab-each, newtab, state, ... read or navigate a
+        // tab, so a navigation blocked while they ran is reported, never read.
+        result = await browserManager.failIfNavigationBlocked(session.getPage(), runMeta());
       } else {
         result = await runMeta();
       }

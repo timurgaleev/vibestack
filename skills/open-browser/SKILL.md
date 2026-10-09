@@ -80,17 +80,13 @@ elif printf '%s' "$_STATUS" | grep -q 'Mode: headed'; then echo "DAEMON: headed"
 else echo "DAEMON: live"; fi
 ```
 
-- **`DAEMON: none`**: no daemon answered. Clear Chromium profile locks left
-  behind by a crash, then run Step 1's plain `$B connect`. The CLI cleans up
-  stale state itself, and it refuses to replace a daemon that is alive but too
-  busy to answer; if it refuses, show its output and stop.
-
-  ```bash
-  _PROFILE_DIR="$HOME/.vibestack/chromium-profile"
-  for _LF in SingletonLock SingletonSocket SingletonCookie; do
-    rm -f "$_PROFILE_DIR/$_LF" 2>/dev/null || true
-  done
-  ```
+- **`DAEMON: none`**: no daemon answered. Run Step 1's plain `$B connect`. Do
+  not delete the Chromium profile's lock files yourself: another project's
+  vibestack Browser may hold them. The CLI cleans up stale state itself — a
+  lock whose browser is gone, or an orphaned browser whose daemon died — and it
+  refuses, killing and deleting nothing, when a live browser it does not own
+  holds the profile or a daemon is alive but too busy to answer. If it refuses,
+  show its output and stop.
 
 - **`DAEMON: headed`**: vibestack Browser is already open. Step 1's plain
   `$B connect` reports that; continue to Step 2.

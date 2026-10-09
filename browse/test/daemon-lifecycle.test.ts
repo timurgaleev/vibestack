@@ -33,15 +33,18 @@ describe('decideDaemonRestart', () => {
 describe.skipIf(process.platform === 'win32')('daemon and profile ownership', () => {
   let scratch: string;
   let holders: ReturnType<typeof Bun.spawn>[];
+  let orphans: number[];
 
   beforeEach(() => {
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-daemon-lifecycle-'));
     holders = [];
+    orphans = [];
   });
 
   afterEach(async () => {
     for (const child of holders) child.kill('SIGKILL');
     await Promise.all(holders.map(child => child.exited));
+    for (const pid of orphans) { try { process.kill(pid, 'SIGKILL'); } catch {} }
     fs.rmSync(scratch, { recursive: true, force: true });
   });
 
@@ -69,14 +72,64 @@ describe.skipIf(process.platform === 'win32')('daemon and profile ownership', ()
     expect(fs.existsSync(path.join(profile, 'SingletonCookie'))).toBe(true);
   });
 
-  test('a headed start reaps the orphan holding the lock and clears the locks', async () => {
-    const orphan = spawnHolder();
-    const profile = profileOwnedBy(orphan.pid);
+  /** A browser-shaped process on `profile` whose parent is this test (alive). */
+  function spawnBrowser(profile: string) {
+    const child = Bun.spawn(['bash', '-c', `sleep 60; : --user-data-dir=${profile}`], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' });
+    holders.push(child);
+    return child;
+  }
+
+  /** The same, re-parented: its launcher exited, as when a daemon dies under its Chromium. */
+  async function spawnOrphanBrowser(profile: string): Promise<number> {
+    const launcher = Bun.spawn(['bash', '-c', `bash -c 'sleep 60; : --user-data-dir=${profile}' >/dev/null 2>&1 & echo $!`], { stdout: 'pipe', stderr: 'ignore' });
+    const pid = parseInt((await new Response(launcher.stdout).text()).trim(), 10);
+    await launcher.exited;
+    orphans.push(pid);
+    return pid;
+  }
+
+  function lockGone(profile: string): boolean {
+    try { fs.lstatSync(path.join(profile, 'SingletonLock')); return false; } catch { return true; }
+  }
+
+  test('a headed start reaps a verified orphan holding the lock and clears the locks', async () => {
+    const profile = profileOwnedBy(0);
+    fs.unlinkSync(path.join(profile, 'SingletonLock'));
+    const orphan = await spawnOrphanBrowser(profile);
+    fs.symlinkSync(`${os.hostname()}-${orphan}`, path.join(profile, 'SingletonLock'));
     await prepareChromiumProfile(true, profile);
-    await orphan.exited;
-    expect(isProcessAlive(orphan.pid)).toBe(false);
+    for (let i = 0; i < 40 && isProcessAlive(orphan); i++) await Bun.sleep(50);
+    expect(isProcessAlive(orphan)).toBe(false);
     expect(fs.existsSync(path.join(profile, 'SingletonCookie'))).toBe(false);
-    expect(() => fs.lstatSync(path.join(profile, 'SingletonLock'))).toThrow();
+    expect(lockGone(profile)).toBe(true);
+  });
+
+  test("a headed start refuses another project's live browser: nothing killed, no lock removed", async () => {
+    const profile = path.join(scratch, 'chromium-profile');
+    const browser = spawnBrowser(profile);
+    const locked = profileOwnedBy(browser.pid);
+    await expect(prepareChromiumProfile(true, locked)).rejects.toThrow(/in use by a live browser.*Nothing was killed or removed/);
+    expect(isProcessAlive(browser.pid)).toBe(true);
+    expect(lockGone(locked)).toBe(false);
+    expect(fs.existsSync(path.join(locked, 'SingletonCookie'))).toBe(true);
+  });
+
+  test('the browser of the daemon this CLI just stopped counts as ours', async () => {
+    const profile = path.join(scratch, 'chromium-profile');
+    const browser = spawnBrowser(profile);
+    const locked = profileOwnedBy(browser.pid);
+    await prepareChromiumProfile(true, locked, process.pid);
+    await browser.exited;
+    expect(isProcessAlive(browser.pid)).toBe(false);
+    expect(lockGone(locked)).toBe(true);
+  });
+
+  test('a lock naming a reused PID is stale: the lock goes, the process stays', async () => {
+    const unrelated = spawnHolder();
+    const profile = profileOwnedBy(unrelated.pid);
+    await prepareChromiumProfile(true, profile);
+    expect(isProcessAlive(unrelated.pid)).toBe(true);
+    expect(lockGone(profile)).toBe(true);
   });
 
   test('connect refuses to kill a healthy live daemon without --force-restart', async () => {

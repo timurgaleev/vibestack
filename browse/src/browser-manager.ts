@@ -146,6 +146,13 @@ export interface BrowserState {
   }>;
 }
 
+/** In-flight guard checks for one page; mainFrame holds the subset for top-level navigations. */
+interface NavigationGuard {
+  pending: Set<Promise<void>>;
+  mainFrame: Set<Promise<void>>;
+  blocked: string | null;
+}
+
 export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
@@ -184,7 +191,9 @@ export class BrowserManager {
   private cookieImportedDomains: Set<string> = new Set();
 
   // ─── Navigation Guard (redirect hops + page-driven navigations) ─────
-  private navigationGuards = new WeakMap<Page, { pending: Set<Promise<void>>; blocked: string | null }>();
+  private navigationGuards = new WeakMap<Page, NavigationGuard>();
+  /** Upper bound on waiting for in-flight navigation guard checks after a command. */
+  navigationGuardTimeoutMs = 15_000;
 
   // ─── Handoff State ─────────────────────────────────────────
   private isHeaded: boolean = false;
@@ -1686,15 +1695,15 @@ export class BrowserManager {
 
   /**
    * Run a command and surface any navigation the guard blocked while it ran.
-   * Waits for in-flight guard checks first, so no command reads a page that is
-   * about to be reset. The block reason replaces the command's own result or
-   * error (often "navigation interrupted"), so the caller learns why the tab
-   * is blank.
+   * Waits for the guard checks already in flight when the command finished, so
+   * no command reads a page that is about to be reset. The block reason
+   * replaces the command's own result or error (often "navigation
+   * interrupted"), so the caller learns why the tab is blank.
    */
   async failIfNavigationBlocked<T>(page: Page, work: Promise<T>): Promise<T> {
     const outcome = await work.then((value) => ({ value }), (error) => ({ error }));
+    const unfinished = await this.awaitGuardChecks(page);
     const guard = this.navigationGuards.get(page);
-    while (guard && guard.pending.size > 0) await Promise.all([...guard.pending]);
     const blocked = guard?.blocked ?? null;
     if (guard) guard.blocked = null;
     if (blocked) {
@@ -1703,19 +1712,42 @@ export class BrowserManager {
       // read as this command's own failure.
       throw new Error(`${blocked} (a navigation the page started, possibly before this command; the tab was reset to about:blank)`);
     }
+    if (unfinished) throw new Error(unfinished);
     if ('error' in outcome) throw (outcome as { error: unknown }).error;
     return (outcome as { value: T }).value;
   }
 
   /**
-   * Wait for every in-flight guard check on the page. A command that captures
-   * the page (snapshot, screenshot, pdf, responsive) calls this before it
-   * starts, so it never captures a blocked response during the up-to-1s
-   * window before the guard blanks the tab.
+   * Wait for the guard checks in flight on the page. A command that reads or
+   * captures the page calls this before it starts, so it never reads a
+   * blocked response during the window before the guard blanks the tab.
    */
   async settleNavigationGuard(page: Page): Promise<void> {
+    const unfinished = await this.awaitGuardChecks(page);
+    if (unfinished) throw new Error(unfinished);
+  }
+
+  /**
+   * Wait, at most navigationGuardTimeoutMs, for the checks pending right now;
+   * checks a page starts later (a frame that keeps reloading) are not waited
+   * for. A frame's check that is still running is let go. A main-frame check
+   * that is still running fails closed: the returned reason refuses the page.
+   */
+  private async awaitGuardChecks(page: Page): Promise<string | null> {
     const guard = this.navigationGuards.get(page);
-    while (guard && guard.pending.size > 0) await Promise.all([...guard.pending]);
+    const started = guard ? [...guard.pending] : [];
+    if (started.length === 0) return null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finished = await Promise.race([
+      Promise.all(started).then(() => true),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), this.navigationGuardTimeoutMs); }),
+    ]);
+    clearTimeout(timer);
+    if (finished) return null;
+    const mainFrameUnchecked = started.some((check) => guard!.pending.has(check) && guard!.mainFrame.has(check));
+    return mainFrameUnchecked
+      ? `Blocked: the address check for this tab's navigation did not finish within ${this.navigationGuardTimeoutMs} ms, so the page is not read`
+      : null;
   }
 
   /**
@@ -1727,7 +1759,7 @@ export class BrowserManager {
    */
   private guardNavigations(page: Page): void {
     if (this.navigationGuards.has(page)) return;
-    const guard = { pending: new Set<Promise<void>>(), blocked: null as string | null };
+    const guard: NavigationGuard = { pending: new Set(), mainFrame: new Set(), blocked: null };
     this.navigationGuards.set(page, guard);
     page.on('request', (req) => {
       if (!req.isNavigationRequest()) return;
@@ -1745,8 +1777,11 @@ export class BrowserManager {
             .then(() => true, () => false);
           if (!late && page.url() === 'about:blank') break;
         }
-      }).finally(() => { guard.pending.delete(check); });
+      }).finally(() => { guard.pending.delete(check); guard.mainFrame.delete(check); });
       guard.pending.add(check);
+      let mainFrame = true;
+      try { mainFrame = req.frame() === page.mainFrame(); } catch {}
+      if (mainFrame) guard.mainFrame.add(check);
     });
   }
 
