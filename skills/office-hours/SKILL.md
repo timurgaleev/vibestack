@@ -73,6 +73,7 @@ eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    ```bash
+   eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
    setopt +o nomatch 2>/dev/null || true  # zsh compat
    ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null
    ```
@@ -324,6 +325,7 @@ After the user states the problem (first question in Phase 2A or 2B), search exi
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 grep -li "<keyword1>\|<keyword2>\|<keyword3>" ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null
 ```
@@ -427,9 +429,10 @@ If B: skip Phase 3.5 entirely. Remember that the second opinion did NOT run (aff
 
 ```bash
 CODEX_PROMPT_FILE=$(mktemp /tmp/vibestack-codex-oh-XXXXXXXX.txt)
+echo "CODEX_PROMPT_FILE: $CODEX_PROMPT_FILE"
 ```
 
-Write the full prompt to this file. **Always start with the filesystem boundary:**
+Read the printed file, then write the full prompt into it with the Write tool. **Always start with the filesystem boundary:**
 "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\n"
 Then add the context block and mode-appropriate instructions:
 
@@ -437,19 +440,46 @@ Then add the context block and mode-appropriate instructions:
 
 **Builder mode instructions:** "You are an independent technical advisor reading a transcript of a builder brainstorming session. [CONTEXT BLOCK HERE]. Your job: 1) What is the COOLEST version of this they haven't considered? 2) What's the ONE thing from their answers that reveals what excites them most? Quote it. 3) What existing open source project or tool gets them 50% of the way there — and what's the 50% they'd need to build? 4) If you had a weekend to build this, what would you build first? Be specific. Be direct. No preamble."
 
-3. Run Codex:
+3. Run Codex. Each Bash call is a fresh shell, so replace `<CODEX_PROMPT_FILE>` with
+the path printed above; the prompt reaches Codex on stdin, and stderr is read and
+both files removed in the same call:
 
 ```bash
-TMPERR_OH=$(mktemp /tmp/codex-oh-err-XXXXXXXX)
+CODEX_PROMPT_FILE='<CODEX_PROMPT_FILE>'
+TMPERR_OH=""
+trap 'rm -f "$TMPERR_OH" "$CODEX_PROMPT_FILE"' EXIT
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-command -v codex >/dev/null 2>&1 && codex exec "$(cat "$CODEX_PROMPT_FILE")" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_OH"
+[ -s "$CODEX_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $CODEX_PROMPT_FILE" >&2; exit 1; }
+TMPERR_OH=$(mktemp /tmp/codex-oh-err-XXXXXXXX) || { echo "ERROR: mktemp failed" >&2; exit 1; }
+# Portable timeout: gtimeout → timeout → a polling watchdog (returns 124 on overrun).
+_CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
+# A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
+# expansion, so "gtimeout 270" would reach execve as one argument (exit 127).
+_cx() {
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  _cx_s=$1; shift
+  "$@" <&0 & _cx_p=$!
+  while kill -0 "$_cx_p" 2>/dev/null; do
+    if [ "$_cx_s" -le 0 ]; then
+      pkill -TERM -P "$_cx_p" 2>/dev/null; kill -TERM "$_cx_p" 2>/dev/null; sleep 2
+      pkill -KILL -P "$_cx_p" 2>/dev/null; kill -KILL "$_cx_p" 2>/dev/null
+      wait "$_cx_p" 2>/dev/null; return 124
+    fi
+    sleep 1; _cx_s=$((_cx_s - 1))
+  done
+  wait "$_cx_p"
+}
+_CODEX_EXIT=0
+# 270s sits below the 300s Bash timeout, so a stall ends here as exit 124.
+command -v codex >/dev/null 2>&1 || { echo "CODEX_NOT_INSTALLED"; exit 0; }
+_cx 270 codex exec - -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < "$CODEX_PROMPT_FILE" 2>"$TMPERR_OH" || _CODEX_EXIT=$?
+echo "CODEX_EXIT: $_CODEX_EXIT"
+echo "--- codex stderr ---"
+cat "$TMPERR_OH"
 ```
 
-Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
-```bash
-cat "$TMPERR_OH"
-rm -f "$TMPERR_OH" "$CODEX_PROMPT_FILE"
-```
+Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT` (124 is the
+270-second stall bound) is a Codex error.
 
 **Error handling:** All errors are non-blocking — second opinion is a quality enhancement, not a prerequisite.
 - **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate." Fall back to Claude subagent.
@@ -538,11 +568,8 @@ Present via AskUserQuestion. Do NOT proceed without user approval of the approac
 ## Visual Design Exploration
 
 ```bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-D=""
-[ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/design/dist/design" ] && D="$_ROOT/.claude/skills/design/dist/design"
-[ -z "$D" ] && D="$HOME/.claude/skills/design/dist/design"
-[ -x "$D" ] && echo "DESIGN_READY" || echo "DESIGN_NOT_AVAILABLE"
+D=~/.vibestack/bin/vibe-design
+[ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ] && echo "DESIGN_READY" || echo "DESIGN_NOT_AVAILABLE"
 ```
 
 **If `DESIGN_NOT_AVAILABLE`:** Fall back to the HTML wireframe approach below
@@ -571,10 +598,14 @@ explore wide across diverse directions.
 The brief is assembled from the user's idea and DESIGN.md, so it never appears in
 shell source — not in a quoted argument, not in a heredoc (a line equal to the
 terminator ends a heredoc and the rest runs as commands). **Write the assembled
-brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above,
-replacing any earlier brief there, then run:
+brief with the Write tool** to `brief.txt` inside the DESIGN_DIR printed above
+(Read it first if it exists — the Write tool will not overwrite an unread file),
+replacing any earlier brief there, then run this block with `<DESIGN_DIR>` replaced
+by that path — each Bash call is a fresh shell:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
+D=~/.vibestack/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
@@ -591,6 +622,8 @@ Show each variant to the user inline first (read the PNGs with Read tool), then
 create and serve the comparison board:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
+D=~/.vibestack/bin/vibe-design
 $D compare --images "<the saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
 ```
 
@@ -615,20 +648,29 @@ If `"regenerated": false`: proceed with the approved variant.
 **Step 6: Save approved choice**
 
 The user's feedback reaches the shell the same way the brief does: **write the
-feedback summary with the Write tool** to `approved-feedback.txt` inside DESIGN_DIR,
-then run this block, replacing `<V>` with the approved variant letter:
+feedback summary with the Write tool** to `approved-feedback.txt` inside DESIGN_DIR
+(Read it first if it exists), then run this block, replacing `<DESIGN_DIR>` with the
+DESIGN_DIR path, `<V>` with the approved variant letter and `<IMAGE>` with the
+`saved:` path of that variant (a same-day rerun saves `variant-A-2.png`, so never
+assume the name). The record keeps the image's absolute path in `approved_path`,
+which is what /design-html opens:
 
 ```bash
+_DESIGN_DIR='<DESIGN_DIR>'
 _FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
-python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
+python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "<IMAGE>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
 import datetime, json, os, re, sys
-d, fb_file, variant, branch = sys.argv[1:5]
+d, fb_file, variant, image, branch = sys.argv[1:6]
 if not re.fullmatch(r"[A-J]", variant):
     sys.exit("approved variant must be one letter A-J, got %r" % variant)
+image = os.path.realpath(image)
+if os.path.commonpath([image, os.path.realpath(d)]) != os.path.realpath(d) or not os.path.isfile(image):
+    sys.exit("approved image %s is not a saved: path under %s; reselect from the paths this run printed" % (image, d))
 feedback = open(fb_file, encoding="utf-8").read().strip() if os.path.isfile(fb_file) else ""
 if not feedback:
     sys.exit("write the feedback into %s with the Write tool first" % fb_file)
 rec = {"approved_variant": variant,
+       "approved_path": image,
        "feedback": feedback,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
        "screen": "mockup", "branch": branch}
@@ -673,11 +715,17 @@ Generate a single-page HTML file with these constraints:
 Write to a temp file:
 ```bash
 SKETCH_FILE="/tmp/vibestack-sketch-$(date +%s).html"
+echo "SKETCH_FILE: $SKETCH_FILE"
 ```
 
 **Step 3: Render and capture**
 
+Replace `<SKETCH_FILE>` with the path printed above and `<BROWSE_BIN>` with the path
+SETUP printed on its `BROWSE_BIN:` line:
+
 ```bash
+SKETCH_FILE='<SKETCH_FILE>'
+B='<BROWSE_BIN>'
 $B goto "file://$SKETCH_FILE"
 $B screenshot /tmp/vibestack-sketch.png
 ```
@@ -787,6 +835,8 @@ DATETIME=$(date +%Y%m%d-%H%M%S)
 
 **Design lineage:** Before writing, check for existing design docs on this branch:
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+BRANCH=$(git branch --show-current 2>/dev/null)
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 PRIOR=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 ```
@@ -971,6 +1021,7 @@ The profile is derived from the append-only log Phase 4.5 writes — this sessio
 entry is already in it, so the counts include the session you are closing.
 
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 PROFILE=$(python3 - "${SLUG:-unknown}" <<'PY'
 import json, os, sys
 home = os.environ.get("VIBESTACK_HOME") or os.path.expanduser("~/.vibestack")
@@ -1157,6 +1208,7 @@ If WebSearch is unavailable, skip this section entirely.
 
 1. Log the selected resource URLs to the builder profile:
 ```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 echo '{"date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","mode":"resources","project_slug":"'"${SLUG:-unknown}"'","signal_count":0,"signals":[],"design_doc":"","assignment":"","resources_shown":["URL1","URL2","URL3"],"topics":[]}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
 ```
 

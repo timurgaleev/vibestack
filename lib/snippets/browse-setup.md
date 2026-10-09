@@ -12,10 +12,16 @@ B="${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse"
 
 if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
   echo "BROWSE_AVAILABLE via $B"
+  echo "BROWSE_BIN: $B"
 else
   echo "BROWSE_NOT_AVAILABLE"
 fi
 ```
+
+Every Bash call starts a fresh shell, so `$B` is unset in every later block. A
+block that runs a browse command starts with `B='<BROWSE_BIN>'`: replace
+`<BROWSE_BIN>` with the path printed on the `BROWSE_BIN:` line, and add that
+line yourself to any browse command you compose.
 
 If `BROWSE_AVAILABLE`: use `$B` for all browse commands below. The shim is
 **stateless** — `goto <url>` records the target, and each capture verb

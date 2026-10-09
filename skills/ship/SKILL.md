@@ -1472,12 +1472,14 @@ If Codex is available, run a lightweight design check on the diff:
 
 ```bash
 TMPERR_DRL=$(mktemp /tmp/codex-drl-XXXXXXXX)
+echo "TMPERR_DRL: $TMPERR_DRL"
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 command -v codex >/dev/null 2>&1 && codex exec "Review the git diff on this branch. Run 7 litmus checks (YES/NO each): 1. Brand/product unmistakable in first screen? 2. One strong visual anchor present? 3. Page understandable by scanning headlines only? 4. Each section has one job? 5. Are cards actually necessary? 6. Does motion improve hierarchy or atmosphere? 7. Would design feel premium with all decorative shadows removed? Flag any hard rejections: 1. Generic SaaS card grid as first impression 2. Beautiful image with weak brand 3. Strong headline with no clear action 4. Busy imagery behind text 5. Sections repeating same mood statement 6. Carousel with no narrative purpose 7. App UI made of stacked cards instead of layout 5 most important design findings only. Reference file:line." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_DRL"
 ```
 
-Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
+Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr, replacing `<TMPERR_DRL>` with the path printed above:
 ```bash
+TMPERR_DRL='<TMPERR_DRL>'
 cat "$TMPERR_DRL" && rm -f "$TMPERR_DRL"
 ```
 
@@ -1927,6 +1929,7 @@ If Codex is available AND `OLD_CFG` is NOT `disabled`:
 
 ```bash
 TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
+echo "TMPERR_ADV: $TMPERR_ADV"
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 # Bound the run in the shell, below the Bash tool's own timeout, so a stall ends
 # as a diagnosable exit 124 instead of the harness killing the call with nothing
@@ -1940,8 +1943,9 @@ _codex_run() {
 command -v codex >/dev/null 2>&1 && _codex_run 540 codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
 ```
 
-Set the Bash tool's `timeout` parameter to `600000` (10 minutes). It sits deliberately ABOVE the 540s shell bound so the wrapper fires first. After the command completes, read stderr:
+Set the Bash tool's `timeout` parameter to `600000` (10 minutes). It sits deliberately ABOVE the 540s shell bound so the wrapper fires first. After the command completes, read stderr, replacing `<TMPERR_ADV>` with the path printed above:
 ```bash
+TMPERR_ADV='<TMPERR_ADV>'
 cat "$TMPERR_ADV"
 ```
 
@@ -1952,7 +1956,7 @@ Present the full output verbatim. This is informational — it never blocks ship
 - **Timeout (exit 124):** "Codex adversarial pass timed out after 9 minutes — the diff was NOT reviewed by Codex." Report it as missing coverage in the synthesis, never as a clean pass: a timeout that reads like agreement is worse than no second opinion at all.
 - **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
 
-**Cleanup:** Run `rm -f "$TMPERR_ADV"` after processing.
+**Cleanup:** Run `rm -f '<TMPERR_ADV>'` with the printed path after processing.
 
 If Codex is NOT available: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
 
@@ -2230,7 +2234,12 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
 
 3. **Queue-aware version pick (workspace-aware ship, v1.6.4.0+).** Call `~/.vibestack/bin/vibe-next-version` to see what's already claimed by open PRs against `<base>` (each PR's claim is the VERSION file at its head), then render the queue state to the user. Sibling worktrees are not detected — a WIP branch without a PR claims nothing.
 
+   Replace `<BUMP_LEVEL>` with the level from step 2 and `<BASE_VERSION>` with the
+   `BASE:` value the idempotency check printed:
+
    ```bash
+   BUMP_LEVEL='<BUMP_LEVEL>'
+   BASE_VERSION='<BASE_VERSION>'
    QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
      --base <base> \
      --bump "$BUMP_LEVEL" \
@@ -2239,6 +2248,8 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
    CLAIMED_COUNT=$(echo "$QUEUE_JSON" | jq -r '.claimed | length')
    OFFLINE=$(echo "$QUEUE_JSON" | jq -r '.offline // false')
    REASON=$(echo "$QUEUE_JSON" | jq -r '.reason // ""')
+   echo "NEW_VERSION: $NEW_VERSION"
+   echo "QUEUE: $QUEUE_JSON"
    ```
 
    - If `OFFLINE=true` or the util fails (auth expired, no `gh`/`glab`, network): fall back to local `BUMP_LEVEL` arithmetic (bump `BASE_VERSION` at the chosen level). Print `⚠ workspace-aware ship offline — using local bump only`. Continue.
@@ -2251,9 +2262,10 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
      Each row comes from one `.claimed[]` object (`pr`, `branch`, `version`). Print every `.warnings[]` line under the table — a PR whose VERSION could not be read is a claim the pick did not see.
    - Validate `NEW_VERSION` against the shape the `VERSION` file already uses. If util returns an empty or malformed version, fall back to local bump.
 
-4. **Validate** `NEW_VERSION` and write it to **both** `VERSION` and `package.json`. This block runs only when `STATE: FRESH`.
+4. **Validate** `NEW_VERSION` and write it to **both** `VERSION` and `package.json`. This block runs only when `STATE: FRESH`. Replace `<NEW_VERSION>` with the version step 3 settled on (the printed `NEW_VERSION:`, or the local bump when it fell back).
 
 ```bash
+NEW_VERSION='<NEW_VERSION>'
 # Three components, optionally a fourth. Pinning this to four aborts every ship
 # on a project whose VERSION is plain MAJOR.MINOR.PATCH — which is most of them,
 # and what the queue util returns.
@@ -2706,7 +2718,7 @@ merge commit and publishes the release. Only a `CLOSED`-without-merge PR reads a
 
 If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file. Editing is the common path on a re-run, so an unscanned edit means most ships publish unscanned.
 
-**Also update the PR title** if the version changed on rerun (never under NO_VERSION — there is no version to put in it). PR titles use the workspace-aware format `v<NEW_VERSION> <type>: <summary>` — version ALWAYS first. If the current title's version prefix doesn't match `NEW_VERSION`, run `gh pr edit --title "v$NEW_VERSION <type>: <summary>"` (or the `glab mr update -t ...` equivalent). This keeps the title truthful when Step 12's queue-drift detection rebumps a stale version. If the title has no `v<version>` prefix (a custom title kept intentionally), leave the title alone — only rewrite titles that already follow the format.
+**Also update the PR title** if the version changed on rerun (never under NO_VERSION — there is no version to put in it). PR titles use the workspace-aware format `v<NEW_VERSION> <type>: <summary>` — version ALWAYS first. If the current title's version prefix doesn't match `NEW_VERSION`, run `gh pr edit --title "v<NEW_VERSION> <type>: <summary>"` (or the `glab mr update -t ...` equivalent). This keeps the title truthful when Step 12's queue-drift detection rebumps a stale version. If the title has no `v<version>` prefix (a custom title kept intentionally), leave the title alone — only rewrite titles that already follow the format.
 
 Print the existing URL and continue to Step 20.
 
@@ -2846,6 +2858,7 @@ rotate before continuing — do not publish.
 
 ```bash
 PR_BODY_FILE='<PR_BODY_FILE>'
+NEW_VERSION='<NEW_VERSION>'
 [ -s "$PR_BODY_FILE" ] || { echo "ABORT: $PR_BODY_FILE is empty — write the body with the Write tool first" >&2; exit 1; }
 # NO_VERSION: drop the "v$NEW_VERSION " prefix — the title is "<type>: <summary>".
 gh pr create --base <base> --title "v$NEW_VERSION <type>: <summary>" --body-file "$PR_BODY_FILE"
@@ -2856,6 +2869,7 @@ rm -f "$PR_BODY_FILE"
 
 ```bash
 PR_BODY_FILE='<PR_BODY_FILE>'
+NEW_VERSION='<NEW_VERSION>'
 [ -s "$PR_BODY_FILE" ] || { echo "ABORT: $PR_BODY_FILE is empty — write the body with the Write tool first" >&2; exit 1; }
 # NO_VERSION: drop the "v$NEW_VERSION " prefix — the title is "<type>: <summary>".
 # glab has no body-file flag: Python reads the file and passes its bytes as one argument.

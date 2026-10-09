@@ -59,7 +59,8 @@ check "Step 0 never replaces the daemon in spawned/headless sessions" 'spawned.*
 check "replacement is gated on an explicit A" 'Only an explicit A' "$STEP0"
 check "Step 1 has the --force-restart connect" '^\$B connect --force-restart$' <(section "$OB" '^## Step 1:' '^## Step 2:')
 
-# Execute the probe block against a stub $B. The stub records the env it saw
+# Execute the probe block with its <BROWSE_BIN> placeholder pointed at a stub.
+# The stub records the env it saw
 # and answers according to STUB_MODE.
 PROBE="$TMP/probe.sh"
 awk '/^```bash/ && !done {on=1; next} /^```/ && on {on=0; done=1} on' "$STEP0" > "$PROBE"
@@ -77,7 +78,7 @@ STUBEOF
 chmod +x "$STUB"
 
 run_probe() {
-  STUB_MODE="$1" STUB_LOG="$TMP/stub.log" B="$STUB" bash -c "$(cat "$PROBE")" 2>&1 | grep '^DAEMON:'
+  env -u B STUB_MODE="$1" STUB_LOG="$TMP/stub.log" bash -c "$(sed "s|<BROWSE_BIN>|$STUB|g" "$PROBE")" 2>&1 | grep '^DAEMON:'
 }
 for mode in none headed live; do
   : > "$TMP/stub.log"

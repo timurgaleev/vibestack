@@ -1191,11 +1191,15 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 If Phase 2 ran (UI scope):
 ```bash
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ~/.vibestack/bin/vibe-review-log '{"skill":"plan-design-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 
 If Phase 2.5 ran (DX scope):
 ```bash
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ~/.vibestack/bin/vibe-review-log '{"skill":"plan-devex-review","timestamp":"'"$TIMESTAMP"'","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW","tthw_target":"TARGET","unresolved":N,"via":"autoplan","commit":"'"$COMMIT"'"}'
 ```
 

@@ -161,10 +161,13 @@ TMP_ROOT="${TMPDIR:-/tmp}"
 TMP_ROOT="${TMP_ROOT%/}"
 [ -w "$TMP_ROOT" ] || TMP_ROOT=$(mktemp -d 2>/dev/null || echo "/tmp")
 mkdir -p "$PLAN_ROOT" 2>/dev/null || true
+echo "PLAN_ROOT: $PLAN_ROOT"
+echo "TMP_ROOT: $TMP_ROOT"
 ```
 
-After this, every subsequent bash block in this skill uses `"$PLAN_ROOT"` and
-`"$TMP_ROOT"` rather than hardcoded paths.
+Each bash block runs in a fresh shell, so a later block that needs these paths
+starts with `PLAN_ROOT='<PLAN_ROOT>'` or `TMP_ROOT='<TMP_ROOT>'`: replace the
+placeholder with the value printed above. Never hardcode the paths instead.
 
 ---
 
@@ -204,8 +207,8 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 
 If all fail, fall back to `main`.
 
-Export the detected name as `BASE` for the bash blocks below, and substitute it
-wherever the prompts in Step 2B and Step 2C say `<base>`.
+Substitute the detected name for `<BASE>` in the bash blocks below that start
+with `BASE='<BASE>'`, and wherever the prompts in Step 2B and Step 2C say `<base>`.
 
 ---
 
@@ -518,17 +521,18 @@ unless it also carries a P0/P1 finding), a refusal, and an empty final message.
 Run Codex code review against the current branch diff. Run the Output Validator
 block first; both run paths below refuse to start without it.
 
-1. Set `BASE` to the branch resolved in Step 0.7:
-```bash
-BASE="<base branch detected in Step 0.7>"
-```
+1. The run blocks below start with `BASE='<BASE>'`: replace `<BASE>` with the
+branch resolved in Step 0.7.
 
 2. Create temp file for stderr capture, and snapshot the working tree Codex is
 about to review. Keep the printed `START_TREE` for step 8: the log refuses a
 `clean` record when the tree moved after this point, so fixes made after the
-review never read as reviewed.
+review never read as reviewed. Keep the printed `TMPERR` too: steps 3, 4 and 9
+start with `TMPERR='<TMPERR>'`, and the placeholder is replaced with that path.
 ```bash
+TMP_ROOT='<TMP_ROOT>'
 TMPERR=$(mktemp "$TMP_ROOT/codex-err-XXXXXX.txt")
+echo "TMPERR: $TMPERR"
 echo "START_TREE: $(~/.vibestack/bin/vibe-review-log --snapshot 2>/dev/null || echo unknown)"
 ```
 
@@ -553,12 +557,13 @@ concern, not a safety concern. If a future diff happens to include skill files,
 Codex may spend a few extra tokens reading them. Acceptable trade-off:
 
 ```bash
+BASE='<BASE>'
+TMPERR='<TMPERR>'
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 _VERDICT_PY="$_REPO_ROOT/.vibestack/tmp/codex-verdict.py"
 [ -n "$PYTHON_CMD" ] && [ -s "$_VERDICT_PY" ] || { echo "Not run: run the Output Validator block first (it needs python3)." >&2; exit 1; }
-TMPERR=${TMPERR:-$(mktemp "${TMP_ROOT:-${TMPDIR:-/tmp}}/codex-err-XXXXXX")}
 TMPRESP=$(mktemp "$_REPO_ROOT/.vibestack/tmp/codex-resp.XXXXXX") || { echo "Not run: mktemp failed for the response file." >&2; exit 1; }
 # Portable timeout: gtimeout → timeout → a polling watchdog. Stock macOS ships
 # neither binary, and running codex unbounded there would make the stall bound
@@ -618,6 +623,8 @@ below assembles the prompt file from it and pipes it to Codex on stdin — the
 focus text and the diff never enter argv or shell source:
 
 ```bash
+BASE='<BASE>'
+TMPERR='<TMPERR>'
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
 FOCUS_FILE="$_REPO_ROOT/.vibestack/tmp/<focus-file-name>"
@@ -626,7 +633,6 @@ case "${FOCUS_FILE##*/}" in ''|*[!A-Za-z0-9._-]*) echo "Not run: <focus-file-nam
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 _VERDICT_PY="$_REPO_ROOT/.vibestack/tmp/codex-verdict.py"
 [ -n "$PYTHON_CMD" ] && [ -s "$_VERDICT_PY" ] || { echo "Not run: run the Output Validator block first (it needs python3)." >&2; exit 1; }
-TMPERR=${TMPERR:-$(mktemp "${TMP_ROOT:-${TMPDIR:-/tmp}}/codex-err-XXXXXX")}
 TMPRESP="$FOCUS_FILE.resp"; _EVENTS_FILE="$FOCUS_FILE.events"
 rm -f "$TMPRESP" "$_EVENTS_FILE"
 _PROMPT_FILE="$FOCUS_FILE.prompt"
@@ -684,6 +690,7 @@ wrapper, so the wrapper is what fires on a stall.
 
 4. Capture the output. Then parse cost from stderr:
 ```bash
+TMPERR='<TMPERR>'
 grep "tokens used" "$TMPERR" 2>/dev/null || echo "tokens: unknown"
 ```
 
@@ -784,6 +791,7 @@ changed since step 2, the edits made after the review were never reviewed — lo
 
 9. Clean up temp files:
 ```bash
+TMPERR='<TMPERR>'
 rm -f "$TMPERR"
 ```
 
@@ -994,6 +1002,7 @@ embedded plan reach Codex on stdin, never through the shell.
 or if plan files exist and the user said `/codex` with no arguments:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
+PLAN_ROOT='<PLAN_ROOT>'
 ls -t "$PLAN_ROOT"/*.md 2>/dev/null | xargs grep -l "$(basename $(pwd))" 2>/dev/null | head -1
 ```
 If no project-scoped match, fall back to `ls -t "$PLAN_ROOT"/*.md 2>/dev/null | head -1`

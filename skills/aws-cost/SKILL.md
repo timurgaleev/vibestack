@@ -112,7 +112,14 @@ THIS_END=$(date +%Y-%m-01)
 PREV_START=$(date -v-2m +%Y-%m-01 2>/dev/null || date -d "$(date +%Y-%m-01) -2 month" +%Y-%m-01)
 PREV_END=$THIS_START
 echo "PERIOD: $THIS_START..$THIS_END vs $PREV_START..$PREV_END"
+echo "THIS_START: $THIS_START"
+echo "THIS_END: $THIS_END"
+echo "PREV_START: $PREV_START"
 ```
+
+Each Bash call starts a fresh shell, so the later blocks that need these dates open with
+`THIS_START='<THIS_START>'` and the like: replace each placeholder with the value this
+block printed.
 
 Only ask about the period when the user named one that is ambiguous ("this quarter",
 "since the migration"). Otherwise use the default and state it in the report header.
@@ -135,6 +142,8 @@ Pull both months grouped by service and build the top-10 table. MCP path: call
 `granularity: MONTHLY` and `group_by: SERVICE`. CLI path:
 
 ```bash
+PREV_START='<PREV_START>'
+THIS_END='<THIS_END>'
 aws ce get-cost-and-usage \
   --time-period Start="$PREV_START",End="$THIS_END" \
   --granularity MONTHLY \
@@ -200,6 +209,8 @@ over $50 and note their root-cause dimension (service, account, region, usage ty
 CLI path: Cost Anomaly Detection only reports when a monitor exists, so check first.
 
 ```bash
+PREV_START='<PREV_START>'
+THIS_END='<THIS_END>'
 aws ce get-anomaly-monitors --output json
 aws ce get-anomalies \
   --date-interval StartDate="$PREV_START",EndDate="$THIS_END" \
@@ -214,6 +225,8 @@ credit and refund exclusion alongside the service, so the breakdown reconciles w
 the Step 1 table:
 
 ```bash
+PREV_START='<PREV_START>'
+THIS_END='<THIS_END>'
 aws ce get-cost-and-usage \
   --time-period Start="$PREV_START",End="$THIS_END" \
   --granularity MONTHLY \
@@ -234,6 +247,8 @@ same query once more for that usage type at daily granularity, and read the onse
 the first day that steps up:
 
 ```bash
+PREV_START='<PREV_START>'
+THIS_END='<THIS_END>'
 aws ce get-cost-and-usage \
   --time-period Start="$PREV_START",End="$THIS_END" \
   --granularity DAILY \
@@ -369,6 +384,8 @@ Take the instantaneous health as a prompt, then confirm with traffic history ove
 report period before assigning any saving:
 
 ```bash
+THIS_START='<THIS_START>'
+THIS_END='<THIS_END>'
 aws elbv2 describe-target-groups --load-balancer-arn <arn> \
   --query 'TargetGroups[].TargetGroupArn' --output json
 aws elbv2 describe-target-health --target-group-arn <target group arn> \
@@ -394,6 +411,8 @@ For NAT gateways, price them with their own usage-type query — NAT charges lan
 the `EC2 - Other` service, which Step 1 only ever shows as a single service row:
 
 ```bash
+THIS_START='<THIS_START>'
+THIS_END='<THIS_END>'
 aws ce get-cost-and-usage \
   --time-period Start="$THIS_START",End="$THIS_END" \
   --granularity MONTHLY \
@@ -444,6 +463,8 @@ Run the three metrics below once for each dimension set returned, adding
 `Name=AvailabilityZone,Value=<az>` next to the gateway id for a regional gateway:
 
 ```bash
+THIS_START='<THIS_START>'
+THIS_END='<THIS_END>'
 for M in BytesInFromSource BytesOutToDestination; do
   aws cloudwatch get-metric-statistics --region "$R" \
     --namespace AWS/NATGateway --metric-name "$M" \
@@ -525,6 +546,8 @@ purchased commitment actually used). MCP path: `sp-performance` and `ri-performa
 for the report month. CLI path:
 
 ```bash
+THIS_START='<THIS_START>'
+THIS_END='<THIS_END>'
 aws ce get-savings-plans-coverage --time-period Start="$THIS_START",End="$THIS_END" --output json
 aws ce get-savings-plans-utilization --time-period Start="$THIS_START",End="$THIS_END" --output json
 aws ce get-reservation-coverage --time-period Start="$THIS_START",End="$THIS_END" --output json

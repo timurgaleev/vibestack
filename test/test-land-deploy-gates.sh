@@ -500,9 +500,10 @@ for a in "$@"; do case "$a" in --*" "*) echo "unknown flag: $a" >&2; exit 2 ;; e
 echo '{"version":"0.0.1","offline":false}'
 NV
   chmod +x "$TMP/home-$SH/.vibestack/bin/vibe-next-version"
-  { printf 'PR_NUMBER=12; PR_HEAD=%s; BASE_BRANCH=main; BASE_SHA=%s\n' "$H" "$(git -C "$d" rev-parse main)"
-    cat "$TMP/drift.sh"; echo 'echo "DRIFT OFFLINE=$OFFLINE NEXT=$NEXT_SLOT"'; } > "$d.dr.sh"
-  out=$( cd "$d" && HOME="$TMP/home-$SH" NV_ARGS="$d.args" "$SH" "$d.dr.sh" 2>&1 )
+  _drift=$(cat "$TMP/drift.sh"); _drift=${_drift//<PR_NUMBER>/12}; _drift=${_drift//<PR_HEAD>/$H}
+  _drift=${_drift//<BASE_BRANCH>/main}; _drift=${_drift//<BASE_SHA>/$(git -C "$d" rev-parse main)}
+  { printf '%s\n' "$_drift"; echo 'echo "DRIFT OFFLINE=$OFFLINE NEXT=$NEXT_SLOT"'; } > "$d.dr.sh"
+  out=$( cd "$d" && env -u PR_NUMBER -u PR_HEAD -u BASE_BRANCH -u BASE_SHA HOME="$TMP/home-$SH" NV_ARGS="$d.args" "$SH" "$d.dr.sh" 2>&1 )
   if case "$out" in *"DRIFT OFFLINE=false NEXT=0.0.1"*) true ;; *) false ;; esac && grep -A1 -x -- '--exclude-pr' "$d.args" | tail -1 | grep -qx 12; then
     ok "[$SH] --exclude-pr and the PR number reach vibe-next-version as two arguments"
   else

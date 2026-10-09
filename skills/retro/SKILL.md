@@ -740,9 +740,11 @@ and fabricate a narrative from an empty query. STOP and say: "`/retro global`
 needs a cross-tool session-discovery binary (`vibe-global-discover`) that isn't
 installed. Run a repo-scoped retro instead: `/retro` from inside a project."
 
-Only when a binary IS present, run the discovery:
+Only when a binary IS present, run the discovery, replacing `<DISCOVER_BIN>` with
+the path printed above:
 ```bash
-$DISCOVER_BIN --since "<window>" --format json 2>/tmp/vibestack-discover-stderr
+DISCOVER_BIN='<DISCOVER_BIN>'
+"$DISCOVER_BIN" --since "<window>" --format json 2>/tmp/vibestack-discover-stderr
 ```
 
 Read the stderr output from `/tmp/vibestack-discover-stderr` for diagnostic info. Parse the JSON output from stdout.

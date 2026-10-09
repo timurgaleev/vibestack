@@ -123,8 +123,15 @@ PROMPT_FILE=$(mktemp /tmp/vibe-claude-prompt-XXXXXX)
 RESP_FILE=$(mktemp /tmp/vibe-claude-response-XXXXXX.json)
 ERR_FILE=$(mktemp /tmp/vibe-claude-error-XXXXXX.txt)
 USER_TEXT_FILE=$(mktemp /tmp/vibe-claude-user-XXXXXX)
+echo "PROMPT_FILE: $PROMPT_FILE"
+echo "RESP_FILE: $RESP_FILE"
+echo "ERR_FILE: $ERR_FILE"
 echo "USER_TEXT_FILE: $USER_TEXT_FILE"
 ```
+
+Each Bash call starts a fresh shell, so every later block opens with assignments such
+as `PROMPT_FILE='<PROMPT_FILE>'`: replace each placeholder with the path this block
+printed (and `<DIFF_FILE>` with the path the diff block prints).
 
 `mktemp` creates each file readable by you alone. The user's instructions, focus
 area or question go into the printed `USER_TEXT_FILE` — **Read the empty file, then
@@ -134,12 +141,17 @@ the user gave none (review and challenge only; consult always has a question).
 Cleanup at the end of every mode:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
+USER_TEXT_FILE='<USER_TEXT_FILE>'
 rm -f "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 
 Parse JSON output:
 
 ```bash
+RESP_FILE='<RESP_FILE>'
 python3 - "$RESP_FILE" <<'PY'
 import json, sys
 path = sys.argv[1]
@@ -183,9 +195,11 @@ Review the current branch diff with nested Claude in tool-less mode.
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
+BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
 DIFF_FILE=$(mktemp /tmp/vibe-claude-diff-XXXXXX.patch)
 git fetch origin "$BASE_BRANCH" --quiet 2>/dev/null || true
 git diff "origin/$BASE_BRANCH" > "$DIFF_FILE" 2>/dev/null || git diff "$BASE_BRANCH" > "$DIFF_FILE"
+echo "DIFF_FILE: $DIFF_FILE"
 ```
 
 If the diff file is empty, stop and say:
@@ -195,6 +209,9 @@ If the diff file is empty, stop and say:
    Write tool (see Shared Helpers), then assemble the prompt file:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+USER_TEXT_FILE='<USER_TEXT_FILE>'
+DIFF_FILE='<DIFF_FILE>'
 {
   cat <<'EOF'
 You are a brutally honest Claude Code reviewer. Review this git diff for bugs,
@@ -212,6 +229,9 @@ EOF
 3. Run Claude:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
 cat "$PROMPT_FILE" | claude -p --output-format json --disable-slash-commands --tools "" > "$RESP_FILE" 2>"$ERR_FILE"
 ```
 
@@ -227,6 +247,11 @@ CLAUDE SAYS (code review):
 5. Cleanup:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
+USER_TEXT_FILE='<USER_TEXT_FILE>'
+DIFF_FILE='<DIFF_FILE>'
 rm -f "$DIFF_FILE" "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 
@@ -242,6 +267,9 @@ Run an adversarial failure-mode review with nested Claude in tool-less mode.
    tool (see Shared Helpers), then assemble the prompt:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+USER_TEXT_FILE='<USER_TEXT_FILE>'
+DIFF_FILE='<DIFF_FILE>'
 {
   cat <<'EOF'
 You are an adversarial Claude Code reviewer. Try to break this change before users do.
@@ -260,6 +288,9 @@ EOF
 3. Run Claude:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
 cat "$PROMPT_FILE" | claude -p --output-format json --disable-slash-commands --tools "" > "$RESP_FILE" 2>"$ERR_FILE"
 ```
 
@@ -275,6 +306,11 @@ CLAUDE SAYS (adversarial challenge):
 5. Cleanup:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
+USER_TEXT_FILE='<USER_TEXT_FILE>'
+DIFF_FILE='<DIFF_FILE>'
 rm -f "$DIFF_FILE" "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 
@@ -297,6 +333,8 @@ If a session exists, ask the user whether to continue it or start fresh.
    Helpers), then assemble the prompt:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+USER_TEXT_FILE='<USER_TEXT_FILE>'
 [ -s "$USER_TEXT_FILE" ] || { echo "QUESTION_MISSING: write the question into $USER_TEXT_FILE with the Write tool first" >&2; exit 1; }
 {
   cat <<'EOF'
@@ -316,18 +354,25 @@ EOF
 For a new session:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
 cat "$PROMPT_FILE" | claude -p --output-format json --disable-slash-commands --allowedTools Read,Grep,Glob --disallowedTools Bash,Edit,Write > "$RESP_FILE" 2>"$ERR_FILE"
 ```
 
 For a resumed session:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
 cat "$PROMPT_FILE" | claude -p --resume "<session-id>" --output-format json --disable-slash-commands --allowedTools Read,Grep,Glob --disallowedTools Bash,Edit,Write > "$RESP_FILE" 2>"$ERR_FILE"
 ```
 
 4. Parse and save the session id:
 
 ```bash
+RESP_FILE='<RESP_FILE>'
 SESSION_ID=$(python3 - "$RESP_FILE" <<'PY'
 import json, sys
 try:
@@ -356,6 +401,10 @@ Session saved - run /claude again to continue this conversation.
 6. Cleanup:
 
 ```bash
+PROMPT_FILE='<PROMPT_FILE>'
+RESP_FILE='<RESP_FILE>'
+ERR_FILE='<ERR_FILE>'
+USER_TEXT_FILE='<USER_TEXT_FILE>'
 rm -f "$PROMPT_FILE" "$RESP_FILE" "$ERR_FILE" "$USER_TEXT_FILE"
 ```
 

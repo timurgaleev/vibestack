@@ -106,9 +106,13 @@ EOF
 chmod +x "$TMP/stub-design"
 DDIR="$TMP/designs/home-page-20260101"; mkdir -p "$DDIR"
 
+# Every Bash call is a fresh shell: blocks run with D and _DESIGN_DIR unset, bind
+# $D to the installed path themselves, and get the directory from the placeholder.
+mkdir -p "$TMP/home/.vibestack/bin"; cp "$TMP/stub-design" "$TMP/home/.vibestack/bin/vibe-design"
 run_block() {  # run_block NAME BLOCK_FILE -> exit code; cwd is the scratch dir
-  (cd "$WORK" && STUB_LOG="$TMP/log-$1" D="$TMP/stub-design" _DESIGN_DIR="$DDIR" \
-     HOME="$TMP/home" bash -c 'mkdir -p "$_DESIGN_DIR"; '"$(cat "$2")") >"$TMP/out-$1" 2>&1
+  mkdir -p "$DDIR"
+  (cd "$WORK" && env -u D -u _DESIGN_DIR STUB_LOG="$TMP/log-$1" HOME="$TMP/home" \
+     bash -c "$(sed "s|<DESIGN_DIR>|$DDIR|g" "$2")") >"$TMP/out-$1" 2>&1
 }
 same_as_hostile() { cmp -s <(printf '%s' "$(cat "$HOSTILE")") "$1"; }
 

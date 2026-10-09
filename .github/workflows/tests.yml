@@ -80,6 +80,12 @@ jobs:
           - test-redact-scan.sh
           - test-vibe-upgrade-guards.sh
           - test-compliance-runner.sh
+          - test-design-consultation.sh
+          - test-design-html.sh
+          - test-design-review-contract.sh
+          - test-design-shotgun-handoff.sh
+          - test-devex-boomerang.sh
+          - test-fresh-shell-vars.sh
     steps:
       - uses: actions/checkout@v4
 

@@ -65,8 +65,10 @@ The staged copy is content-addressed, so concurrent sessions and mixed vibestack
 versions never clobber each other:
 
 ```bash
+B='<BROWSE_BIN>'
 OUT="${OUT:-./diagram}"            # base path; produces $OUT.mmd, $OUT.html, $OUT.png
 mkdir -p "$(dirname "$OUT")"
+echo "OUT: $OUT"
 
 # The renderer is linked into this skill's own directory at install time
 # (skills/diagram/renderer -> lib/diagram-render), so it resolves the same way
@@ -87,6 +89,7 @@ else
     "$B" load-html "$STAGED" --tab-id "$TAB"
     "$B" wait '#done' --tab-id "$TAB"
     echo "RENDER_TAB_READY: tab $TAB"
+    echo "TAB: $TAB"
   }
 fi
 ```
@@ -106,9 +109,14 @@ it the call hits whatever tab is active, which may be a live `/qa` or `/scrape`
 session sharing the daemon.
 
 Render the source, reading it from disk inside the page call so no shell quoting
-touches the Mermaid text:
+touches the Mermaid text. The blocks below start from fresh shells: replace
+`<OUT>` and `<TAB>` with the values the render block printed on its `OUT:` and
+`TAB:` lines.
 
 ```bash
+B='<BROWSE_BIN>'
+OUT='<OUT>'
+TAB='<TAB>'
 "$B" js "__renderMermaid('diagram-1', $(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$OUT.mmd"))" \
   --tab-id "$TAB" --out "$OUT.svg"
 "$B" closetab "$TAB" >/dev/null 2>&1 || true
@@ -122,6 +130,8 @@ blank diagram nobody notices.
 ### 3. Inline the SVG into the HTML artifact, then screenshot it
 
 ```bash
+B='<BROWSE_BIN>'
+OUT='<OUT>'
 {
   printf '%s' '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Diagram</title>'
   printf '%s' '<style>body{margin:0;padding:20px;background:#fff;font-family:system-ui}svg{max-width:100%}</style>'

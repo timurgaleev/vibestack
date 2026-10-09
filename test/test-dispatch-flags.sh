@@ -27,7 +27,7 @@ no() { fail=$((fail+1)); printf '  FAIL %s\n' "$1"; }
 # Skills whose dispatch sites are still being brought in line. The list may
 # only shrink: a listed skill that is already clean fails the run, so the entry
 # cannot linger after the fix lands.
-PENDING="cso design-consultation design-review improve-arch office-hours plan-design-review"
+PENDING="cso improve-arch office-hours plan-design-review"
 
 # scan FILE... -> prints `file:line` for each dispatch paragraph without the flag
 scan() {

@@ -652,8 +652,12 @@ Before starting review passes, check for prior DX reviews on this project:
 
 ```bash
 eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-~/.vibestack/bin/vibe-review-read --json 2>/dev/null | grep plan-devex-review || echo "NO_PRIOR_DX_REVIEWS"
+~/.vibestack/bin/vibe-review-read --skill plan-devex-review --json 2>/dev/null || echo "NO_REVIEWS"
 ```
+
+The output is `NO_REVIEWS` or a JSON array of prior /plan-devex-review entries,
+newest first; `NO_REVIEWS` or `[]` means there is no trend to show. Each entry's
+`pass_scores` holds the per-pass scores and `timestamp` says when.
 
 If prior reviews exist, display the trend:
 ```
@@ -891,7 +895,7 @@ _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo"
 [ -s "$_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $_PROMPT_FILE" >&2; exit 1; }
 TMPERR_PV=$(mktemp "${TMPDIR:-/tmp}/codex-planreview-XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
 _CODEX_EXIT=0
-codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c 'model_reasoning_effort="high"' --enable web_search_cached < "$_PROMPT_FILE" 2>"$TMPERR_PV" || _CODEX_EXIT=$?
+codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_PV" || _CODEX_EXIT=$?
 echo "CODEX_EXIT: $_CODEX_EXIT"
 # Each Bash call is a fresh shell, so stderr is read and removed here, not later.
 echo "--- codex stderr ---"

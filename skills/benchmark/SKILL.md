@@ -87,6 +87,7 @@ git diff $(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || gh repo 
 For each page, collect comprehensive performance metrics:
 
 ```bash
+B='<BROWSE_BIN>'
 $B goto <page-url>
 $B perf
 ```
@@ -94,6 +95,7 @@ $B perf
 Then gather detailed metrics via JavaScript:
 
 ```bash
+B='<BROWSE_BIN>'
 $B eval "JSON.stringify(performance.getEntriesByType('navigation')[0])"
 ```
 
@@ -107,17 +109,20 @@ Extract key metrics:
 
 Resource analysis:
 ```bash
+B='<BROWSE_BIN>'
 $B eval "JSON.stringify(performance.getEntriesByType('resource').map(r => ({name: r.name.split('/').pop().split('?')[0], type: r.initiatorType, size: r.transferSize, duration: Math.round(r.duration)})).sort((a,b) => b.duration - a.duration).slice(0,15))"
 ```
 
 Bundle size check:
 ```bash
+B='<BROWSE_BIN>'
 $B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
 $B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'css').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
 ```
 
 Network summary:
 ```bash
+B='<BROWSE_BIN>'
 $B eval "(() => { const r = performance.getEntriesByType('resource'); return JSON.stringify({total_requests: r.length, total_transfer: r.reduce((s,e) => s + (e.transferSize||0), 0), by_type: Object.entries(r.reduce((a,e) => { a[e.initiatorType] = (a[e.initiatorType]||0) + 1; return a; }, {})).sort((a,b) => b[1]-a[1])})})()"
 ```
 

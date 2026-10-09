@@ -286,6 +286,8 @@ for old, new in zip(pairs[::2], pairs[1::2]):
 open(path, "w", encoding="utf-8").write(s)
 PY
 }
+# fill FILE OLD NEW ... -> subst for each pair the block actually contains
+fill() { local f="$1"; shift; while [ $# -ge 2 ]; do grep -qF -- "$1" "$f" && subst "$f" "$1" "$2"; shift 2; done; return 0; }
 # same A B -> files identical, ignoring one trailing newline on either side
 same() { python3 -I -c 'import sys
 a,b=(open(p,encoding="utf-8").read().rstrip("\n") for p in sys.argv[1:3]); sys.exit(a!=b)' "$1" "$2" 2>/dev/null; }
@@ -338,9 +340,9 @@ SH
 chmod +x "$STUB"/*
 CAP="$TMP/cap"
 fresh_cap() { rm -rf "$CAP" "$SENT"; mkdir -p "$CAP" "$SENT"; }
-run_block() { # run_block BLOCK_FILE [VAR=VAL ...]
+run_block() { # run_block BLOCK_FILE [-u VAR ... | VAR=VAL ...]
   local blk="$1"; shift
-  (cd "$TMP" && env PATH="$STUB:$PATH" CAP="$CAP" HOME="$TMP/home" "$@" bash "$blk") >"$TMP/run.out" 2>&1
+  (cd "$TMP" && env "$@" PATH="$STUB:$PATH" CAP="$CAP" HOME="$TMP/home" bash "$blk") >"$TMP/run.out" 2>&1
 }
 
 echo "/claude: user text reaches nested Claude through USER_TEXT_FILE"
@@ -351,6 +353,7 @@ for spec in "review:Additional user instructions, if any:" "challenge:Focus area
   fresh_cap
   if block_with "$CL" "$anchor" > "$TMP/cl-$mode.sh" 2>"$TMP/err"; then
     cp "$HOSTILE" "$TMP/user.txt"
+    fill "$TMP/cl-$mode.sh" "<PROMPT_FILE>" "$TMP/prompt-$mode.txt" "<USER_TEXT_FILE>" "$TMP/user.txt" "<DIFF_FILE>" "$TMP/diff.patch"
     run_block "$TMP/cl-$mode.sh" PROMPT_FILE="$TMP/prompt-$mode.txt" USER_TEXT_FILE="$TMP/user.txt" DIFF_FILE="$TMP/diff.patch"
     if [ -f "$TMP/prompt-$mode.txt" ] && contains "$TMP/prompt-$mode.txt" "$HOSTILE" && no_sentinel; then
       ok "$mode: the prompt carries the user text verbatim and none of it ran"
@@ -372,6 +375,7 @@ SP="$R/spec/SKILL.md"
 fresh_cap
 if block_with "$SP" 'GATE_PROMPT=$(mktemp' > "$TMP/sp-gate.sh" 2>"$TMP/err"; then
   cp "$HOSTILE" "$TMP/draft.txt"
+  fill "$TMP/sp-gate.sh" "<SPEC_DRAFT>" "$TMP/draft.txt"
   run_block "$TMP/sp-gate.sh" SPEC_DRAFT="$TMP/draft.txt"
   if [ -f "$CAP/codex.stdin" ] && contains "$CAP/codex.stdin" "$HOSTILE" && no_sentinel \
      && grep -q '^exec - ' "$CAP/codex.argv" 2>/dev/null; then
@@ -385,6 +389,7 @@ fi
 fresh_cap
 if block_with "$SP" 'gh issue create --title' > "$TMP/sp-file.sh" 2>"$TMP/err"; then
   cp "$HOSTILE" "$TMP/body.md"; printf 'Fix `touch %s/title` $(touch %s/title2) it'"'"'s\n' "$SENT" "$SENT" > "$TMP/title.txt"
+  fill "$TMP/sp-file.sh" "<BODY_FILE>" "$TMP/body.md" "<TITLE_FILE>" "$TMP/title.txt"
   run_block "$TMP/sp-file.sh" BODY_FILE="$TMP/body.md" TITLE_FILE="$TMP/title.txt"
   if same "$CAP/gh.body" "$HOSTILE" && same "$CAP/gh.title" "$TMP/title.txt" && no_sentinel; then
     ok "filing: gh receives the body and title verbatim and none of it ran"
@@ -399,6 +404,7 @@ if block_with "$SP" 'ARCHIVE_PATH="$ARCHIVE_DIR/$ARCHIVE_NAME"' > "$TMP/sp-arch.
   cp "$HOSTILE" "$TMP/body.md"; printf 'Title $(touch %s/arch) `touch %s/arch2`\n' "$SENT" "$SENT" > "$TMP/title.txt"
   cp "$TMP/title.txt" "$TMP/title.want"
   mkdir -p "$TMP/home"
+  fill "$TMP/sp-arch.sh" "<BODY_FILE>" "$TMP/body.md" "<TITLE_FILE>" "$TMP/title.txt"
   run_block "$TMP/sp-arch.sh" BODY_FILE="$TMP/body.md" TITLE_FILE="$TMP/title.txt" VIBESTACK_HOME="$TMP/vh"
   arch="$(ls "$TMP"/vh/projects/*/specs/*.md 2>/dev/null | head -1)"
   if [ -n "$arch" ] && contains "$arch" "$HOSTILE" && grep -qxF "# $(head -n1 "$TMP/title.want")" "$arch" && no_sentinel; then
@@ -482,13 +488,17 @@ for a in "$@"; do [ "$prev" = "--brief-file" ] && cp "$a" "$CAP/design.brief"; p
 echo "requested: 1"
 SH
 chmod +x "$DSTUB"
-for spec in "design-consultation:_DESIGN_DIR" "office-hours:_DESIGN_DIR" "design-review:REPORT_DIR"; do
-  skill="${spec%%:*}"; var="${spec#*:}"
+# Each block runs in a fresh shell: it binds $D to the installed path itself and
+# names the printed directory as a placeholder, so neither is injected here.
+mkdir -p "$TMP/home/.vibestack/bin"; cp "$DSTUB" "$TMP/home/.vibestack/bin/vibe-design"
+for spec in "design-consultation:<DESIGN_DIR>" "office-hours:<DESIGN_DIR>" "design-review:<REPORT_DIR>"; do
+  skill="${spec%%:*}"; ph="${spec#*:}"
   fresh_cap
   if block_with "$R/$skill/SKILL.md" '--brief-file "$BRIEF_FILE"' > "$TMP/d-$skill.sh" 2>"$TMP/err"; then
     dd="$TMP/dd-$skill"; mkdir -p "$dd" "$dd/mockups/finding-NNN"
     if [ "$skill" = design-review ]; then cp "$HOSTILE" "$dd/mockups/finding-NNN/brief.txt"; else cp "$HOSTILE" "$dd/brief.txt"; fi
-    run_block "$TMP/d-$skill.sh" D="$DSTUB" "$var=$dd"
+    subst "$TMP/d-$skill.sh" "$ph" "$dd"
+    run_block "$TMP/d-$skill.sh" -u D -u _DESIGN_DIR -u REPORT_DIR
     if same "$CAP/design.brief" "$HOSTILE" && no_sentinel; then
       ok "$skill: \$D gets the brief file verbatim and none of it ran"
     else
@@ -503,16 +513,26 @@ echo "/office-hours: approved.json is built from the feedback file"
 fresh_cap
 if block_with "$R/office-hours/SKILL.md" 'approved-feedback.txt' > "$TMP/oh-approve.sh" 2>"$TMP/err"; then
   od="$TMP/oh-design"; mkdir -p "$od"; cp "$HOSTILE" "$od/approved-feedback.txt"
-  subst "$TMP/oh-approve.sh" '"<V>"' '"B"'
-  run_block "$TMP/oh-approve.sh" _DESIGN_DIR="$od"
-  if python3 -I -c 'import json,sys
+  # A same-day rerun saved variant-B-2.png; the record must name it, not variant-B.png.
+  : > "$od/variant-B.png"; : > "$od/variant-B-2.png"
+  cp "$TMP/oh-approve.sh" "$TMP/oh-approve-out.sh"
+  subst "$TMP/oh-approve.sh" '"<V>"' '"B"' "<IMAGE>" "$od/variant-B-2.png" "<DESIGN_DIR>" "$od"
+  run_block "$TMP/oh-approve.sh" -u _DESIGN_DIR
+  if python3 -I -c 'import json,os,sys
 rec=json.load(open(sys.argv[1])); fb=open(sys.argv[2]).read().strip()
-sys.exit(not (rec["approved_variant"]=="B" and rec["feedback"]==fb and rec["screen"]=="mockup"))' "$od/approved.json" "$HOSTILE" 2>/dev/null \
+sys.exit(not (rec["approved_variant"]=="B" and rec["feedback"]==fb and rec["screen"]=="mockup"
+              and rec.get("approved_path")==os.path.realpath(sys.argv[3])))' "$od/approved.json" "$HOSTILE" "$od/variant-B-2.png" 2>/dev/null \
      && no_sentinel; then
-    ok "the feedback lands in approved.json verbatim and none of it ran"
+    ok "the feedback lands in approved.json verbatim, approved_path names the saved image, and none of it ran"
   else
     no "approved.json ($(head -3 "$TMP/run.out")); sentinels: $(ls "$SENT")"
   fi
+  # An image outside the design dir is refused and no record is written.
+  rm -f "$od/approved.json"; : > "$TMP/outside.png"
+  subst "$TMP/oh-approve-out.sh" '"<V>"' '"B"' "<IMAGE>" "$TMP/outside.png" "<DESIGN_DIR>" "$od"
+  run_block "$TMP/oh-approve-out.sh" -u _DESIGN_DIR
+  [ ! -e "$od/approved.json" ] && ok "an image outside the design dir is refused" \
+    || no "approved.json written for an image outside the design dir"
 else
   no "office-hours approve: $(cat "$TMP/err")"
 fi
