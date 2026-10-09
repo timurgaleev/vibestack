@@ -1560,11 +1560,19 @@ $B text
 Verify the page has content (not blank, not a generic error page).
 
 ```bash
-B='<BROWSE_BIN>'
-$B snapshot -i -a -o ".vibestack/deploy-reports/post-deploy.png"
+B='<BROWSE_BIN>'; PR_NUMBER='<PR_NUMBER>'   # PR_NUMBER from Step 1's TARGET line
+SHOT="/tmp/vibestack-pr${PR_NUMBER}-post-deploy.png"
+$B snapshot -i -a -o "$SHOT"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+REPORT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/deploy-reports"
+mkdir -p "$REPORT_DIR" && [ -f "$SHOT" ] && mv "$SHOT" "$REPORT_DIR/pr${PR_NUMBER}-post-deploy.png" \
+  && echo "SCREENSHOT: $REPORT_DIR/pr${PR_NUMBER}-post-deploy.png"
 ```
 
-Take an annotated screenshot as evidence.
+Take an annotated screenshot as evidence. Browse writes only under the project or a
+temp directory, so the shot lands in `/tmp` and moves to the per-project state root;
+nothing is written into the work tree, where an untracked file would trip Step 1's
+clean-checkout gate on the next run.
 
 **Health assessment:**
 - Page loads successfully with 200 status → PASS
@@ -1710,7 +1718,9 @@ deploy, and an HTTP 200 is not this revision being live:
 Create the deploy report directory:
 
 ```bash
-mkdir -p .vibestack/deploy-reports
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+REPORT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/deploy-reports"
+mkdir -p "$REPORT_DIR" && echo "REPORT_DIR: $REPORT_DIR"
 ```
 
 Produce and display the ASCII summary:
@@ -1754,7 +1764,7 @@ Rollback:     <none / revert <sha> / revert PR <url> / PENDING: <what is unresol
 VERDICT: <the first matching row of the table above>
 ```
 
-Save report to `.vibestack/deploy-reports/{date}-pr{number}-deploy.md`.
+Save report to `<REPORT_DIR>/{date}-pr{number}-deploy.md`, using the `REPORT_DIR:` path the block above printed — the state root, never the work tree.
 
 Log to the review dashboard:
 

@@ -1006,15 +1006,16 @@ the block removes on exit, so the gate is decided from the same bytes you were s
 - **`GATE: FAIL (N P0/P1 finding(s))`** — `[P0]`/`[P1]` tags, native `P0:`/`P1:` labels,
   or `VERDICT: findings`. A P0 blocks exactly like a P1.
 - **`GATE: FAIL (... no usable review)`** — a non-zero exit, empty output, auth/quota/CLI
-  error text, a refusal, or a `Review comment(s):` section whose comments carry no
-  severity tag. The review did not happen, so it cannot pass. Relay the stderr cause
+  error text, a refusal, a `Review comment(s):` section whose comments carry no
+  severity tag, or prose with neither severity tags nor an explicit no-findings
+  conclusion — a one-line summary such as "The change only adds an accurate docstring
+  and does not alter runtime behavior." is FAIL. The review did not happen, so it
+  cannot pass. Relay the stderr cause
   (same error handling as Codex adversarial above).
 - **`GATE: SKIPPED (timed out ...)`** — exit 124. The review never finished: record
   `SKIPPED`, never `PASS`.
-- **`GATE: PASS`** — a clean exit with only `[P2]`/`[P3]` findings, or a completed run
-  with no `Review comment(s):` section at all. That second case is how `codex review`
-  reports a clean diff: a one-line summary such as "The change only adds an accurate
-  docstring and does not alter runtime behavior.", with no tag and no marker.
+- **`GATE: PASS`** — a clean exit with only `[P2]`/`[P3]` findings, or an explicit
+  no-findings conclusion (`NO_FINDINGS`, "no issues found", "did not find any ...").
 
 If GATE is FAIL with P0/P1 findings, use AskUserQuestion:
 ```

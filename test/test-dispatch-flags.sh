@@ -135,6 +135,15 @@ else
   no "codex gate block differs between review and ship (or is missing)"
 fi
 
+# The PASS rule the model reads must match what the block does, in both skills.
+pass_rule() { sed -n '/^- \*\*`GATE: PASS`\*\*/,/^$/p' "$1"; }
+if [ -n "$(pass_rule "$ROOT/skills/review/SKILL.md")" ] &&
+   [ "$(pass_rule "$ROOT/skills/review/SKILL.md")" = "$(pass_rule "$ROOT/skills/ship/SKILL.md")" ]; then
+  ok "codex GATE: PASS rule identical in review and ship"
+else
+  no "codex GATE: PASS rule differs between review and ship (or is missing)"
+fi
+
 # Grade fixture outputs through the extracted gate. Every way a review can fail
 # to happen must come out FAIL or SKIPPED; only an explicit conclusion passes.
 sed -n '/^_CX_BLOCK=/,/^echo "GATE:/p' "$ROOT/skills/review/SKILL.md" > "$TMP/gate.sh"
@@ -150,6 +159,7 @@ for sh in bash zsh; do
   grade "$sh" 0   PASS    "NO_FINDINGS"                                    "marker"
   grade "$sh" 0   PASS    "Review comments:\n- [P2] naming nit"            "P2 only"
   grade "$sh" 0   FAIL    "There is a critical race condition in a.ts."    "untagged prose"
+  grade "$sh" 0   FAIL    "The change only adds an accurate docstring and does not alter runtime behavior." "untagged clean summary"
   grade "$sh" 0   FAIL    "Review comments:\n- [P1] data loss"             "P1"
   grade "$sh" 0   FAIL    "[P2] nit\nError: not logged in"                 "P2 plus auth error"
   grade "$sh" 0   FAIL    "Review comments:\n- the null check is gone"     "untagged comments"
