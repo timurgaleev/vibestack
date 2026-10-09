@@ -75,7 +75,7 @@ mkdir -p .vibestack/benchmark-reports/baselines
 
 ### Phase 2: Page Discovery
 
-Same as /canary — auto-discover from navigation or use `--pages`.
+Use `--pages` when given; otherwise run `$B links` and keep only same-origin links, dropping any URL whose path matches `logout|signout|delete|remove|cancel|unsubscribe` (case-insensitive) before presenting or visiting them.
 
 If `--diff` mode:
 ```bash
@@ -96,34 +96,44 @@ Then gather detailed metrics via JavaScript:
 
 ```bash
 B='<BROWSE_BIN>'
-$B eval "JSON.stringify(performance.getEntriesByType('navigation')[0])"
+$B js "JSON.stringify(performance.getEntriesByType('navigation')[0])"
 ```
 
-Extract key metrics:
+Paint timings (the `js` verb awaits a returned Promise, so the LCP observer resolves before the command returns):
+
+```bash
+B='<BROWSE_BIN>'
+$B js "performance.getEntriesByType('paint').find(e=>e.name==='first-contentful-paint')?.startTime ?? null"
+$B js "new Promise(r=>{let v=null;new PerformanceObserver(l=>{const e=l.getEntries();if(e.length)v=e[e.length-1].startTime}).observe({type:'largest-contentful-paint',buffered:true});setTimeout(()=>r(v),3000)})"
+```
+
+Extract key metrics (the navigation entry's `startTime` is 0, so its fields are already relative to navigation start):
 - **TTFB** (Time to First Byte): `responseStart - requestStart`
-- **FCP** (First Contentful Paint): from PerformanceObserver or `paint` entries
-- **LCP** (Largest Contentful Paint): from PerformanceObserver
-- **DOM Interactive**: `domInteractive - navigationStart`
-- **DOM Complete**: `domComplete - navigationStart`
-- **Full Load**: `loadEventEnd - navigationStart`
+- **FCP** (First Contentful Paint): the `first-contentful-paint` paint entry's `startTime`
+- **LCP** (Largest Contentful Paint): the last `largest-contentful-paint` entry's `startTime` seen within 3 s
+- **DOM Interactive**: `domInteractive`
+- **DOM Complete**: `domComplete`
+- **Full Load**: `loadEventEnd`
+
+A missing FCP or LCP (the command printed `null`) is recorded as `null` and shown as `missing` in every table — never 0, and never a PASS in the budget table.
 
 Resource analysis:
 ```bash
 B='<BROWSE_BIN>'
-$B eval "JSON.stringify(performance.getEntriesByType('resource').map(r => ({name: r.name.split('/').pop().split('?')[0], type: r.initiatorType, size: r.transferSize, duration: Math.round(r.duration)})).sort((a,b) => b.duration - a.duration).slice(0,15))"
+$B js "JSON.stringify(performance.getEntriesByType('resource').map(r => ({name: r.name.split('/').pop().split('?')[0], type: r.initiatorType, size: r.transferSize, duration: Math.round(r.duration)})).sort((a,b) => b.duration - a.duration).slice(0,15))"
 ```
 
 Bundle size check:
 ```bash
 B='<BROWSE_BIN>'
-$B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
-$B eval "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'css').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
+$B js "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
+$B js "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'css').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
 ```
 
 Network summary:
 ```bash
 B='<BROWSE_BIN>'
-$B eval "(() => { const r = performance.getEntriesByType('resource'); return JSON.stringify({total_requests: r.length, total_transfer: r.reduce((s,e) => s + (e.transferSize||0), 0), by_type: Object.entries(r.reduce((a,e) => { a[e.initiatorType] = (a[e.initiatorType]||0) + 1; return a; }, {})).sort((a,b) => b[1]-a[1])})})()"
+$B js "(() => { const r = performance.getEntriesByType('resource'); return JSON.stringify({total_requests: r.length, total_transfer: r.reduce((s,e) => s + (e.transferSize||0), 0), by_type: Object.entries(r.reduce((a,e) => { a[e.initiatorType] = (a[e.initiatorType]||0) + 1; return a; }, {})).sort((a,b) => b[1]-a[1])})})()"
 ```
 
 ### Phase 4: Baseline Capture (--baseline mode)
@@ -156,7 +166,7 @@ Save metrics to baseline file:
 }
 ```
 
-Write to `.vibestack/benchmark-reports/baselines/baseline.json`.
+Write to `.vibestack/benchmark-reports/baselines/baseline.json`. Only `--baseline` mode writes this file; it is the comparison baseline.
 
 ### Phase 5: Comparison
 
@@ -235,7 +245,7 @@ Grade: B (4/6 passing)
 
 ### Phase 8: Trend Analysis (--trend mode)
 
-Load historical baseline files and show trends:
+Load the timestamped `.vibestack/benchmark-reports/baselines/*-benchmark.json` files, sorted by name (oldest first), and show trends:
 
 ```
 PERFORMANCE TRENDS (last 5 benchmarks)
@@ -254,6 +264,8 @@ TREND: Performance degrading. LCP doubled in 8 days.
 ### Phase 9: Save Report
 
 Write to `.vibestack/benchmark-reports/{date}-benchmark.md` and `.vibestack/benchmark-reports/{date}-benchmark.json`.
+
+On every run that collected metrics, in any mode, also write the metrics JSON (the Phase 4 shape) to an immutable `.vibestack/benchmark-reports/baselines/<UTC timestamp YYYYMMDDTHHMMSSZ>-benchmark.json` (timestamp from `date -u +%Y%m%dT%H%M%SZ`). Never overwrite an existing timestamped file; `--trend` reads these.
 
 ## Important Rules
 

@@ -50,7 +50,7 @@ fi
 
 # /qa-only: Report-Only QA Testing
 
-You are a QA engineer. Test web applications like a real user — click everything, fill every form, check every state. Produce a structured report with evidence. **NEVER fix anything.**
+You are a QA engineer. Test web applications like a real user — click everything, fill every form on LOCAL targets (on NON-LOCAL targets only after the consent question below), check every state. Produce a structured report with evidence. **NEVER fix anything.**
 
 Every instruction that follows describes how to observe and record. Nothing below authorises an edit, a commit, or a "quick fix while I'm here" — a bug you fix is a bug the report can no longer prove was there, and the user chose this skill precisely because they want the diagnosis without the diff. When a fix looks obvious, that is not an invitation: record the observation and move on.
 
@@ -61,7 +61,7 @@ Every instruction that follows describes how to observe and record. Nothing belo
 | Parameter | Default | Override example |
 |-----------|---------|-----------------:|
 | Target URL | (auto-detect or required) | `https://myapp.com`, `http://localhost:3000` |
-| Mode | full | `--quick`, `--regression .vibestack/qa-reports/baseline.json` |
+| Mode | full | `--quick`, `--regression` (compares with the newest earlier run), `--regression <path>/baseline.json` |
 | Output dir | `.vibestack/qa-reports/` | `Output to /tmp/qa` |
 | Scope | Full app (or diff-scoped) | `Focus on the billing page` |
 | Auth | None | `Sign in to user@example.com`, `Import cookies from cookies.json` |
@@ -74,14 +74,7 @@ Every instruction that follows describes how to observe and record. Nothing belo
 
 {{include lib/snippets/browse-detect.md}}
 
-```bash
-REPORT_DIR=".vibestack/qa-reports"
-mkdir -p "$REPORT_DIR/screenshots"
-echo "REPORT_DIR: $REPORT_DIR"
-```
-
-Later blocks that write screenshots start with `REPORT_DIR='<REPORT_DIR>'`:
-replace `<REPORT_DIR>` with the path printed on the `REPORT_DIR:` line.
+{{include lib/snippets/qa-run-dir.md}}
 
 If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
 
@@ -157,7 +150,11 @@ Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced
 30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce health score. No detailed issue documentation.
 
 ### Regression (`--regression <baseline>`)
-Run full mode, then load `baseline.json` from a previous run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
+Run full mode, then compare with the prior baseline resolved at setup — `prior-baseline.json` in this run's directory, copied from the `--regression` path or the newest earlier run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
+
+---
+
+{{include lib/snippets/qa-probe-consent.md}}
 
 ---
 
@@ -166,13 +163,13 @@ Run full mode, then load `baseline.json` from a previous run. Diff: which issues
 ### Phase 1: Initialize
 
 1. Find browse binary (see Setup above)
-2. Create output directories
-3. Copy report template from `qa/templates/qa-report-template.md` to output dir
+2. Create this run's report directory (see Setup above)
+3. Copy report template from `qa/templates/qa-report-template.md` to `$REPORT_DIR`
 4. Start timer for duration tracking
 
 ### Phase 2: Authenticate (if needed)
 
-**If the user specified auth credentials:**
+**If the user gave credentials for a throwaway test account on a LOCAL target:**
 
 ```bash
 B='<BROWSE_BIN>'
@@ -192,7 +189,9 @@ $B cookie-import cookies.json
 $B goto <target-url>
 ```
 
-**If 2FA/OTP is required:** Ask the user for the code and wait.
+**On a NON-LOCAL target:** never type credentials. Ask the user to import cookies or sign in themselves in the visible browser, then continue.
+
+**If 2FA/OTP is required:** Ask the user to complete it in the browser, then continue.
 
 **If CAPTCHA blocks you:** Tell the user: "Please complete the CAPTCHA in the browser, then tell me to continue."
 
@@ -232,8 +231,8 @@ $B console --errors
 Then follow the **per-page exploration checklist** (see `qa/references/issue-taxonomy.md`):
 
 1. **Visual scan** — Look at the annotated screenshot for layout issues
-2. **Interactive elements** — Click buttons, links, controls. Do they work?
-3. **Forms** — Fill and submit. Test empty, invalid, edge cases
+2. **Interactive elements** — Click buttons, links, controls. Do they work? (NON-LOCAL: consent first; never the logout/delete link class)
+3. **Forms** — Fill and submit. Test empty, invalid, edge cases (NON-LOCAL: consent first; never the logout/delete link class)
 4. **Navigation** — Check all paths in and out
 5. **States** — Empty state, loading, error, overflow
 6. **Console** — Any new JS errors after interactions?
@@ -297,7 +296,7 @@ From the browser alone you can answer `protects` (the user-visible behavior) and
 3. **Write console health summary** — aggregate all console errors seen across pages
 4. **Update severity counts** in the summary table
 5. **Fill in report metadata** — date, duration, pages visited, screenshot count, framework
-6. **Save baseline** — write `baseline.json` with:
+6. **Save baseline** — write `$REPORT_DIR/baseline.json` with:
    ```json
    {
      "date": "YYYY-MM-DD",
@@ -308,7 +307,7 @@ From the browser alone you can answer `protects` (the user-visible behavior) and
    }
    ```
 
-**Regression mode:** After writing the report, load the baseline file. Compare:
+**Regression mode:** After writing the report, load `$REPORT_DIR/prior-baseline.json` — never the `baseline.json` this run just wrote, so the run never compares with itself. With `PRIOR_BASELINE: none` or `BASELINE_MISSING`, skip the comparison and say why in the report. Compare:
 - Health score delta
 - Issues fixed (in baseline but not current)
 - New issues (in current but not baseline)
@@ -404,7 +403,7 @@ Minimum 0 per category.
 
 Write the report to both local and project-scoped locations:
 
-**Local:** `.vibestack/qa-reports/qa-report-{domain}-{YYYY-MM-DD}.md`
+**Local:** `$REPORT_DIR/qa-report.md` — `.vibestack/qa-reports/run-<UTC>/{qa-report.md, baseline.json, prior-baseline.json, screenshots/}`
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
@@ -416,16 +415,18 @@ Write to `~/.vibestack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.m
 
 ```
 .vibestack/qa-reports/
-├── qa-report-{domain}-{YYYY-MM-DD}.md    # Structured report
-├── screenshots/
-│   ├── initial.png                        # Landing page annotated screenshot
-│   ├── issue-001-step-1.png               # Per-issue evidence
-│   ├── issue-001-result.png
-│   └── ...
-└── baseline.json                          # For regression mode
+└── run-<UTC>/                             # One directory per run, never overwritten
+    ├── qa-report.md                       # Structured report
+    ├── baseline.json                      # This run's baseline, for later runs
+    ├── prior-baseline.json                # The baseline this run compares with (if any)
+    └── screenshots/
+        ├── initial.png                    # Landing page annotated screenshot
+        ├── issue-001-step-1.png           # Per-issue evidence
+        ├── issue-001-result.png
+        └── ...
 ```
 
-Report filenames use the domain and date: `qa-report-myapp-com-2026-03-12.md`
+`<UTC>` is the run's start time, e.g. `run-20260312T141500Z`.
 
 ---
 

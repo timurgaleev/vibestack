@@ -1,6 +1,6 @@
 ---
 name: performance-benchmarker
-description: Performance benchmarking specialist for latency, throughput, and load testing. Use PROACTIVELY when measuring performance baselines, regression-testing changes, or planning capacity.
+description: Performance specialist for latency, throughput, and load testing. /benchmark covers web page performance. Use PROACTIVELY when measuring service baselines, load-testing, or planning capacity.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: opus
 ---

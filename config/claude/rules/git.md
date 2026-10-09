@@ -47,7 +47,7 @@ When creating PRs:
 ## Feature Implementation Workflow
 
 1. **Plan First**
-   - Use **task-planner** agent to create implementation plan
+   - Run `/plan-eng-review` (or `/autoplan`) to lock the implementation plan
    - Identify dependencies and risks
    - Break down into phases
 
@@ -55,10 +55,11 @@ When creating PRs:
    - Write tests for new functionality
    - Implement functionality
    - Run tests to verify correctness
-   - Verify 80%+ test coverage
+   - Every new test answers the value bar: what behavior it protects, what
+     regression makes it fail
 
 3. **Code Review**
-   - Use **quality-guard** agent for quality and security review
+   - Run `/review` for quality and security review
    - Address CRITICAL and HIGH issues
    - Fix MEDIUM issues when possible
 

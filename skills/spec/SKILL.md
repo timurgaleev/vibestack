@@ -586,12 +586,16 @@ echo "PIN_SHA: $PIN_SHA"
 ```
 
 **Unique branch + worktree path:** Suffix with `$$` to avoid concurrent
-collisions. Replace `<SLUG_TITLE>` with the value the archive block printed:
+collisions. The parent is derived from the repo root, so `SPAWN_PATH` is
+absolute no matter where the shell starts. Replace `<SLUG_TITLE>` with the value
+the archive block printed:
 
 ```bash
 SLUG_TITLE='<SLUG_TITLE>'
+_ROOT=$(git rev-parse --show-toplevel)
+WORKTREE_PARENT="${WORKTREE_PARENT:-$(dirname "$_ROOT")/worktrees}"
 SPAWN_BRANCH="spec/${SLUG_TITLE}-$$"
-SPAWN_PATH="${WORKTREE_PARENT:-../worktrees}/${SLUG_TITLE}-$$"
+SPAWN_PATH="$WORKTREE_PARENT/${SLUG_TITLE}-$$"
 mkdir -p "$(dirname "$SPAWN_PATH")"
 echo "SPAWN_BRANCH: $SPAWN_BRANCH"
 echo "SPAWN_PATH: $SPAWN_PATH"
@@ -607,21 +611,26 @@ If A, with each placeholder replaced by the value printed above:
 SPAWN_PATH='<SPAWN_PATH>'
 SPAWN_BRANCH='<SPAWN_BRANCH>'
 PIN_SHA='<PIN_SHA>'
+: "${SPAWN_PATH:?}" "${SPAWN_BRANCH:?}"
 git worktree add "$SPAWN_PATH" -b "$SPAWN_BRANCH" "$PIN_SHA" 2>&1
 ```
 
-**Error: worktree create fails** (disk full, path exists, etc.): print:
-"Worktree create failed — `$ERROR`. Spawning agent in current dir instead. Your
-in-progress changes will be visible to the agent. Cancel with Ctrl+C if not
-desired." Then fall back to current dir (still spawn).
+**Error: worktree create fails** (disk full, path exists, etc.): print
+"NOT_SPAWNED: worktree create failed — <error>" and stop. Never fall back to the
+current checkout — the agent would run against your in-progress changes. The
+issue stays filed and the archive stays written, so the user can retry.
 
-If A and worktree created: spawn `claude -p` with the spec piped via stdin:
+If A and worktree created: verify the target is the worktree root, then spawn
+`claude -p` with the spec piped via stdin:
 
 ```bash
 ARCHIVE_PATH='<ARCHIVE_PATH>'
 SPAWN_PATH='<SPAWN_PATH>'
 SPAWN_BRANCH='<SPAWN_BRANCH>'
-cat "$ARCHIVE_PATH" | (cd "$SPAWN_PATH" && claude -p 2>&1) &
+: "${SPAWN_PATH:?}" "${SPAWN_BRANCH:?}"
+[ -d "$SPAWN_PATH" ] && [ "$(git -C "$SPAWN_PATH" rev-parse --show-toplevel 2>/dev/null)" = "$SPAWN_PATH" ] || { echo "NOT_SPAWNED: $SPAWN_PATH is not the worktree root"; exit 1; }
+cd "$SPAWN_PATH"
+cat "$ARCHIVE_PATH" | (claude -p 2>&1) &
 SPAWN_PID=$!
 echo "Spawned: PID $SPAWN_PID in $SPAWN_PATH (branch $SPAWN_BRANCH)"
 echo "Follow with: cd $SPAWN_PATH && claude --resume"

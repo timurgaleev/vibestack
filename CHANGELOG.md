@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.51.0 — 2026-10-09
+
+### Removed
+
+- **`/benchmark-models` is withdrawn.** Putting one question to several
+  models is `/deliberation:ask-all`. A re-install removes the skill from every
+  target it was installed to.
+
+### Fixed
+
+- **`/canary` compares console errors per check, by message**, takes an
+  identity baseline, and appends each run to a history file.
+- **`/benchmark` collects real FCP and LCP** through `$B js` and keeps a
+  timestamped trend history.
+- **`/claude` runs hermetic and time-boxed.** A timeout, empty or unparsable
+  answer fails its gate instead of passing it, and every run is logged.
+- **`/qa` and `/qa-only` give each run its own report directory** with a real
+  prior baseline, only look at a page until the user consents to acting on
+  it, and prove a regression test red before the fix. `/design-review` runs
+  the same red proof against the pre-fix commit.
+- **`/spec --execute` guards the sessions it spawns**, `/skillify` defaults to
+  user scope and installs into the active runtime's own skill root, and
+  `/setup-deploy` never prints key bytes and reports a failed status command.
+- **Fence pairing follows CommonMark** in the renderer and the source lint:
+  indented and tilde fences pair correctly, and a backtick opener whose info
+  string holds a backtick is not a fence.
+
+### Changed
+
+- **The deployed `CLAUDE.md` and rules route to every shipped skill**, mark
+  skills that come from other packs, and fall back to `/vibe` when nothing
+  fits. A test keeps the routing table in step with `skills/`.
+- **Deployed agents defer to the skill that owns their task** and no longer
+  claim it proactively.
+- **The repo `CLAUDE.md` and `CONTRIBUTING.md` document the authoring
+  conventions CI enforces**: fresh-shell blocks, untrusted text through files,
+  foreground dispatch, fail-closed gates, the test value bar and the
+  description budget.
+
 ## 1.50.0 — 2026-10-09
 
 ### Fixed

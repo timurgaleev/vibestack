@@ -167,9 +167,9 @@ Full rule: `rules/claude-code-usage.md`
 ## Skills
 
 **Prefer a matching skill over improvising.** `rules/skills.md` holds the task →
-skill map (`/plan-eng-review` to plan, `/investigate` to debug, `/code-review`
-before merge, `/ship` to ship). Invoke the skill before starting the work. If a
-referenced skill is not installed, proceed normally.
+skill map (`/plan-eng-review` to plan, `/investigate` to debug, `/review`
+before merge, `/ship` to ship, `/vibe` when unsure). Invoke the skill before
+starting the work. If a referenced skill is not installed, proceed normally.
 
 ## Memory (memrain MCP)
 

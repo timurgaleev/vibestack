@@ -1,6 +1,6 @@
 ---
 name: docs-crafter
-description: Documentation specialist for README, API docs, and comments.
+description: Inline and code-adjacent docs: comments, docstrings, module headers. /document-release updates docs after a ship and /document-generate writes missing docs; use this for comments.
 tools: Read, Write, Edit, Grep, Glob
 model: opus
 ---

@@ -2,12 +2,15 @@
 # test-browser-skill-consent.sh — the browser skills ask before they destroy or
 # expose a signed-in session.
 #
-# The browse daemon can hold imported cookies and logged-in tabs. Four skills
+# The browse daemon can hold imported cookies and logged-in tabs. Six skills
 # touch it, and each one has a rule that only lives in its SKILL.md text:
 #   /open-browser          probes the daemon and asks before replacing a live one
 #   /pair-agent            asks before a relaunch; tunnel consent is daemon-enforced
 #   /setup-browser-cookies never prints cookie values, never picks the browser
 #   /browse                look-not-act consent, LOCAL hosts, credential rules
+#   /qa, /qa-only          the same consent rules for probes, a fresh run-<UTC>
+#                          report dir with a real prior baseline, red tests kept,
+#                          and (/qa) the regression test before the commit
 #
 # The /open-browser probe is also executed against a stub `$B`, so a probe that
 # boots a daemon, misreads the status, or kills a process fails here.
@@ -148,6 +151,30 @@ check "never prints session material" 'Never print session material' "$RULES"
 check "js/eval output is unwrapped but untrusted" '`\$B js` and `\$B eval` output is NOT wrapped' "$RULES"
 check "untrusted-content block covers js/eval" '^> 5\. `js` and `eval` output is NOT wrapped' "$BR"
 refute "no QA example types a bare \"password\"" 'fill @e[0-9]+ "password"' "$BR"
+
+# ── /qa and /qa-only ─────────────────────────────────────────────────────────
+for name in qa qa-only; do
+  echo "$name: probe consent and per-run report dirs"
+  Q="$(render "$name")"
+  check "$name: invocation is consent to LOOK, not to ACT" 'consent to LOOK, not to ACT' "$Q"
+  check "$name: names NON-LOCAL targets" 'NON-LOCAL' "$Q"
+  check "$name: bans the logout/delete link class" 'logout\|signout\|delete\|remove\|cancel\|unsubscribe' "$Q"
+  check "$name: each run gets its own run-\$RUN_ID dir" 'run-\$RUN_ID' "$Q"
+  check "$name: regression compares with prior-baseline.json" 'prior-baseline\.json' "$Q"
+  refute "$name: never asks for the 2FA code in chat" 'Ask the user for the code' "$Q"
+  refute "$name: no shared baseline.json default" '\.vibestack/qa-reports/baseline\.json' "$Q"
+  refute "$name: never deletes a red test silently" 'delete silently' "$Q"
+  refute "$name: never deletes a red regression test" 'delete test, defer' "$Q"
+done
+Q="$(render qa)"
+test_line="$(grep -n '^### 8[a-z]\. Regression test' "$Q" | head -1 | cut -d: -f1)"
+commit_line="$(grep -n '^### 8[a-z]\. Commit' "$Q" | head -1 | cut -d: -f1)"
+if [ -n "$test_line" ] && [ -n "$commit_line" ] && [ "$test_line" -lt "$commit_line" ]; then
+  ok "qa: regression test is written before the commit"
+else
+  no "qa: regression test (line ${test_line:-none}) must precede the commit (line ${commit_line:-none})"
+fi
+refute "qa: never reverts blindly with git revert HEAD" 'git revert HEAD' "$Q"
 
 echo
 echo "passed: $pass  failed: $fail"

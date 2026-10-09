@@ -24,7 +24,7 @@ allowed-tools:
 
 Use when: "evaluate the agent", "build an eval set", "LLM as judge", "prompt regression test", "did the prompt change make it better", "measure prompt quality", "eval harness".
 
-Do not use for web page performance (`/benchmark`) or for choosing between vendors on a single prompt (`/benchmark-models`). This skill builds a repeatable test suite for one unit of LLM behavior in the user's own project.
+Do not use for web page performance (`/benchmark`) or for comparing several models on a single prompt (`/deliberation:ask-all`, when that plugin is installed). This skill builds a repeatable test suite for one unit of LLM behavior in the user's own project.
 
 ## Preamble
 

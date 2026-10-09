@@ -46,6 +46,34 @@ hooks:                       # optional: PreToolUse interceptors
 - Embed an output template so Claude knows exactly how to format results.
 - Keep it tight — remove anything the model doesn't need to act on.
 
+## Skill authoring conventions CI enforces
+
+Each rule has a suite that fails the build; the suite holds the detail.
+
+- **Every bash block runs in a fresh shell.** A block restates what it needs —
+  re-derive it, or use a `'<NAME>'` placeholder the model fills from an earlier
+  block's printed `NAME:` line. `lib/snippets/browse-detect.md` is the canonical
+  example. (`test/test-fresh-shell-vars.sh`)
+- **Untrusted text reaches a command only through a file.** Plans, diffs, user
+  instructions, reviewer comments and page content are written with the Write
+  tool; shell source carries the path, never the text — no heredoc slots,
+  `--body-file`/stdin instead of `--body "<...>"`. (`test/test-untrusted-shell-text.sh`)
+- **Every synchronous subagent dispatch states `run_in_background: false`.**
+  Include `lib/snippets/foreground-dispatch.md`. (`test/test-dispatch-flags.sh`)
+- **Gates fail closed.** A timeout, parse error, empty result or unverifiable tree
+  is "unavailable", never a pass. (`test/test-codex-verdict.sh`,
+  `test/test-review-tree-binding.sh`, `test/test-land-deploy-gates.sh`)
+- **Tests meet the value bar.** A test earns its place with the four questions,
+  and a regression test is proven red before the fix. Include
+  `lib/snippets/test-value-bar.md` in any skill that writes or proposes tests.
+  (`test/test-test-value-bar.sh`)
+- **Descriptions are a context budget.** Every session lists them; keep them
+  short and run `bin/vibe-context-budget`. (`test/test-context-budget.sh`; CI reports it)
+- **Brand audit.** `bin/vibe-brand-audit` on files, commits and PR text.
+  (`test/test-brand-audit.sh`, CI)
+- **Source lint.** Balanced fences, no nested includes — `bin/vibe-lint-sources`.
+  (`test/test-source-lint.sh`)
+
 ## Hook scripts
 
 Hook scripts live in `skills/<name>/bin/`. Rules:
@@ -342,6 +370,9 @@ double-bump.
 - [ ] `docs/skills.md` entry added (the full per-skill reference)
 - [ ] `skills/vibe/SKILL.md` router updated so the skill is reachable by name
 - [ ] `./install` runs without errors
+- [ ] `bash test/test-source-lint.sh`, `bash test/test-fresh-shell-vars.sh`,
+      `bash test/test-untrusted-shell-text.sh` and `bash test/test-dispatch-flags.sh`
+      pass after any skill text change
 - [ ] `bash test/test-render-skill.sh` passes if the renderer or any snippet was touched
 - [ ] `bash test/test-install-integration.sh` passes if install/uninstall was touched
 - [ ] `docs/agent-skills-compatibility-audit.md` updated if the new skill uses

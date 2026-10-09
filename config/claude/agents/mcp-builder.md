@@ -1,6 +1,6 @@
 ---
 name: mcp-builder
-description: MCP server specialist for building Model Context Protocol tools, resources, and prompts. Use PROACTIVELY when designing or implementing MCP servers, defining tool schemas, or integrating with Claude/Cursor.
+description: MCP server specialist for tools, resources, and prompts. Use PROACTIVELY when designing or implementing an MCP server; /mcp-review audits an existing one.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: opus
 ---

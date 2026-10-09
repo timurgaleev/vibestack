@@ -242,12 +242,62 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-first-task-detect.sh` | First-run repo classification |
 | `test-learn-sync.sh` | `/learn sync` planning and dedup |
 | `test-browse-shim.sh` | The `vibe-browse` launcher: verb routing, the cheap no-browser path, and `BROWSE_NOT_AVAILABLE` when dependencies are absent |
+| `test-dispatch-flags.sh` | Every synchronous subagent dispatch in a rendered skill states `run_in_background: false` |
+| `test-fresh-shell-vars.sh` | No skill bash block reads a variable an earlier block set — every tool call is a fresh shell |
+| `test-untrusted-shell-text.sh` | Untrusted text (plan, spec, PR and issue bodies, briefs, pasted output) reaches a command only through a file, never as shell source |
+| `test-update-check.sh` | `vibe-update-check` against a local fake remote: checkout discovery, `CHECK_FAILED`, the day stamp |
+| `test-vibe-upgrade-flow.sh` | `/vibe-upgrade` blocks against a fake remote: replaying the original install, stopping on a failed fetch |
+| `test-vibe-upgrade-guards.sh` | `/vibe-upgrade`'s mutating blocks refuse an empty or wrong install dir; migrations receive the install dir |
+| `test-plan-tune-profile.sh` | `/plan-tune` profile writes land under `VIBESTACK_HOME` as numbers and nothing lands in the working directory |
+| `test-plan-review-contract.sh` | Contracts between `/autoplan` and the plan-review and `/office-hours` skills it loads from disk |
+| `test-plan-ceo-review.sh` | `/plan-ceo-review` keeps the user in control of scope and reports failed metric writes |
+| `test-plan-eng-review-rubric.sh` | `/plan-eng-review` rules and the shared Implementation Tasks snippet |
+| `test-plan-design-review.sh` | `/plan-design-review` keeps plan text out of the shell, every fix behind approval, and the review log honest |
+| `test-autoplan-ledger.sh` | `/autoplan` audit records: well-formed tables and one voice record per review |
+| `test-config-claude_md_preserve.sh` | The deployed `~/.claude/CLAUDE.md` is merged, so lines a third party appended survive a sync |
+| `test-config-codex_agents.sh` | `config/codex/AGENTS.md` matches what `scripts/gen-codex-agents.py` generates from its sources |
+| `test-config-deliberation.sh` | The opt-in deliberation plugin install, which leaves its own config to the plugin's setup |
+| `test-config-install_bootstrap.sh` | The configuration library finds its own files under `bash -c "$(curl …)"` |
+| `test-config-rtk.sh` | `rtk init -g` runs after the settings merge, and the RTK installer is downloaded to a file before it runs |
+| `test-config-settings_merge.sh` | The shipped `settings.json` merge program, extracted and run as-is |
+| `test-config-sync.sh` | `lib/config-sync.sh`: manifest prune and fill-missing merges in a fake HOME |
+| `test-config-phase.sh` | Real configuration-phase installs into isolated HOMEs |
+| `test-config-uninstall-keys.sh` | `./uninstall --with-config` takes back the merged keys the install owns and leaves the rest |
+| `test-config-skills-routing.sh` | Every routed slash name in `rules/skills.md` exists; non-pack names are marked |
+| `test-claude-gate.sh` | The `/claude` parser, timeout wrapper and hermetic flags |
+| `test-codex-verdict.sh` | `/codex` grades every run, so a run that reviewed nothing reports `VERDICT: unavailable` |
+| `test-document-release.sh` | `/document-release` blocks against stub `gh`/`glab`: spawned mode, hostile PR text, fresh shells |
+| `test-document-generate-pr-body.sh` | `/document-generate` commits without an assistant trailer and publishes a PR body only through the trust envelope and secret scan |
+| `test-cso-contract.sh` | `/cso` text contracts: trend tracking resolves a finding only on new evidence, `--recheck` |
+| `test-review-checklist.sh` | `skills/review/checklist.md` and the `/connect-review` Bedrock step; runs every `rg` probe the checklist prints |
+| `test-review-log.sh` | `vibe-review-log` tree binding and honest-status guards, plus the `/review` contracts that feed it |
+| `test-review-tree-binding.sh` | Reviews and test runs are keyed to tree content, not commits |
+| `test-ship-doc-contract.sh` | `/ship` drives `/document-release` through its spawned-mode contract |
+| `test-ship-release-gates.sh` | `/ship` version, push, distribution and release gates on fixture repos |
+| `test-release-after-merge.sh` | The shared tag-and-release step `/ship` and `/land-and-deploy` run once a PR has merged |
+| `test-land-deploy-gates.sh` | `/land-and-deploy` merges only the approved head over green CI and reverts exactly what landed |
+| `test-test-value-bar.sh` | The test value bar reaches every skill that writes, proposes or reviews tests, without drifting copies |
+| `test-context-provenance.sh` | `/context-save` and `/context-restore` keep a resumed session off the wrong context or a guessed step |
+| `test-context-identity.sh` | Checkpoints are stamped with their project and restore never offers another project's |
+| `test-learn-honest-read.sh` | A failed learnings read surfaces as unavailable; `--cross-project` carries only user-stated entries |
+| `test-design-saved-paths.sh` | Every skill running `vibe-design variants` uses the printed `saved:` paths |
+| `test-design-consultation.sh` | `/design-consultation` writes nothing before approval and verifies fonts |
+| `test-design-html.sh` | `/design-html` instructions use the real Pretext API and no bundle that does not ship |
+| `test-design-review-contract.sh` | `/design-review` outside voices, browser use, diff-aware scope and fix verification |
+| `test-design-shotgun-handoff.sh` | `/design-shotgun` writes `approved.json` from a file with the approved image's absolute path |
+| `test-devex-boomerang.sh` | `/devex-review` reads the `/plan-devex-review` baseline and drives the browser under look-not-act rules |
+| `test-browser-skill-consent.sh` | The browser skills ask before they destroy or expose a signed-in session |
+| `test-health-scoring.sh` | `/health` scores the checkers' real exit codes and full logs |
+| `test-context-budget.sh` | `vibe-context-budget` counts what the runtime lists and fails over budget |
+| `test-host-routing.sh` | Host-dependent routing: the `/vibe` index, the second-opinion pick, the memrain code-graph rule |
+| `test-redact-scan.sh` | `vibe-redact scan`: deterministic, fail-closed, sharing the pre-push guard's matcher |
+| `test-compliance-runner.sh` | The rule/skill compliance runner's bun tests against a fake `claude` — no tokens spent |
 
 ## CI (`.github/workflows/tests.yml`)
 
 Every PR runs the suites above on Linux **and** macOS — the BSD/GNU split is
 where hook patterns break, and stock macOS ships bash 3.2, so the installer
-legs `brew install bash` first. Three jobs run beyond the matrix:
+legs `brew install bash` first. Six jobs run beyond the matrix:
 
 - **nothing names another project** — `vibe-brand-audit` over tracked files, the
   PR's commit range, and the PR title and body. Commit messages are checked
@@ -255,6 +305,11 @@ legs `brew install bash` first. Three jobs run beyond the matrix:
   rewriting published history.
 - **installed skills match sources** — installs into an isolated `HOME` and
   proves every rendered `SKILL.md` still matches its source.
+- **make-pdf and browse daemon unit tests** — `bun test` over `make-pdf/test/*.test.ts`
+  (after building the binary) and `browse/test/`, with Chromium installed for the
+  navigation-guard fixture.
+- **skill listing fits the context budget** — `vibe-context-budget` over the
+  rendered listing; an over-budget result is a warning annotation, not a failure.
 - **hook scripts are runnable** — every skill hook and `bin/` script carries the
   executable bit, and the shell ones are parsed with `bash -n`. Python binaries
   are checked for the bit only; their syntax is covered by `test-vibe-bins.sh`

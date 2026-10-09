@@ -152,6 +152,12 @@ echo '{"tool_input":{"command":"dangerous command"}}' | bash skills/my-skill/bin
 echo 'not json' | bash skills/my-skill/bin/check-my-skill.sh
 # Expected: a decision, never {} — an unreadable payload must not be an allow
 
+# Skill text conventions CI enforces (see "Skill authoring conventions CI enforces" in CLAUDE.md):
+bash test/test-source-lint.sh
+bash test/test-fresh-shell-vars.sh
+bash test/test-untrusted-shell-text.sh
+bash test/test-dispatch-flags.sh
+
 # Test the full skill in your agent (Claude Code, Cursor, Kiro, or Codex CLI):
 # Start a new session and invoke /my-skill — in Codex, write $my-skill in a message
 # For hook-bearing skills, see docs/hook-verification.md to confirm
@@ -189,6 +195,7 @@ Before submitting:
 - [ ] `description:` is one clear sentence
 - [ ] `allowed-tools:` contains only tools the skill actually uses
 - [ ] Body is prose instructions, not bash
+- [ ] Follows the skill authoring conventions in `CLAUDE.md`; the four suites in step 4 pass
 - [ ] If hooks: scripts are POSIX-portable and tested directly
 - [ ] Invoked at least once in a real agent session (Claude Code, Cursor, Kiro, or Codex CLI)
 - [ ] If hook-bearing: hook tier documented in `docs/agent-skills-compatibility-audit.md`

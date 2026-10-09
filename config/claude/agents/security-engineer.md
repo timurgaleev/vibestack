@@ -1,6 +1,6 @@
 ---
 name: security-engineer
-description: Application security engineer for threat modeling, secure code review, vulnerability assessment, and security architecture. Use PROACTIVELY when reviewing code for security, designing auth flows, hardening cloud infrastructure, or assessing third-party risk.
+description: Application security engineer for threat modeling and secure code review. /cso owns the security audit; use this for a scoped review of one auth flow, endpoint, or design inside other work.
 tools: Read, Grep, Glob
 model: opus
 ---

@@ -211,27 +211,9 @@ Devices when you stop using the skill.
 
 ---
 
-## vibe-model-benchmark
-
-**Required by:** `/benchmark-models`
-
-**What it is:** a CLI for running a single prompt against multiple LLM providers (OpenAI, Anthropic, Google, Mistral, Groq, Together, Ollama) and saving structured comparison results.
-
-**Expected location:**
-
-```
-~/.vibestack/bin/vibe-model-benchmark
-```
-
-**Status:** vibestack does **not** include this binary. `/benchmark-models` will detect the missing binary and exit with a clear message.
-
-**If you have your own:** drop it at the path above and `/benchmark-models` will use it.
-
----
-
 ## Why aren't these bundled?
 
-vibestack is a curated skills pack. The browse daemon and the model-benchmark CLI are non-trivial standalone projects (a Chromium controller and a multi-provider LLM benchmark tool). Building and shipping them would expand the project scope well beyond "skills pack." The gh CLI, the aws CLI and the MCP inspector are a different case: other people's tools, with their own release cadence, install story and credential handling — vendoring any of them would mean shipping a stale copy, and in gh's case a second copy of a credential store the machine already has. The honest path in every case is to document the gap and let skills fail gracefully when the dependency is absent.
+vibestack is a curated skills pack. The browse daemon is a non-trivial standalone project (a Chromium controller). Building and shipping it would expand the project scope well beyond "skills pack." The gh CLI, the aws CLI and the MCP inspector are a different case: other people's tools, with their own release cadence, install story and credential handling — vendoring any of them would mean shipping a stale copy, and in gh's case a second copy of a credential store the machine already has. The honest path in every case is to document the gap and let skills fail gracefully when the dependency is absent.
 
 The affected skills are kept in the pack because (a) they're useful when the daemon **is** available, (b) they fall back when it isn't, and (c) deleting them would lose the integration scaffolding for anyone who supplies their own daemon.
 

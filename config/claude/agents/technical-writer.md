@@ -1,6 +1,6 @@
 ---
 name: technical-writer
-description: Developer documentation specialist for READMEs, API references, tutorials, and docs-as-code pipelines. Use PROACTIVELY when writing or auditing docs, generating API references from OpenAPI specs, or improving onboarding content.
+description: Long-form developer docs: READMEs, API references, tutorials. /document-release updates docs after a ship and /document-generate writes missing docs; use this for prose outside a release.
 tools: Read, Grep, Glob
 model: opus
 ---

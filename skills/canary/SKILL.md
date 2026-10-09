@@ -118,18 +118,32 @@ Parse the user's arguments. Default duration is 10 minutes. Default pages: auto-
 
 If the user passed `--baseline`, capture the current state BEFORE deploying.
 
+The browse console buffer is shared across every page and every check, and only
+`console --clear` empties it — navigation does not. Every block below that reads
+`console --errors` therefore clears the buffer first, so the errors it reports belong
+to that one page load. `--errors` also returns warnings: keep only lines tagged
+`[error]` and drop `[warning]` lines before any comparison. Each line reads
+`[<timestamp>] [error] <message>`; store and compare only `<message>` — the timestamp
+differs on every load, so keeping it would make every error look new.
+
 For each page (either from `--pages` or the homepage):
 
 ```bash
 B='<BROWSE_BIN>'
+$B console --clear
 $B goto <page-url>
 $B snapshot -i -a -o ".vibestack/canary-reports/baselines/<page-name>.png"
 $B console --errors
 $B perf
-$B text
+$B text > ".vibestack/canary-reports/baselines/<page-name>.txt"
+$B links
 ```
 
-Collect for each page: screenshot path, console error count, page load time from `perf`, and a text content snapshot.
+Then run the link check (below) on the `links` output.
+
+Collect for each page: the screenshot path, the list of `[error]` message strings (the
+messages themselves, not a count), the broken links, the saved text snapshot path and
+the page load time from `perf`.
 
 Save the baseline manifest to `.vibestack/canary-reports/baseline.json`:
 
@@ -141,7 +155,9 @@ Save the baseline manifest to `.vibestack/canary-reports/baseline.json`:
   "pages": {
     "/": {
       "screenshot": "baselines/home.png",
-      "console_errors": 0,
+      "console_errors": ["Uncaught TypeError: x is undefined"],
+      "broken_links": ["https://example.com/old-pricing"],
+      "text_snapshot": "baselines/home.txt",
       "load_time_ms": 450
     }
   }
@@ -149,6 +165,28 @@ Save the baseline manifest to `.vibestack/canary-reports/baseline.json`:
 ```
 
 Then STOP and tell the user: "Baseline captured. Deploy your changes, then run `/canary <url>` to monitor."
+
+#### Link check
+
+Used by Phase 2, Phase 4 and every round of Phase 5. From the `$B links` output keep
+same-origin links only, and drop any URL whose path matches
+`logout|signout|delete|remove|cancel|unsubscribe` (case-insensitive). Filter BEFORE
+fetching anything: such links are never visited with `goto` or HEAD, because the
+browse session may carry imported cookies and a request to one of them changes real
+production state.
+
+Write the filtered absolute URLs, one per line, to
+`.vibestack/canary-reports/links-<page-name>.txt` with the Write tool, then:
+
+```bash
+grep -Eiv '^[a-z]+://[^/]+/.*(logout|signout|delete|remove|cancel|unsubscribe)' ".vibestack/canary-reports/links-<page-name>.txt" | while IFS= read -r u; do
+  code=$(curl -sI -o /dev/null -w '%{http_code}' "$u" 2>/dev/null) || code=000
+  printf '%s %s\n' "$code" "$u"
+done
+```
+
+`404` or `410` is broken. Any other code outside 2xx/3xx, or a curl failure (`000`), is
+`unknown` — report it, never alert on it.
 
 ### Phase 3: Page Discovery
 
@@ -161,12 +199,16 @@ $B links
 $B snapshot -i
 ```
 
-Extract the top 5 internal navigation links from the `links` output. Always include the homepage. Present the page list via AskUserQuestion:
+From the `links` output keep same-origin links only and drop any URL whose path matches
+`logout|signout|delete|remove|cancel|unsubscribe` (case-insensitive) before building the
+list — those pages are never proposed and never visited, because an imported session
+would change real production state. Take the top 5 internal navigation links from the
+filtered set. Always include the homepage. Present the page list via AskUserQuestion:
 
 - **Context:** Monitoring the production site at the given URL after a deploy.
 - **Question:** Which pages should the canary monitor?
 - **RECOMMENDATION:** Choose A — these are the main navigation targets.
-- A) Monitor these pages: [list the discovered pages]
+- A) Monitor these pages: [list the filtered pages]
 - B) Add more pages (user specifies)
 - C) Monitor homepage only (quick check)
 
@@ -178,13 +220,20 @@ For each page to monitor:
 
 ```bash
 B='<BROWSE_BIN>'
+$B console --clear
 $B goto <page-url>
 $B snapshot -i -a -o ".vibestack/canary-reports/screenshots/pre-<page-name>.png"
 $B console --errors
 $B perf
+$B text > ".vibestack/canary-reports/screenshots/pre-<page-name>.txt"
+$B links
 ```
 
-Record the console error count and load time for each page. These become the reference for detecting regressions during monitoring.
+Run the link check on the `links` output. Collect the same fields as the baseline
+(`screenshot`, `console_errors` as the list of `[error]` messages, `broken_links`,
+`text_snapshot`, `load_time_ms`) and write them in the same shape to
+`.vibestack/canary-reports/pre-monitor.json`. Never write this snapshot to
+`baseline.json`. It is the reference for detecting regressions during monitoring.
 
 ### Phase 5: Continuous Monitoring Loop
 
@@ -192,20 +241,24 @@ Monitor for the specified duration. Every 60 seconds, check each page:
 
 ```bash
 B='<BROWSE_BIN>'
+$B console --clear
 $B goto <page-url>
 $B snapshot -i -a -o ".vibestack/canary-reports/screenshots/<page-name>-<check-number>.png"
 $B console --errors
 $B perf
+$B links
 ```
 
-After each check, compare results against the baseline (or pre-deploy snapshot):
+Run the link check on the `links` output. Keep only `[error]` console lines.
+
+After each check, compare results against `baseline.json` (or `pre-monitor.json`):
 
 1. **Page load failure** — `goto` returns error or timeout → CRITICAL ALERT
-2. **New console errors** — errors not present in baseline → HIGH ALERT
+2. **New console errors** — an `[error]` message not in the page's `console_errors` list → HIGH ALERT
 3. **Performance regression** — load time exceeds 2x baseline → MEDIUM ALERT
-4. **Broken links** — new 404s not in baseline → LOW ALERT
+4. **Broken links** — a 404/410 URL not in the page's `broken_links` list → LOW ALERT
 
-**Alert on changes, not absolutes.** A page with 3 console errors in the baseline is fine if it still has 3. One NEW error is an alert.
+**Alert on changes, not absolutes.** Errors are compared by message, not by count. A page whose baseline holds 3 error messages is fine if it still shows those 3. One NEW message is an alert, even if another one went away.
 
 **Don't cry wolf.** Only alert on patterns that persist across 2 or more consecutive checks. A single transient network blip is not an alert.
 
@@ -232,6 +285,17 @@ Current:  [current value]
 
 ### Phase 6: Health Report
 
+An alert is **confirmed** once it is seen on 2 or more consecutive checks. Derive the
+status from confirmed alerts only:
+
+- **BROKEN** — any CRITICAL alert was confirmed
+- **DEGRADED** — any other alert was confirmed
+- **HEALTHY** — no alert was confirmed
+
+A confirmed alert that later clears stays in the report with `resolved: true`; it still
+counts toward the status. Findings seen on a single check never confirm — they go under
+`observations`.
+
 After monitoring completes (or if the user stops early), produce a summary:
 
 ```
@@ -255,16 +319,50 @@ Screenshots:   .vibestack/canary-reports/screenshots/
 VERDICT: [DEPLOY IS HEALTHY / DEPLOY HAS ISSUES — details above]
 ```
 
-Save report to `.vibestack/canary-reports/{date}-canary.md` and `.vibestack/canary-reports/{date}-canary.json`.
+Save report to `.vibestack/canary-reports/{date}-canary.md` and `.vibestack/canary-reports/{date}-canary.json`. The JSON report has this shape:
 
-Log the result for the review dashboard:
-
-```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-mkdir -p ~/.vibestack/projects/$SLUG
+```json
+{
+  "skill": "canary",
+  "timestamp": "<ISO>",
+  "url": "<url>",
+  "duration_min": 10,
+  "status": "DEGRADED",
+  "pages": {
+    "/dashboard": {
+      "checks": 10,
+      "new_errors": ["Uncaught TypeError: x is undefined"],
+      "new_404s": ["https://example.com/old-pricing"],
+      "load_avg_ms": 1200,
+      "load_baseline_ms": 400
+    }
+  },
+  "alerts": [
+    {
+      "type": "new_console_error",
+      "page": "/dashboard",
+      "severity": "HIGH",
+      "first_seen": "<ISO>",
+      "confirmed_at": "<ISO>",
+      "resolved": false,
+      "evidence": "screenshots/dashboard-3.png"
+    }
+  ],
+  "observations": ["transient findings that never confirmed"]
+}
 ```
 
-Write a JSONL entry: `{"skill":"canary","timestamp":"<ISO>","status":"<HEALTHY/DEGRADED/BROKEN>","url":"<url>","duration_min":<N>,"alerts":<N>}`
+Log the result for the review dashboard by appending one line to the project's canary
+history. The line holds model-authored summary fields only — `skill`, `timestamp`,
+`status`, `url`, `duration_min`, `alerts` (the confirmed alert count) — never page text.
+The file is appended to, never overwritten:
+
+```bash
+eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null || echo SLUG=unknown)"
+_H="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+mkdir -p "$_H"
+printf '%s\n' '{"skill":"canary","timestamp":"<ISO>","status":"<HEALTHY/DEGRADED/BROKEN>","url":"<url>","duration_min":<N>,"alerts":<N>}' >> "$_H/canary-history.jsonl"
+```
 
 ### Phase 7: Baseline Update
 
@@ -275,7 +373,15 @@ If the deploy is healthy, offer to update the baseline:
 - A) Update baseline with current screenshots
 - B) Keep old baseline
 
-If the user chooses A, copy the latest screenshots to the baselines directory and update `baseline.json`.
+If the user chooses A, copy the latest screenshots to the baselines directory and save each page's current text:
+
+```bash
+B='<BROWSE_BIN>'
+$B goto <page-url>
+$B text > ".vibestack/canary-reports/baselines/<page-name>.txt"
+```
+
+Then rewrite `baseline.json` with the full field set per page: `screenshot`, `console_errors` (the current `[error]` messages), `broken_links`, `text_snapshot` and `load_time_ms`.
 
 {{include lib/snippets/capture-learnings.md}}
 Canary runs learn things nothing else sees — which page is slow only under real traffic,

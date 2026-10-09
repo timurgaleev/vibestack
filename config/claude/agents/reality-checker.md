@@ -1,6 +1,6 @@
 ---
 name: reality-checker
-description: Reality-check tester who validates whether features actually work end-to-end. Use PROACTIVELY when verifying deployments, smoke-testing new features, or auditing claims against real behavior.
+description: Validates that features actually work end to end. /qa-only reports and /qa runs the fix loop for web apps; use this for non-browser checks: CLIs, APIs, jobs, deploy claims.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: opus
 ---

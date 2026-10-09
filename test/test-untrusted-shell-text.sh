@@ -15,8 +15,15 @@
 #     argument holding a placeholder for an untrusted role (brief, body, plan,
 #     spec, question, focus, instructions, feedback, description, prompt,
 #     comment, reply, user message), and (c) a file's text spliced into a
-#     `-d`/`--data`/`-F` argument with $(cat ...). A short allowlist below names
-#     the justified exceptions by block signature, each with its reason;
+#     `-d`/`--data`/`-F` argument, bare or as name=value, with $(cat ...). A
+#     short allowlist below names the justified exceptions by block signature,
+#     each with its reason. The allowlist holds only model-authored or fixed
+#     text (the model's own questions, ledger lines and commit messages, or a
+#     comment in a fixed helper) and must stay that way: untrusted text is
+#     fixed by moving it into a file, never by allowlisting it;
+#   - a scanner self-test on a fixture doc: each unsafe shape is flagged and
+#     each file-based shape passes, so a scanner that silently matches nothing
+#     cannot report the tree clean;
 #   - the fixed blocks of /claude, /spec, /ship, /pr-summary, /address-pr-review,
 #     /office-hours, /design-consultation and /design-review, run with hostile
 #     text (terminator lines, $(...), backticks, quote breakouts) in the file the
@@ -63,8 +70,7 @@ done
 while IFS= read -r f; do docs+=("${f#"$SRC"/}=$f"); done \
   < <(find "$SRC/skills" -name '*.md' ! -name SKILL.md | sort; ls "$SRC"/lib/snippets/*.md)
 
-echo "no untrusted text in shell source"
-python3 -I - "$TMP/allow.txt" "${docs[@]}" > "$TMP/scan.out" <<'PY'
+cat > "$TMP/scan.py" <<'PY'
 import re, sys
 
 allow = []
@@ -86,7 +92,7 @@ PROSE = re.compile(r"(?i)\b(paste (it |the |your )?here|insert (the|your) |full 
 ROLE = re.compile(r"(?i)\b(brief|body|plan|spec|question|focus|instructions?|feedback|description|prompt|comment|reply|user|message)s?\b")
 IDENT = re.compile(r"(?i)(id|file|name|path|dir|number|url|sha|slug|key)$")
 ROLE_FLAG = re.compile(r"(?:^|\s)--(brief|body|description|prompt|message|comment|feedback|focus|question|instructions?)[ =]*$")
-CAT_DATA = re.compile(r"(?:^|\s)(-d|--data(?:-raw|-binary|-urlencode)?|-F|--form)\s+[\"']?\$\(\s*cat\b")
+CAT_DATA = re.compile(r"(?:^|\s)(-d|--data(?:-raw|-binary|-urlencode)?|-F|--form)\s+[\"']?(?:[A-Za-z0-9_.-]+=)?[\"']?\$\(\s*cat\b")
 HTML_ATTR = re.compile(r"^[A-Za-z][A-Za-z0-9]*\s+[A-Za-z-]+=")
 
 
@@ -221,6 +227,66 @@ for label, ln, kind, line, slot in bad:
 for a in allow:
     print(("USED" if a[3] else "STALE") + f"\t{a[0]} | {a[1]} — {a[2]}")
 PY
+
+echo "scanner self-test"
+: > "$TMP/allow-none.txt"
+cat > "$TMP/selftest.md" <<'SELFTEST_DOC'
+```bash
+codex exec "<prompt>"
+```
+
+```bash
+claude -p "<review instructions>"
+```
+
+```bash
+gh pr create --title "t" --body "<body>"
+```
+
+```bash
+gh api repos/o/r/pulls/7/comments -f body="<reply text>"
+```
+
+```bash
+cat > "$PLAN_FILE" <<'EOF'
+<plan content>
+EOF
+```
+
+```bash
+curl -s -F body="$(cat "$F")" https://example.invalid/upload
+```
+
+```bash
+gh pr create --title "t" --body-file "$BODY_FILE"
+```
+
+```bash
+gh api repos/o/r/issues/7/comments -F body=@"$F"
+```
+
+```bash
+codex exec - < "$PROMPT_FILE"
+```
+
+```bash
+cat "$PROMPT_FILE" | claude -p
+```
+SELFTEST_DOC
+if python3 -I "$TMP/scan.py" "$TMP/allow-none.txt" "selftest.md=$TMP/selftest.md" > "$TMP/self.out"; then
+  for want in 'codex exec "<prompt>"' 'claude -p "<review instructions>"' '--body "<body>"' \
+              '-f body="<reply text>"' 'cat > "$PLAN_FILE" <<' 'curl -s -F body="$(cat'; do
+    grep '^BAD' "$TMP/self.out" | grep -qF -- "$want" && ok "flagged: $want" || no "not flagged: $want"
+  done
+  for safe in '--body-file "$BODY_FILE"' '-F body=@"$F"' 'codex exec - < "$PROMPT_FILE"' 'cat "$PROMPT_FILE" | claude -p'; do
+    grep '^BAD' "$TMP/self.out" | grep -qF -- "$safe" && no "false positive: $safe" || ok "passes: $safe"
+  done
+else
+  no "the scanner ran on the self-test doc"
+fi
+
+echo "no untrusted text in shell source"
+python3 -I "$TMP/scan.py" "$TMP/allow.txt" "${docs[@]}" > "$TMP/scan.out"
 scan_rc=$?
 if [ "$scan_rc" -ne 0 ]; then
   no "the scanner ran (exit $scan_rc)"

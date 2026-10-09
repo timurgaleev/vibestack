@@ -25,7 +25,26 @@ mkfix() { # mkfix <name> → builds $TMP/<name>/{skills/demo,lib/snippets}
 # 2. Unbalanced fence in a skill source.
 d=$(mkfix fence); printf '# demo\n```\nunclosed\n' > "$d/skills/demo/SKILL.md"
 out=$(bash "$LINT" "$d" 2>&1); rc=$?
-[ "$rc" -eq 1 ] && grep -q "odd number" <<<"$out" && ok "unbalanced fence caught" || no "fence rule missed (rc=$rc)"
+[ "$rc" -eq 1 ] && grep -q "SKILL.md:2: unclosed fence opened here" <<<"$out" && ok "unbalanced fence caught" || no "fence rule missed (rc=$rc)"
+
+# 2b. Fence shapes. fence_case <name> <expect: pass|fail> <printf body>
+fence_case() {
+  local d; d=$(mkfix "$1"); printf "$3" > "$d/skills/demo/SKILL.md"
+  out=$(bash "$LINT" "$d" 2>&1); rc=$?
+  if [ "$2" = fail ]; then
+    [ "$rc" -eq 1 ] && grep -q "unclosed fence opened here" <<<"$out" && ok "$4" || no "$4 (rc=$rc)"
+  else
+    [ "$rc" -eq 0 ] && ok "$4" || no "$4 (rc=$rc: $out)"
+  fi
+}
+fence_case indentfence fail '# demo\n   ```bash\nunclosed\n' "unclosed 3-space-indented fence caught"
+fence_case tildefence fail '# demo\n~~~\nunclosed\n' "unclosed ~~~ fence caught"
+fence_case longfence pass '# demo\n````md\n```bash\nx\n```\n````\n' "4-backtick block holding \`\`\` lines passes"
+fence_case tildeholds pass '# demo\n~~~\n```\nx\n~~~\n' "~~~ block holding a \`\`\` line passes"
+fence_case wrongchar fail '# demo\n```\nx\n~~~\n' "a closer of the other character does not close"
+fence_case deepindent pass '# demo\n    ```\ncode\n' "a 4-space-indented fence line is content"
+fence_case backtickinfo pass '# demo\n``` `x` ```\ntext\n' "a backtick run whose info string holds a backtick is not a fence"
+fence_case tildeinfo fail '# demo\n~~~ `x`\nunclosed\n' "a ~~~ opener may carry a backtick in its info string"
 
 # 3. Nested include in a snippet.
 d=$(mkfix nested); printf '# snip\n{{include lib/snippets/other.md}}\n' > "$d/lib/snippets/bad.md"

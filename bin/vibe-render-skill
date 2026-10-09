@@ -73,16 +73,38 @@ TMP="$(mktemp "$DEST_DIR/.SKILL.XXXXXX")" || {
 # Directive regex. Anchored line; only `lib/snippets/<name>.md` allowed.
 DIRECTIVE_RE='^\{\{include lib/snippets/[A-Za-z0-9_-]+\.md\}\}$'
 
+# Fenced code blocks (CommonMark): a fence opens on a line of 0-3 spaces then a
+# run of 3+ backticks or 3+ tildes, and closes only on a line of 0-3 spaces, the
+# same character, a run at least as long, and nothing but whitespace after.
+# A backtick opener whose info string holds a backtick is not a fence.
+# Directives inside a fence are content. FENCE_CHAR is empty outside a fence.
+FENCE_RE='^( {0,3})(`{3,}|~{3,})(.*)$'
+FENCE_CHAR=""
+FENCE_LEN=0
+# fence_step LINE — succeeds when LINE opens or closes a fence, updating state.
+fence_step() {
+  [[ "$1" =~ $FENCE_RE ]] || return 1
+  local run="${BASH_REMATCH[2]}" rest="${BASH_REMATCH[3]}"
+  if [ -z "$FENCE_CHAR" ]; then
+    # A backtick opener's info string may not contain a backtick (CommonMark).
+    [ "${run:0:1}" = '`' ] && [[ "$rest" == *'`'* ]] && return 1
+    FENCE_CHAR="${run:0:1}"; FENCE_LEN=${#run}
+    return 0
+  fi
+  if [ "${run:0:1}" = "$FENCE_CHAR" ] && [ "${#run}" -ge "$FENCE_LEN" ] && [[ "$rest" =~ ^[[:space:]]*$ ]]; then
+    FENCE_CHAR=""; FENCE_LEN=0
+    return 0
+  fi
+  return 1
+}
+
 # Pass 1: scan source to learn if any expansion will happen.
 # This decides whether we write a sidecar JSON.
 EXPANDED_PARTS=""
-in_fence=0
+FENCE_CHAR=""; FENCE_LEN=0
 while IFS= read -r line || [ -n "$line" ]; do
-  if [[ "$line" =~ ^\`\`\` ]] || [[ "$line" =~ ^~~~ ]]; then
-    in_fence=$((1 - in_fence))
-    continue
-  fi
-  [ "$in_fence" -eq 1 ] && continue
+  fence_step "$line" && continue
+  [ -n "$FENCE_CHAR" ] && continue
   if [[ "$line" =~ $DIRECTIVE_RE ]]; then
     # Extract path (strip {{include  and }}).
     part="${line#\{\{include }"
@@ -92,14 +114,13 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$SOURCE"
 
 # Pass 2: emit content. Track fence state again; expand directives.
-in_fence=0
+FENCE_CHAR=""; FENCE_LEN=0
 while IFS= read -r line || [ -n "$line" ]; do
-  if [[ "$line" =~ ^\`\`\` ]] || [[ "$line" =~ ^~~~ ]]; then
-    in_fence=$((1 - in_fence))
+  if fence_step "$line"; then
     printf '%s\n' "$line" >> "$TMP"
     continue
   fi
-  if [ "$in_fence" -eq 0 ] && [[ "$line" =~ $DIRECTIVE_RE ]]; then
+  if [ -z "$FENCE_CHAR" ] && [[ "$line" =~ $DIRECTIVE_RE ]]; then
     part="${line#\{\{include }"
     part="${part%\}\}}"
     snippet_path="$REPO_ROOT/$part"
@@ -108,19 +129,18 @@ while IFS= read -r line || [ -n "$line" ]; do
       exit 2
     }
     # Reject nested includes: a snippet containing its own directive is out of v1 scope.
-    snippet_in_fence=0
+    # The directive line sits outside any source fence, so the snippet walk can
+    # borrow the fence state and leave it empty again for the source walk.
     snippet_lineno=0
     while IFS= read -r snippet_line || [ -n "$snippet_line" ]; do
       snippet_lineno=$((snippet_lineno + 1))
-      if [[ "$snippet_line" =~ ^\`\`\` ]] || [[ "$snippet_line" =~ ^~~~ ]]; then
-        snippet_in_fence=$((1 - snippet_in_fence))
-        continue
-      fi
-      if [ "$snippet_in_fence" -eq 0 ] && [[ "$snippet_line" =~ $DIRECTIVE_RE ]]; then
+      fence_step "$snippet_line" && continue
+      if [ -z "$FENCE_CHAR" ] && [[ "$snippet_line" =~ $DIRECTIVE_RE ]]; then
         echo "render: validation: nested include in $part:$snippet_lineno (v1 disallows snippet-includes-snippet)" >&2
         exit 2
       fi
     done < "$snippet_path"
+    FENCE_CHAR=""; FENCE_LEN=0
     # Substitute {SKILL_NAME} in snippet content. Use awk for safe text handling.
     awk -v name="$SKILL_NAME" '{ gsub(/\{SKILL_NAME\}/, name); print }' "$snippet_path" >> "$TMP"
   else

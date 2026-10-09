@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Pre-merge diff reviewer for correctness, security, and architectural fit. Use PROACTIVELY when reviewing pull requests, evaluating change risk, or providing line-level feedback before merge.
+description: Diff reviewer for correctness, security, and fit. /review owns the pre-merge review (/codex review for a second model); use this for a scoped read-only pass inside another skill or where the pack is not installed.
 tools: Read, Grep, Glob
 model: opus
 ---

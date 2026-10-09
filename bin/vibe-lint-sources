@@ -2,9 +2,14 @@
 # vibe-lint-sources — static checks over skill sources and shared snippets.
 #
 # Rules:
-#   fences    — every skills/*/SKILL.md and lib/snippets/*.md has an even
-#               number of ``` fence lines (an unbalanced fence silently
-#               swallows include directives in the renderer).
+#   fences    — every fenced code block in skills/*/SKILL.md and
+#               lib/snippets/*.md is closed (an unbalanced fence silently
+#               swallows include directives in the renderer). Fences follow
+#               CommonMark, as the renderer does: a fence opens on 0-3 spaces
+#               then 3+ backticks or 3+ tildes (an info string may follow, and
+#               after backticks it may not contain a backtick) and
+#               closes only on 0-3 spaces, the same character, a run at least
+#               as long, and nothing but whitespace after.
 #   snippets  — lib/snippets/*.md: no duplicate headings inside one snippet,
 #               no nested {{include}} directives, max 400 lines.
 #
@@ -16,11 +21,34 @@ ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 errors=0
 say() { echo "$1"; errors=$((errors + 1)); }
 
+# fence_step(line) returns 1 for a fence line or a line inside a fence, 0 for a
+# line outside every fence. State: fc/fl (open fence char and run length, fc
+# empty outside a fence), fline/fopen (line number and text of the opener).
+FENCE_AWK='
+function fence_step(line,   rest, c, n) {
+  match(line, /^ */)
+  if (RLENGTH > 3) return fc != ""
+  rest = substr(line, RLENGTH + 1)
+  c = substr(rest, 1, 1)
+  if (c != "`" && c != "~") return fc != ""
+  n = 0
+  while (substr(rest, n + 1, 1) == c) n++
+  if (n < 3) return fc != ""
+  if (fc == "") {
+    if (c == "`" && index(substr(rest, n + 1), "`")) return 0
+    fc = c; fl = n; fline = NR; fopen = line; return 1
+  }
+  if (c == fc && n >= fl && substr(rest, n + 1) ~ /^[ \t]*$/) fc = ""
+  return 1
+}'
+
 # --- fence balance ---------------------------------------------------------
 while IFS= read -r f; do
-  n=$(grep -c '^```' "$f" || true)
-  if [ $((n % 2)) -ne 0 ]; then
-    say "$f: odd number of \`\`\` fence lines ($n) — unbalanced fence swallows directives"
+  open=$(awk "$FENCE_AWK"'
+    { fence_step($0) }
+    END { if (fc != "") print fline ": " fopen }' "$f")
+  if [ -n "$open" ]; then
+    say "$f:${open%%:*}: unclosed fence opened here (${open#*: }) — an unbalanced fence swallows directives"
   fi
 done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
 
@@ -36,17 +64,17 @@ for f in "$ROOT"/lib/snippets/*.md; do
   # Nested includes: the renderer supports one level only. Match the exact
   # directive grammar; indented/fenced occurrences are content, not directives
   # (fence-aware, same as the renderer's treatment).
-  n=$(awk '
-    /^```/ { fence = !fence; next }
-    !fence && /^\{\{include lib\/snippets\/[A-Za-z0-9_-]+\.md\}\}$/ { print NR; exit }' "$f")
+  n=$(awk "$FENCE_AWK"'
+    fence_step($0) { next }
+    /^\{\{include lib\/snippets\/[A-Za-z0-9_-]+\.md\}\}$/ { print NR; exit }' "$f")
   if [ -n "$n" ]; then
     say "$f:$n: nested {{include}} — snippets must not include other snippets"
   fi
 
   # Duplicate headings inside one snippet (fence-aware: skip fenced blocks).
-  dup=$(awk '
-    /^```/ { fence = !fence; next }
-    !fence && /^#{1,6} / {
+  dup=$(awk "$FENCE_AWK"'
+    fence_step($0) { next }
+    /^#{1,6} / {
       if (seen[$0]++) { print NR ": " $0; exit }
     }' "$f")
   if [ -n "$dup" ]; then
