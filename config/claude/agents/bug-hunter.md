@@ -1,6 +1,6 @@
 ---
 name: bug-hunter
-description: Debugging specialist for errors and test failures.
+description: Debugging specialist for errors and test failures. /investigate owns root-cause debugging; use this for a scoped diagnosis inside another skill or where the pack is not installed.
 tools: Read, Edit, Bash, Grep, Glob
 model: opus
 ---

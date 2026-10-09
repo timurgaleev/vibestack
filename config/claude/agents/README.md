@@ -68,6 +68,24 @@ This directory holds the sub-agent definitions deployed to `~/.claude/agents/` b
 | `minimal-change-engineer` | `code-shaper` | `minimal-change-engineer` is surgical bug fixes; `code-shaper` is behavior-preserving refactor. |
 | `technical-writer` | `docs-crafter` | `technical-writer` is long-form developer docs; `docs-crafter` is inline/code-adjacent docs. |
 
+## Agents and the pack's skills
+
+Where a skill owns a task, the skill runs the full workflow and the agent covers what is left.
+
+| Agent | Owning skill | Use the agent instead when |
+|-------|--------------|----------------------------|
+| `code-reviewer`, `quality-guard` | `/review` (`/codex review` for a second model) | A scoped read-only pass inside another skill, or the pack is not installed |
+| `security-engineer` | `/cso` | A scoped review of one auth flow, endpoint, or design inside other work |
+| `task-planner`, `system-designer`, `software-architect` | `/plan-eng-review` (`/autoplan` for the full review chain) | Architecture notes or ADRs are requested as a document |
+| `bug-hunter` | `/investigate` | A scoped diagnosis inside another skill, or the pack is not installed |
+| `docs-crafter`, `technical-writer` | `/document-release` (after a ship), `/document-generate` (missing docs) | Inline and code-adjacent comments (`docs-crafter`); long-form prose outside a release (`technical-writer`) |
+| `reality-checker` | `/qa-only` (report), `/qa` (fix loop) | End-to-end checks that do not run in a browser |
+| `performance-benchmarker` | `/benchmark` (web page performance) | Service latency, throughput, and load tests |
+| `ai-engineer` | `/agent-eval`, `/ai-cost-guard`, `/kb-review` (evals, spend caps, RAG review) | Building AI features |
+| `mcp-builder` | `/mcp-review` (auditing an existing server) | Designing or implementing an MCP server |
+| `devops-automator` | `/setup-deploy`, `/land-and-deploy` (this repo's deploy pipeline) | Writing infrastructure code |
+| `sre` | `/canary`, `/land-and-deploy` (post-deploy health) | SLO and observability design |
+
 ## Frontmatter convention
 
 Every agent file starts with:
@@ -75,10 +93,12 @@ Every agent file starts with:
 ```yaml
 ---
 name: <kebab-case-name>
-description: <action-oriented sentence with "Use PROACTIVELY when ..." trigger>
+description: <action-oriented sentence>
 tools: <comma-separated subset>
 model: opus
 ---
 ```
+
+The description carries a `Use PROACTIVELY when ...` trigger only when no skill owns the agent's task. Where a skill owns it, the description names that skill and the narrow case the agent still covers. `performance-benchmarker`, `ai-engineer`, `mcp-builder`, `devops-automator`, and `sre` share only part of their scope with a skill, so they keep the trigger for the part no skill owns.
 
 Every agent body ends with a `## Output discipline` section that pins terseness, file-line citation, and "no invented file paths" rules.

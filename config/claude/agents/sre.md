@@ -1,6 +1,6 @@
 ---
 name: sre
-description: Site reliability engineer for SLOs, error budgets, observability, chaos engineering, and toil reduction. Use PROACTIVELY when defining reliability targets, designing observability, planning capacity, or reviewing production incidents.
+description: Site reliability engineer for SLOs, error budgets, observability, and toil. Use PROACTIVELY when defining reliability targets or designing observability; /canary and /land-and-deploy own post-deploy health.
 tools: Read, Grep, Glob
 model: opus
 ---

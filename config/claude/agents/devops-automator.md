@@ -1,6 +1,6 @@
 ---
 name: devops-automator
-description: DevOps engineer for Terraform/CDK, CI/CD pipelines, container orchestration, and observability. Use PROACTIVELY when automating infrastructure, building deployment pipelines, or implementing monitoring and zero-downtime deploys.
+description: DevOps engineer for Terraform/CDK, CI/CD, containers, and observability. Use PROACTIVELY when writing infrastructure code; /setup-deploy and /land-and-deploy own this repo's deploy pipeline.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: opus
 ---

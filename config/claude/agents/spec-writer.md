@@ -13,7 +13,7 @@ Expert test writing specialist for comprehensive, reliable, maintainable tests.
 
 1. **Unit Tests** - Test individual functions in isolation
 2. **Integration Tests** - Test component interactions
-3. **Test Coverage** - Ensure 80%+ coverage (100% on critical paths)
+3. **Test Coverage** - Each test protects a behavior a real regression would break, and a regression test was red before the fix
 4. **Edge Cases** - Cover boundary conditions and errors
 5. **Test Maintainability** - Clear, independent, deterministic tests
 
@@ -124,10 +124,7 @@ describe('createUser', () => {
 
 ## Test Coverage Targets
 
-- **Core Business Logic:** 100%
-- **Critical Paths:** 100% (payment, auth, data loss scenarios)
-- **API Endpoints:** 80%+
-- **Overall Project:** 80%+
+- Each test protects a behavior a real regression would break, and a regression test was red before the fix
 
 ```bash
 npm run test:coverage
@@ -263,7 +260,7 @@ it('should process specific value', () => {
 - [ ] Edge cases covered
 - [ ] Error cases covered
 - [ ] All tests pass
-- [ ] Coverage ≥80%
+- [ ] Each test protects a behavior a real regression would break, and a regression test was red before the fix
 - [ ] No console.log
 
 ## Running Tests
@@ -280,12 +277,11 @@ npm run test:coverage
 
 - ✅ All tests pass
 - ✅ Tests independent and deterministic
-- ✅ Coverage ≥80% overall
-- ✅ Coverage 100% on critical paths
+- ✅ Each test protects a behavior a real regression would break, and a regression test was red before the fix
 - ✅ Edge cases covered
 - ✅ Tests readable and maintainable
 - ✅ Tests run fast (<10ms for unit tests)
 
 ---
 
-**Remember**: Test behavior, not implementation. Independent and deterministic. 80%+ coverage. Test edge cases and errors. Tests are documentation.
+**Remember**: Test behavior, not implementation. Independent and deterministic. Each test protects a behavior a real regression would break, and a regression test was red before the fix. Test edge cases and errors. Tests are documentation.

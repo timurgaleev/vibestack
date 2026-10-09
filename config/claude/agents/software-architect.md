@@ -1,6 +1,6 @@
 ---
 name: software-architect
-description: System and feature architecture specialist focused on domain-driven design, ADRs, and trade-off analysis. Use PROACTIVELY when designing new features, evaluating architectural patterns, or making reversibility-sensitive technical decisions.
+description: Feature architect for domain design, ADRs, and trade-offs. /plan-eng-review owns plan review (/autoplan for the full chain); use this for architecture notes or ADRs requested as a document.
 tools: Read, Grep, Glob
 model: opus
 ---

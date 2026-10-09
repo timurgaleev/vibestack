@@ -1,6 +1,6 @@
 ---
 name: ai-engineer
-description: AI/ML engineer for model development, RAG systems, LLM integration, and production deployment. Use PROACTIVELY when building AI features, integrating LLMs, designing MLOps pipelines, or evaluating model performance and bias.
+description: AI/ML engineer for RAG, LLM integration, and MLOps. Use PROACTIVELY when building AI features. Evals go to /agent-eval, spend caps to /ai-cost-guard, RAG review to /kb-review.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: opus
 ---

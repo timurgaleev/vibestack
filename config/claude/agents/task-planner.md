@@ -1,6 +1,6 @@
 ---
 name: task-planner
-description: Expert planning specialist for complex features and refactoring. Use PROACTIVELY when users request feature implementation, architectural changes, or complex refactoring. Automatically activated for planning tasks.
+description: Planning specialist for complex features and refactors. /plan-eng-review owns plan review (/autoplan for the full chain); use this when a plan or ADR is wanted as a written document.
 tools: Read, Grep, Glob
 model: opus
 ---
