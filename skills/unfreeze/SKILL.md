@@ -15,7 +15,7 @@ triggers:
 
 ## When to invoke
 
-Use when you want to widen edit scope without ending the session. Use when asked to "unfreeze", "unlock edits", "remove freeze", or "allow all edits".
+Use when you want to widen edit scope. Ending the session does not lift the boundary: it persists in `~/.vibestack/freeze-dir.txt` until this runs. Use when asked to "unfreeze", "unlock edits", "remove freeze", or "allow all edits".
 
 # /unfreeze — Clear Freeze Boundary
 

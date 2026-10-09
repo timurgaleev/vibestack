@@ -1,7 +1,7 @@
 ---
 name: freeze
 description: |
-  Restrict file edits to a specific directory for the session. Blocks Edit, Write and NotebookEdit outside the allowed path.
+  Restrict file edits to a specific directory until /unfreeze. Blocks Edit, Write and NotebookEdit outside the allowed path.
 allowed-tools:
   - Bash
   - Read
@@ -39,6 +39,12 @@ Use when debugging to prevent accidentally "fixing" unrelated code, or when you 
 Lock file edits to a specific directory. Any Edit, Write or NotebookEdit
 operation targeting a file outside the allowed path will be **blocked** (not
 just warned).
+
+**Where this is enforced.** The block is a Claude Code `PreToolUse` hook.
+Cursor, Kiro and Codex install the same skill, but the hook is not guaranteed
+to run there; outside Claude Code `/freeze` is instruction-only. On those
+hosts, tell the user the boundary is advisory: you will keep your own edits
+inside it, but nothing blocks an edit that lands outside.
 
 ## Setup
 
@@ -79,7 +85,10 @@ payload with no path, a relative saved boundary, and any unexpected hook error
 are all blocked, not allowed. Its ask-tier sibling `/careful` makes the opposite call on
 the same input. Both share one extractor (`careful/bin/hook-extract.sh`).
 
-The freeze boundary persists for the session via `~/.vibestack/freeze-dir.txt`.
+The boundary lives in `~/.vibestack/freeze-dir.txt`, not in the session.
+Ending or killing a conversation stops its hooks but leaves the file in place,
+so the next session that loads the freeze hook (`/freeze`, `/guard`,
+`/investigate`) enforces the same boundary again. Only `/unfreeze` removes it.
 
 ## Notes
 
@@ -89,4 +98,4 @@ The freeze boundary persists for the session via `~/.vibestack/freeze-dir.txt`.
 - A symlink inside the boundary pointing outside it is resolved and blocked
 - A path with spaces in it works — only leading and trailing whitespace is
   trimmed from the saved boundary, and a leading `~` is expanded
-- To deactivate: run `/unfreeze` or end the conversation
+- To deactivate: run `/unfreeze` — ending the conversation does not remove the boundary

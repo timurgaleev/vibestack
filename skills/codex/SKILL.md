@@ -523,9 +523,13 @@ block first; both run paths below refuse to start without it.
 BASE="<base branch detected in Step 0.7>"
 ```
 
-2. Create temp file for stderr capture:
+2. Create temp file for stderr capture, and snapshot the working tree Codex is
+about to review. Keep the printed `START_TREE` for step 8: the log refuses a
+`clean` record when the tree moved after this point, so fixes made after the
+review never read as reviewed.
 ```bash
 TMPERR=$(mktemp "$TMP_ROOT/codex-err-XXXXXX.txt")
+echo "START_TREE: $(~/.vibestack/bin/vibe-review-log --snapshot 2>/dev/null || echo unknown)"
 ```
 
 3. Run the review (5.5-minute timeout). **Codex CLI ≥ 0.130.0 rejects passing a
@@ -583,7 +587,7 @@ _cx 330 codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'skills.inc
 _CODEX_EXIT=$?
 cat "$TMPRESP"; echo
 if [ "$_CODEX_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","timeout_s":330}' >/dev/null 2>&1 || true
+  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","completed":false,"timeout_s":330}' >/dev/null 2>&1 || true
   echo "Codex stalled past 5.5 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
 elif [ "$_CODEX_EXIT" != "0" ]; then
   echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
@@ -659,7 +663,7 @@ _CODEX_EXIT=$?
 rm -f "$_PROMPT_FILE" "$FOCUS_FILE"
 cat "$TMPRESP" 2>/dev/null; echo
 if [ "$_CODEX_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","timeout_s":330}' >/dev/null 2>&1 || true
+  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","completed":false,"timeout_s":330}' >/dev/null 2>&1 || true
   echo "Codex stalled past 5.5 minutes."
 elif [ "$_CODEX_EXIT" != "0" ]; then
   echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
@@ -761,7 +765,7 @@ CROSS-MODEL ANALYSIS:
 report both read this log, so a review that is not logged is a review that never
 happened as far as the rest of the pack is concerned:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"commit":"'"$(git rev-parse --short HEAD)"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"completed":COMPLETED,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
 Substitute: TIMESTAMP (ISO 8601), STATUS — "clean" when the gate passed on
@@ -771,7 +775,12 @@ Those last two are the states where the review did not produce a gradable
 review, and the dashboard must not show either as a clean review;
 GATE ("pass", "fail" or "unverified"), findings (count of [P0]–[P3] markers, 0
 when unavailable or unverified), findings_fixed (count of findings that were
-addressed/fixed before shipping).
+addressed/fixed before shipping), COMPLETED (`true` when Codex exited 0 and the
+validator graded its output, `false` otherwise), START_TREE (the snapshot from
+step 2; if it printed `unknown`, drop the `start_tree` field). The logger records
+the tree at log time itself. If it rejects a `clean` record because the tree
+changed since step 2, the edits made after the review were never reviewed — log
+`issues_found` instead, or re-run the review on the new tree.
 
 9. Clean up temp files:
 ```bash
