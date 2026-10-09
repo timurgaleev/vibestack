@@ -86,7 +86,7 @@ new.
 
 | Binary | Purpose |
 |--------|---------|
-| `vibe-slug` | Project slug from the git remote |
+| `vibe-slug` | Project slug from the origin remote, as `owner-repo` (`github.com/alice/api` → `alice-api`; nested groups and local-path remotes add an 8-hex hash; no remote falls back to the folder name; `VIBESTACK_PROJECT_SLUG` overrides). The first run under the new name copies durable state (learnings, decisions, specs, design boards, unstamped and own checkpoints) from the old name-only bucket — copied, never moved — but only when that bucket shows evidence of this repository (a review-log commit that exists here, or a checkpoint stamped with this remote); otherwise it prints a notice and `vibe-slug --migrate` copies on request. Review logs and deploy confirmations are never carried over, so the readiness dashboard starts empty for branches that were open. `--identity`, `--stamp-checkpoint` and `--classify-checkpoints` let `/context-save` stamp and `/context-restore` filter checkpoints by project. Limits: two remote-less repos with one folder name, or one owner/repo on two hosts, still share a bucket — set `VIBESTACK_PROJECT_SLUG` |
 | `vibe-config` | Get/set project config (`config.json`) |
 | `vibe-learnings-log` / `vibe-learnings-search` | Append / search per-project learnings |
 | `vibe-learnings-sync-plan` | Plan `/learn sync` pushes: dedup, watermark, secret redaction |
@@ -109,13 +109,14 @@ new.
 | `vibe-review-log` / `vibe-review-read` | Append / read the per-branch review ledger the plan-* dashboards summarise |
 | `vibe-next-version` | Next free VERSION slot, skipping versions claimed by open PRs against the same base — each PR's claim is the VERSION file at its head (`--exclude-pr` drops your own) |
 | `vibe-diff-scope` | Classify a diff as frontend / backend / docs / config, so QA and canary depth match the change |
-| `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it |
+| `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it. `vibe-redact scan --file <path> [--file …]` is the deterministic, fail-closed scan the publishing skills (`/spec`, `/document-generate`, `/document-release`, `/ship`) run before any external write: exit 0 clean, 1 finding (`HIGH  <label>  <path>:<line>  <masked>`), 2 could not run — the same matcher and patterns as the pre-push guard. Both skip documentation placeholders judged on the matched value alone (the AWS docs keys, `<token>`, `xxxxxx`, a value starting or ending in `example`), and the guard blocks a push when the matcher itself fails |
 | `vibe-design` | Design-asset generation; reports `DESIGN_NOT_AVAILABLE` without an API key. `variants` never overwrites (an existing `variant-A.png` makes the next image `variant-A-2.png`) and prints `requested:`, one `saved: <path>` per image written, `failures:` and one `failed: <variant>: <reason>` per image not saved — callers use only the `saved:` paths. `--brief-file <path>` reads the brief from a file, so skills never put brief text in shell source. Exit 0 all saved, 3 partial, 2 nothing saved (with a `DESIGN_ERROR:` line), 1 usage error |
 | `vibe-specialist-stats` | Aggregate specialist-reviewer findings across runs |
 | `vibe-tree-hash` | Content fingerprint of the tracked working tree — a git tree id, so a commit or rebase that changes no bytes changes no hash |
-| `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose |
+| `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose. A single argument after `--` runs as a shell command line and is recorded verbatim. `check` narrows with `--expect-cmd C` (the recorded line must equal C), `--max-age H` (older passes are STALE) and `--allow-paths P` (a run at another tree still counts when only release bookkeeping such as `CHANGELOG.md,VERSION` differs); a recorded tree the object store no longer has never matches |
 | `vibe-version-bump` | Move VERSION, `package.json` and the lockfiles together or not at all; `--root` for a manifest in a subdirectory |
 | `vibe-detach` | Run a command past the turn boundary; `status` separates running (exit 2) from failed (exit 1) |
+| `vibe-context-budget` | Measure the always-loaded skill listing (rendered name + description per skill) against a runtime's budget — Codex 8,000 chars by default; exit 1 over budget, `--warn-only` reports without failing; CI reports it on every PR |
 | `vibe-codex-probe` | Whether Codex is *usable*, not merely installed — cheap negatives first, one cached round trip for the positive |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
