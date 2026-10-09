@@ -33,8 +33,12 @@ steps on **one live page**, so a form fill → submit → screenshot works witho
 cross-call element refs:
 `$B chain "goto <url>" "fill <sel> <value>" "click <sel>" "screenshot <path>"`.
 Step verbs: `goto click fill type press hover check uncheck select wait
-screenshot text eval is`. It returns a JSON log per step and stops on the first
-failure. For a **persistent session with element refs** across separate calls, start the
+screenshot text eval is`; the shim's `wait` takes milliseconds or a selector. It
+returns a JSON log per step and stops on the first failure. When `$B` resolves
+to the full daemon, `chain` takes the steps as one pipe-separated argument and
+`wait` takes a selector or `--networkidle` / `--load`:
+`$B chain 'goto <url> | fill <sel> <value> | click <sel> | screenshot <path>'`.
+For a **persistent session with element refs** across separate calls, start the
 daemon once: `$B daemon &` (then `$B daemon-status` to confirm, `$B daemon-stop`
 to end it). With the daemon up, `$B snapshot` tags interactive elements and
 returns `@e1`, `@e2`, …; later calls act on the same live page by ref —

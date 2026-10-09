@@ -148,7 +148,10 @@ OUT='<OUT>'
 } > "$OUT.html"
 
 if [ -n "${B:-}" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
-  "$B" chain "goto file://$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT").html" "wait --load" "screenshot $OUT.png"
+  # The tab verbs above need the full daemon, so this chain uses its single
+  # pipe-separated argument; the shim's one-argument-per-step form would run
+  # only the goto here.
+  "$B" chain "goto \"file://$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT").html\" | wait --load | screenshot \"$OUT.png\""
   echo "DIAGRAM: $OUT.png (and $OUT.html, $OUT.svg, $OUT.mmd)"
 else
   echo "DIAGRAM_HTML_ONLY: $OUT.html — open it in a browser (no shim for PNG)"

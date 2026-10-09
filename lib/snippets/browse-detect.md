@@ -20,8 +20,9 @@ line yourself to any browse command you compose.
 If `BROWSE_AVAILABLE`: use `$B` for the browse commands in this skill. The shim
 is stateless — `goto <url>` records the target and each capture verb
 re-navigates; use `$B chain "goto …" "click …" "screenshot …"` for a
-multi-step flow on one live page, or `$B daemon &` + `$B snapshot` for a
-persistent session with `@e1`-style element refs across calls.
+multi-step flow on one live page (the full daemon takes one pipe-separated
+argument instead: `$B chain 'goto … | click … | screenshot …'`), or `$B daemon &` + `$B snapshot`
+for a persistent session with `@e1`-style element refs across calls.
 
 If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks
 (curl, open, direct HTTP checks).
