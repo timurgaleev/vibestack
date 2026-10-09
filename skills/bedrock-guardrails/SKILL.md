@@ -1,7 +1,7 @@
 ---
 name: bedrock-guardrails
 description: |
-  Audit the guardrail layer around Amazon Bedrock usage: region pinning and cross-region inference profiles, IAM scoping to model ARNs, Bedrock Guardrails configuration (PII, denied topics, content and word filters, grounding, versioning), invocation logging and KMS, per-tenant isolation, prompt injection boundaries, quotas and cost controls. Use before shipping an LLM feature on Bedrock, during a security or EU data residency review, or when designing the Terraform for a new Bedrock workload. Read-only; produces a PASS/FAIL/N-A control table with Terraform remediation for every FAIL.
+  Read-only audit of Amazon Bedrock guardrails, IAM, logging and data residency before shipping an LLM feature.
 triggers:
   - bedrock guardrails
   - bedrock security review
@@ -24,13 +24,13 @@ Use when: "bedrock guardrails", "review our bedrock setup", "is bedrock locked t
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"

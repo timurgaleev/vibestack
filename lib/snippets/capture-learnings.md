@@ -10,7 +10,7 @@ When there is something worth keeping — a non-obvious pattern, pitfall, or
 architectural insight — log it for future sessions:
 
 ```bash
-~/.vibestack/bin/vibe-learnings-log '{"skill":"{SKILL_NAME}","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"{SKILL_NAME}","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

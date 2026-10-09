@@ -42,7 +42,7 @@ chmod +x "$STUB/vibe-slug" "$STUB/vibe-learnings-search"
 BLOCK="$TMP/pass1.sh"
 awk '/^\*\*Pass 1/{p=1} p&&/^```bash$/{c=1;next} c&&/^```$/{exit} c{print}' "$SKILL" > "$BLOCK"
 if [ -s "$BLOCK" ]; then
-  out="$(HOME="$TMP/stub" bash "$BLOCK" 2>&1)"
+  out="$(HOME="$TMP/stub" VIBESTACK_HOME="$TMP/stub/.vibestack" bash "$BLOCK" 2>&1)"
   echo "$out" | grep -q 'LEARNINGS: unavailable (vibe-learnings-search exited 1)' \
     && ok "Pass 1 reports a failed read as unavailable" || no "Pass 1 failure output: '$out'"
   echo "$out" | grep -q 'No learnings yet' && no "Pass 1 calls a failed read empty" || ok "Pass 1 does not call a failed read empty"

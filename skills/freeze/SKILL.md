@@ -1,7 +1,7 @@
 ---
 name: freeze
 description: |
-  Restrict file edits to a specific directory until /unfreeze. Blocks Edit, Write and NotebookEdit outside the allowed path.
+  Restrict file edits to one directory until /unfreeze; blocks edits outside the allowed path.
 allowed-tools:
   - Bash
   - Read

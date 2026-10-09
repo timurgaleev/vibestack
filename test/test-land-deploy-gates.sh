@@ -526,7 +526,7 @@ S="$SKILL"
 grep -q 'bun test' "$S" && no "a bun test default survives" || ok "no bun test default"
 grep -qi 'merge anyway' "$S" && no "'merge anyway' still offered" || ok "no 'merge anyway' option"
 grep -q 'Do not ask the question below and do not offer A or C' "$S" && ok "blockers stop the gate" || no "blockers can still reach A/C"
-grep -q 'gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | ~/.vibestack/bin/vibe-untrusted --source pr-body' "$S" \
+grep -qF 'gh pr view "$PR_NUMBER" --repo "$REPO" --json body -q .body | ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source pr-body' "$S" \
   && ok "PR body goes through vibe-untrusted" || no "PR body read raw"
 grep -q 'gh pr checks --watch' "$S" && no "unbounded gh pr checks --watch survives" || ok "no unbounded CI watch"
 grep -q 'Mark it as healthy' "$S" && no "'Mark it as healthy' survives" || ok "accepted issues report DEGRADED"

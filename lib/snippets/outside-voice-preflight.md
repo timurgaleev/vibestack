@@ -1,6 +1,6 @@
 **Preflight — decide whether and how the outside voice runs:**
 ```bash
-_CODEX_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
+_CODEX_CFG=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get codex_reviews 2>/dev/null || echo enabled)
 OUTSIDE_VOICE=""
 # Master switch: only the literal `disabled` turns the outside voice off. vibestack
 # has no validating config binary, so treat any other value as enabled.
@@ -28,7 +28,7 @@ else
   # An installed binary says nothing about a usable one: `codex --version`
   # succeeds while logged out. The probe makes one cached round trip and names
   # what it found; a missing probe is an unverified Codex, never a ready one.
-  _PROBE_OUT=$(~/.vibestack/bin/vibe-codex-probe 2>/dev/null || true)
+  _PROBE_OUT=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-codex-probe 2>/dev/null || true)
   [ -n "$_PROBE_OUT" ] && printf '%s\n' "$_PROBE_OUT"
   case "$(printf '%s\n' "$_PROBE_OUT" | sed -n '1s/^CODEX: //p')" in
     usable)          CODEX_MODE="ready" ;;

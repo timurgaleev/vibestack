@@ -1,7 +1,7 @@
 ---
 name: vibe-upgrade
 description: |
-  Update the installed vibestack pack to the latest release — detect the install (global git checkout or a project-local vendored copy), run the upgrade, run version migrations, and show what changed.
+  Upgrade the installed vibestack pack to the latest release, run version migrations, and show what changed.
 allowed-tools:
   - Bash
   - Read
@@ -39,7 +39,7 @@ First, check whether auto-upgrade is enabled:
 ```bash
 _AUTO=""
 [ "${VIBESTACK_AUTO_UPGRADE:-}" = "1" ] && _AUTO="true"
-[ -z "$_AUTO" ] && _AUTO=$(~/.vibestack/bin/vibe-config get auto_upgrade 2>/dev/null || true)
+[ -z "$_AUTO" ] && _AUTO=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get auto_upgrade 2>/dev/null || true)
 echo "AUTO_UPGRADE=$_AUTO"
 ```
 
@@ -60,7 +60,7 @@ block did not report.
 
 **If "Always keep me up to date":**
 ```bash
-~/.vibestack/bin/vibe-config set auto_upgrade true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config set auto_upgrade true
 ```
 Tell the user: "Auto-upgrade enabled. Future updates install automatically." Then
 proceed to Step 2.
@@ -70,7 +70,7 @@ proceed to Step 2.
 originally invoked. Do not mention the upgrade again this session.
 
 ```bash
-_SNOOZE_FILE="$HOME/.vibestack/update-snoozed"
+_SNOOZE_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/update-snoozed"
 _REMOTE_VER="{new}"
 _CUR_LEVEL=0
 if [ -f "$_SNOOZE_FILE" ]; then
@@ -82,7 +82,7 @@ if [ -f "$_SNOOZE_FILE" ]; then
 fi
 _NEW_LEVEL=$((_CUR_LEVEL + 1))
 [ "$_NEW_LEVEL" -gt 3 ] && _NEW_LEVEL=3
-mkdir -p "$HOME/.vibestack"
+mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}"
 echo "$_REMOTE_VER $_NEW_LEVEL $(date +%s)" > "$_SNOOZE_FILE"
 ```
 Note: substitute `{new}` (the remote version from the update-check result) for
@@ -92,7 +92,7 @@ or 1 week, matching the level). Tip: "Enable automatic upgrades with
 
 **If "Never ask again":**
 ```bash
-~/.vibestack/bin/vibe-config set update_check false
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config set update_check false
 ```
 Tell the user: "Update checks disabled. Re-enable with
 `~/.vibestack/bin/vibe-config set update_check true`." Continue with the current
@@ -151,7 +151,7 @@ if [ -n "$_ROOT" ]; then
     fi
   done
 fi
-_TEAM_MODE=$(~/.vibestack/bin/vibe-config get team_mode 2>/dev/null || echo "false")
+_TEAM_MODE=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get team_mode 2>/dev/null || echo "false")
 echo "_ROOT=$_ROOT"
 echo "LOCAL_VIBESTACK=$LOCAL_VIBESTACK"
 echo "TEAM_MODE=$_TEAM_MODE"
@@ -297,7 +297,7 @@ fi
 cd "$REPO" || exit 1
 _AUTO=""
 [ "${VIBESTACK_AUTO_UPGRADE:-}" = "1" ] && _AUTO="true"
-[ -z "$_AUTO" ] && _AUTO=$(~/.vibestack/bin/vibe-config get auto_upgrade 2>/dev/null || true)
+[ -z "$_AUTO" ] && _AUTO=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get auto_upgrade 2>/dev/null || true)
 PREV_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 BR="$(git symbolic-ref --short HEAD 2>/dev/null || echo main)"
 git fetch --quiet origin || { echo "FETCH_FAILED — could not fetch origin in $REPO; nothing changed"; exit 1; }
@@ -490,10 +490,10 @@ version that is not installed.
 
 ```bash
 OLD_VERSION='<OLD_VERSION>'
-mkdir -p ~/.vibestack
-echo "$OLD_VERSION" > ~/.vibestack/just-upgraded-from
-rm -f ~/.vibestack/.update-check-stamp ~/.vibestack/.update-check-failed
-rm -f ~/.vibestack/update-snoozed
+mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}
+echo "$OLD_VERSION" > ${VIBESTACK_HOME:-$HOME/.vibestack}/just-upgraded-from
+rm -f ${VIBESTACK_HOME:-$HOME/.vibestack}/.update-check-stamp ${VIBESTACK_HOME:-$HOME/.vibestack}/.update-check-failed
+rm -f ${VIBESTACK_HOME:-$HOME/.vibestack}/update-snoozed
 ```
 
 ### Step 6: Show what's new
@@ -530,7 +530,7 @@ already opted in — skip the Step 1 question and go straight to the upgrade.
 1. Force a fresh update check (bypasses the once/day throttle, snooze, and the
    `update_check` gate):
 ```bash
-~/.vibestack/bin/vibe-update-check --force 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-update-check --force 2>/dev/null || true
 ```
 An `UPDATE: vibestack <new> is available (you have <old>)` line means an upgrade
 is available; no output means the primary is already current. A

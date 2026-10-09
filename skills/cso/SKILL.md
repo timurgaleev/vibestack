@@ -1,7 +1,7 @@
 ---
 name: cso
 description: |
-  Chief Security Officer mode. Infrastructure-first security audit: secrets archaeology, dependency supply chain, CI/CD pipeline security, live AWS account posture (IAM, CloudTrail, S3 exposure, security groups), LLM/AI security, skill supply chain scanning, plus OWASP Top 10, STRIDE threat modeling, and active verification. Two modes: daily (zero-noise, 8/10 confidence gate) and comprehensive (monthly deep scan, 2/10 bar). Trend tracking across audit runs.
+  Security audit: secrets, supply chain, CI/CD, cloud posture, LLM risks, OWASP and STRIDE, with trend tracking.
 allowed-tools:
   - Bash
   - Read
@@ -28,13 +28,13 @@ Voice triggers (speech-to-text aliases): "see-so", "see so", "security review", 
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -653,6 +653,8 @@ When a finding is VERIFIED, search the entire codebase for the same vulnerabilit
 **Parallel Finding Verification:**
 
 For each candidate finding, launch an independent verification sub-task using the Agent tool. The verifier has fresh context and cannot see the initial scan's reasoning — only the finding itself and the FP filtering rules.
+
+{{include lib/snippets/foreground-dispatch.md}}
 
 Prompt each verifier with:
 - The file path and line number ONLY (avoid anchoring)

@@ -1,7 +1,7 @@
 ---
 name: mcp-review
 description: |
-  Review an MCP server (Python FastMCP or the TypeScript SDK) for tool design, scope, auth, input validation, error shape, transport and prompt-injection exposure. Use it before publishing a server, before wiring one into an agent, or when someone asks whether an MCP server is safe to run. Produces a findings table with severities and proposed tool schema changes; never modifies the server or its credentials.
+  Review an MCP server for tool design, auth, input validation and prompt-injection risk before publishing it.
 triggers:
   - mcp review
   - review my mcp server
@@ -24,13 +24,13 @@ Use when: "review my MCP server", "is this MCP server safe", "check the tool sch
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"

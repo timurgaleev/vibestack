@@ -34,10 +34,12 @@ no() { fail=$((fail+1)); echo "  FAIL $1"; }
 chk() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1 (got '$2', want '$3')"; fi; }
 
 # A fake HOME whose ~/.vibestack/bin is this checkout's bin/, so the skills'
-# own blocks run unmodified against the code under test.
+# own blocks run unmodified against the code under test. Blocks resolve the
+# state root as ${VIBESTACK_HOME:-$HOME/.vibestack}, so its bin/ links there too.
 FH="$TMP/fakehome"
-mkdir -p "$FH/.vibestack"
+mkdir -p "$FH/.vibestack" "$VIBESTACK_HOME"
 ln -s "$BIN" "$FH/.vibestack/bin"
+ln -s "$BIN" "$VIBESTACK_HOME/bin"
 
 REPO="$TMP/repo"
 mkdir -p "$REPO"
@@ -174,7 +176,7 @@ printf '%s' "$DASH" | grep -qF 'compare it with \`TREE_NOW\`' && ok "ship stalen
 echo "ship: its own review records are bound to the tree they started on"
 SH="$SRC/skills/ship/SKILL.md"
 S9=$(section '## Step 9: Pre-Landing Review' '## Confidence Calibration')
-printf '%s' "$S9" | grep -qF 'echo "START_TREE: $(~/.vibestack/bin/vibe-review-log --snapshot' \
+printf '%s' "$S9" | grep -qF 'echo "START_TREE: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot' \
   && ok "Step 9 snapshots the tree before the diff" || no "Step 9 takes no start snapshot"
 grep -F '"via":"ship"' "$SH" | grep -qF '"start_tree":"START_TREE"' \
   && ok "ship's review record carries start_tree" || no "ship's review record is not tree-bound"
@@ -183,7 +185,7 @@ grep -F '"skill":"adversarial-review"' "$SH" | grep -qF '"start_tree":"START_TRE
 
 echo "codex: review record bound to its start tree"
 CX="$SRC/skills/codex/SKILL.md"
-grep -qF 'echo "START_TREE: $(~/.vibestack/bin/vibe-review-log --snapshot' "$CX" && ok "review mode snapshots before the run" || no "no start snapshot in review mode"
+grep -qF 'echo "START_TREE: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot' "$CX" && ok "review mode snapshots before the run" || no "no start snapshot in review mode"
 grep -qF '"skill":"codex-review","timestamp":"TIMESTAMP"' "$CX" && \
   grep -F '"skill":"codex-review","timestamp":"TIMESTAMP"' "$CX" | grep -qF '"completed":COMPLETED,"start_tree":"START_TREE"' \
   && ok "the review record carries completed and start_tree" || no "the review record is not tree-bound"

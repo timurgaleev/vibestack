@@ -1,7 +1,7 @@
 ---
 name: unslop
 description: |
-  Finds machine-sounding writing patterns in English prose (README, release notes, CHANGELOG, PR bodies, articles, posts, chat replies) and rewrites the text in a specific human voice while keeping every fact, number, name and claim. Use when a draft reads like a bot wrote it and it should read like the author did.
+  Rewrite machine-sounding English prose (README, PR bodies, posts) in a human voice, keeping every fact.
 triggers:
   - unslop
   - humanize this text
@@ -24,13 +24,13 @@ Use when: "unslop", "humanize this", "de-ai this", "this reads like a bot", "mak
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"

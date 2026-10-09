@@ -2,7 +2,7 @@
 name: plan-design-review
 interactive: true
 description: |
-  Designer's eye plan review — interactive, like CEO and Eng review. Rates each design dimension 0-10, explains what would make it a 10, then proposes fixes and applies the ones you approve. Works in plan mode. For live site visual audits, use /design-review.
+  Rate a plan's design dimensions 0-10 and fix the plan toward 10; for a live site audit use /design-review.
 allowed-tools:
   - Read
   - Edit
@@ -34,13 +34,13 @@ pre-review audit → design Step 0 → Step 0.5 mockups.
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -296,7 +296,7 @@ Report findings before proceeding to Step 0.
 
 ```bash
 # Bind $D to vibe-design (OpenAI image backend) when a key is configured.
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 if [ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ]; then
   echo "DESIGN_AVAILABLE via $D"
 else
@@ -373,8 +373,8 @@ Allowed commands under this exception:
 First, set up the output directory. Name it after the screen/feature being designed and today's date:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.vibestack/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -390,7 +390,7 @@ For each UI screen/section in scope, construct a design brief from the plan's de
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
@@ -406,7 +406,7 @@ After generation, run a cross-model quality check on each variant (each `saved:`
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 $D check --image "<one saved: path>" --brief "$(cat "$BRIEF_FILE")"
 ```
@@ -430,7 +430,7 @@ Create the comparison board and serve it over HTTP:
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 $D compare --images "<this round's saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
 ```
 
@@ -623,7 +623,10 @@ cat "$TMPERR_DESIGN"; rm -f "$TMPERR_DESIGN"
 Use a 5-minute timeout (`timeout: 300000`).
 
 2. **Claude design subagent** (via Agent tool):
-Dispatch a subagent with this prompt:
+Dispatch a subagent with the prompt below.
+
+{{include lib/snippets/foreground-dispatch.md}}
+
 "Read the plan file at [plan-file-path]. You are an independent senior product designer reviewing this plan. You have NOT seen any prior review. Evaluate:
 
 1. Information hierarchy: what does the user see first, second, third? Is it right?
@@ -673,7 +676,7 @@ Fill in each cell from the Codex and subagent outputs. CONFIRMED = both agree. D
 
 **Log the result:**
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".
 
@@ -705,8 +708,8 @@ The description of what 10/10 looks like reaches `$D` through a file, as in Step
 First create the directory:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+_IDEAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
 mkdir -p "$_IDEAL_DIR"
 echo "IDEAL_DIR: $_IDEAL_DIR"
 ```
@@ -715,9 +718,9 @@ Then **write the description with the Write tool** to `brief.txt` inside the IDE
 just printed, and run:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_IDEAL_DIR="$HOME/.vibestack/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
-D=~/.vibestack/bin/vibe-design
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+_IDEAL_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/ideal-<dimension>-$(date +%Y%m%d)"
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 BRIEF_FILE="$_IDEAL_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
@@ -981,7 +984,7 @@ If visual mockups were generated during this review, add to the plan file:
 
 | Screen/Section | Mockup Path | Direction | Notes |
 |----------------|-------------|-----------|-------|
-| [screen name]  | ~/.vibestack/projects/$SLUG/designs/[folder]/[filename].png | [brief description] | [constraints from review] |
+| [screen name]  | ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/[folder]/[filename].png | [brief description] | [constraints from review] |
 ```
 
 Include the full path to each approved mockup (the variant the user chose), a one-line description of the direction, and any constraints. The implementer reads this to know exactly which visual to build from. These persist across conversations and workspaces. If no mockups were generated, omit this section.
@@ -995,7 +998,7 @@ After producing the Completion Summary above, persist the review result.
 depends on this data. Skipping this command breaks the review readiness dashboard in /ship.
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"unresolved":N,"decisions_made":N,"commit":"COMMIT"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"plan-design-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"unresolved":N,"decisions_made":N,"commit":"COMMIT"}'
 ```
 
 Substitute values from the Completion Summary:

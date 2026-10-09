@@ -523,7 +523,7 @@ Triggers: `draw a diagram`, `make a mermaid diagram`, `render this flowchart`
 ---
 
 ### `/connect-chrome`
-Reuse your real Chrome's logged-in cookies in the browse daemon (via CDP import on `--remote-debugging-port`), so authenticated pages work without re-logging-in.
+Reuse your real Chrome's logged-in cookies in the browse daemon, so authenticated pages work without re-logging-in. With the full daemon it reads the installed browser's cookie store directly (`cookie-import-browser`, handed off to `/setup-browser-cookies`); under the stateless shim it falls back to `cookies import-cdp` from a Chrome started with `--remote-debugging-port`, which Chrome 136+ only opens on a separate `--user-data-dir` — so the user signs in once in that window first.
 
 Triggers: `connect to chrome`, `use my chrome session`, `import chrome cookies`
 

@@ -8,7 +8,7 @@ it. When a question touches a past decision ("what did we decide / why / did we
 try"), search first:
 
 ```bash
-~/.vibestack/bin/vibe-decision-search --recent 5 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-search --recent 5 2>/dev/null || true
 ```
 
 Treat returned decisions as settled calls with their rationale — don't silently
@@ -16,7 +16,7 @@ reverse one; if you are about to, say so explicitly. When a new durable decision
 is made, log it (`--supersede <id>` for a reversal):
 
 ```bash
-~/.vibestack/bin/vibe-decision-log '{"decision":"...","rationale":"...","scope":"repo","source":"user"}' 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log '{"decision":"...","rationale":"...","scope":"repo","source":"user"}' 2>/dev/null || true
 ```
 
 **Accepting a shortcut is itself a decision.** When a review, a plan, or a fix
@@ -54,7 +54,7 @@ merge/deploy approval, breaking change) is asked every time and can never be
 silenced by a preference:
 
 ```bash
-~/.vibestack/bin/vibe-question-check --id "<skill>:<question-id>" --skill "<skill>" --category "<approval|clarification|routing>" --summary "<the question text>"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-question-check --id "<skill>:<question-id>" --skill "<skill>" --category "<approval|clarification|routing>" --summary "<the question text>"
 ```
 
 Exit 3 / `ONE_WAY` → ask it regardless of preference. Exit 0 / `TWO_WAY` → the
@@ -68,7 +68,7 @@ log is local, records the option keys rather than the user's prose, and is sent
 nowhere:
 
 ```bash
-~/.vibestack/bin/vibe-question-log '{"skill":"{SKILL_NAME}","question_id":"{SKILL_NAME}:<question-id>","question_summary":"<short>","category":"<approval|clarification|routing>","options_count":N,"user_choice":"<key>","recommended":"<key>"}' 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-question-log '{"skill":"{SKILL_NAME}","question_id":"{SKILL_NAME}:<question-id>","question_summary":"<short>","category":"<approval|clarification|routing>","options_count":N,"user_choice":"<key>","recommended":"<key>"}' 2>/dev/null || true
 ```
 
 ### Voice
@@ -92,5 +92,5 @@ Telemetry is opt-in and off by default. When enabled (`vibe-config set telemetry
 on`), record the skill outcome at the end of the workflow — never blocks:
 
 ```bash
-~/.vibestack/bin/vibe-telemetry-log --event-type skill_run --skill <skill-name> --outcome <done|blocked|partial> 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-telemetry-log --event-type skill_run --skill <skill-name> --outcome <done|blocked|partial> 2>/dev/null || true
 ```

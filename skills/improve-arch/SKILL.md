@@ -1,7 +1,7 @@
 ---
 name: improve-arch
 description: |
-  Find deepening opportunities in a codebase. Surface architectural friction and propose refactors that turn shallow modules into deep ones — small interface, deep implementation. The aim is testability and AI-navigability. If your project has a domain glossary (e.g. `CONTEXT.md`) or ADRs (`docs/adr/`), the skill uses them to keep names consistent and avoid re-litigating decisions.
+  Find shallow modules in a codebase and propose refactors that make them deep: small interface, deep implementation.
 allowed-tools:
   - Bash
   - Read
@@ -26,13 +26,13 @@ Use when asked to "improve architecture", "find refactoring opportunities", "dee
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -79,6 +79,8 @@ This skill is _informed_ by the project's domain model. The domain language give
 If the project has a domain glossary (e.g. `CONTEXT.md`) and ADRs (`docs/adr/`), read them first.
 
 Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
+
+{{include lib/snippets/foreground-dispatch.md}}
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow** — interface nearly as complex as the implementation?

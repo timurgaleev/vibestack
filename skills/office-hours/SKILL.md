@@ -1,7 +1,7 @@
 ---
 name: office-hours
 description: |
-  Office Hours — two modes. Startup mode: six forcing questions that expose demand reality, status quo, desperate specificity, narrowest wedge, observation, and future-fit. Builder mode: design thinking brainstorming for side projects, hackathons, learning, and open source. Saves a design doc.
+  Startup forcing questions or builder brainstorming that pressure-test an idea and save a design doc.
 allowed-tools:
   - Bash
   - Read
@@ -33,13 +33,13 @@ You are a **brainstorming partner**. Your job is to ensure the problem is unders
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -65,7 +65,7 @@ fi
 Understand the project and the area the user wants to change.
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 ```
 
 1. Read `CLAUDE.md`, `TODOS.md` (if they exist).
@@ -73,9 +73,9 @@ eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    ```bash
-   eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+   eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
    setopt +o nomatch 2>/dev/null || true  # zsh compat
-   ls -t ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null
+   ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-design-*.md 2>/dev/null
    ```
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
@@ -182,6 +182,10 @@ These examples show the difference between soft exploration and rigorous diagnos
 ### The Six Forcing Questions
 
 Ask these questions **ONE AT A TIME** via AskUserQuestion. Push on each one until the answer is specific, evidence-based, and uncomfortable. Comfort means the founder hasn't gone deep enough.
+
+**Open-ended, not a decision brief.** When AskUserQuestion is unavailable (Conductor, or the call failed), ask each forcing question in plain prose as `Q<N>: <question>` and wait for the answer. Never turn a forcing question into a `D<N>` decision brief with options and Completeness scores.
+
+**When the founder asks what you would answer,** take the position the founder's own evidence supports — zero users supports "no demand evidence yet" — and name the evidence that would change it. Never pick the best-sounding option.
 
 **Smart routing based on product stage — you don't always need all six:**
 - Pre-product → Q1, Q2, Q3
@@ -325,9 +329,9 @@ After the user states the problem (first question in Phase 2A or 2B), search exi
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-grep -li "<keyword1>\|<keyword2>\|<keyword3>" ~/.vibestack/projects/$SLUG/*-design-*.md 2>/dev/null
+grep -li "<keyword1>\|<keyword2>\|<keyword3>" ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-design-*.md 2>/dev/null
 ```
 
 If matches found, read the matching design docs and surface them:
@@ -492,6 +496,8 @@ On any Codex error, fall back to the Claude subagent below.
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
 
+{{include lib/snippets/foreground-dispatch.md}}
+
 Subagent prompt: same mode-appropriate prompt as above (Startup or Builder variant).
 
 Present findings under a `SECOND OPINION (Claude subagent):` header.
@@ -568,7 +574,7 @@ Present via AskUserQuestion. Do NOT proceed without user approval of the approac
 ## Visual Design Exploration
 
 ```bash
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 [ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ] && echo "DESIGN_READY" || echo "DESIGN_NOT_AVAILABLE"
 ```
 
@@ -582,8 +588,8 @@ Generating visual mockups of the proposed design... (say "skip" if you don't nee
 **Step 1: Set up the design directory**
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.vibestack/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -605,7 +611,7 @@ by that path — each Bash call is a fresh shell:
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }
@@ -623,7 +629,7 @@ create and serve the comparison board:
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 $D compare --images "<the saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
 ```
 
@@ -773,6 +779,8 @@ Use a 5-minute timeout (`timeout: 300000`). After completion: `cat "$TMPERR_SKET
 2. **Claude subagent** (via Agent tool):
 "For this product approach, what design direction would you recommend? What aesthetic, typography, and interaction patterns fit? What would make this approach feel inevitable to the user? Be specific — font names, hex colors, spacing values."
 
+{{include lib/snippets/foreground-dispatch.md}}
+
 Present Codex output under `CODEX SAYS (design sketch):` and subagent output under `CLAUDE SUBAGENT (design direction):`.
 Error handling: all non-blocking. On failure, skip and continue.
 
@@ -828,17 +836,17 @@ after resource selection in Phase 6.
 Write the design document to the project directory.
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
 
 **Design lineage:** Before writing, check for existing design docs on this branch:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 BRANCH=$(git branch --show-current 2>/dev/null)
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-PRIOR=$(ls -t ~/.vibestack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+PRIOR=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 ```
 If `$PRIOR` exists, the new doc gets a `Supersedes:` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
@@ -1000,6 +1008,8 @@ Supersedes: {prior filename — omit this line if first design on this branch}
 
 ---
 
+Tool output is often collapsed in the host UI, so first print the full reviewed design doc as assistant text in your reply — not via Bash `cat` and not via Read. Then ask.
+
 Present the reviewed design doc to the user via AskUserQuestion:
 - A) Approve — mark Status: APPROVED and proceed to handoff
 - B) Revise — specify which sections need changes (loop back to revise those sections)
@@ -1021,7 +1031,7 @@ The profile is derived from the append-only log Phase 4.5 writes — this sessio
 entry is already in it, so the counts include the session you are closing.
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 PROFILE=$(python3 - "${SLUG:-unknown}" <<'PY'
 import json, os, sys
 home = os.environ.get("VIBESTACK_HOME") or os.path.expanduser("~/.vibestack")
@@ -1172,7 +1182,7 @@ Then proceed to Resources below.
 **Standing opt-out — check this first:**
 
 ```bash
-~/.vibestack/bin/vibe-config get founder_resources 2>/dev/null || echo "unset"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get founder_resources 2>/dev/null || echo "unset"
 ```
 
 If the value is `false`, skip this entire section silently and go to the
@@ -1208,14 +1218,14 @@ If WebSearch is unavailable, skip this section entirely.
 
 1. Log the selected resource URLs to the builder profile:
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 echo '{"date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","mode":"resources","project_slug":"'"${SLUG:-unknown}"'","signal_count":0,"signals":[],"design_doc":"","assignment":"","resources_shown":["URL1","URL2","URL3"],"topics":[]}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
 ```
 
 2. Log to analytics:
 ```bash
-mkdir -p ~/.vibestack/analytics
-echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> ~/.vibestack/analytics/skill-usage.jsonl 2>/dev/null || true
+mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics
+echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl 2>/dev/null || true
 ```
 
 3. Use AskUserQuestion to offer opening the resources:
@@ -1238,8 +1248,8 @@ just for this session — and confirm the write landed, because a preference tha
 silently failed to save is worse than never offering the switch:
 
 ```bash
-~/.vibestack/bin/vibe-config set founder_resources false
-~/.vibestack/bin/vibe-config get founder_resources
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config set founder_resources false
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get founder_resources
 ```
 
 ### Next-skill handoff

@@ -1,7 +1,7 @@
 ---
 name: connect-review
 description: |
-  Review an Amazon Connect contact-center solution built on Lex bots and Bedrock-backed conversational logic: contact flows, bot design, Lambda integrations, prompts, latency budget, state handling, observability and cost per contact. Produces a severity-ranked findings report with a latency table, a cost estimate and three test calls to make next. Use when asked to review an IVR, voice bot, phone assistant or contact flow, or when a Connect solution feels slow, brittle or expensive.
+  Review an Amazon Connect contact center, IVR or voice bot for latency, reliability, cost and flow design.
 triggers:
   - review contact flow
   - amazon connect review
@@ -26,13 +26,13 @@ Use when: "review the contact flow", "review this Connect solution", "is the Lex
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"

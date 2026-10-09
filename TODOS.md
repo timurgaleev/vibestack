@@ -2,14 +2,19 @@
 
 ## Open
 
-### Fit the skill listing into Codex's 8,000-char budget
-
-`bin/vibe-context-budget --runtime codex` measures the rendered listing at
-16,755 / 8,000 chars, so Codex shortens descriptions and may drop skills from
-its initial list. Trim the heaviest descriptions it ranks until the total fits,
-then make its exit 1 fatal in the `context-budget` CI job instead of a warning.
-
 ## Completed
+
+### Fit the skill listing into Codex's 8,000-char budget (2026-10-09)
+
+Shipped in the next release. `bin/vibe-context-budget --runtime codex` measured
+the rendered listing at 16,755 / 8,000 chars, so Codex shortened descriptions
+and could drop skills from its initial list. The heaviest descriptions were
+trimmed until the listing fit: the tool now prints TOTAL 6892 for 60 skills.
+The `context-budget` CI job fails on an over-budget listing instead of
+warning, and `test/test-context-budget.sh` asserts the pack fits the default
+codex budget.
+
+**Completed:** next release (2026-10-09)
 
 ### Install removes skills the pack no longer ships (2026-09-02)
 

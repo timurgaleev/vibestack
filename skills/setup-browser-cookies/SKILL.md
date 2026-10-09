@@ -1,7 +1,7 @@
 ---
 name: setup-browser-cookies
 description: |
-  Import cookies from your real Chromium browser into the headless browse session. Opens an interactive picker UI where you select which cookie domains to import. Use before QA testing authenticated pages.
+  Import cookies from your real Chromium browser into the headless browse session to QA authenticated pages.
 triggers:
   - import browser cookies
   - login to test site
@@ -19,13 +19,13 @@ Use when asked to "import cookies", "login to the site", or "authenticate the br
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -87,7 +87,8 @@ Cookie import needs the full browse daemon; the stateless fallback shim cannot
 decrypt a real browser's cookie store. If any command below answers
 `NOT_SUPPORTED:cookie-import-browser`, that is what happened: tell the user the
 full daemon is not running in this checkout and stop, rather than reporting a
-half-import that never occurred.
+half-import that never occurred. Point them at `/connect-chrome`, which imports
+cookies into the shim from a Chrome started with a remote debugging port.
 
 ### 2. Open the cookie picker
 

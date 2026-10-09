@@ -1,7 +1,7 @@
 ---
 name: benchmark
 description: |
-  Performance regression detection using the browse daemon. Establishes baselines for page load times, Core Web Vitals, and resource sizes. Compares before/after on every PR. Tracks performance trends over time.
+  Detect page performance regressions: baseline load times, Core Web Vitals and bundle sizes, compare per PR.
 triggers:
   - performance benchmark
   - check page speed
@@ -23,13 +23,13 @@ Voice triggers (speech-to-text aliases): "speed test", "check performance".
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -68,7 +68,7 @@ When the user types `/benchmark`, run this skill.
 ### Phase 1: Setup
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null || echo "SLUG=unknown")"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null || echo "SLUG=unknown")"
 mkdir -p .vibestack/benchmark-reports
 mkdir -p .vibestack/benchmark-reports/baselines
 ```
@@ -185,17 +185,18 @@ TTFB                120ms       135ms       +15ms    OK
 FCP                 450ms       480ms       +30ms    OK
 LCP                 800ms       1600ms      +800ms   REGRESSION
 DOM Interactive     600ms       650ms       +50ms    OK
-DOM Complete        1200ms      1350ms      +150ms   WARNING
+DOM Complete        1200ms      1350ms      +150ms   OK
 Full Load           1400ms      2100ms      +700ms   REGRESSION
 Total Requests      42          58          +16      WARNING
 Transfer Size       1.2MB       1.8MB       +0.6MB   REGRESSION
 JS Bundle           450KB       720KB       +270KB   REGRESSION
 CSS Bundle          85KB        88KB        +3KB     OK
 
-REGRESSIONS DETECTED: 3
+REGRESSIONS DETECTED: 4
   [1] LCP doubled (800ms → 1600ms) — likely a large new image or blocking resource
-  [2] Total transfer +50% (1.2MB → 1.8MB) — check new JS bundles
-  [3] JS bundle +60% (450KB → 720KB) — new dependency or missing tree-shaking
+  [2] Full Load +700ms (1400ms → 2100ms) — over the 500ms absolute threshold
+  [3] Total transfer +50% (1.2MB → 1.8MB) — check new JS bundles
+  [4] JS bundle +60% (450KB → 720KB) — new dependency or missing tree-shaking
 ```
 
 **Regression thresholds:**
@@ -204,6 +205,8 @@ REGRESSIONS DETECTED: 3
 - Bundle size: >25% increase = REGRESSION
 - Bundle size: >10% increase = WARNING
 - Request count: >30% increase = WARNING
+- Bundle-size thresholds also apply to total transfer size.
+- When a metric matches both, REGRESSION takes precedence over WARNING.
 
 ### Phase 6: Slowest Resources
 

@@ -1,7 +1,7 @@
 ---
 name: codex
 description: |
-  OpenAI Codex CLI wrapper — three modes. Code review: independent diff review via codex review with pass/fail gate. Challenge: adversarial mode that tries to break your code. Consult: ask codex anything with session continuity for follow-ups. The second-opinion reviewer from a completely different AI model.
+  Get a second opinion from the Codex CLI: diff review with a pass/fail gate, adversarial challenge, or consult.
 voice-triggers:
   - "code x"
   - "code ex"
@@ -27,13 +27,13 @@ Use when asked to "codex review", "codex challenge", "ask codex", "second opinio
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -102,7 +102,7 @@ context; a quota verdict for 15 minutes, a rate limit never) and prints a
 `CODEX: <verdict>` line:
 
 ```bash
-_PROBE="$HOME/.vibestack/bin/vibe-codex-probe"
+_PROBE="${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-codex-probe"
 if [ -x "$_PROBE" ]; then
   # The verdict is the first line; quota_exhausted and rate_limited add DETAIL: lines.
   _PROBE_OUT=$("$_PROBE" 2>/dev/null)
@@ -533,7 +533,7 @@ start with `TMPERR='<TMPERR>'`, and the placeholder is replaced with that path.
 TMP_ROOT='<TMP_ROOT>'
 TMPERR=$(mktemp "$TMP_ROOT/codex-err-XXXXXX.txt")
 echo "TMPERR: $TMPERR"
-echo "START_TREE: $(~/.vibestack/bin/vibe-review-log --snapshot 2>/dev/null || echo unknown)"
+echo "START_TREE: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot 2>/dev/null || echo unknown)"
 ```
 
 3. Run the review (5.5-minute timeout). **Codex CLI ≥ 0.130.0 rejects passing a
@@ -592,7 +592,7 @@ _cx 330 codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'skills.inc
 _CODEX_EXIT=$?
 cat "$TMPRESP"; echo
 if [ "$_CODEX_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","completed":false,"timeout_s":330}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","completed":false,"timeout_s":330}' >/dev/null 2>&1 || true
   echo "Codex stalled past 5.5 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
 elif [ "$_CODEX_EXIT" != "0" ]; then
   echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
@@ -669,7 +669,7 @@ _CODEX_EXIT=$?
 rm -f "$_PROMPT_FILE" "$FOCUS_FILE"
 cat "$TMPRESP" 2>/dev/null; echo
 if [ "$_CODEX_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","completed":false,"timeout_s":330}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"codex-review","status":"timeout","gate":"fail","completed":false,"timeout_s":330}' >/dev/null 2>&1 || true
   echo "Codex stalled past 5.5 minutes."
 elif [ "$_CODEX_EXIT" != "0" ]; then
   echo "[codex exit $_CODEX_EXIT] $(head -n1 "$TMPERR" 2>/dev/null)"
@@ -772,7 +772,7 @@ CROSS-MODEL ANALYSIS:
 report both read this log, so a review that is not logged is a review that never
 happened as far as the rest of the pack is concerned:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"completed":COMPLETED,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"codex-review","timestamp":"TIMESTAMP","status":"STATUS","gate":"GATE","findings":N,"findings_fixed":N,"completed":COMPLETED,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
 Substitute: TIMESTAMP (ISO 8601), STATUS — "clean" when the gate passed on
@@ -919,7 +919,7 @@ printf '%s\n' "$_VERDICT_OUT"
 _VERDICT=$(printf '%s\n' "$_VERDICT_OUT" | sed -n 's/^VERDICT: //p' | head -1)
 # Hang detection — log + surface actionable message
 if [ "$_CODEX_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-challenge","status":"timeout","timeout_s":540}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"codex-challenge","status":"timeout","timeout_s":540}' >/dev/null 2>&1 || true
   echo "Codex stalled past 9 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
   echo "CODEX_RESULT: TIMEOUT"
 # Surface non-zero exits so an empty stream is never read as "codex found nothing".
@@ -1151,7 +1151,7 @@ _VERDICT_OUT=$("$PYTHON_CMD" "$_VERDICT_PY" --mode answer --exit "$_CODEX_EXIT" 
 printf '%s\n' "$_VERDICT_OUT"
 _VERDICT=$(printf '%s\n' "$_VERDICT_OUT" | sed -n 's/^VERDICT: //p' | head -1)
 if [ "$_CODEX_EXIT" = "124" ]; then
-  ~/.vibestack/bin/vibe-review-log '{"skill":"codex-consult","status":"timeout","timeout_s":540}' >/dev/null 2>&1 || true
+  ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"codex-consult","status":"timeout","timeout_s":540}' >/dev/null 2>&1 || true
   echo "Codex stalled past 9 minutes. Common causes: model API stall, long prompt, network issue. Try re-running. If persistent, split the prompt or check ~/.codex/logs/."
   echo "CODEX_RESULT: TIMEOUT"
 # Surface non-zero exits — otherwise a rejected flag or entitlement failure
@@ -1225,7 +1225,7 @@ The reason must engage with a specific Codex insight and compare against an alte
 plan file report and the Outside Voice dashboard row can see it:
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"codex","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"codex","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
 STATUS is "clean" when Codex raised no blocking gaps, "issues_found" otherwise.
@@ -1238,7 +1238,7 @@ Before writing the plan file report below, read the branch review log so the
 report covers every review that has run on this branch, not only this one:
 
 ```bash
-~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
 ```
 
 Parse the JSONL entries it returns; ignore anything older than 7 days.
@@ -1353,7 +1353,7 @@ If you discovered a non-obvious codex behavior, prompt pattern, or review insigh
 during this session, log it for future sessions:
 
 ```bash
-~/.vibestack/bin/vibe-learnings-log '{"skill":"codex","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log '{"skill":"codex","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `tool`

@@ -1,7 +1,7 @@
 ---
 name: telegram
 description: |
-  Read, transcribe and send Telegram messages as the user's own account (not a bot) — chat history, voice notes through local whisper, text and file sends — via a small Telethon CLI with a one-time QR login.
+  Read, transcribe and send Telegram messages from your own account: chat history, voice notes and file sends.
 allowed-tools:
   - Bash
   - Read

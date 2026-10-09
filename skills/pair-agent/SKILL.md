@@ -1,7 +1,7 @@
 ---
 name: pair-agent
 description: |
-  Pair a remote AI agent with your browser. One command generates a setup key and prints instructions the other agent can follow to connect. Works with OpenClaw, Hermes, Codex, Cursor, or any agent that can make HTTP requests. The remote agent gets its own tab. Default access is read+write+admin+meta — the trust boundary is the pairing ceremony, not the scope; `--control` adds stop/restart/disconnect and `--restrict` narrows it.
+  Pair a remote agent with your browser: generate a setup key and instructions so it can connect over HTTP.
 triggers:
   - pair with agent
   - connect remote agent
@@ -19,13 +19,13 @@ Use when asked to "pair agent", "connect agent", "share browser", "remote browse
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -213,7 +213,7 @@ nobody agreed to. Never set the flag yourself to get past that refusal — not
 which overrides it. Only the user's answer below turns it on. Check the standing consent:
 
 ```bash
-~/.vibestack/bin/vibe-config get pair_agent 2>/dev/null || echo "unset"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get pair_agent 2>/dev/null || echo "unset"
 ```
 
 If the value is not `on`, ask via AskUserQuestion. This is a one-way door — it

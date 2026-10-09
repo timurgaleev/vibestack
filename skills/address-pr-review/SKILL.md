@@ -1,7 +1,7 @@
 ---
 name: address-pr-review
 description: |
-  Work a pull request's open review threads and failing CI checks to a close: read each unresolved thread, fix or explain, run the tests, commit and push, then reply on every thread and resolve the ones that were addressed. Use after a PR exists on the current branch and reviewers or CI have come back with something.
+  Work a PR's open review threads and failing CI checks to a close: fix or explain, push, reply, resolve.
 triggers:
   - address pr review
   - address review comments
@@ -25,13 +25,13 @@ Use when: "address the review", "fix the review comments", "resolve the threads"
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"

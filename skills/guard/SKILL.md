@@ -1,7 +1,7 @@
 ---
 name: guard
 description: |
-  Full safety mode: destructive command warnings + directory-scoped edits. Combines /careful (warns before rm -rf, DROP TABLE, force-push, etc.) with /freeze (blocks edits outside a specified directory). Use for maximum safety when touching prod or debugging live systems.
+  Full safety mode for prod work: warn before destructive commands and block edits outside one directory.
 allowed-tools:
   - Bash
   - Read

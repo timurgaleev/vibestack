@@ -1,7 +1,7 @@
 ---
 name: ai-cost-guard
 description: |
-  Find every code path that can run up a paid-inference bill without a ceiling (loops, retries, fan-out, agent steps, queues) and require a written dollar cap both in code and at the provider. Use before shipping anything that calls an LLM, speech, or image API, or when a bill was larger than expected.
+  Find code paths that can run up an unbounded LLM or inference bill and require a dollar cap before shipping.
 triggers:
   - ai cost guard
   - runaway api cost
@@ -27,13 +27,13 @@ Use when: "ai cost guard", "cap llm spend", "unbounded llm loop", "token budget"
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"

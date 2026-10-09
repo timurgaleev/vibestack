@@ -1,7 +1,7 @@
 ---
 name: careful
 description: |
-  Safety guardrails for destructive commands. Warns before rm -rf, DROP TABLE, force-push, git reset --hard, kubectl delete, and similar destructive operations. User can override each warning; a small catastrophic set (recursive delete of / or the home directory, force-push to the default branch) is hard-denied instead.
+  Safety guardrails that warn before destructive commands like rm -rf, DROP TABLE, force-push or reset --hard.
 allowed-tools:
   - Bash
   - Read

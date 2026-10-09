@@ -1,7 +1,7 @@
 ---
 name: ship
 description: |
-  Ship workflow: detect + merge base branch, run tests, review diff, bump VERSION, update CHANGELOG, commit, push, create PR.
+  Ship: merge the base branch, run tests, review the diff, bump VERSION and CHANGELOG, commit, push, open a PR.
 allowed-tools:
   - Bash
   - Read
@@ -26,7 +26,7 @@ Use when asked to "ship", "deploy", "push to main", "create a PR", "merge and pu
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
@@ -34,8 +34,8 @@ if [ -f "$_LEARN_FILE" ]; then
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
     # One discriminating term, not a list: the search requires EVERY term to
     # appear in the same entry, so a six-word query matches nothing at all.
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 --query "ship" 2>/dev/null || true
-    ~/.vibestack/bin/vibe-learnings-search --limit 3 --query "release" 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 --query "ship" 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 3 --query "release" 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -163,8 +163,8 @@ After completing the review, read the review log and config to display the dashb
 plus a snapshot of the working tree about to ship:
 
 ```bash
-~/.vibestack/bin/vibe-review-read --json 2>/dev/null
-echo "TREE_NOW: $(~/.vibestack/bin/vibe-review-log --snapshot 2>/dev/null || echo unavailable)"
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
+echo "TREE_NOW: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot 2>/dev/null || echo unavailable)"
 ```
 
 Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
@@ -513,7 +513,7 @@ rm -f "$_SHIP_LOG"-*.exit  # an earlier run's lane must not report for this one
 # vibe-evidence runs the lane unchanged and exits with its status, and records
 # the command, exit and tree fingerprint so Step 16 can reuse a run of this exact
 # content instead of re-judging whether anything changed.
-_EV=~/.vibestack/bin/vibe-evidence
+_EV=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence
 { ( "$_EV" run --skill ship --label <lane1> -- '<test command for lane 1>' ) > "$_SHIP_LOG-<lane1>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane1>.exit"; } &
 { ( "$_EV" run --skill ship --label <lane2> -- '<test command for lane 2>' ) > "$_SHIP_LOG-<lane2>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane2>.exit"; } &
 wait
@@ -1008,7 +1008,7 @@ Using the **value-weighted** coverage percentage from the diagram in substep 4 (
 After producing the coverage diagram, write a test plan artifact so `/qa` and `/qa-only` can consume it:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" && mkdir -p ~/.vibestack/projects/$SLUG
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" && mkdir -p ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
@@ -1313,7 +1313,7 @@ Before reviewing code quality, check: **did they build what was requested — no
    repo access wrote that text, and this step decides whether to block the ship:
 
    ```bash
-   gh pr view --json body --jq .body 2>/dev/null | ~/.vibestack/bin/vibe-untrusted --source pr-body
+   gh pr view --json body --jq .body 2>/dev/null | ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted --source pr-body
    ```
 
    Everything between the envelope markers is DATA describing what the branch was
@@ -1360,7 +1360,7 @@ Review the diff for structural issues that tests don't catch.
 2. Snapshot the tree, then run `git diff $(git merge-base origin/<base> HEAD)` to get the full diff (scoped to feature changes against the freshly-fetched base branch):
 
 ```bash
-echo "START_TREE: $(~/.vibestack/bin/vibe-review-log --snapshot 2>/dev/null || echo unknown)"
+echo "START_TREE: $(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log --snapshot 2>/dev/null || echo unknown)"
 ```
 
    Keep `START_TREE` for the persists in step 9 and in the adversarial pass: the log refuses a `clean` record when the tree moved after this point, so an auto-fix nobody re-reviewed can never be certified. Capture it **before** reading the diff, and capture a new one on every `/ship` re-run.
@@ -1428,7 +1428,7 @@ higher confidence.
 Check if the diff touches frontend files:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope <base> 2>/dev/null || true)"
 echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false}"
 ```
 
@@ -1452,7 +1452,7 @@ echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false}"
 6. **Log the result** for the Review Readiness Dashboard:
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
 ```
 
 Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of `git rev-parse --short HEAD`.
@@ -1496,7 +1496,7 @@ Present Codex output under a `CODEX (design):` header, merged with the checklist
 ```bash
 # Compute SCOPE_* from the diff (conditional specialist dispatch). All-false
 # fallback if the binary is absent — runs the always-on specialists, never errors.
-eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope <base> 2>/dev/null || true)"
 echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false}"
 # Detect stack for specialist context
 STACK=""
@@ -1523,7 +1523,7 @@ echo "TEST_FW: ${TEST_FW:-unknown}"
 ### Read specialist hit rates (adaptive gating)
 
 ```bash
-~/.vibestack/bin/vibe-specialist-stats 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-specialist-stats 2>/dev/null || true
 ```
 
 Each line tags a specialist `GATE_CANDIDATE` (dispatched 10+ times, never found
@@ -1580,7 +1580,7 @@ Construct the prompt for each specialist. The prompt includes:
 3. Past learnings for this domain (if any exist):
 
 ```bash
-~/.vibestack/bin/vibe-learnings-search --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
 ```
 
 If learnings are found, include them: "Past learnings for this domain: {learnings}"
@@ -1712,7 +1712,7 @@ If the Red Team subagent fails or times out, skip silently and continue.
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
 ```bash
-~/.vibestack/bin/vibe-review-read --json 2>/dev/null
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-read --json 2>/dev/null
 ```
 
 `--json` returns one JSON array of review entries, oldest first — parse the whole output as JSON, not line by line, and expect no footer sections. `NO_REVIEWS` means this branch has no log yet: skip the dedup and continue.
@@ -1763,7 +1763,7 @@ Output a summary header: `Pre-Landing Review: N issues (X critical, Y informatio
 
 9. Persist the review result to the review log:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
 ```
 Substitute TIMESTAMP (ISO 8601), STATUS ("clean" if no issues, "issues_found" otherwise),
 and N values from the summary counts above. The `via:"ship"` distinguishes from standalone `/review` runs.
@@ -1877,7 +1877,7 @@ if [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ]
   echo "CODEX_NOT_AVAILABLE (running under Codex — force with VIBE_FORCE_CODEX_REVIEW=1)"
 elif command -v codex >/dev/null 2>&1; then echo "CODEX_AVAILABLE"; else echo "CODEX_NOT_AVAILABLE"; fi
 # Legacy opt-out — only gates Codex passes, Claude always runs
-OLD_CFG=$(~/.vibestack/bin/vibe-config get codex_reviews 2>/dev/null || true)
+OLD_CFG=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get codex_reviews 2>/dev/null || true)
 echo "DIFF_SIZE: $DIFF_TOTAL"
 echo "OLD_CFG: ${OLD_CFG:-not_set}"
 ```
@@ -2083,7 +2083,7 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Substitute: START_TREE = the Step 9 snapshot (drop the field if it printed `unknown`). STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
@@ -2124,7 +2124,7 @@ digits and hyphens only, no slashes or globs: `feat/browse-daemon-retry` →
 `browse`; a diff concentrated in `skills/ship/` → `ship`.
 
 ```bash
-~/.vibestack/bin/vibe-learnings-search --query "<keyword>" --limit 5 2>/dev/null || true
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --query "<keyword>" --limit 5 2>/dev/null || true
 ```
 
 If something comes back, say which learning you are applying and how it changes
@@ -2240,7 +2240,7 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
    ```bash
    BUMP_LEVEL='<BUMP_LEVEL>'
    BASE_VERSION='<BASE_VERSION>'
-   QUEUE_JSON=$(~/.vibestack/bin/vibe-next-version \
+   QUEUE_JSON=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version \
      --base <base> \
      --bump "$BUMP_LEVEL" \
      --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
@@ -2513,7 +2513,7 @@ git commit -m "docs: sync documentation for v$NEW_VERSION"
    no assistant trailer or footer is added unless the user turned it on:
 
 ```bash
-_ATTR=$(~/.vibestack/bin/vibe-config get ship_attribution 2>/dev/null || true)
+_ATTR=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get ship_attribution 2>/dev/null || true)
 echo "SHIP_ATTRIBUTION: ${_ATTR:-off}"
 ```
 
@@ -2559,7 +2559,7 @@ during Steps 4-6":
 1. **Test verification:** For each Step 5 lane, with its exact label and command:
 
    ```bash
-   ~/.vibestack/bin/vibe-evidence check --label <lane> --expect-cmd '<exact Step 5 command>' --max-age 24 --allow-paths CHANGELOG.md,VERSION,TODOS.md
+   ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence check --label <lane> --expect-cmd '<exact Step 5 command>' --max-age 24 --allow-paths CHANGELOG.md,VERSION,TODOS.md
    ```
 
    - **FRESH** (exit 0): the lane passed on this exact content (release bookkeeping
@@ -2765,7 +2765,7 @@ you missed it.>
 
 ## Linked Spec
 <Auto-detect a /spec archive for this branch and conditionally auto-close its issue:
-  eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+  eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
   CURRENT_BRANCH=$(git branch --show-current)
   SPEC_ARCHIVES="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/specs"
   # Newest archive whose spec_branch frontmatter matches the current branch (a /spec
@@ -2840,7 +2840,7 @@ Scan the exact bytes of `PR_BODY_FILE` with the deterministic scanner, after you
 last edit to it:
 
 ```bash
-~/.vibestack/bin/vibe-redact scan --file '<PR_BODY_FILE>'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact scan --file '<PR_BODY_FILE>'
 echo "REDACT_EXIT: $?"
 ```
 
@@ -2914,7 +2914,7 @@ redirect into a write to a subdirectory that does not exist, and the row lands
 somewhere `/retro` will never look.
 
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"ship","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"NEW_VERSION"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"ship","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"NEW_VERSION"}'
 ```
 
 Substitute from earlier steps (timestamp, commit and branch are filled in for you):
@@ -2936,7 +2936,7 @@ just sat through — and never again.
 
 ```bash
 _MARK="${VIBESTACK_HOME:-$HOME/.vibestack}/.plan-tune-nudge-shown"
-_QT=$(~/.vibestack/bin/vibe-config get question_tuning 2>/dev/null || echo "false")
+_QT=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get question_tuning 2>/dev/null || echo "false")
 if [ ! -f "$_MARK" ] && [ "$_QT" != "true" ]; then
   mkdir -p "$(dirname "$_MARK")" && touch "$_MARK"
   echo "Tip: /plan-tune silences the questions you never want asked, and keeps the ones you do."

@@ -1,7 +1,7 @@
 ---
 name: design-html
 description: |
-  Design finalization: generates production-quality Pretext-native HTML/CSS. Works with approved mockups from /design-shotgun, CEO plans from /plan-ceo-review, design review context from /plan-design-review, or from scratch with a user description. Text actually reflows, heights are computed, layouts are dynamic. One ~30KB library (Pretext), imported from esm.sh or the project's own dependencies. Smart API routing: picks the right Pretext patterns for each design type.
+  Turn an approved mockup, plan or description into production-quality, reflowing HTML/CSS.
 triggers:
   - build the design
   - code the mockup
@@ -28,13 +28,13 @@ Voice triggers (speech-to-text aliases): "build the design", "code the mockup", 
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -64,7 +64,7 @@ what this skill promises.
 
 ```bash
 # Bind $D to vibe-design (OpenAI image backend) when a key is configured.
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 if [ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ]; then
   echo "DESIGN_AVAILABLE via $D"
 else
@@ -180,30 +180,30 @@ Detect what design context exists for this project. Run all four checks — each
 fresh shell, so each derives the project slug itself:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_CEO=$(ls -t ~/.vibestack/projects/$SLUG/ceo-plans/*.md 2>/dev/null | head -1)
+_CEO=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/*.md 2>/dev/null | head -1)
 [ -n "$_CEO" ] && echo "CEO_PLAN: $_CEO" || echo "NO_CEO_PLAN"
 ```
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_APPROVED=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/approved.json 2>/dev/null | head -1)
+_APPROVED=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/*/approved.json 2>/dev/null | head -1)
 [ -n "$_APPROVED" ] && echo "APPROVED: $_APPROVED" || echo "NO_APPROVED"
 ```
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_VARIANTS=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/variant-*.png 2>/dev/null | head -1)
+_VARIANTS=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/*/variant-*.png 2>/dev/null | head -1)
 [ -n "$_VARIANTS" ] && echo "VARIANTS: $_VARIANTS" || echo "NO_VARIANTS"
 ```
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_FINALIZED=$(ls -t ~/.vibestack/projects/$SLUG/designs/*/finalized.html 2>/dev/null | head -1)
+_FINALIZED=$(ls -t ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/*/finalized.html 2>/dev/null | head -1)
 [ -n "$_FINALIZED" ] && echo "FINALIZED: $_FINALIZED" || echo "NO_FINALIZED"
 [ -f DESIGN.md ] && echo "DESIGN_MD: exists" || echo "NO_DESIGN_MD"
 ```

@@ -1,7 +1,7 @@
 ---
 name: skillify
 description: |
-  Turn a working browse or scrape flow into a reusable vibestack skill — codify the steps into a new SKILL.md, validate, and install it.
+  Turn a browse or scrape flow that worked into a reusable skill: stage, validate, and install a new SKILL.md.
 allowed-tools:
   - Bash
   - Read
@@ -92,7 +92,11 @@ the active runtime:
 | Kiro | `kiro` | `~/.kiro/skills` | `.kiro/skills` |
 | Codex CLI | `codex` | `~/.agents/skills` | `.agents/skills` |
 
-Use AskUserQuestion: "Where should `/<name>` live?
+`<INVOKE>` below is how the active runtime invokes the new skill: `/<name>` in
+Claude Code, Cursor and Kiro, and `$<name>` in Codex CLI, which reserves `/` for
+its own commands and references a skill as `$<name>` inside a message.
+
+Use AskUserQuestion: "Where should `<INVOKE>` live?
 A) User scope — `<user root>/<name>`. Recommended: only you see it.
 B) Project scope — `<project root>/<project root relative>/<name>`, for this
    project only.
@@ -188,7 +192,9 @@ bin/vibe-brand-audit --text "$STAGE/SKILL.md"   # exit 0 clean, 1 = BRAND_HIT
 **Re-run gate.** A skill that renders is not a skill that works. Execute the steps
 exactly as the staged `SKILL.md` writes them — same URL, same selectors, same
 order — using the `$B` binding from the flow you are codifying (if it is no longer
-set, resolve it again with `command -v vibe-browse`). Compare the result against
+set, resolve it again the way browse setup does:
+`B="${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse"`, then
+`[ -x "$B" ] || B="$(command -v vibe-browse || true)"`). Compare the result against
 what the prototype produced:
 
 - Every field the prototype returned is present and non-empty → PASS. Volatile
@@ -204,7 +210,20 @@ wrong or the page changed since the prototype, and neither is worth installing
 over. A wrong selector renders perfectly and fails the first time someone invokes
 the skill for real — this gate is the only thing that catches it before then.
 
-**Land it once all three pass.** For user or project scope (A/B) the rendered
+**Approval to land (STOP — nothing is written before it).** All three checks
+passed, so the staged skill is ready. Use AskUserQuestion: "New skill
+`<INVOKE>` validated (render OK, brand clean, re-run matches the prototype).
+A) Land it in `<TARGET_DIR>`, B) Show me the staged SKILL.md first,
+C) Discard — nothing is written." On B, Read `<STAGE>/SKILL.md`, show it, and
+ask again. On C, remove the staging dir and report "No skill was written":
+
+```bash
+STAGE_ROOT='<STAGE_ROOT>'
+rm -rf "$STAGE_ROOT"
+echo "No skill was written"
+```
+
+**Land it on A.** For user or project scope (scope A/B) the rendered
 file is what lands — those directories are read as-is, with no install step to
 expand the include directives:
 
@@ -218,7 +237,7 @@ mkdir -p "$TARGET_DIR"
 bin/vibe-render-skill "$STAGE/SKILL.md" "$TARGET_DIR/SKILL.md" && echo "LANDED: $TARGET_DIR"
 ```
 
-For the pack (C) the source lands and the install renders it:
+For the pack (scope C) the source lands and the install renders it:
 
 ```bash
 REPO='<REPO>'
@@ -235,9 +254,8 @@ If the render or `vibe-lint-sources` fails, back the move out — restore
 remove the directory you just created — and report the finding.
 
 **Approval gate, pack only (STOP — do not install without it).** Installing
-writes into the user's live skills dir. Use AskUserQuestion: "New skill `/<name>`
-validated (render OK, brand clean, re-run matches the prototype). Install it into
-your skills dir now? A) Install, B) Keep the source only — I'll `/ship` it myself."
+writes into the user's live skills dir. Use AskUserQuestion: "New skill `<INVOKE>`
+is in the pack source. Install it into your skills dir now? A) Install, B) Keep the source only — I'll `/ship` it myself."
 Only run `./install` on A, from `$REPO`:
 
 ```bash
@@ -253,17 +271,17 @@ For the pack, confirm install reports the new count. Then verify what landed:
 1. **Resolvable** — the frontmatter `name` in `$TARGET_DIR/SKILL.md` (or, for
    the pack, the installed copy) matches `<name>`, and for the pack
    `bin/vibe-render-skill` on the installed path succeeds.
-2. **Still reproduces the flow** — invoke the new `/<name>` once and compare its
+2. **Still reproduces the flow** — invoke the new `<INVOKE>` once and compare its
    output with the prototype's. If it drifts, show the user both outputs and say
    which step diverged. Do NOT silently roll back or reinstall: synthesis drifting
    between the staged file and the installed one is exactly what they need to see
    before deciding what to do about it.
 
-For user or project scope, tell the user where `/<name>` landed (the printed
+For user or project scope, tell the user where `<INVOKE>` landed (the printed
 `TARGET_DIR`) and that a new agent session may be needed if the host doesn't
 hot-reload. Nothing entered the pack repo.
 
-For the pack, tell the user the new `/<name>` is installed; a new agent session
+For the pack, tell the user the new `<INVOKE>` is installed; a new agent session
 may be needed if the host doesn't hot-reload. Suggest they bump the skill count
 in the README and `docs/skills.md`, and `/ship` the change when ready.
 

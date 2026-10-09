@@ -575,6 +575,35 @@ slug_in "$SLUGT/alice/api" --stamp-checkpoint "$CP4" 2>"$SLUGT/err"; rc=$?
 [ "$rc" -ne 0 ] && cmp -s "$CP4" "$CP4.orig" && grep -q "closing ---" "$SLUGT/err" \
   && ok "slug: an unclosed frontmatter exits non-zero and is left alone" || no "slug: unclosed frontmatter rc=$rc: $(cat "$CP4")"
 
+# --- vibestack doctor ---------------------------------------------------------
+# A stale install (old version stamp, a tool missing from the state root's bin)
+# must show up as rows, and an optional CLI that is not installed is a note,
+# never a failure on its own.
+DOCH="$TMP/doctor-home"; DOCV="$TMP/doctor-vh"
+mkdir -p "$DOCH/.claude/skills/review" "$DOCV/bin"
+: > "$DOCH/.claude/skills/.vibestack-manifest"
+for t in config slug session-kind repo-mode decision-log decision-search; do cp "$BIN/vibe-$t" "$DOCV/bin/"; done
+echo "0.0.0-stale" > "$DOCV/version"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCV" env PATH=/usr/bin:/bin "$BIN/vibestack" doctor 2>&1)"; rc=$?
+echo "$out" | grep -Eq '^  warn .*version.*0\.0\.0-stale' \
+  && ok "doctor: a stale version stamp is a warn row" || no "doctor: no version warn row: $out"
+echo "$out" | grep -Eq '^  MISS .*vibe-redact' \
+  && ok "doctor: a tool missing from the state root's bin is named in a MISS row" || no "doctor: no MISS row for vibe-redact: $out"
+echo "$out" | grep -Eq '^  note codex not installed' \
+  && ok "doctor: an absent codex is a note" || no "doctor: no 'note codex not installed' row: $out"
+echo "$out" | grep -Eq '^  ok   claude skills manifest' \
+  && ok "doctor: an installed target with a manifest is ok" || no "doctor: no manifest ok row for claude: $out"
+# The MISS row for the missing tools is the only real failure here; the
+# version mismatch and the absent CLIs must not add another.
+fails="$(echo "$out" | grep -Ec '^  (MISS|FAIL) ')"
+[ "$rc" = 1 ] && [ "$fails" = 1 ] \
+  && ok "doctor: only the missing tools fail; absent CLIs and a stale stamp do not" \
+  || no "doctor: rc=$rc with $fails MISS/FAIL rows: $out"
+cp "$BIN"/vibe-* "$DOCV/bin/"; cp "$ROOT/VERSION" "$DOCV/version"
+out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCV" env PATH="$DOCV/bin:/usr/bin:/bin" "$BIN/vibestack" doctor 2>&1)"; rc=$?
+[ "$rc" = 0 ] && ! echo "$out" | grep -Eq '^  (MISS|FAIL|warn) ' \
+  && ok "doctor: a complete install with only optional CLIs absent exits 0" || no "doctor: complete install rc=$rc: $out"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

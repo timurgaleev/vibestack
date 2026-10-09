@@ -30,7 +30,7 @@ If you can't fill in every slot, the candidate isn't ready to evaluate yet — k
 
 ## Sub-agent fan-out
 
-For non-trivial deepenings, fan out: dispatch the candidates to multiple sub-agents in parallel, one per shape, each with a focused brief to flesh out the contract and the deepest example.
+For non-trivial deepenings, fan out: dispatch the candidates to multiple sub-agents in parallel, one per shape, each with a focused brief to flesh out the contract and the deepest example. Pass `run_in_background: false` on each Agent call and wait for every sub-agent to return before comparing candidates.
 
 Include [LANGUAGE.md](LANGUAGE.md) vocabulary in the brief, plus the project's domain vocabulary (e.g. from `CONTEXT.md` if it exists), so each sub-agent names things consistently with the architecture language and the project's domain language.
 

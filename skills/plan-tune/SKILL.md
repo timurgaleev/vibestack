@@ -1,7 +1,7 @@
 ---
 name: plan-tune
 description: |
-  Self-tuning question sensitivity + developer psychographic for vibestack. Never-ask preferences auto-decide two-way questions (one-way doors always ask); the declared/inferred profile is shown to you and never changes a skill's defaults. Review which AskUserQuestion prompts fire across vibestack skills, set per-question preferences (never-ask / always-ask / ask-only-for-one-way), inspect the dual-track profile (what you declared vs what your behavior suggests), and enable/disable question tuning. Conversational interface — no CLI syntax required.
+  Tune which questions vibestack skills ask you: set never-ask or always-ask per question and view your profile.
 triggers:
   - tune questions
   - stop asking me that
@@ -29,13 +29,13 @@ Proactively suggest when the user says the same vibestack question has come up b
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -94,7 +94,7 @@ Power-user shortcuts (one-word invocations) — handle these too:
 
 1. Read the current state:
    ```bash
-   _QT=$(~/.vibestack/bin/vibe-config get question_tuning 2>/dev/null || echo "false")
+   _QT=$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config get question_tuning 2>/dev/null || echo "false")
    echo "QUESTION_TUNING: $_QT"
    ```
 
@@ -124,7 +124,7 @@ Power-user shortcuts (one-word invocations) — handle these too:
 
 3. If A or B: enable:
    ```bash
-   ~/.vibestack/bin/vibe-config set question_tuning true
+   ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config set question_tuning true
    ```
 
 4. If A (full setup), ask FIVE one-per-dimension declaration questions via
@@ -263,7 +263,7 @@ Parse the JSON. Present in **plain English**, not raw floats:
 ## Review question log
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 _LOG="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/question-log.jsonl"
 if [ ! -f "$_LOG" ]; then
   echo "NO_LOG"
@@ -336,7 +336,7 @@ scope expansion comes up", etc).
 
 4. Write:
    ```bash
-   ~/.vibestack/bin/vibe-config set question_pref_<id> '<never-ask|always-ask|ask-only-for-one-way>'
+   ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config set question_pref_<id> '<never-ask|always-ask|ask-only-for-one-way>'
    ```
 
 5. Confirm: "Set `<id>` → `<preference>`. Active immediately. One-way doors
@@ -348,7 +348,7 @@ scope expansion comes up", etc).
    A `never-ask` preference only ever silences a two-way question:
 
    ```bash
-   ~/.vibestack/bin/vibe-question-check --id "<id>" --summary "<question text>"
+   ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-question-check --id "<id>" --summary "<question text>"
    # exit 3 / ONE_WAY  -> ask anyway, preference ignored
    # exit 0 / TWO_WAY  -> preference may suppress
    ```
@@ -450,7 +450,7 @@ the user decides whether declared is wrong or behavior is wrong.
 ## Stats
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
 _VS_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
 python3 - "$_VS_HOME/projects/$SLUG/question-log.jsonl" "$_VS_HOME/developer-profile.json" "$_VS_HOME/config.json" <<'PYEOF'
 import json, os, sys

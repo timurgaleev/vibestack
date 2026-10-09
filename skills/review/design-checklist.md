@@ -9,7 +9,7 @@ This checklist applies to **source code in the diff** — not rendered output. R
 **Trigger:** Only run this checklist if the diff touches frontend files. Use git diff to detect:
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-diff-scope <base> 2>/dev/null || true)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope <base> 2>/dev/null || true)"
 echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false}"
 ```
 

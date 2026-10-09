@@ -1,7 +1,7 @@
 ---
 name: design-consultation
 description: |
-  Design consultation: understands your product, researches the landscape, proposes a complete design system (aesthetic, typography, color, layout, spacing, motion), and generates font+color preview pages. Creates DESIGN.md as your project's design source of truth. For existing sites, use /plan-design-review to infer the system instead.
+  Propose a complete design system for a new product, with font and color previews, written to DESIGN.md.
 allowed-tools:
   - Bash
   - Read
@@ -26,13 +26,13 @@ Proactively suggest when starting a new project's UI with no existing design sys
 ## Preamble
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)" 2>/dev/null || SLUG="unknown"
 _LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    ~/.vibestack/bin/vibe-learnings-search --limit 5 2>/dev/null || true
+    ${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search --limit 5 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: none yet"
@@ -89,8 +89,8 @@ Look for office-hours output:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-ls ~/.vibestack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+ls ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ls .context/*office-hours* .context/attachments/*office-hours* 2>/dev/null | head -5
 ```
 
@@ -108,7 +108,7 @@ If the codebase is empty and purpose is unclear, say: *"I don't have a clear pic
 
 ```bash
 # Bind $D to vibe-design (OpenAI image backend) when a key is configured.
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 if [ -x "$D" ] && [ "$("$D" status 2>/dev/null)" = "DESIGN_AVAILABLE" ]; then
   echo "DESIGN_AVAILABLE via $D"
 else
@@ -142,58 +142,14 @@ a posture ("for builders, not managers"). Write it down. Every subsequent design
 decision should serve this memorable thing. Design that tries to be memorable for
 everything is memorable for nothing.
 
-### Taste profile (if this user has prior sessions)
+### Prior taste (if this user has prior sessions)
 
-Read the persistent taste profile if it exists:
-
-```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_TASTE_PROFILE=~/.vibestack/projects/$SLUG/taste-profile.json
-if [ -f "$_TASTE_PROFILE" ]; then
-  # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
-  # Each dimension has approved[] and rejected[] entries with
-  # { value, confidence, approved_count, rejected_count, last_seen }
-  # Confidence decays 5% per week of inactivity — computed at read time.
-  cat "$_TASTE_PROFILE" 2>/dev/null | head -200
-  echo "TASTE_PROFILE_FOUND"
-else
-  echo "NO_TASTE_PROFILE"
-fi
-```
-
-**If TASTE_PROFILE_FOUND:** Summarize the strongest signals (top 3 approved entries
-per dimension by confidence * approved_count). Include them in the design brief:
-
-"Based on \${SESSION_COUNT} prior sessions, this user's taste leans toward:
-fonts [top-3], colors [top-3], layouts [top-3], aesthetics [top-3]. Bias
-generation toward these unless the user explicitly requests a different direction.
-Also avoid their strong rejections: [top-3 rejected per dimension]."
-
-**If NO_TASTE_PROFILE:** Fall through to per-session approved.json files (legacy).
-
-**Conflict handling:** If the current user request contradicts a strong persistent
-signal (e.g., "make it playful" when taste profile strongly prefers minimal), flag
-it: "Note: your taste profile strongly prefers minimal. You're asking for playful
-this time — I'll proceed, but want me to update the taste profile, or treat this
-as a one-off?"
-
-**Decay:** Confidence scores decay 5% per week. A font approved 6 months ago with
-10 approvals has less weight than one approved last week. The decay calculation
-happens at read time, not write time, so the file only grows on change.
-
-**Legacy files:** If the file has no `version` field or `version: 0`, it is the
-older per-session `approved.json` aggregate rather than a v1 profile. Nothing
-migrates it for you — read what it does carry (approved values, dates) and treat
-the confidence and count fields as absent instead of assuming they are there.
-
-The profile itself is maintained outside this skill, so it may simply not exist.
-When it doesn't, the project's learnings log is the cross-session taste signal —
-the preamble already loaded it.
-
-If a taste profile exists for this project, factor it into your Phase 3 proposal.
-The profile reflects what the user has actually approved in prior sessions — treat
-it as a demonstrated preference, not a constraint. You may still deliberately
-depart from it if the product direction demands something different; when you do,
+The project's learnings log is the cross-session taste signal; the preamble
+already loaded it. If it carries taste entries (approved or rejected fonts,
+colors, layouts, aesthetics), factor them into your Phase 3 proposal. They
+reflect what the user has actually approved in prior sessions — treat them as a
+demonstrated preference, not a constraint. You may still deliberately
+depart from them if the product direction demands something different; when you do,
 say so explicitly and connect the departure to the memorable-thing answer above.
 
 ---
@@ -206,7 +162,7 @@ If the user wants competitive research:
 
 Use WebSearch to find 5-10 products in their space. Search for:
 - "[product category] website design"
-- "[product category] best websites 2025"
+- "[product category] best websites <current year>" (substitute the current year from the session context)
 - "best [industry] web apps"
 
 **Step 2: Visual research via browse (if available)**
@@ -276,7 +232,7 @@ Keep the printed path. Read that empty file first — the Write tool refuses to
 overwrite a file it has not read — then use the Write tool to put the brief into it:
 what the product is, who it is for, the space and project type (Phase 1), the
 memorable-thing answer, research status and findings (Phase 2, or "no research"), and
-any taste-profile signals. The brief carries user words, so it never appears in shell
+any prior-taste signals from the learnings log. The brief carries user words, so it never appears in shell
 source.
 
 {{include lib/snippets/outside-voice-preflight.md}}
@@ -384,7 +340,7 @@ complete. Q2 names each voice as completed, unavailable or declined.
 
 **Log the result:**
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 Replace SOURCE with "codex+subagent", "codex-only", "subagent-only", "claude-cli",
 "unavailable", "disabled" or "declined". Replace STATUS with "clean" or
@@ -546,8 +502,8 @@ This phase generates visual previews of the proposed design system. Two paths de
 Generate AI-rendered mockups showing the proposed design system applied to realistic screens for this product. This is far more powerful than an HTML preview — the user sees what their product could actually look like.
 
 ```bash
-eval "$(~/.vibestack/bin/vibe-slug 2>/dev/null)"
-_DESIGN_DIR="$HOME/.vibestack/projects/$SLUG/designs/design-system-$(date +%Y%m%d)"
+eval "$(${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug 2>/dev/null)"
+_DESIGN_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/design-system-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -561,7 +517,7 @@ printed above:
 
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
-D=~/.vibestack/bin/vibe-design
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
 BRIEF_FILE="$_DESIGN_DIR/brief.txt"
 [ -f "$BRIEF_FILE" ] && grep -q '[^[:space:]]' "$BRIEF_FILE" \
   || { echo "BRIEF_MISSING: write the brief into $BRIEF_FILE with the Write tool first" >&2; exit 1; }

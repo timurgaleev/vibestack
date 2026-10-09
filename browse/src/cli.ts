@@ -15,7 +15,7 @@ import * as os from 'os';
 import { spawn as nodeSpawn } from 'child_process';
 import { safeUnlink, safeUnlinkQuiet, safeKill, isProcessAlive } from './error-handling';
 import { writeSecureFile, mkdirSecure } from './file-permissions';
-import { resolveConfig, ensureStateDir, readVersionHash, isPairAgentEnabled, PAIR_AGENT_OFF_HINT } from './config';
+import { resolveConfig, ensureStateDir, readVersionHash, isPairAgentEnabled, PAIR_AGENT_OFF_HINT, resolveChromiumProfile, resolvevibestackHome } from './config';
 import { parseProxyConfig, computeConfigHash, ProxyConfigError } from './proxy-config';
 import { redactProxyUrl } from './proxy-redact';
 import { spawnTerminalAgent, BUN_CHILD_FLAGS } from './terminal-agent-control';
@@ -218,8 +218,8 @@ function cleanupLegacyState(): void {
 // delete its locks: the holder is the user's open headed browser, possibly
 // driven from another project.
 /** Profile dir used by headed/connect Chromium sessions. */
-function chromiumProfileDir(): string {
-  return path.join(process.env.HOME || '/tmp', '.vibestack', 'chromium-profile');
+export function chromiumProfileDir(): string {
+  return resolveChromiumProfile();
 }
 
 /** Remove Chromium SingletonLock/Socket/Cookie so a relaunch can acquire the
@@ -720,7 +720,7 @@ let _globalFlags: GlobalFlags | null = null;
 /** Check if ngrok is installed and authenticated (native config or vibestack env). */
 function isNgrokAvailable(): boolean {
   // Check vibestack's own ngrok env
-  const ngrokEnvPath = path.join(process.env.HOME || '/tmp', '.vibestack', 'ngrok.env');
+  const ngrokEnvPath = path.join(resolvevibestackHome(), 'ngrok.env');
   if (fs.existsSync(ngrokEnvPath)) return true;
 
   // Check NGROK_AUTHTOKEN env var
