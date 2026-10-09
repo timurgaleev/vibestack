@@ -1241,9 +1241,29 @@ interactive state issues.
 
 For CSS-only fixes: skip entirely. CSS regressions are caught by re-running /design-review.
 
-If the fix involved JS behavior: follow the same procedure as /qa Phase 8b (study existing
-test patterns, write a regression test encoding the exact bug condition, run it, commit if
-passes or defer if fails). Commit format: `test(design): regression test for FINDING-NNN`.
+If the fix involved JS behavior: write the test as /qa Phase 8b steps 1–2 describe (study
+existing test patterns, answer the value questions, encode the exact bug condition). The fix
+is already committed in 8c, so prove the test red against the fix commit's parent instead of
+the working tree. Replace `<FIX_SHA>` with the hash of the 8c commit and `<tmp>` with a fresh
+scratch path:
+
+```bash
+git worktree add --detach '<tmp>' '<FIX_SHA>^'
+```
+
+Copy the new or extended test file (and any new fixtures) to the same paths in `<tmp>`, run
+`{detected test command} {new-test-file}` there, then `git worktree remove --force '<tmp>'`.
+Judge that run exactly as /qa Phase 8b step 3 does: it must fail on its own assertion; a test
+defect gets one correction, a green run one rewrite, and otherwise the test is dropped with
+`Regression proof — unavailable (<reason>)`. The scratch worktree has no `node_modules`,
+`.venv` or build output: a failure there from a missing dependency is the environment, not the
+test — link the dependencies in, and otherwise record `Regression proof — unavailable
+(<reason>)` instead of treating the run as red.
+
+Then run the same command in the working tree, where the fix is present: it must pass. Commit
+the test only when it was red at the parent and green at the fix, and record
+`fails before fix: yes` / `passes after fix: yes` in the finding's report entry. Commit format:
+`test(design): regression test for FINDING-NNN`.
 
 ### 8f. Self-Regulation (STOP AND EVALUATE)
 
