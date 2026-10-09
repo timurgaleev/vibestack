@@ -76,6 +76,7 @@ jobs:
           - test-land-deploy-gates.sh
           - test-browser-skill-consent.sh
           - test-health-scoring.sh
+          - test-retro-prs.sh
           - test-context-budget.sh
           - test-context-identity.sh
           - test-review-tree-binding.sh

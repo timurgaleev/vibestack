@@ -283,8 +283,25 @@ _FIRST=$(git log origin/<default> --since="<window>" --format=%H | tail -1)
 git show "${_FIRST}^:VERSION" 2>/dev/null || git show "${_FIRST}:VERSION" 2>/dev/null
 git show origin/<default>:VERSION 2>/dev/null
 
-# 16. Merged PRs in window (hosting data)
-gh pr list --state merged --base <default> --search "merged:>=<start-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE
+# 16. Merged PRs/MRs in window (hosting data), from the platform Step 0
+#     detected — replace <PLATFORM> with github, gitlab or unknown. glab has no
+#     merged-date filter, so the window is applied to merged_at here; each MR
+#     prints as "!<iid> <merged_at> <title>".
+RETRO_PLATFORM='<PLATFORM>'
+case "$RETRO_PLATFORM" in
+  github)
+    gh pr list --state merged --base <default> --search "merged:>=<start-date>" --json number,title,mergedAt --limit 200 2>/dev/null || echo PRS_UNAVAILABLE ;;
+  gitlab)
+    glab mr list --merged --target-branch <default> --per-page 100 -F json 2>/dev/null \
+      | python3 -I -c 'import json, sys
+start = sys.argv[1]
+for m in json.load(sys.stdin):
+    day = (m.get("merged_at") or "")[:10]
+    if day and day >= start:
+        print("!%s %s %s" % (m["iid"], m["merged_at"], m["title"]))' '<start-date>' 2>/dev/null \
+      || echo PRS_UNAVAILABLE ;;
+  *) echo PRS_UNAVAILABLE ;;
+esac
 
 # 17. CHANGELOG entries added in window
 git log origin/<default> --since="<window>" --format= -p -- CHANGELOG.md | grep '^+' | grep -v '^+++' || true
@@ -322,7 +339,7 @@ lines of a good fix is not less shipping than ten thousand lines of scaffold.
 See docs/designs/PLAN_TUNING_V1.md §Workstream C.
 
 Logical SLOC comes from command 14, version range from command 15. PRs merged
-comes from command 16; on `PRS_UNAVAILABLE` the row reads "unavailable (no gh)" —
+comes from command 16; on `PRS_UNAVAILABLE` the row reads "unavailable (no gh/glab)" —
 never infer it from `#NNN` in subjects, which is what PRs referenced (command 5)
 counts. Features shipped is the deduplicated CHANGELOG entry lines from command 17
 plus the merged PR titles from command 16; when both sources are empty or
