@@ -388,6 +388,112 @@ out="$(NV_GH_DOWN=1 nv --base main --bump patch --current-version 1.20.0)"
 [ "$(nvq 'd["offline"]' <<<"$out")" = "True" ] && [ "$(nvq 'd["version"]' <<<"$out")" = "1.20.1" ] \
   && ok "next-version falls back offline to a local bump" || no "next-version offline fallback wrong: $out"
 
+# vibe-slug: the bucket is keyed by owner and repo, not the repo name alone.
+SLUGT="$TMP/slug"
+SLUGH="$SLUGT/home"
+mkdir -p "$SLUGH"
+mkrepo() {  # mkrepo <dir> [origin-url]
+  mkdir -p "$1" && git -C "$1" init -q
+  [ -z "${2:-}" ] || git -C "$1" remote add origin "$2"
+}
+slug_in() { (cd "$1" && VIBESTACK_HOME="$SLUGH" env -u VIBESTACK_PROJECT_SLUG "$BIN/vibe-slug" "${@:2}"); }
+slug_of() { slug_in "$1" 2>/dev/null | sed -n 's/^SLUG=//p'; }
+
+mkrepo "$SLUGT/alice/api" "git@github.com:alice/api.git"
+mkrepo "$SLUGT/bob/api" "https://github.com/bob/api"
+mkrepo "$SLUGT/alice-https/api" "https://alice:ghp_secrettoken@github.com:443/Alice/api.git"
+mkrepo "$SLUGT/g1/api" "https://gitlab.com/grp/sub/api.git"
+mkrepo "$SLUGT/g2/api" "https://gitlab.com/other/sub/api.git"
+mkrepo "$SLUGT/plain/Local Proj"
+
+a="$(slug_of "$SLUGT/alice/api")"; b="$(slug_of "$SLUGT/bob/api")"
+[ "$a" = "alice-api" ] && [ "$b" = "bob-api" ] \
+  && ok "slug: alice/api and bob/api get different buckets" || no "slug: alice='$a' bob='$b'"
+[ "$(slug_of "$SLUGT/alice-https/api")" = "alice-api" ] \
+  && ok "slug: https+token spelling resolves to the ssh spelling's bucket" || no "slug: https spelling got '$(slug_of "$SLUGT/alice-https/api")'"
+out="$(slug_in "$SLUGT/alice-https/api" --identity)"
+echo "$out" | grep -q "ghp_secrettoken" \
+  && no "slug: --identity leaked the remote credential: $out" || ok "slug: --identity drops credentials"
+echo "$out" | grep -qx "PROJECT_REMOTE='github.com/alice/api'" \
+  && ok "slug: --identity prints the canonical remote" || no "slug: --identity remote wrong: $out"
+g1="$(slug_of "$SLUGT/g1/api")"; g2="$(slug_of "$SLUGT/g2/api")"
+case "$g1" in sub-api-????????) [ "$g1" != "$g2" ] && ok "slug: nested groups with one repo name stay apart" || no "slug: nested groups collide: $g1" ;;
+  *) no "slug: nested group slug shape '$g1'" ;; esac
+[ "$(slug_of "$SLUGT/plain/Local Proj")" = "local-proj" ] \
+  && ok "slug: no remote falls back to the directory name" || no "slug: no-remote got '$(slug_of "$SLUGT/plain/Local Proj")'"
+[ "$(cd "$SLUGT/alice/api" && VIBESTACK_HOME="$SLUGH" VIBESTACK_PROJECT_SLUG="Pinned.Name" "$BIN/vibe-slug")" = "SLUG=pinned-name" ] \
+  && ok "slug: VIBESTACK_PROJECT_SLUG overrides" || no "slug: override ignored"
+
+# One-time migration out of the old name-only bucket.
+OLD="$SLUGH/projects/api"
+mkdir -p "$OLD/checkpoints" "$OLD/specs"
+echo '{"key":"k1"}' > "$OLD/learnings.jsonl"
+echo '{"d":1}' > "$OLD/decisions.jsonl"
+echo 'spec' > "$OLD/specs/s1.md"
+git -C "$SLUGT/alice/api" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+ALICE_SHA="$(git -C "$SLUGT/alice/api" rev-parse --short HEAD)"
+echo "{\"skill\":\"review\",\"commit\":\"$ALICE_SHA\"}" > "$OLD/main-reviews.jsonl"
+mkdir -p "$OLD/designs/board-1"
+echo 'png' > "$OLD/designs/board-1/variant-a.png"
+echo 'confirmed' > "$OLD/land-deploy-confirmed"
+printf -- '---\nbranch: main\n---\nold\n' > "$OLD/checkpoints/20260101-000000-unstamped.md"
+printf -- '---\nbranch: main\nremote: github.com/bob/api\nproject_root: /x\n---\nbob\n' > "$OLD/checkpoints/20260102-000000-bobs.md"
+NEW="$SLUGH/projects/alice-api"
+mkdir -p "$NEW" && echo '{"key":"mine"}' > "$NEW/decisions.jsonl"
+out="$(slug_in "$SLUGT/alice/api" 2>"$SLUGT/err")"
+[ "$out" = "SLUG=alice-api" ] && ok "slug: migration keeps stdout to the one SLUG line" || no "slug: migration stdout '$out'"
+grep -q "copied" "$SLUGT/err" && ok "slug: migration reports on stderr" || no "slug: migration silent: $(cat "$SLUGT/err")"
+[ -f "$NEW/learnings.jsonl" ] && [ -f "$NEW/specs/s1.md" ] && [ -f "$NEW/checkpoints/20260101-000000-unstamped.md" ] \
+  && ok "slug: migration copies the listed durable files" || no "slug: migration missed listed files: $(ls -R "$NEW")"
+[ -f "$NEW/designs/board-1/variant-a.png" ] \
+  && ok "slug: migration copies design boards at any depth" || no "slug: migration missed designs/: $(ls -R "$NEW")"
+[ ! -e "$NEW/main-reviews.jsonl" ] && [ ! -e "$NEW/land-deploy-confirmed" ] \
+  && ok "slug: migration leaves gate state behind" || no "slug: migration copied review log or deploy confirmation"
+[ ! -e "$NEW/checkpoints/20260102-000000-bobs.md" ] \
+  && ok "slug: migration skips another project's checkpoint" || no "slug: migration copied a foreign checkpoint"
+grep -q mine "$NEW/decisions.jsonl" && ok "slug: migration never overwrites" || no "slug: migration overwrote decisions.jsonl"
+[ -f "$OLD/learnings.jsonl" ] && [ -f "$OLD/main-reviews.jsonl" ] \
+  && ok "slug: migration leaves the old bucket in place" || no "slug: migration moved files out of the old bucket"
+rm "$NEW/learnings.jsonl"; slug_of "$SLUGT/alice/api" >/dev/null
+[ ! -e "$NEW/learnings.jsonl" ] && ok "slug: migration runs once" || no "slug: migration re-ran"
+out="$(slug_in "$SLUGT/bob/api" 2>&1 >/dev/null)"
+[ ! -e "$SLUGH/projects/bob-api/learnings.jsonl" ] && echo "$out" | grep -q "github.com/alice/api" \
+  && ok "slug: a second remote with the old name is warned, not copied" || no "slug: bob got alice's old bucket: $out"
+
+# A shared old name with no evidence of ownership copies nothing until asked.
+mkrepo "$SLUGT/carol/web" "git@github.com:carol/web.git"
+WOLD="$SLUGH/projects/web"
+mkdir -p "$WOLD"
+echo '{"key":"whose"}' > "$WOLD/learnings.jsonl"
+echo '{"skill":"review","commit":"0123abc"}' > "$WOLD/main-reviews.jsonl"
+out="$(slug_in "$SLUGT/carol/web" 2>&1 >/dev/null)"
+[ ! -e "$SLUGH/projects/carol-web/learnings.jsonl" ] && echo "$out" | grep -q "vibe-slug --migrate" \
+  && ok "slug: no ownership evidence copies nothing and names --migrate" || no "slug: copied without evidence: $out"
+[ ! -e "$WOLD/.claimed-by" ] && ok "slug: an unproven bucket stays unclaimed" || no "slug: unproven bucket was claimed"
+[ "$(slug_in "$SLUGT/carol/web" --migrate 2>/dev/null)" = "SLUG=carol-web" ] && [ -f "$SLUGH/projects/carol-web/learnings.jsonl" ] \
+  && grep -qx "github.com/carol/web" "$WOLD/.claimed-by" \
+  && ok "slug: --migrate copies and claims on request" || no "slug: --migrate did not copy"
+
+# Checkpoint identity stamps.
+CP="$SLUGT/cp.md"
+printf -- '---\nstatus: in-progress\nbranch: main\n---\n\n## Working on: x\n' > "$CP"
+slug_in "$SLUGT/alice/api" --stamp-checkpoint "$CP" 2>/dev/null
+grep -qx "remote: github.com/alice/api" "$CP" && grep -qx "project_root: $(cd "$SLUGT/alice/api" && pwd -P)" "$CP" \
+  && ok "slug: --stamp-checkpoint writes remote and project_root" || no "slug: stamp wrong: $(cat "$CP")"
+sed -n '2,6p' "$CP" | grep -qx -- '---' && ok "slug: stamp stays inside the frontmatter" || no "slug: stamp broke the frontmatter: $(cat "$CP")"
+slug_in "$SLUGT/alice/api" --stamp-checkpoint "$CP" 2>/dev/null
+[ "$(grep -c '^remote:' "$CP")" = 1 ] && ok "slug: restamping does not duplicate fields" || no "slug: duplicate stamp: $(cat "$CP")"
+cls() { printf '%s\n' "$2" | slug_in "$1" --classify-checkpoints 2>/dev/null | cut -f1; }
+[ "$(cls "$SLUGT/alice/api" "$CP")" = "match" ] && ok "slug: classify matches its own project" || no "slug: classify own got '$(cls "$SLUGT/alice/api" "$CP")'"
+[ "$(cls "$SLUGT/bob/api" "$CP")" = "foreign" ] && ok "slug: classify flags another remote as foreign" || no "slug: classify other got '$(cls "$SLUGT/bob/api" "$CP")'"
+[ "$(cls "$SLUGT/alice/api" "$OLD/checkpoints/20260101-000000-unstamped.md")" = "unstamped" ] \
+  && ok "slug: classify reports unstamped saves" || no "slug: classify unstamped wrong"
+mkrepo "$SLUGT/p1/proj"; mkrepo "$SLUGT/p2/proj"
+CP2="$SLUGT/cp2.md"; printf -- '---\nbranch: main\n---\n' > "$CP2"
+slug_in "$SLUGT/p1/proj" --stamp-checkpoint "$CP2" 2>/dev/null
+grep -qx "remote: none" "$CP2" && [ "$(cls "$SLUGT/p1/proj" "$CP2")" = "match" ] && [ "$(cls "$SLUGT/p2/proj" "$CP2")" = "foreign" ] \
+  && ok "slug: without a remote the project root decides" || no "slug: no-remote classify wrong: $(cat "$CP2")"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

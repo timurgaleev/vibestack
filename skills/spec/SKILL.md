@@ -274,10 +274,37 @@ regardless of the codex gate:
 
 {{include lib/snippets/secret-scan-patterns.md}}
 
-On match, **STOP** — do not dispatch to codex, do not archive, do not file the
-issue. Print: "BLOCKED — your spec contains what looks like a secret (matched
-pattern: `{pattern_name}` at line {N}). Redact it and re-run. `--no-gate` only
-skips the quality score, not this scan — a secret must never be archived or filed."
+The scan is deterministic, not a read-through: the scanner runs the patterns
+above over the exact bytes. The spec is user text, so it reaches the scanner
+through a private file written with the Write tool, never through shell source:
+
+```bash
+SPEC_SCAN=$(mktemp /tmp/spec-scan-XXXXXXXX)
+echo "SPEC_SCAN: $SPEC_SCAN"
+```
+
+Read the empty file, **Write the draft spec into `SPEC_SCAN` verbatim**, then:
+
+```bash
+~/.vibestack/bin/vibe-redact scan --file "$SPEC_SCAN"
+echo "REDACT_EXIT: $?"
+rm -f "$SPEC_SCAN"
+```
+
+`SPEC_SCAN` is a scratch input to the scanner, not a sink — it is removed on
+every outcome, before anything else happens. Only `REDACT_EXIT: 0` passes. Exit
+1 lists each finding as `HIGH  <label>  <path>:<line>  <masked>`; exit 2 (or a
+missing binary) means the scan did not run, and that blocks too — this gate
+fails closed. The scanner covers the single-token shapes; also read the draft
+for the multi-line ones it cannot see (a service-account JSON key) and treat a
+hit as a match.
+
+On match or any non-zero exit, **STOP** — do not dispatch to codex, do not
+archive, do not file the issue. Print: "BLOCKED — your spec contains what looks
+like a secret (matched pattern: `{pattern_name}` at line {N}). Redact it and
+re-run. `--no-gate` only skips the quality score, not this scan — a secret must
+never be archived or filed." On exit 2, say the scan could not run instead of
+naming a pattern; it still blocks.
 
 ### Phase 4.6: Quality Gate (--no-gate to skip)
 
@@ -302,7 +329,7 @@ echo "SPEC_DRAFT: $SPEC_DRAFT"
 
 Read the empty file, then **Write the draft spec into the printed `SPEC_DRAFT`
 verbatim with the Write tool** (only after the 4.5b scan passed — a blocked spec is
-never written anywhere). Then build the prompt from that file and send it on stdin:
+never written to a sink, and the 4.5b `SPEC_SCAN` scratch file is already gone). Then build the prompt from that file and send it on stdin:
 
 ```bash
 [ -s "$SPEC_DRAFT" ] || { echo "SPEC_MISSING: write the draft into $SPEC_DRAFT with the Write tool first" >&2; exit 1; }
@@ -412,7 +439,7 @@ echo "TITLE_FILE: $TITLE_FILE"
 Read each empty file, then **Write the final body into `BODY_FILE` and the one-line
 title into `TITLE_FILE` with the Write tool.**
 
-**Re-scan before filing.** The Phase 4.5a/4.5b gates ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so on `$BODY_FILE` and the title you are about to file: (1) repeat the Phase 4.5a semantic re-read and honor its verdict, and (2) scan for the same high-confidence secret patterns as the 4.5b gate (`lib/snippets/secret-scan-patterns.md`). On a regex match, **stop**: redact and rotate before filing — never create the issue with a secret in it. Any redaction or edit the scan forces is applied to `$BODY_FILE` and re-scanned there; a fix made only in the conversation is lost the moment the body is rendered again.
+**Re-scan before filing.** The Phase 4.5a/4.5b gates ran *before* codex; the spec may have been revised since (codex feedback, late edits). The GitHub issue is world-readable, so on `$BODY_FILE` and the title you are about to file: (1) repeat the Phase 4.5a semantic re-read and honor its verdict, and (2) run the same deterministic scanner as the 4.5b gate on both files: `~/.vibestack/bin/vibe-redact scan --file "$BODY_FILE" --file "$TITLE_FILE"; echo "REDACT_EXIT: $?"`. Only `REDACT_EXIT: 0` passes; on any other exit (a finding, or a scan that could not run), **stop**: redact and rotate before filing — never create the issue with a secret in it. Any redaction or edit the scan forces is applied to `$BODY_FILE` and re-scanned there; a fix made only in the conversation is lost the moment the body is rendered again.
 
 If `gh` is available and authenticated:
 
@@ -489,8 +516,9 @@ gate would otherwise survive in the issue but not in the archive, and the archiv
 is a sink of its own. It sits on disk under
 `~/.vibestack/projects/<slug>/specs/` and is exactly what a spawned agent reads
 on stdin, so a secret that reaches it has escaped the gate twice over. If the
-body was touched at all between the filing scan and this write, scan `$BODY_FILE`
-again before writing it — on a match, do not write the archive.
+body was touched at all between the filing scan and this write, run
+`~/.vibestack/bin/vibe-redact scan --file "$BODY_FILE"` again before writing it —
+on any non-zero exit, do not write the archive.
 
 **Sync default:** spec archives stay local under
 `~/.vibestack/projects/<slug>/specs/`. `--sync-archive` is reserved for future

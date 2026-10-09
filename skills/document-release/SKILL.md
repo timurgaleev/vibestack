@@ -574,7 +574,7 @@ means Codex did not complete: treat it as a Codex error, never as a clean review
 
 On any Codex error, fall back to the Claude-subagent path.
 
-**If `CODEX_MODE` is `under_codex`, `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored):**
+**If `CODEX_MODE` is `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored), or `under_codex` with no completed `claude -p` pass:** under `under_codex` the preflight's `OUTSIDE_VOICE` branches govern — `claude -p` runs first, and only its fallback reaches this subagent.
 
 Dispatch the same prompt to a Claude subagent via the Agent tool — fresh context,
 so it reviews the docs rather than defending them. If it also fails or returns
@@ -584,7 +584,7 @@ review-log record below, and move on.
 {{include lib/snippets/foreground-dispatch.md}}
 
 Present whichever pass ran verbatim — Codex under a `CODEX SAYS (documentation
-review):` header, the subagent under `OUTSIDE VOICE (Claude subagent):`. Then use
+review):` header, the subagent under `OUTSIDE VOICE (Claude subagent):` (under `under_codex`, `OUTSIDE VOICE (same-model subagent — not cross-model):`). Then use
 AskUserQuestion — this is informational, nothing is auto-applied:
 
 - RECOMMENDATION: decide per finding; apply only the corrections you agree with.
@@ -714,9 +714,19 @@ cp "<run-dir>/body.md" "<run-dir>/body-orig.md"
    If there are any documentation debt items, suggest adding a `docs-debt` label to the PR.
 
 6. **Secret scan before external write.** Before writing the body back, scan the
-   exact text about to be published (the working copy) for high-confidence secrets.
-   On a match, STOP — tell the user to redact + rotate before continuing; do not
-   publish.
+   exact text about to be published (the working copy, after your last edit to it)
+   with the deterministic scanner:
+
+```bash
+~/.vibestack/bin/vibe-redact scan --file "<run-dir>/body.md"
+echo "REDACT_EXIT: $?"
+```
+
+   It fails closed: only `REDACT_EXIT: 0` passes. Exit 1 lists each finding as
+   `HIGH  <label>  <path>:<line>  <masked>`; exit 2 (or a missing binary) means the
+   scan did not run. On any non-zero exit, STOP — tell the user to redact + rotate
+   before continuing; do not publish. The scanner covers the single-token shapes
+   below; also read the body for the multi-line ones it cannot see.
 {{include lib/snippets/secret-scan-patterns.md}}
 
 7. **Banner tripwire.** The trust-envelope banner must never reach a live PR/MR —

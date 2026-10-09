@@ -205,12 +205,13 @@ Display:
 - CEO, Design, and Codex reviews are shown for context but never block shipping
 - If \`skip_eng_review\` config is \`true\`, Eng Review shows "SKIPPED (global)" and verdict is CLEARED
 
-**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale:
-- Get the current HEAD yourself with \`git rev-parse --short HEAD\`. The review log is a flat JSON array of entries and carries no HEAD of its own — there is no footer section to parse.
-- For each review entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
+**Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale. Content decides, not commits: committing the reviewed bytes keeps a review current, and an uncommitted edit makes it stale though HEAD never moved.
+- For each review entry that has a \`tree\` field: compare it with \`TREE_NOW\`. If different, display: "Note: {skill} review from {date} is stale — the working tree changed since it was logged". If \`TREE_NOW\` is \`unavailable\`, display: "Note: {skill} review from {date} — the current tree cannot be fingerprinted, so freshness is unknown". Skip the commit checks below for these entries.
+- For the remaining entries, get the current HEAD yourself with \`git rev-parse --short HEAD\`. The review log is a flat JSON array of entries and carries no HEAD of its own — there is no footer section to parse.
+- For each such entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
 - If that count command FAILS, the stored commit was rebased or amended away and is no longer reachable. Grade the entry UNKNOWN instead of letting the error surface mid-dashboard: "Note: {skill} review from {date} — stored commit is no longer in this branch's history (rebased or amended); re-run to be sure."
-- For entries without a \`commit\` field (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
-- If all reviews match the current HEAD, do not display any staleness notes
+- For entries with neither \`tree\` nor \`commit\` (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
+- If every review matches \`TREE_NOW\` (or, for entries without \`tree\`, the current HEAD), do not display any staleness notes
 
 If the Eng Review is NOT "CLEAR":
 
@@ -509,8 +510,12 @@ _SHIP_LOG="/tmp/vibestack-ship-$(git branch --show-current | tr '/' '-')"
 # runner through `tee` would report tee's status, so a red suite reads as green.
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 rm -f "$_SHIP_LOG"-*.exit  # an earlier run's lane must not report for this one
-{ ( <test command for lane 1> ) > "$_SHIP_LOG-<lane1>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane1>.exit"; } &
-{ ( <test command for lane 2> ) > "$_SHIP_LOG-<lane2>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane2>.exit"; } &
+# vibe-evidence runs the lane unchanged and exits with its status, and records
+# the command, exit and tree fingerprint so Step 16 can reuse a run of this exact
+# content instead of re-judging whether anything changed.
+_EV=~/.vibestack/bin/vibe-evidence
+{ ( "$_EV" run --skill ship --label <lane1> -- '<test command for lane 1>' ) > "$_SHIP_LOG-<lane1>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane1>.exit"; } &
+{ ( "$_EV" run --skill ship --label <lane2> -- '<test command for lane 2>' ) > "$_SHIP_LOG-<lane2>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane2>.exit"; } &
 wait
 # Walk the lanes that were LAUNCHED, not the exit files that happen to exist: a
 # lane killed before its status write leaves no file, and globbing would skip it.
@@ -523,7 +528,11 @@ done
 
 Keep the braces: `{ …; echo $? > exit; } &` backgrounds the run and the status
 write together. Without them, `a; b &` runs the suite in the foreground and only
-the `echo` in the background, so the lanes stop running in parallel.
+the `echo` in the background, so the lanes stop running in parallel. Pass each
+lane's command as ONE single-quoted string after `--`: the ledger records that
+string verbatim, and Step 16 asks for it byte for byte. If a lane log shows
+`vibe-evidence` itself was not found, run the lane commands bare instead (same
+braces, same exit files); Step 16 then re-runs them.
 
 After all lanes complete, read each `LANE:` line. **A lane passes only when its
 `exit=` is `0`.** A missing exit file, an empty one, or any non-zero value is a
@@ -634,9 +643,11 @@ Use AskUserQuestion:
   **Last modified by:** <author>
   **Noticed by:** vibestack /ship on <date>
   ````
-  Read the file back and scan it for high-confidence secrets with the same patterns
-  as Step 19's secret scan. On a match, stop and tell the user to redact + rotate
-  before continuing — do not publish.
+  Scan the file with the same deterministic scanner as Step 19's secret scan:
+  `~/.vibestack/bin/vibe-redact scan --file '<ISSUE_BODY_FILE>'; echo "REDACT_EXIT: $?"`.
+  Only `REDACT_EXIT: 0` passes. On any other exit (a finding, or a scan that could
+  not run), stop and tell the user to redact + rotate before continuing — do not
+  publish.
 - Create an issue assigned to that person (use the platform detected in Step 0).
   Substitute the printed path. The title carries only the test name: drop any
   `'`, `` ` ``, `$` or `\` from it before placing it inside the single quotes.
@@ -1346,7 +1357,13 @@ Review the diff for structural issues that tests don't catch.
 
 1. Read the review checklist at `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/checklist.md` — the installed sibling skill, not a path relative to the repo you happen to be shipping. Most repos have no vendored `.claude/skills/`, and a relative read there fails into the STOP below on every ship. If the file cannot be read, **STOP** and report the error.
 
-2. Run `git diff $(git merge-base origin/<base> HEAD)` to get the full diff (scoped to feature changes against the freshly-fetched base branch).
+2. Snapshot the tree, then run `git diff $(git merge-base origin/<base> HEAD)` to get the full diff (scoped to feature changes against the freshly-fetched base branch):
+
+```bash
+echo "START_TREE: $(~/.vibestack/bin/vibe-review-log --snapshot 2>/dev/null || echo unknown)"
+```
+
+   Keep `START_TREE` for the persists in step 9 and in the adversarial pass: the log refuses a `clean` record when the tree moved after this point, so an auto-fix nobody re-reviewed can never be certified. Capture it **before** reading the diff, and capture a new one on every `/ship` re-run.
 
 3. Apply the review checklist in two passes:
    - **Pass 1 (CRITICAL):** SQL & Data Safety, Race Conditions & Concurrency, LLM Output Trust Boundary, Shell Injection, Enum & Value Completeness
@@ -1744,10 +1761,11 @@ Output a summary header: `Pre-Landing Review: N issues (X critical, Y informatio
 
 9. Persist the review result to the review log:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
 ```
 Substitute TIMESTAMP (ISO 8601), STATUS ("clean" if no issues, "issues_found" otherwise),
 and N values from the summary counts above. The `via:"ship"` distinguishes from standalone `/review` runs.
+- `START_TREE` = the snapshot from step 2; if it printed `unknown`, drop the `start_tree` field
 - `quality_score` = the PR Quality Score computed in Step 9.2 (e.g., 7.5). If specialists were skipped (small diff), use `10.0`
 - `specialists` = the per-specialist stats object compiled in Step 9.2. Each specialist that was considered gets an entry: `{"dispatched":true/false,"findings":N,"critical":N,"informational":N}` if dispatched, or `{"dispatched":false,"reason":"scope|gated"}` if skipped. Example: `{"testing":{"dispatched":true,"findings":2,"critical":0,"informational":2},"security":{"dispatched":false,"reason":"scope"}}`
 - `findings` = array of per-finding records. For each finding (from checklist pass and specialists), include: `{"fingerprint":"path:line:category","severity":"CRITICAL|INFORMATIONAL","action":"ACTION"}`. ACTION is `"auto-fixed"`, `"fixed"` (user approved), or `"skipped"` (user chose Skip).
@@ -2061,9 +2079,9 @@ If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversaria
 
 After all passes complete, persist:
 ```bash
-~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+~/.vibestack/bin/vibe-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
-Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
+Substitute: START_TREE = the Step 9 snapshot (drop the field if it printed `unknown`). STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
 
 ---
 
@@ -2522,9 +2540,29 @@ once the PR is merged.
 
 **IRON LAW: NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.**
 
-Before pushing, re-verify if code changed during Steps 4-6:
+Before pushing, prove every test lane passed on the content about to ship. The
+evidence ledger answers that mechanically — no judging whether code "changed
+during Steps 4-6":
 
-1. **Test verification:** If ANY file changed after Step 5's test run — fixes from review findings, Step 7's generated tests, Step 14.5's documentation edits (docs are inputs to doc tests, linters and generators) — re-run the test suite. Only CHANGELOG/VERSION/TODOS bookkeeping does not count. Paste fresh output. Stale output from Step 5 is NOT acceptable.
+1. **Test verification:** For each Step 5 lane, with its exact label and command:
+
+   ```bash
+   ~/.vibestack/bin/vibe-evidence check --label <lane> --expect-cmd '<exact Step 5 command>' --max-age 24 --allow-paths CHANGELOG.md,VERSION,TODOS.md
+   ```
+
+   - **FRESH** (exit 0): the lane passed on this exact content (release bookkeeping
+     aside). Cite the printed line and the Step 5 log; do not re-run it.
+   - **STALE** (exit 1), or the helper is missing: something a test can read changed
+     since the run — fixes from review findings, Step 7's generated tests, Step 14.5's
+     documentation edits (docs are inputs to doc tests, linters and generators) — or
+     there is no proven run. Re-run the lane with the Step 5 wrapper
+     (`vibe-evidence run --skill ship --label <lane> -- '<command>'`), paste fresh
+     output, and check again. Stale output from Step 5 is NOT acceptable.
+
+   Only CHANGELOG.md, VERSION and TODOS.md may be allow-listed. Never add a path a
+   test, build or generator reads — a `package.json` edit, a fixture, a doc. If any
+   test reads one of those three files itself (a version check, a changelog lint),
+   drop that file from the list and re-run.
 
 2. **Build verification:** If the project has a build step, run it. Paste output.
 
@@ -2786,11 +2824,22 @@ Read the empty file, then **Write the composed body into the printed
 variables do not survive from one command to the next, so the publish blocks
 below take that printed path in place of `<PR_BODY_FILE>`.
 
-Read `PR_BODY_FILE` and scan its exact contents — **and the title string** — for
-high-confidence secrets. Quote any pasted tool output (test logs, Codex output,
-stack traces) inside a fenced block in the body, so a credential-shaped string in
-someone else's output can't be mistaken for prose. On a match, stop and tell the
-user to redact + rotate before continuing — do not publish.
+Scan the exact bytes of `PR_BODY_FILE` with the deterministic scanner, after your
+last edit to it:
+
+```bash
+~/.vibestack/bin/vibe-redact scan --file '<PR_BODY_FILE>'
+echo "REDACT_EXIT: $?"
+```
+
+It fails closed: only `REDACT_EXIT: 0` passes. Exit 1 lists each finding as
+`HIGH  <label>  <path>:<line>  <masked>`; exit 2 (or a missing binary) means the
+scan did not run. The scanner covers the single-token shapes below; also read the
+body — **and the title string** — for the multi-line ones it cannot see. Quote any
+pasted tool output (test logs, Codex output, stack traces) inside a fenced block in
+the body, so a credential-shaped string in someone else's output can't be mistaken
+for prose. On any non-zero exit or a match, stop and tell the user to redact +
+rotate before continuing — do not publish.
 {{include lib/snippets/secret-scan-patterns.md}}
 
 **If GitHub:**

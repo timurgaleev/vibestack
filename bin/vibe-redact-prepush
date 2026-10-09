@@ -30,13 +30,6 @@ log_skip() {
     >> "$VIBE_HOME/security/prepush-skip.jsonl" 2>/dev/null || true
 }
 
-case "$(printf '%s' "${VIBESTACK_REDACT_PREPUSH:-}" | tr '[:upper:]' '[:lower:]')" in
-  skip)
-    log_skip
-    echo "vibe-redact-prepush: skipped via VIBESTACK_REDACT_PREPUSH=skip" >&2
-    exit 0 ;;
-esac
-
 block_no_diff() {
   {
     echo ""
@@ -83,6 +76,7 @@ added_lines_for() {
 
 # High-confidence credential patterns (kept in sync with
 # lib/snippets/secret-scan-patterns.md). Format: "<label>|<POSIX ERE>".
+# `vibe-redact scan` sources this file for the same list and matcher.
 PATTERNS=(
   'AWS access key|AKIA[0-9A-Z]{16}'
   'GitHub token|gh(p|o|s)_[A-Za-z0-9]{36}'
@@ -98,61 +92,121 @@ PATTERNS=(
   'env-style secret|^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=..+'
 )
 
-# Print masked findings for one blob of text; returns 0 if any finding.
-scan_added() {
-  local text="$1" found=1 entry label pat hits
+# A matched span that is itself a documentation placeholder is not a finding:
+# the AWS docs keys (AKIAIOSFODNN7EXAMPLE), <your-token>, xxxxxx, ****,
+# your_api_key. Judged on the span alone, never on the rest of the line, so a
+# live key sitting next to the word "example" still blocks. For env-style
+# lines only the value is judged — EXAMPLE_API_KEY=<live value> is a finding.
+redact_is_placeholder() {
+  local label="$1" span="$2" v
+  v="$span"
+  [ "$label" = "env-style secret" ] && v="${span#*=}"
+  v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
+  printf '%s' "$v" | grep -qiE '^(your[_-]|<[^>]*>$|[*]+$|x{6,}$|changeme$|redacted|placeholder|dummy|fake)' && return 0
+  case "$v" in *://*|*@*) return 1 ;; esac
+  # Only a value that starts or ends with "example" (AKIA...EXAMPLE,
+  # ...EXAMPLEKEY, example-token) — a word in the middle (MyExampleCorp2024!)
+  # is part of a real secret as often as not.
+  printf '%s' "$v" | grep -qiE '^example|example(key)?$' && return 0
+  return 1
+}
+
+# The shared matcher. Prints one finding per line as
+#   <line number><TAB><label><TAB><matched span>
+# for the text in $1 (line numbers are 1-based within that text). Returns 0
+# when it ran, 2 when grep itself failed — a scan that did not run is never
+# treated as clean.
+redact_find() {
+  local text="$1" entry label pat out rc line n span tok
   for entry in "${PATTERNS[@]}"; do
     label="${entry%%|*}"
     pat="${entry#*|}"
-    hits=$(printf '%s\n' "$text" | grep -oE "$pat" 2>/dev/null | head -5 || true)
-    if [ -n "$hits" ]; then
-      found=0
-      while IFS= read -r h; do
-        printf '  HIGH  %-22s %.10s...\n' "$label" "$h"
-      done <<< "$hits"
-    fi
+    rc=0
+    out=$(printf '%s\n' "$text" | grep -noE -e "$pat" 2>/dev/null) || rc=$?
+    [ "$rc" -gt 1 ] && return 2
+    [ -n "$out" ] || continue
+    while IFS= read -r line; do
+      n="${line%%:*}"; span="${line#*:}"
+      redact_is_placeholder "$label" "$span" && continue
+      printf '%s\t%s\t%s\n' "$n" "$label" "$span"
+    done <<< "$out"
   done
   # Bearer tokens, entropy-gated: >=20 chars with a digit, a lowercase, and an
   # uppercase — placeholders (YOUR_TOKEN_HERE, <token>, xxxx...) don't qualify.
-  hits=$(printf '%s\n' "$text" | grep -oE 'Bearer[ 	]+[A-Za-z0-9._~+/=-]{20,}' 2>/dev/null \
-    | sed -E 's/^Bearer[ 	]+//' \
-    | awk '/[0-9]/ && /[a-z]/ && /[A-Z]/' | head -5 || true)
-  if [ -n "$hits" ]; then
-    found=0
-    while IFS= read -r h; do
-      printf '  HIGH  %-22s %.10s...\n' "Bearer token" "$h"
-    done <<< "$hits"
+  rc=0
+  out=$(printf '%s\n' "$text" | grep -noE -e 'Bearer[ 	]+[A-Za-z0-9._~+/=-]{20,}' 2>/dev/null) || rc=$?
+  [ "$rc" -gt 1 ] && return 2
+  if [ -n "$out" ]; then
+    while IFS= read -r line; do
+      n="${line%%:*}"
+      tok=$(printf '%s' "${line#*:}" | sed -E 's/^Bearer[ 	]+//')
+      case "$tok" in *[0-9]*) ;; *) continue ;; esac
+      case "$tok" in *[a-z]*) ;; *) continue ;; esac
+      case "$tok" in *[A-Z]*) ;; *) continue ;; esac
+      redact_is_placeholder "Bearer token" "$tok" && continue
+      printf '%s\t%s\t%s\n' "$n" "Bearer token" "$tok"
+    done <<< "$out"
   fi
-  return $found
+  return 0
 }
 
-findings=""
-# `|| [ -n ... ]` keeps the last line when stdin lacks a trailing newline
-# (the managed wrapper pipes refs via printf '%s').
-while read -r _local_ref local_sha _remote_ref remote_sha _rest || [ -n "${local_sha:-}" ]; do
-  [ -n "${local_sha:-}" ] || continue
-  printf '%s' "$local_sha" | grep -qE '^0+$' && continue   # branch delete
-  if ! added=$(added_lines_for "$local_sha" "${remote_sha:-0}"); then
-    block_no_diff "git diff failed for $local_sha"
-  fi
-  [ -n "$(printf '%s' "$added" | tr -d '[:space:]')" ] || continue
-  if hit=$(scan_added "$added"); then
-    findings="$findings$hit
-"
-  fi
-done
+# Print masked findings for one blob of text; returns 0 if any finding, 1 if
+# none, 2 if the matcher could not run.
+scan_added() {
+  local text="$1" hits rc=0 n label span
+  hits=$(redact_find "$text") || rc=$?
+  [ "$rc" -eq 0 ] || return 2
+  [ -n "$hits" ] || return 1
+  while IFS=$'\t' read -r n label span; do
+    printf '  HIGH  %-22s %.10s...\n' "$label" "$span"
+  done <<< "$hits"
+  return 0
+}
 
-if [ -n "$findings" ]; then
-  {
-    echo ""
-    echo "BLOCKED: vibe-redact-prepush found credential(s) in the pushed diff:"
-    echo ""
-    printf '%s' "$findings"
-    echo ""
-    echo "Rotate the credential (a pushed secret is compromised) and remove it from the diff."
-    echo "This is a guardrail: 'git push --no-verify' or 'VIBESTACK_REDACT_PREPUSH=skip git push' bypass it."
-  } >&2
-  exit 1
+prepush_main() {
+  case "$(printf '%s' "${VIBESTACK_REDACT_PREPUSH:-}" | tr '[:upper:]' '[:lower:]')" in
+    skip)
+      log_skip
+      echo "vibe-redact-prepush: skipped via VIBESTACK_REDACT_PREPUSH=skip" >&2
+      exit 0 ;;
+  esac
+
+  findings=""
+  # `|| [ -n ... ]` keeps the last line when stdin lacks a trailing newline
+  # (the managed wrapper pipes refs via printf '%s').
+  while read -r _local_ref local_sha _remote_ref remote_sha _rest || [ -n "${local_sha:-}" ]; do
+    [ -n "${local_sha:-}" ] || continue
+    printf '%s' "$local_sha" | grep -qE '^0+$' && continue   # branch delete
+    if ! added=$(added_lines_for "$local_sha" "${remote_sha:-0}"); then
+      block_no_diff "git diff failed for $local_sha"
+    fi
+    [ -n "$(printf '%s' "$added" | tr -d '[:space:]')" ] || continue
+    rc=0
+    hit=$(scan_added "$added") || rc=$?
+    case "$rc" in
+      0) findings="$findings$hit"$'\n' ;;
+      1) ;;
+      *) block_no_diff "credential matcher failed for $local_sha" ;;
+    esac
+  done
+
+  if [ -n "$findings" ]; then
+    {
+      echo ""
+      echo "BLOCKED: vibe-redact-prepush found credential(s) in the pushed diff:"
+      echo ""
+      printf '%s' "$findings"
+      echo ""
+      echo "Rotate the credential (a pushed secret is compromised) and remove it from the diff."
+      echo "This is a guardrail: 'git push --no-verify' or 'VIBESTACK_REDACT_PREPUSH=skip git push' bypass it."
+    } >&2
+    exit 1
+  fi
+
+  exit 0
+}
+
+# Sourced by `vibe-redact scan` for the patterns and matcher; run as the hook otherwise.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  prepush_main "$@"
 fi
-
-exit 0
