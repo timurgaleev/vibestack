@@ -77,6 +77,27 @@ else
   _pass "H1: hub does not name /code-review"
 fi
 
+# T1-T2: every runtime gets the same test policy. A coverage percentage left in
+# one runtime's always-loaded rules contradicts the value bar the skills carry,
+# and a rule that routes review to an agent instead of /review bypasses it.
+coverage_hits=""
+for rt in claude cursor; do
+  hits=$(grep -nE '[0-9]+%' "$ROOT/config/$rt/rules/"tests.* "$ROOT/config/$rt/rules/"git.* \
+    "$ROOT/config/$rt/agents/quality-guard.md" "$ROOT/config/$rt/agents/spec-writer.md" 2>/dev/null)
+  [[ -n "$hits" ]] && coverage_hits="$coverage_hits$hits"$'\n'
+done
+if [[ -z "$coverage_hits" ]]; then
+  _pass "T1: no coverage percentage in the claude or cursor test/git rules and test agents"
+else
+  _fail "T1: a coverage percentage survives:"
+  printf '%s' "$coverage_hits" | sed 's/^/        /'
+fi
+if grep -nE 'task-planner|quality-guard' "$ROOT/config/cursor/rules/git.mdc"; then
+  _fail "T2: config/cursor/rules/git.mdc routes to an agent instead of /plan-eng-review and /review"
+else
+  _pass "T2: cursor git rule routes planning and review to the skills"
+fi
+
 # Self-tests: each mutation must turn the check red.
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/skills-routing.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

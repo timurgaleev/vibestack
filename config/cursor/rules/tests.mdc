@@ -1,16 +1,25 @@
 ---
-description: Testing requirements — 80% coverage minimum, TDD workflow, and test writing guidelines.
+description: Testing requirements — test value bar, TDD workflow, and test writing guidelines.
 globs:
 alwaysApply: true
 ---
 
 # Testing Requirements
 
-## Minimum Test Coverage: 80%
+## Test Value Bar
 
-Test Types (ALL required):
-1. **Unit Tests** - Individual functions, utilities, components
-2. **Integration Tests** - API endpoints, database operations
+A test earns its place by protecting behavior a real regression would break.
+Write one only when all four questions have an answer:
+
+1. What observable behavior, invariant or contract does it protect?
+2. What credible regression makes it fail?
+3. Why does existing coverage not already catch that?
+4. Does it need a production seam no production caller needs? If so, test at
+   the real boundary instead.
+
+Weak tests are not coverage: a smoke test, an existence check, or "it doesn't
+throw" never counts as covering a path. A regression test is proven red against
+the code before the fix, then green after it.
 
 ## Testing Workflow
 
@@ -20,7 +29,6 @@ Recommended workflow:
 3. Implement functionality
 4. Run tests to verify they pass
 5. Refactor as needed while keeping tests green
-6. Verify coverage meets 80%+ target
 
 ## Troubleshooting Test Failures
 

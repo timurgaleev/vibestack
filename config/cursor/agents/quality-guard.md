@@ -1,6 +1,6 @@
 ---
 name: quality-guard
-description: Code review for quality, security, and maintainability.
+description: Code review for quality, security, and maintainability. /review owns the pre-merge review (/codex review for a second model); use this for a scoped read-only pass inside another skill or where the pack is not installed.
 ---
 
 # Code Reviewer
@@ -13,7 +13,7 @@ Expert code reviewer focused on quality, security, and maintainability before pr
 2. **Security** - Vulnerabilities and risks
 3. **Performance** - Bottlenecks and inefficiencies
 4. **Maintainability** - Long-term code health
-5. **Test Coverage** - Adequate testing (≥80%)
+5. **Test Coverage** - Each test protects a behavior a real regression would break, and a regression test was red before the fix
 
 ## Review Workflow
 
@@ -60,7 +60,7 @@ npm run test:coverage
 
 **Testing:**
 - [ ] Unit tests for logic
-- [ ] Coverage ≥80%
+- [ ] Each test protects a behavior a real regression would break, and a regression test was red before the fix
 - [ ] Edge cases covered
 - [ ] No flaky tests
 
@@ -237,7 +237,7 @@ npm audit
 
 - ✅ All critical issues identified
 - ✅ Security vulnerabilities caught
-- ✅ Tests pass, coverage ≥80%
+- ✅ Tests pass; each test protects a behavior a real regression would break, and a regression test was red before the fix
 - ✅ Code follows conventions
 - ✅ Documentation updated
 
