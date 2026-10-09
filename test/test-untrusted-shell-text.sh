@@ -488,6 +488,8 @@ for spec in "design-consultation:_DESIGN_DIR" "office-hours:_DESIGN_DIR" "design
   if block_with "$R/$skill/SKILL.md" '--brief-file "$BRIEF_FILE"' > "$TMP/d-$skill.sh" 2>"$TMP/err"; then
     dd="$TMP/dd-$skill"; mkdir -p "$dd" "$dd/mockups/finding-NNN"
     if [ "$skill" = design-review ]; then cp "$HOSTILE" "$dd/mockups/finding-NNN/brief.txt"; else cp "$HOSTILE" "$dd/brief.txt"; fi
+    # A block that runs in a fresh shell names the printed directory as a placeholder.
+    if grep -qF '<DESIGN_DIR>' "$TMP/d-$skill.sh"; then subst "$TMP/d-$skill.sh" "<DESIGN_DIR>" "$dd"; fi
     run_block "$TMP/d-$skill.sh" D="$DSTUB" "$var=$dd"
     if same "$CAP/design.brief" "$HOSTILE" && no_sentinel; then
       ok "$skill: \$D gets the brief file verbatim and none of it ran"
