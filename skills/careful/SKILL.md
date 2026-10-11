@@ -17,6 +17,16 @@ hooks:
         - type: command
           command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/careful}/bin/check-careful.sh"
           statusMessage: "Checking for destructive commands..."
+    - matcher: "Edit"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/careful}/bin/check-careful.sh"
+          statusMessage: "Checking for gate-file edits..."
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/careful}/bin/check-careful.sh"
+          statusMessage: "Checking for gate-file edits..."
 triggers:
   - be careful
   - warn before destructive
@@ -64,6 +74,30 @@ session.
 | `git checkout .` / `git restore .` | `git checkout .` | Uncommitted work loss |
 | `kubectl delete` | `kubectl delete pod` | Production impact |
 | `docker rm -f` / `docker system prune` | `docker system prune -a` | Container/image loss |
+| `terraform destroy` / `tofu destroy` | `terraform destroy` | Infrastructure teardown |
+| `terraform apply ... -auto-approve` | `tofu apply -auto-approve` | Unreviewed infrastructure change |
+| `aws <service> delete-*` / `terminate-instances` / `deregister-*` | `aws ec2 terminate-instances --instance-ids i-1` | Cloud resource loss |
+| `helm uninstall` / `helm delete` | `helm uninstall web` | Release removal |
+| `argocd app delete` | `argocd app delete web` | Cascading resource deletion |
+| `sudo rm` | `sudo rm -r /opt/x` | Delete as root |
+| `chmod 777` | `chmod -R 777 ./uploads` | World-writable files |
+| `--no-verify` on `git commit` / `git push` | `git commit --no-verify -m x` | Bypassed hook |
+| `npm publish` / `pnpm publish` / `yarn publish` | `npm publish` | Public, hard-to-undo release |
+
+A plain `terraform apply` (it shows the plan and asks) and `terraform plan
+-destroy` (read-only) pass.
+
+## Gate files
+
+The hook also runs on Edit and Write. An edit to a file that gates the build
+asks: lint and format config (`.eslintrc*`, `eslint.config.*`, `biome.json`,
+`ruff.toml`, `.flake8`, `.golangci.yml`, `.pre-commit-config.yaml`), type-check
+config (`tsconfig*.json`, `mypy.ini`), test and coverage config (`pytest.ini`,
+`codecov.yml`), CI (`.github/workflows/*.yml`, `.gitlab-ci.yml`, `Jenkinsfile`)
+and migrations (`migrations/`, `migrate/`, `db/migrate/`, `alembic/versions/`).
+The cheapest way past a failing check is to loosen the check, so the prompt
+asks you to confirm the edit tightens or keeps it. Every other path passes.
+`/guard` runs the same check on Edit and Write alongside its edit boundary.
 
 ## PowerShell and cmd (Windows)
 
@@ -102,8 +136,10 @@ script, a teardown target. Add warn rules for them, one POSIX ERE per line
 
 Both are consulted **after** the built-in families, so a pattern file can only
 ADD a warning, never suppress a baseline one — a guard a project can silence is
-not a guard. A line whose regex the shell cannot compile is skipped, so a typo
-never takes the hook down with it.
+not a guard. A line whose regex grep cannot compile is reported on stderr
+(`[careful] skipped unusable pattern in <file>:<line>`) and skipped; the
+built-in families and the file's other lines stay active, so a typo never takes
+the hook down with it.
 
 ## How it works
 

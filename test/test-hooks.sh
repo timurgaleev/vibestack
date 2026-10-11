@@ -76,6 +76,55 @@ assert_decision "kubectl delete asks"           "$CAREFUL" '{"tool_input":{"comm
 assert_decision "docker prune asks"             "$CAREFUL" '{"tool_input":{"command":"docker system prune -a"}}' ask
 assert_decision "force-with-lease asks not deny" "$CAREFUL" '{"tool_input":{"command":"git push --force-with-lease origin main"}}' ask
 
+echo "careful — infrastructure, publish and hook-bypass families"
+assert_decision "terraform destroy asks"        "$CAREFUL" '{"tool_input":{"command":"terraform destroy"}}' ask
+assert_decision "tofu apply -auto-approve asks" "$CAREFUL" '{"tool_input":{"command":"tofu apply -auto-approve"}}' ask
+assert_decision "global option before apply asks" "$CAREFUL" '{"tool_input":{"command":"tofu -chdir=infra apply -auto-approve"}}' ask
+assert_decision "apply --auto-approve asks"     "$CAREFUL" '{"tool_input":{"command":"terraform apply --auto-approve"}}' ask
+assert_decision "terraform apply passes"        "$CAREFUL" '{"tool_input":{"command":"terraform apply"}}' allow
+assert_decision "terraform plan -destroy passes" "$CAREFUL" '{"tool_input":{"command":"terraform plan -destroy"}}' allow
+assert_decision "aws terminate-instances asks"  "$CAREFUL" '{"tool_input":{"command":"aws ec2 terminate-instances --instance-ids i-1"}}' ask
+assert_decision "aws rds delete-db-instance asks" "$CAREFUL" '{"tool_input":{"command":"aws rds delete-db-instance --db-instance-identifier prod"}}' ask
+assert_decision "aws s3 ls passes"              "$CAREFUL" '{"tool_input":{"command":"aws s3 ls"}}' allow
+assert_decision "helm uninstall asks"           "$CAREFUL" '{"tool_input":{"command":"helm uninstall web"}}' ask
+assert_decision "argocd app delete asks"        "$CAREFUL" '{"tool_input":{"command":"argocd app delete web"}}' ask
+assert_decision "sudo rm -r asks"               "$CAREFUL" '{"tool_input":{"command":"sudo rm -r /opt/x"}}' ask
+assert_decision "sudo rm single file asks"      "$CAREFUL" '{"tool_input":{"command":"sudo rm /etc/hosts"}}' ask
+assert_decision "chmod -R 777 asks"             "$CAREFUL" '{"tool_input":{"command":"chmod -R 777 ./uploads"}}' ask
+assert_decision "git commit --no-verify asks"   "$CAREFUL" '{"tool_input":{"command":"git commit --no-verify -m x"}}' ask
+assert_decision "npm publish asks"              "$CAREFUL" '{"tool_input":{"command":"npm publish"}}' ask
+assert_decision "yarn npm publish asks"         "$CAREFUL" '{"tool_input":{"command":"yarn npm publish"}}' ask
+assert_decision "npm run publish-docs passes"   "$CAREFUL" '{"tool_input":{"command":"npm run publish-docs"}}' allow
+
+echo "careful — gate files on Edit/Write"
+assert_decision "workflow file asks"            "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":".github/workflows/ci.yml"}}' ask
+assert_decision "tsconfig.json asks"            "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"tsconfig.json"}}' ask
+assert_decision "migration file asks"           "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"db/migrate/20240101_add_x.rb"}}' ask
+assert_decision "nested migration file asks"    "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"/repo/prisma/migrations/20240101_x/migration.sql"}}' ask
+assert_decision "migrations doc passes"         "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":"/repo/docs/migrations.md"}}' allow
+assert_decision "ordinary source passes"        "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":"src/app.ts"}}' allow
+assert_decision "empty tool_input passes"       "$CAREFUL" '{"tool_input":{}}' allow
+for _skill in careful guard; do
+  for _m in Edit Write; do
+    if awk -v m="matcher: \"$_m\"" 'index($0,m){f=1;next} f&&/matcher:/{f=0} f&&/check-careful\.sh/{found=1} END{exit !found}' "$ROOT/skills/$_skill/SKILL.md"; then
+      ok "$_skill runs check-careful on $_m"
+    else
+      bad "$_skill runs check-careful on $_m" "check-careful.sh under matcher \"$_m\"" "missing"
+    fi
+  done
+done
+
+echo "careful — project pattern file with an uncompilable line"
+printf '(\nmake[[:space:]]+nuke-db\n' > "$VIBESTACK_HOME/careful-patterns.txt"
+assert_decision "valid line after a bad one asks" "$CAREFUL" '{"tool_input":{"command":"make nuke-db"}}' ask
+assert_decision "bad line does not block ls"      "$CAREFUL" '{"tool_input":{"command":"ls"}}' allow
+_err=$(printf '%s' '{"tool_input":{"command":"ls"}}' | bash "$CAREFUL" 2>&1 >/dev/null)
+case "$_err" in
+  *'skipped unusable pattern'*) ok "bad line reported on stderr" ;;
+  *) bad "bad line reported on stderr" "skipped unusable pattern" "$_err" ;;
+esac
+rm -f "$VIBESTACK_HOME/careful-patterns.txt"
+
 echo "careful — escaped-quote extractor (the bypass)"
 # grep -o '"command":"[^"]*"' truncates at the first escaped quote, so each of
 # these reached the pattern checks as a harmless prefix and returned {}.

@@ -23,11 +23,17 @@ hooks:
         - type: command
           command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../freeze/bin/check-freeze.sh"
           statusMessage: "Checking freeze boundary..."
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../careful/bin/check-careful.sh"
+          statusMessage: "Checking for gate-file edits..."
     - matcher: "Write"
       hooks:
         - type: command
           command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../freeze/bin/check-freeze.sh"
           statusMessage: "Checking freeze boundary..."
+        - type: command
+          command: "bash ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/guard}/../careful/bin/check-careful.sh"
+          statusMessage: "Checking for gate-file edits..."
     - matcher: "NotebookEdit"
       hooks:
         - type: command
@@ -79,7 +85,7 @@ other writer finishes; never write or delete the state file directly.
 
 Tell the user:
 - "**Guard mode active.** Two protections are now running:"
-- "1. **Destructive command guard** — Bash and PowerShell: rm -rf, Remove-Item -Recurse, DROP TABLE, force-push, etc. warn before executing (you can override); catastrophic shapes (recursive delete of `/` or `~`, force-push to the default branch) are blocked outright"
+- "1. **Destructive command guard** — Bash and PowerShell: rm -rf, Remove-Item -Recurse, DROP TABLE, force-push, etc. warn before executing (you can override); catastrophic shapes (recursive delete of `/` or `~`, force-push to the default branch) are blocked outright; an Edit or Write to a gate file (lint, type-check, CI or migration config) also warns"
 - "2. **Edit boundary** — Edit, Write and NotebookEdit restricted to `<FREEZE_DIR>/`. Edits outside this directory are blocked."
 - "The edit boundary is saved in `~/.vibestack/freeze-dir.txt` and outlives this session: any later session that loads the freeze hook (`/freeze`, `/guard`, `/investigate`) enforces it again. To remove it, run `/unfreeze`. Ending the session turns off the destructive command guard only."
 

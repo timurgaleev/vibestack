@@ -113,8 +113,22 @@ if [ "$EXTRACT_RC" -ne 0 ]; then
   exit 0
 fi
 
-# Parsed fine, but there is genuinely no command field (non-Bash payload) — allow.
+# Parsed fine, but there is no command field: an Edit/Write payload, or nothing
+# to check. An edit to a file that gates the build (lint, type, CI, migrations)
+# asks — the cheap way past a failing check is to loosen the check.
 if [ -z "$CMD" ]; then
+  set +e
+  _FILE_PATH=$(vibe_hook_extract_field "$INPUT" file_path)
+  set -e
+  if [ -n "$_FILE_PATH" ] && printf '%s' "$_FILE_PATH" | grep -qE \
+    -e '(^|/)(\.eslintrc(\.[a-z]+)?|eslint\.config\.[a-z]+|biome\.jsonc?|\.?ruff\.toml|\.pre-commit-config\.ya?ml|tsconfig(\.[a-z]+)?\.json|\.gitlab-ci\.ya?ml|Jenkinsfile|codecov\.ya?ml|\.golangci\.ya?ml|pytest\.ini|\.flake8|mypy\.ini)$' \
+    -e '(^|/)\.github/workflows/[^/]+\.ya?ml$' \
+    -e '(^|/)(migrations|migrate|alembic/versions)/.+$' 2>/dev/null; then
+    _vibestack_log careful ask gate-file "$_FILE_PATH"
+    _vibestack_analytics ask gate_file
+    vibe_hook_decision ask "[careful] Gate file: ${_FILE_PATH##*/}. Fix the code, not the gate — confirm this edit tightens or keeps the check rather than silencing a failure."
+    exit 0
+  fi
   _vibestack_log careful allow no-command ""
   echo '{}'
   exit 0
@@ -439,6 +453,43 @@ if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'docker[[:space:]]+(rm[[:spac
   WARN="Destructive: Docker force-remove or prune. May delete running containers or cached images."
 fi
 
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(terraform|tofu)([[:space:]]+-[^[:space:]]+)*[[:space:]]+destroy' 2>/dev/null; then
+  WARN="Destructive: terraform destroy tears down every resource in the state."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(terraform|tofu)([[:space:]]+-[^[:space:]]+)*[[:space:]]+apply([[:space:]]+[^[:space:]]+)*[[:space:]]+--?auto-approve' 2>/dev/null; then
+  WARN="Destructive: terraform apply -auto-approve changes infrastructure without showing the plan first."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'aws[[:space:]]+[a-z0-9-]+[[:space:]]+(delete-[a-z-]+|terminate-instances|deregister-[a-z-]+)' 2>/dev/null; then
+  WARN="Destructive: AWS delete/terminate/deregister removes cloud resources. May impact production."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'helm[[:space:]]+(uninstall|delete)([[:space:]]|$)' 2>/dev/null; then
+  WARN="Destructive: helm uninstall removes a release and its Kubernetes resources."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'argocd[[:space:]]+app[[:space:]]+delete' 2>/dev/null; then
+  WARN="Destructive: argocd app delete can cascade-delete the application's resources."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'sudo[[:space:]]+rm([[:space:]]|$)' 2>/dev/null; then
+  WARN="Destructive: sudo rm deletes as root, past every file permission."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'chmod[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*[0-7]?777' 2>/dev/null; then
+  WARN="Destructive: chmod 777 makes files world-writable."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+(commit|push)' 2>/dev/null \
+  && printf '%s' "$CMD" | grep -qE -- '--no-verify' 2>/dev/null; then
+  WARN="Destructive: --no-verify skips the git hooks. A bypassed hook hides the failure it exists to catch."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(npm|pnpm)[[:space:]]+publish|yarn[[:space:]]+(npm[[:space:]]+)?publish' 2>/dev/null; then
+  WARN="Destructive: package publish is public and cannot be cleanly taken back."
+fi
+
 # --- Project patterns (additive only) ---
 # One POSIX ERE per line; blank lines and `#` comments are ignored. Consulted
 # only after every built-in family above, so a config file can ADD a warning but
@@ -446,10 +497,19 @@ fi
 # guard. An unusable regex is skipped rather than aborting: a typo in a config
 # file must not take the whole hook down.
 _match_pattern_file() {
-  local _pf="$1" _line
+  local _pf="$1" _line _lineno=0 _rc
   [ -f "$_pf" ] || return 1
   while IFS= read -r _line || [ -n "$_line" ]; do
+    _lineno=$((_lineno + 1))
     case "$_line" in ''|'#'*) continue ;; esac
+    # grep exits 2 on a regex it cannot compile. Say so on stderr, so a typo
+    # is visible instead of a rule that silently never fires.
+    _rc=0
+    printf '' | grep -qE -- "$_line" 2>/dev/null || _rc=$?
+    if [ "$_rc" -eq 2 ]; then
+      printf '[careful] skipped unusable pattern in %s:%s: %s\n' "$_pf" "$_lineno" "$_line" >&2
+      continue
+    fi
     # `--` first: a project pattern may legitimately start with a dash (say
     # `--destroy`), and without the terminator grep reads it as an option,
     # exits 2, and the discarded stderr makes the guard silently skip it.
