@@ -197,7 +197,7 @@ CN="$(render canary)"
 fenced_bash <(section "$CN" '^\*\*SSE first event\*\*' '^### Phase 3') > "$TMP/sse-probe.sh"
 check "canary: SSE probe block found" 'SSE_FIRST_EVENT' "$TMP/sse-probe.sh"
 cat > "$TMP/sse-server.py" <<'PY'
-import http.server, sys
+import http.server, socketserver, sys
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/auth" and "session=ok" not in (self.headers.get("Cookie") or ""):
@@ -208,7 +208,8 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path != "/silent":
             self.wfile.write(b"data: hi\n\n")
     def log_message(self, *a): pass
-s = http.server.HTTPServer(("127.0.0.1", 0), H)
+# HTTPServer.server_bind calls getfqdn, which can stall on reverse DNS on CI hosts.
+s = socketserver.TCPServer(("127.0.0.1", 0), H)
 print(s.server_address[1], flush=True)
 s.serve_forever()
 PY
