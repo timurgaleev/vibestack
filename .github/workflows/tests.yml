@@ -91,6 +91,7 @@ jobs:
           - test-devex-boomerang.sh
           - test-fresh-shell-vars.sh
           - test-compact-snapshot.sh
+          - test-jira-adapter.sh
     steps:
       - uses: actions/checkout@v4
 

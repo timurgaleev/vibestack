@@ -250,6 +250,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-vibe-upgrade-flow.sh` | `/vibe-upgrade` blocks against a fake remote: replaying the original install, stopping on a failed fetch |
 | `test-vibe-upgrade-guards.sh` | `/vibe-upgrade`'s mutating blocks refuse an empty or wrong install dir; migrations receive the install dir |
 | `test-compact-snapshot.sh` | `vibe-compact-snapshot` records git state per project and never transcript content |
+| `test-jira-adapter.sh` | The Jira adapter in `/spec` and `/ship` stays opt-in |
 | `test-plan-tune-profile.sh` | `/plan-tune` profile writes land under `VIBESTACK_HOME` as numbers and nothing lands in the working directory |
 | `test-plan-review-contract.sh` | Contracts between `/autoplan` and the plan-review and `/office-hours` skills it loads from disk |
 | `test-plan-ceo-review.sh` | `/plan-ceo-review` keeps the user in control of scope and reports failed metric writes |
