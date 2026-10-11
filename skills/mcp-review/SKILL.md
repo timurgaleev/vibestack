@@ -115,6 +115,8 @@ grep -rnE '(log|logger|console)\.(info|debug|warn|error|log)\(.*(token|secret|pa
 
 A literal credential in tracked source: CRITICAL. A credential interpolated into a log line: HIGH. A `.env` file that is not in `.gitignore`: HIGH.
 
+**Trust boundary map.** For each write tool, write one line: source (the client, a fetched document, another tool's result) → parser → validator → side effect, and name the identity and the scope the handler checks before the side effect runs. A write that proceeds when identity or containment is not proven — the check is missing, runs after the write, or treats a lookup failure as "allowed": HIGH; the handler has to fail closed before the side effect. Identifiers that reach a storage key, a file path or an argv element come from an allowlist or a strict pattern, not free text: MEDIUM, HIGH when the identifier reaches a shell.
+
 ---
 
 ## Step 4: Input validation and error shape
@@ -122,7 +124,7 @@ A literal credential in tracked source: CRITICAL. A credential interpolated into
 The schema is the outer boundary; the handler is the inner one. Both must hold.
 
 - **Schema plus range.** Numbers carry min and max (`ge`/`le`, `.min()/.max()`), strings carry a max length, arrays carry a max item count. A `limit` with no upper bound is a finding. Severity: MEDIUM.
-- **Path traversal.** Any tool that takes a path or filename must resolve it and confirm it stays under an allowed root. Grep for `open(`, `readFile`, `os.path.join`, `path.join` inside handlers and trace the argument back to the schema. A user-supplied path joined to a base without a `realpath`-and-prefix check: HIGH.
+- **Path traversal.** Any tool that takes a path or filename must resolve it and confirm it stays under an allowed root. Grep for `open(`, `readFile`, `os.path.join`, `path.join` inside handlers and trace the argument back to the schema. A user-supplied path joined to a base without a resolved-path containment check: HIGH. Containment is checked on the resolved path — after `realpath`/`Path.resolve()`, so symlinks and `..` are already collapsed, and with drive letters and UNC prefixes (`C:`, `\\server\share`) handled on Windows — against the resolved allowed root, component by component (`Path.is_relative_to`, `os.path.commonpath`, `path.relative` not starting with `..`). A string-prefix check (`startswith(root)`) is not containment: `/srv/data-evil` starts with `/srv/data`. A prefix check standing in for containment: HIGH.
 - **Injection in queries.** SQL built by string concatenation or f-string with a tool argument, shell commands built with `subprocess(..., shell=True)` or `exec(` from arguments, or search filters passed straight into a query language. Severity: CRITICAL.
 
 ```bash
@@ -130,7 +132,8 @@ grep -rnE 'f"[^"]*(SELECT|INSERT|UPDATE|DELETE|WHERE)|\+[[:space:]]*["'"'"'].*(S
   --include='*.py' --include='*.ts' . 2>/dev/null | grep -v node_modules
 ```
 
-- **Error envelope.** A failed call has to be marked as failed at the protocol level: the tool result carries `isError: true`, which the SDKs set when the handler raises their tool error (`ToolError` in FastMCP, a thrown error or a result with `isError` in the TypeScript SDK). A handler that catches everything and returns an error object as ordinary `content` leaves `isError` false, so the client sees a successful call whose text happens to contain the word "error" — retry logic and the model's own reading both go wrong. Grep the handlers for a `try` that ends in `return {"error": ...}` with no raise and no `isError`. Severity: MEDIUM.
+- **Error envelope.** A failed call has to be marked as failed at the protocol level: the tool result carries `isError: true`, which the SDKs set when the handler raises their tool error (`ToolError` in FastMCP, a thrown error or a result with `isError` in the TypeScript SDK). A handler that catches everything and returns an error object as ordinary `content` leaves `isError` false, so the client sees a successful call whose text happens to contain the word "error" — retry logic and the model's own reading both go wrong. Grep the handlers for a `try` that ends in `return {"error": ...}` with no raise and no `isError`. Severity: MEDIUM. The same holds for a failure returned as an empty success — `[]`, `{}` or `""` from an `except` branch reads to the model as "nothing found"; a failure is a typed error, never an empty result. Severity: MEDIUM.
+- **Truncation is explicit.** When a bounded tool cuts its output at `limit`, `max_bytes` or a token budget, the result says so: `truncated: true` plus how much was omitted (items, bytes, or the cursor to continue). A silently cut result reads as the whole answer. Severity: MEDIUM.
 - **Error content.** Separately from the envelope, the text the client does see is structured and sanitized — for example `{"error": "<what went wrong>", "suggestion": "<what to try>"}` — never a raw stack trace, an internal hostname, a SQL fragment, or a token. Grep for `traceback.format_exc`, `err.stack`, `str(e)` returned directly to the client. Stack traces to the client: MEDIUM; secrets or connection strings in error text: HIGH.
 - **Rate limits.** A network-bound server, or any tool that calls a paid or quota-limited backend, needs a per-client rate limit. Missing on HTTP transport: MEDIUM.
 
@@ -155,7 +158,7 @@ grep -rnEi 'ignore (previous|all|other)|always (call|use) this|do not tell the u
 ## Step 6: Operability
 
 - **Health and version.** A `health` or `server_info` tool, or the `serverInfo` block in the initialize response, reports the version and the backends it depends on. Missing: LOW.
-- **Logging without payload secrets.** Log lines carry the tool name, duration and outcome; they do not carry argument values that could hold tokens, PII or document bodies. Check `logger.*` / `console.*` calls inside handlers. Full arguments logged: MEDIUM.
+- **Logging without payload secrets.** Log lines carry the tool name, duration and outcome; they do not carry argument values that could hold tokens, PII or document bodies. Check `logger.*` / `console.*` calls inside handlers. Full arguments logged: MEDIUM. Secrets never travel in argv (a token on a spawned command line is visible in `ps` and in shell history), in text returned to the model's context, or in a log line; pass them through the environment or a file descriptor. A secret in argv, in a tool result or in a log line: HIGH.
 - **Timeouts** on every outbound call (`timeout=` in httpx/requests, `AbortSignal.timeout` or `signal` in fetch, statement timeout on database connections). Outbound call with no timeout: MEDIUM.
 - **Idempotency for write tools.** A create or send tool accepts an `idempotency_key` or checks for an existing record, so a retried call does not double-create. Missing on a tool that creates, sends or charges: MEDIUM.
 - **Live tool listing (opt-in).** Listing the tools from a running server catches schemas that differ from the source. It is off by default, because it means executing the server's code.

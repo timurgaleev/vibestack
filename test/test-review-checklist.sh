@@ -9,6 +9,10 @@
 #     memory poisoning) and duplicated context sits under "LLM Prompt Issues";
 #   - every `rg` probe in those sections is a valid pattern that matches a
 #     fixture showing the defect;
+#   - Pass 1 carries "Production Failure Modes" (non-idempotent webhooks,
+#     lazy env reads, retried writes without a key, fail-open gates, fallbacks
+#     consumed as success) with the intentional-empty-contract exemption, and
+#     each of its `rg` probes matches a fixture showing the defect;
 #   - greptile-triage.md and TODOS-format.md diff the detected base and cite
 #     /ship steps that exist, and ship Step 14 records both kinds of deferral;
 #   - connect-review Step 3 carries the conversation-state / memory admission row.
@@ -70,6 +74,17 @@ PI="$(section "$CL" '#### LLM Prompt Issues')"
 printf '%s\n' "$PI" | grep -q 'more than one channel' && ok "prompt issues has duplicated context" \
   || no "prompt issues missing duplicated context"
 
+echo "Production Failure Modes"
+PF="$(section "$CL" '#### Production Failure Modes')"
+P1="$(awk '/^### Pass 1/{on=1;next} on && /^### /{exit} on{print}' "$CL")"
+printf '%s\n' "$P1" | grep -qx '#### Production Failure Modes' \
+  && ok "section sits in Pass 1" || no "Production Failure Modes not in Pass 1"
+grep -q '^- \*\*Pass 1 (CRITICAL):\*\*.*Production Failure Modes' "$CL" \
+  && ok "Instructions Pass 1 list names it" || no "Instructions Pass 1 list omits it"
+for want in 'idempoten' 'fail fast at startup' 'idempotency key' 'reads as pass' 'intentional empty contract' 'file:line'; do
+  printf '%s\n' "$PF" | grep -q "$want" && ok "section has: $want" || no "section missing: $want"
+done
+
 echo "rg probes"
 if ! command -v rg >/dev/null 2>&1; then
   # CI installs ripgrep for this suite, so a missing rg there is a broken job,
@@ -103,6 +118,52 @@ PY
     fi
   done <<< "$probes"
   [ "$n" -ge 5 ] && ok "found $n probes" || no "expected at least 5 probes, found $n"
+
+  # Production Failure Modes probes, each against fixtures holding the defect.
+  mkdir -p "$TMP/pf"
+  cat > "$TMP/pf/billing.py" <<'PY'
+import os
+from tenacity import retry, stop_after_attempt
+
+@app.post("/webhooks/stripe")
+def stripe_webhook(request):
+    event = stripe.Webhook.construct_event(request.body, sig, secret)
+    api_key = os.environ["LEDGER_API_KEY"]
+    db.execute("UPDATE orders SET status = 'paid' WHERE id = %s", (event.order_id,))
+
+@retry(stop=stop_after_attempt(3))
+def create_charge(amount):
+    return payments.charges.create(amount=amount)
+
+def load_settings():
+    try:
+        return read_settings()
+    except Exception:
+        return {}
+PY
+  cat > "$TMP/pf/items.ts" <<'TS'
+export async function listItems() {
+  const items = await fetchItems().catch(() => []);
+  return { ok: true, items };
+}
+TS
+  cat > "$TMP/pf/gate.sh" <<'SH'
+#!/usr/bin/env bash
+npm run lint || true
+SH
+  pprobes="$(printf '%s\n' "$PF" | grep -o '`rg [^`]*`' | tr -d '`')"
+  m=0
+  while IFS= read -r probe; do
+    [ -n "$probe" ] || continue
+    m=$((m+1))
+    out="$(cd "$TMP/pf" && eval "$probe ." </dev/null 2>&1)"; rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$out" ]; then
+      ok "probe matches fixture: ${probe:0:60}"
+    else
+      no "probe rc=$rc on fixture: $probe ($out)"
+    fi
+  done <<< "$pprobes"
+  [ "$m" -ge 5 ] && ok "found $m production probes" || no "expected at least 5 production probes, found $m"
 fi
 
 echo "connect-review Step 3"

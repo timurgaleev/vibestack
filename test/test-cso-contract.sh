@@ -15,6 +15,8 @@
 #   - the incident playbook does not advise rewriting or force-pushing history;
 #   - OWASP Top 10:2025, API Security Top 10:2023 and ASVS 5.0.0 labels;
 #   - agentic and MCP coverage in Phase 7;
+#   - agent-tooling pin classification and harness-surface rules, with the
+#     wildcard allow judged by its compensating control;
 #   - the blanket exclusions for own skills, UUIDs, env vars, dev dependencies,
 #     removed secrets and pull_request_target are gone.
 #
@@ -243,6 +245,14 @@ has   "delegation"                         '**Uncontrolled delegation:**'
 has   "token passthrough"                  '**No token passthrough:**'
 has   "confused deputy"                    '**Confused deputy:**'
 has   "no live MCP connection"             'Do not connect to a live MCP server'
+
+echo "agent-tooling pins and harness surface"
+has   "pin classification"                 '**Agent-tooling pins.**'
+has   "floating launch spec is HIGH"       '`npx -y pkg@latest`'
+has   "pin is not vetting"                 'reproducible, not vetted'
+has   "harness surface"                    '**Harness surface.**'
+has   "wildcard allow names its control"   'reported with its compensating control'
+has   "literal MCP env secret only"        'an env var reference is fine'
 
 echo "exclusions"
 hasnt "own skills not trusted (FP rule)"   "vibestack's own skills are trusted"

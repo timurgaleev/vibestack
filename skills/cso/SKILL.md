@@ -290,6 +290,11 @@ Goes beyond `npm audit`. Checks actual supply chain risk.
 
 **Lockfile integrity:** Check that lockfiles exist AND are tracked by git.
 
+**Agent-tooling pins.** MCP server and skill launch specs the repo carries — `.mcp.json`, `.claude/settings*.json`, agent Dockerfiles, hook commands — name code that runs with the agent's tool authority. Classify each launch spec by how it resolves:
+- `npx -y pkg@latest`, a bare `pkg` with no version, a dist-tag (`@next`, `@beta`), a docker image tag without a `@sha256:` digest, or `uvx pkg` without `==<version>` → HIGH: an auto-updating code path with tool authority; whatever the registry serves next runs on the next launch.
+- A version range (`^1.2`, `~1.2`, `>=1.2`) → MEDIUM.
+- An exact version or a digest → pass, noted as "reproducible, not vetted": a pin makes the launch repeatable, it does not make the pinned code safe.
+
 **Severity:** CRITICAL for known CVEs (high/critical) in direct deps. HIGH for install scripts in prod deps / missing lockfile. MEDIUM for abandoned packages / medium CVEs / lockfile not tracked.
 
 **FP rules:** devDependency CVEs are MEDIUM max — unless the package runs inside a job that holds CI, deploy or publish credentials (install scripts, build plugins, test runners, release tooling). Then rate it by what those credentials reach; a compromised dev dependency in a release job is a path to publishing malicious code. `node-gyp`/`cmake` install scripts expected (MEDIUM not HIGH). No-fix-available advisories without known exploits excluded. Missing lockfile for library repos (not apps) is NOT a finding.
@@ -441,6 +446,14 @@ Read MCP code and configuration only. Do not connect to a live MCP server, start
 Map findings to the OWASP Top 10 for LLM Applications and the OWASP Top 10 for Agentic Applications by the edition you actually consulted; name the edition, and do not claim conformance with either list.
 
 **Severity:** CRITICAL for user input in system prompts / unsanitized LLM output rendered as HTML / eval of LLM output / untrusted content (tool result, retrieved document, memory) able to trigger a consequential tool with another user's or a service's authority / MCP token passthrough or audience not validated. HIGH for missing tool call validation / exposed AI API keys / memory one user can poison for another / confused-deputy consent / MCP server reachable beyond loopback without auth. MEDIUM for unbounded LLM calls or delegation / RAG without input validation / OAuth metadata fetched without destination limits.
+
+**Harness surface.** Read the agent harness configuration the repo ships (`.claude/settings*.json` hooks and permissions, `.mcp.json`, hook scripts):
+- A hook command that interpolates tool input into a shell string — `$(...)` around a payload field, or an unquoted field from the tool input in the command text → HIGH: the tool input is attacker-reachable through any file or page the agent reads.
+- A literal secret in an MCP server's `env` block → CRITICAL; an env var reference is fine (`"${GITHUB_TOKEN}"`, a value read from the shell environment).
+- A wildcard `allow` (`Bash(*)`, `*`) is reported with its compensating control — a deny list, a PreToolUse hook, a sandbox — and is a finding only when no compensating control exists.
+- A tracked `.claude/` directory is informational, unless it carries secrets or commands that run automatically (hooks, MCP launch commands, `SessionStart` scripts) — then rate those by the rules above.
+
+No blanket findings: the presence of an `env` block, a pin, `Bash(*)` or a tracked `.claude/` is not by itself a vulnerability.
 
 **FP rules:** A user's own message in the user-message position of their own conversation is NOT prompt injection (precedent #13) — they can only steer the model with authority they already hold. This does not cover tool results, retrieved documents, memory, other users' content, or messages from other agents; trace those to their sinks. Flag when untrusted content enters system prompts, tool schemas, function-calling contexts, or reaches a tool acting with more authority than its author has.
 
