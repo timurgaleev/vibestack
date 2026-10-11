@@ -163,6 +163,8 @@ Compute every metric overall and per tag. Per-tag is where regressions hide: an 
 | Latency p50 / p95 | wall-clock per case, from call to final output | runner |
 | Cost per task | generator plus judge for that case: (input tokens x input price + output tokens x output price) / 1,000,000 at each model's own price, averaged | API usage fields |
 | Judge agreement | exact and within-one agreement from the Step 3 human sample | calibration file |
+| pass@k | share of cases where at least one of k runs passes — capability: the agent can do it | k runs per case |
+| pass^k | share of cases where all k runs pass — reliability: the agent does it every time. Equals p^k only if runs are independent, which agent runs usually are not (same prompt, same cache, same tool state), so compute it from the observed runs, never from p | k runs per case |
 
 Record both price tables used in `evals/<unit>/config.json` so cost numbers are reproducible after a price change: `"price"` for the generator and `"judge_price"` for the judge, each `{"in_per_mtok": <usd>, "out_per_mtok": <usd>}` — USD per million tokens, the unit vendor price pages publish — and divide by a million wherever the runner turns token counts into dollars. The judge is a paid call like any other: its tokens go on the same ledger as the generator's, so a judge-heavy run cannot slip past the cap or under-report cost.
 
@@ -360,6 +362,7 @@ The gate compares a fresh run to the baseline and fails on any of:
 - a non-zero runner exit, or a summary headed `INCOMPLETE`. The run did not cover the case set, so its rates are not comparable — the gate fails without reading them, and such a run can never become a baseline.
 - success rate drop greater than N points (default 3) overall or on any tag with 5 or more cases
 - cost per task increase greater than M% (default 20)
+- on `golden` cases, observed all-run stability below its baseline: run each `golden` case k ≥ 3 times and gate on pass^k counted from those runs. Write the independence assumption into the summary — pass^k is observed, and any p^k figure printed beside it is only an estimate that assumes independent runs.
 
 Add it as a CI step that runs on changes to prompt files, the agent loop, model config, or `evals/`. Put the thresholds in `config.json`, not in the CI yaml, so they are reviewed with the code. A gate run needs its own cost cap, lower than a local run.
 
@@ -368,6 +371,7 @@ Updating the baseline is a deliberate act: a separate commit that changes only `
 Findings:
 
 - **HIGH** — no baseline committed, or a CI job that regenerates it automatically. The gate cannot fail.
+- **MEDIUM** — a production path gated on pass@k alone. One success in k runs shows the agent can do the task, not that it does it reliably; gate production on pass^k.
 - **MEDIUM** — thresholds looser than the noise floor. Run the baseline twice with the same config; if the two runs differ by more than N, N is too tight or the seed is not honored.
 
 ---

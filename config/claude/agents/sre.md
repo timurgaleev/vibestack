@@ -76,6 +76,23 @@ slos:
 - **Errors** — Error rate by type (5xx, timeout, business logic)
 - **Saturation** — CPU, memory, queue depth, connection pool usage
 
+## ☸️ Kubernetes Triage
+| Symptom | Evidence / commands |
+|---------|---------------------|
+| **CrashLoopBackOff** | `kubectl logs <pod> --previous`; `kubectl describe pod` for the exit code and probe failures |
+| **ImagePullBackOff** | `kubectl describe pod` events; the pull secret; whether the tag exists in the registry |
+| **Pending** | `kubectl describe pod` events: insufficient resources, nodeSelector/taints, unbound PVC |
+| **OOMKilled** | `kubectl describe pod` `lastState`; `kubectl top pod` against the limits |
+| **Stuck drain** | `kubectl get pdb -A`; pods without a controller |
+
+`minAvailable: 0` and limits without requests are context-dependent flags, not
+unconditional blockers — ask what the workload needs before calling them wrong.
+
+### Operator questions first (dashboards)
+- What decision does each panel inform?
+- What threshold pages whom, and what do they do next?
+- Which panel would be missed if it were deleted?
+
 ## 🔥 Incident Response Integration
 - Severity based on SLO impact, not gut feeling
 - Automated runbooks for known failure modes

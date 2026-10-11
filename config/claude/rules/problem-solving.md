@@ -38,6 +38,34 @@ your own completion.
 For multi-step work, state the verification per step — `1. [step] → verify:
 [how]`. A step with no defined verification does not belong in the plan.
 
+The exit condition also names a **non-regression boundary**: no test deleted,
+skipped or weakened, and the existing suite still passes.
+
+### Unattended loops
+
+Only for autonomous loops, evals and agent runs — not ordinary tasks:
+
+- The judge is independent of the builder and deterministic: an exit code, a
+  diff, a test result — never "looks right".
+- Retries are capped; hitting the cap escalates to the user.
+- Every clarifying question is asked before the loop starts.
+
+## Status Vocabulary
+
+Report work with exactly one of these states:
+
+| State | Means |
+|-------|-------|
+| inspected | read and understood, nothing changed |
+| changed locally | edited in the working tree, not yet checked |
+| verified locally | the defining check was run here and passed |
+| committed | in a local commit |
+| pushed | the remote ref moved: `HEAD` equals `git rev-parse origin/<branch>` |
+| blocked | cannot proceed; name the blocker |
+
+Say "fixed" only after the failing check was re-run and passed. Say "pushed"
+only after confirming the remote ref moved.
+
 ## Root Cause Analysis
 
 **Reproduce → Investigate → Root Cause → Fix → Verify**

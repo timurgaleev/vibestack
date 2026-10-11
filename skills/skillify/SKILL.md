@@ -77,6 +77,46 @@ REPO="$(cd "$(dirname "$(readlink "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-
 If `REPO_NOT_FOUND`, ask the user where they cloned vibestack. The repo is
 needed for its renderer and snippets wherever the skill ends up.
 
+**Look for a skill that already does this (before staging).** A second skill for
+the same job splits its triggers and its fixes. Write the flow's intent as a few
+search terms, one per line (site name, the noun it extracts, the verb), to a file
+with the Write tool — they may come from page text, so they never go into the
+command itself — then search every local skill root's `name:` and `description:`,
+case-insensitively. Replace `<TERMS_FILE>` with that file's path and `<REPO>` with
+the printed repo path:
+
+```bash
+TERMS_FILE='<TERMS_FILE>'
+REPO='<REPO>'
+_TOP=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_ROOTS=("$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills" "$REPO/skills")
+if [ -n "$_TOP" ]; then
+  _ROOTS+=("$_TOP/.claude/skills" "$_TOP/.agents/skills" "$_TOP/.cursor/skills" "$_TOP/.kiro/skills")
+fi
+_HITS=0
+for _root in "${_ROOTS[@]}"; do
+  [ -d "$_root" ] || continue
+  for _f in "$_root"/*/SKILL.md; do
+    [ -f "$_f" ] || continue
+    # name: and the description block from the frontmatter only.
+    if awk 'NR == 1 && /^---$/ { fm = 1; next }
+            fm && /^---$/ { exit }
+            fm && /^(name|description):/ { on = 1; print; next }
+            fm && on && /^[[:space:]]/ { print; next }
+            fm { on = 0 }' "$_f" | grep -qiF -f <(grep -v '^[[:space:]]*$' "$TERMS_FILE"); then
+      echo "MATCH: $_f"; _HITS=$((_HITS + 1))
+    fi
+  done
+done
+echo "SCOUT: $_HITS match(es)"
+```
+
+On `SCOUT: 0`, continue. Otherwise read each matched skill's description and
+present the plausible ones; then ask via AskUserQuestion: "A) Extend `<existing>`
+with this flow, B) Create a new skill anyway (say why it differs)." On A, stop
+here and hand off — extending a skill is an edit to that skill, not a skillify.
+Search a marketplace or the web only when the user asks for it.
+
 **Choose where the skill lives (ask before staging).** A recorded flow often
 carries internal URLs and selectors for a private site, and the pack checkout is
 a public repo, so the pack is never the default.
@@ -177,6 +217,28 @@ existing skill (e.g. `skills/scrape/SKILL.md`). Keep brand-clean — no external
 project names.
 
 ### 3. Validate the staged skill (nothing lands until it's clean)
+
+**Sanitize first.** A recorded flow carries the recorder's machine and accounts
+with it. Scan the staged file before the brand audit:
+
+```bash
+REPO='<REPO>'
+STAGE='<STAGE>'
+grep -nE '/Users/[^/[:space:]]+|/home/[^/[:space:]]+' "$STAGE/SKILL.md" && echo "HOME_PATHS: found" || echo "HOME_PATHS: none"
+"$REPO/bin/vibe-redact" scan --file "$STAGE/SKILL.md"
+echo "REDACT_EXIT: $?"
+```
+
+- An absolute home path becomes `$HOME/...` or a `<placeholder>` the user fills.
+- Any non-zero `REDACT_EXIT` stops here: exit 1 is a credential (remove it, and tell
+  the user to rotate it if it is real), exit 2 means the scan did not run, which
+  blocks the same way.
+- Read the file for private person, client or account names — no scanner finds
+  them. Replace each with a role or a placeholder (`<client>`, `<account-id>`).
+
+Never change a selector, URL or parameter the flow needs to run. When a URL itself
+carries a private host or account, ask the user whether to keep it, template it,
+or move the skill to user scope instead.
 
 All three checks run against the staged file. Any failure stops here with the
 target untouched — there is no half-installed state to clean up:

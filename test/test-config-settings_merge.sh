@@ -45,7 +45,14 @@ cat > "$SB/dst.json" <<'JSON'
     "defaultMode": "acceptEdits"
   },
   "theme": "dark",
-  "model": "some-local-model"
+  "model": "some-local-model",
+  "hooks": {
+    "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "rtk hook" }] }],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "my-own-precompact" }] },
+      { "hooks": [{ "type": "command", "command": "bash ~/.vibestack/bin/vibe-compact-snapshot --old-flag" }] }
+    ]
+  }
 }
 JSON
 
@@ -90,6 +97,28 @@ check "d['enabledPlugins'].get('deliberation@antonbabenko') is True" \
                                                                    "S12: deliberation plugin arrives enabled"
 check "d['extraKnownMarketplaces'].get('antonbabenko', {}).get('source', {}).get('repo') == 'antonbabenko/agent-plugins'" \
                                                                    "S13: deliberation marketplace arrives with its source"
+
+# The harness reads `attribution` to decide whether it appends a co-author
+# trailer or a PR footer itself; the deprecated boolean must not come back.
+check "d.get('attribution') == {'commit': '', 'pr': '', 'sessionUrl': False}" \
+                                                                   "S14: attribution setting arrives with empty commit/pr and no session URL"
+check "'includeCoAuthoredBy' not in d"                             "S15: deprecated includeCoAuthoredBy is not shipped"
+
+# hooks merge per event: a hook another tool registered survives next to ours.
+check "d.get('hooks', {}).get('PreToolUse')"                       "S16: a machine's own PreToolUse hook survives"
+check "any('vibe-compact-snapshot' in h.get('command', '') for e in d.get('hooks', {}).get('PreCompact', []) for h in e.get('hooks', []))" \
+                                                                   "S17: repo PreCompact snapshot hook arrives"
+# The same event the repo ships: the machine's own entry is kept, ours is
+# appended, and a previous version of ours is replaced rather than left beside it.
+check "any(h.get('command') == 'my-own-precompact' for e in d['hooks']['PreCompact'] for h in e.get('hooks', []))" \
+                                                                   "S18: a machine's own PreCompact hook survives next to ours"
+check "sum('vibe-compact-snapshot' in h.get('command', '') for e in d['hooks']['PreCompact'] for h in e.get('hooks', [])) == 1" \
+                                                                   "S19: a previous version of our PreCompact hook is replaced, not duplicated"
+
+# Re-running the merge on its own output changes nothing.
+python3 "$MERGE" "$SRC" "$SB/out.json" > "$SB/out2.json" 2>/dev/null
+if cmp -s "$SB/out.json" "$SB/out2.json"; then _pass "S20: the merge is idempotent"
+else _fail "S20: a second merge changed the result"; fi
 
 echo "----"
 echo "PASS=$PASS FAIL=$FAIL"

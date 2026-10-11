@@ -45,7 +45,8 @@ fi
 {{include lib/snippets/state-protocols.md}}
 
 ## User-invocable
-When the user types `/health`, run this skill.
+When the user types `/health`, run this skill. `/health skills` runs
+[Target: skills](#target-skills) instead of Steps 1-6.
 
 ---
 
@@ -66,7 +67,7 @@ node_tool() { if [ -x "node_modules/.bin/$1" ]; then echo "./node_modules/.bin/$
 # Linter
 [ -f biome.json ] || [ -f biome.jsonc ] && echo "LINT: $(node_tool biome) check ."
 setopt +o nomatch 2>/dev/null || true
-ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | head -1 | xargs -I{} echo "LINT: $(node_tool eslint) ."
+ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | sed -n '1p' | xargs -I{} echo "LINT: $(node_tool eslint) ."
 [ -f .pylintrc ] || [ -f pyproject.toml ] && grep -q "pylint\|ruff" pyproject.toml 2>/dev/null && echo "LINT: ruff check ."
 
 # Test runner
@@ -80,7 +81,7 @@ command -v knip >/dev/null 2>&1 && echo "DEADCODE: knip"
 [ -f package.json ] && grep -q '"knip"' package.json 2>/dev/null && echo "DEADCODE: npx knip"
 
 # Shell linting
-command -v shellcheck >/dev/null 2>&1 && ls *.sh scripts/*.sh bin/*.sh 2>/dev/null | head -1 | xargs -I{} echo "SHELL: shellcheck"
+command -v shellcheck >/dev/null 2>&1 && ls *.sh scripts/*.sh bin/*.sh 2>/dev/null | sed -n '1p' | xargs -I{} echo "SHELL: shellcheck"
 ```
 
 Use Glob to search for shell scripts:
@@ -268,6 +269,7 @@ Checked: typecheck, lint, test, deadcode, shell
 Unavailable: none
 
 Duration: 23s total
+VERDICT: NOT READY (lint, deadcode exited non-zero)
 ```
 
 Use these status labels:
@@ -278,6 +280,17 @@ Use these status labels:
 - Command could not run (exit 126/127): `FAILED` (scores 0)
 - Tool not available: `SKIPPED` (no score)
 - Capture broke: `ERROR` (no score; composite is N/A)
+
+**Verdict line.** End the dashboard with one of:
+
+- `VERDICT: READY` only when every required check ran and exited 0 and all five
+  categories were checked. The required checks are every `## Health Stack` entry,
+  or every detected tool when the stack was auto-detected.
+- `VERDICT: NOT READY` when every required check ran and at least one exited
+  non-zero.
+- `VERDICT: INCOMPLETE` when any required check was SKIPPED, FAILED or ERROR, or
+  fewer than five categories were checked. Name each missing one. A high composite
+  does not change this: never `READY` with partial coverage.
 
 Always show the coverage lines. With skipped categories, label the score
 `— partial coverage` (e.g. `COMPOSITE SCORE: 8.0 / 10 — partial coverage`,
@@ -387,6 +400,51 @@ RECOMMENDATIONS (by impact)
 Rank by `weight * (10 - score)` descending. Only show categories below 10.
 
 ---
+
+## Target: skills
+
+`/health skills` reports on the installed skills instead of the codebase: how often
+each one is used, what its description costs every session, and what to do about it.
+Both tools are read-only.
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-skill-usage" --days 90
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-context-budget" --runtime claude --rendered "$HOME/.claude/skills" --config-dir "" --top 0 --warn-only
+```
+
+`vibe-skill-usage` counts `typed` (the user typed `/<name>`) and `model` (the model
+called the skill) from Claude Code transcripts, `nested` for the share found in
+subagent transcripts, and `tracked` from the slash-command analytics file. Typed and
+tracked overlap — never add them. `vibe-context-budget` gives each skill's
+description length (`--top 0` lists every skill; `--config-dir ""` skips the repo
+config payload, which an installed copy does not have).
+
+Present one row per installed skill:
+
+```
+SKILL HEALTH (last 90 days, claude measured; cursor, kiro, codex unmeasured)
+Skill           Typed  Model  Last seen    Desc chars  Proposal
+--------------  -----  -----  -----------  ----------  ------------------------------
+ship               12     30  2026-10-09          112  Keep — used weekly, both ways
+diagram             0      0  -                   140  Improve — never auto-invoked; description names no trigger phrase
+old-helper          0      0  -                   210  Retire — no use in 90 days on the one measured runtime and covered by /vibe
+```
+
+Propose exactly one of **Keep**, **Improve**, **Retire** or **Merge into `<skill>`**
+per skill, with a reason a reader can check without this conversation (the counts,
+the overlapping skill, the description problem).
+
+Rules:
+- **Unmeasured is not zero.** Usage on Cursor, Kiro or Codex, and in transcripts the
+  tool could not read, is unmeasured, and unmeasured never justifies Retire. Say
+  which runtimes the user works in before proposing Retire; a skill with zero Claude
+  use may be in daily use elsewhere.
+- **Retire is a proposal.** This target never deletes, moves or edits a skill. Point
+  to `/vibe-gc` for the removal itself.
+- **Merge into** names the surviving skill and what moves into it.
+- **Improve** names the change: a description that never matches how users ask, a
+  description long enough to dominate the budget, a trigger list that collides with
+  another skill.
 
 {{include lib/snippets/capture-learnings.md}}
 The score itself belongs in `health-history.jsonl`, not here. What belongs here is what

@@ -18,11 +18,12 @@ triggers:
   - write a how-to
   - explain this module
   - docs for this project
+  - record this decision
 ---
 
 ## When to invoke
 
-Use when asked to "write docs", "generate documentation", "document this feature", "create a tutorial", or "explain this module".
+Use when asked to "write docs", "generate documentation", "document this feature", "create a tutorial", or "explain this module". "ADR this", "record this decision" or `--adr` runs [ADR mode](#adr-mode) instead.
 
 ## Preamble
 
@@ -89,6 +90,58 @@ different reader need:
 **Philosophy: research the whole, then write the parts.** Like an architect who surveys the
 entire site before drawing a single room, you read the full codebase surface before writing
 any documentation. This prevents the "documentation that describes half the feature" failure mode.
+
+---
+
+## ADR mode
+
+An architecture decision record captures one decision: what was decided, why, and
+what it costs. It is a separate mode, not a fifth Diataxis quadrant, and replaces
+Steps 0a-8 when the user says "ADR this", "record this decision" or passes `--adr`.
+Nothing else creates an ADR: a plan review may suggest one, but never writes it.
+
+1. **Find the repo's convention first.** Look for an existing ADR home —
+   `docs/adr/`, `docs/decisions/`, `adr/`, `architecture/decisions/` — and for
+   Markdown files with a `## Status` heading anywhere in the tree. When one exists,
+   follow it exactly: its directory, numbering scheme (next number after the
+   highest present), filename pattern, template headings and status vocabulary.
+2. **No convention yet:** propose `docs/adr/NNNN-<slug>.md` (four-digit number,
+   kebab-case slug) with these sections, and ask via AskUserQuestion before
+   creating the directory or the file:
+
+   ```markdown
+   # NNNN. <Decision title>
+
+   ## Status
+   Proposed | Accepted | Superseded by [NNNN](NNNN-<slug>.md)
+
+   ## Context
+   The forces at play: the problem, the constraints, what made a decision necessary now.
+
+   ## Decision
+   What was decided, stated plainly.
+
+   ## Alternatives considered
+   Each option that was weighed, and the specific reason it lost.
+
+   ## Consequences
+   What becomes easier, what becomes harder, and what is now committed to.
+   ```
+
+3. **One ADR per decision.** Two decisions get two records, even when they came
+   out of the same discussion.
+4. **Status links both ways.** A new ADR that supersedes an old one says
+   `Supersedes [NNNN](...)`; edit the old record's status to
+   `Superseded by [MMMM](...)`. Never delete or rewrite a superseded record's body.
+5. **Update the index if there is one** (`docs/adr/README.md`, `index.md`, a list
+   in the docs nav): add the new row in the existing format. Do not create an index
+   the repo does not have.
+6. **Write from evidence.** Context and alternatives come from the conversation,
+   the plan, code and git history; mark anything you could not confirm as an open
+   question instead of inventing a rationale.
+
+Then run Step 9's secret scan over the ADR (and the index, if touched) before
+staging, and report the path.
 
 ---
 

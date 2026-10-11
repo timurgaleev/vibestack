@@ -72,6 +72,14 @@ else
   out=$(cd "$DP" && PATH=/usr/bin:/bin bash "$TMP/detect.sh" 2>/dev/null)
   grep -qx 'TYPECHECK: tsc --noEmit' <<<"$out" \
     && ok "without node_modules the command stays bare" || no "bare detection changed: $out"
+  # head exits after one line; under pipefail the writer's SIGPIPE fails the pipe.
+  grep -q 'head -1' "$TMP/detect.sh" && no "detect block pipes into head -1 (SIGPIPE under pipefail)" \
+    || ok "detect block takes the first match with sed, not head"
+  DS="$TMP/shonly"; mkdir -p "$DS/bin"
+  for i in $(seq 1 300); do : > "$DS/bin/s$i.sh"; done
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$DS/bin/shellcheck"; chmod +x "$DS/bin/shellcheck"
+  out=$(cd "$DS" && PATH="$DS/bin:/usr/bin:/bin" bash -o pipefail "$TMP/detect.sh" 2>/dev/null)
+  grep -qx 'SHELL: shellcheck' <<<"$out" && ok "shell lint detected under pipefail" || no "shell lint detection: $out"
 fi
 
 echo "Step 2: capture"
@@ -193,6 +201,43 @@ grep -q 'Only when the composite is numeric' <<<"$s5" && ok "no history row for 
 s6=$(section "## Step 6: Trend" "## Important Rules")
 grep -q 'Coverage changed — scores are' <<<"$s6" && grep -q "scored set equals this" <<<"$s6" \
   && ok "trends compare only identical coverage sets" || no "trend compares across coverage changes"
+s4=$(section "## Step 4: Present Dashboard" "## Step 5")
+s4flat=$(tr -s '[:space:]' ' ' <<<"$s4")
+grep -q 'INCOMPLETE' <<<"$s4" && grep -q 'NOT READY' <<<"$s4" \
+  && ok "Step 4: verdict has READY / NOT READY / INCOMPLETE" || no "Step 4 lacks the verdict line"
+grep -q 'READY` only when every required check ran and exited 0' <<<"$s4flat" \
+  && ok "READY requires every required check to run and pass" || no "READY rule does not require full coverage"
+grep -q 'never `READY` with partial coverage' <<<"$s4flat" \
+  && ok "partial coverage is never READY" || no "partial coverage can still be READY"
+# READY and partial coverage must not both be reachable from the bullets: an
+# auto-detected stack with one tool that passed is still 1/5 coverage.
+grep -q 'exited 0 and all five categories were checked' <<<"$s4flat" \
+  && ok "READY needs all five categories checked" || no "READY bullet allows partial coverage"
+grep -q 'or fewer than five categories were checked' <<<"$s4flat" \
+  && ok "partial coverage is INCOMPLETE" || no "INCOMPLETE bullet misses partial coverage"
+sk=$(section "## Target: skills" "## Important Rules")
+grep -q 'vibe-skill-usage" --days 90' <<<"$sk" && grep -q 'vibe-context-budget" --runtime claude' <<<"$sk" \
+  && ok "skills target runs usage and context budget" || no "skills target missing or incomplete"
+grep -qi 'unmeasured.*is not zero' <<<"$(tr '\n' ' ' <<<"$sk")" \
+  && ok "skills target: unmeasured is not zero" || no "skills target treats unmeasured as zero"
+grep -q 'never deletes' <<<"$sk" && ok "skills target deletes nothing" || no "skills target may delete"
+# Run the budget line as written against an installed layout: bin/ copied into
+# VIBESTACK_HOME has no config/claude beside it, and more skills than the
+# default --top keeps. Every installed skill needs its description length.
+budget_line=$(grep -m1 'vibe-context-budget" --runtime claude' <<<"$sk")
+SH="$TMP/skills-home"
+mkdir -p "$SH/vh/bin"
+cp "$ROOT/bin/vibe-context-budget" "$SH/vh/bin/"
+for i in 01 02 03 04 05 06 07 08 09 10 11 12; do
+  mkdir -p "$SH/.claude/skills/s$i"
+  printf -- '---\nname: s%s\ndescription: Skill number %s.\n---\nbody\n' "$i" "$i" > "$SH/.claude/skills/s$i/SKILL.md"
+done
+budget_out=$(HOME="$SH" VIBESTACK_HOME="$SH/vh" bash -c "$budget_line" 2>&1); budget_rc=$?
+[ "$budget_rc" -eq 0 ] && ok "skills target: budget command runs from an installed bin/" \
+  || no "skills target: budget command exits $budget_rc — $(head -1 <<<"$budget_out")"
+listed=$(grep -cE '(^|[[:space:]])s(0[1-9]|1[0-2])([[:space:]]|$)' <<<"$budget_out")
+[ "$listed" -eq 12 ] && ok "skills target: budget lists every installed skill" \
+  || no "skills target: budget listed $listed of 12 skills"
 grep -q 'never show 10/10 for an empty run' "$SKILL" && ok "empty run never shows 10/10" || no "empty-run rule missing"
 grep -q 'Skip only a tool whose absence was established before running' "$SKILL" \
   && ok "rule 4: skip only on established absence" || no "rule 4 still skips failures"

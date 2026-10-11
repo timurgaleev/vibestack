@@ -339,7 +339,9 @@ Triggers: `restore context`, `context restore`, `pick up where I left off`
 ### `/careful`
 Activate extra caution for risky operations.
 
-Registers a PreToolUse hook on the Bash and PowerShell tools that intercepts commands matching destructive patterns: `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout .`, `kubectl delete`, `docker rm -f`. Most matches prompt and are overridable. A small catastrophic set is blocked outright and cannot be overridden while the skill is active: recursive deletion of `/` or your home directory, and a force-push to the repo's default branch. Only simple commands qualify for that tier — anything with `;`, `&&`, a pipe or a newline falls back to a prompt, and `--force-with-lease` never hard-denies. Safe build artifact deletions (`node_modules`, `.next`, `dist`, etc.) pass through silently.
+Registers a PreToolUse hook on the Bash and PowerShell tools that intercepts commands matching destructive patterns: `rm -rf`, `DROP TABLE`, `TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout .`, `kubectl delete`, `docker rm -f`, plus infrastructure and release commands: `terraform`/`tofu destroy`, `apply -auto-approve`, AWS `delete-*`/`terminate-instances`/`deregister-*`, `helm uninstall`, `argocd app delete`, `sudo rm`, `chmod 777`, `--no-verify` on `git commit`/`git push` (and `git commit -n`), and `npm`/`pnpm`/`yarn publish`. Most matches prompt and are overridable. A small catastrophic set is blocked outright and cannot be overridden while the skill is active: recursive deletion of `/` or your home directory, and a force-push to the repo's default branch. Only simple commands qualify for that tier — anything with `;`, `&&`, a pipe or a newline falls back to a prompt, and `--force-with-lease` never hard-denies. Safe build artifact deletions (`node_modules`, `.next`, `dist`, etc.) pass through silently.
+
+The same hook runs on Edit and Write: an edit to a gate file — lint, format and type-check config, test and coverage config, CI workflows, migrations — asks you to confirm the edit tightens or keeps the check rather than loosening it. `/guard` runs this check too.
 
 PowerShell (Claude Code's shell on Windows) and any `pwsh`/`powershell`/`cmd` launched from Bash get a trimmed Windows set: recursive or forced `Remove-Item` and its aliases, `Get-ChildItem -Recurse` piped into `Remove-Item`, cmd `rd /s` and `del /s`, `Format-Volume`/`Clear-Disk`, `[IO.Directory]::Delete`, and `-EncodedCommand`/`Invoke-Expression`, which cannot be inspected. All of them prompt.
 
@@ -533,6 +535,13 @@ Triggers: `connect to chrome`, `use my chrome session`, `import chrome cookies`
 Update the installed vibestack pack to the latest release — pull the repo (ff-only, never forces), re-run install, and summarize the CHANGELOG delta.
 
 Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`
+
+---
+
+### `/vibe-gc`
+Audit what is installed around the agent and retire what the owner confirms. `vibe-gc scan` ranks at most 20 candidates across all four runtime roots: skill directories no `.vibestack-manifest` claims (missing or empty `SKILL.md`, duplicate names), hook scripts nothing in the user settings or another hook references, duplicate or `Bash(*)`-shadowed permission entries, configured MCP servers, and old caches. Pack-owned skills are never candidates, unmeasured usage never counts as unused, and a server that fails to connect is evidence, not a verdict. Each item is confirmed on its own; a confirmed item moves to `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, and `vibe-gc undo <date>` moves it back. Settings, `~/.claude.json`, `.mcp.json` and transcripts are refused, and MCP, cron and launchd state is never changed. Headless runs audit only.
+
+Triggers: `vibe gc`, `clean up skills`, `garbage collect config`, `prune unused skills`
 
 ---
 

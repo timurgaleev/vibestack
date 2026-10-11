@@ -550,6 +550,8 @@ done
 # Claude settings.json: deep merge so user customizations survive sync.
 #   - Source wins for scalar/object keys (repo authoritative for shared policy)
 #   - permissions.allow/deny/ask/additionalDirectories: array union (user additions kept)
+#   - hooks.<event>: the machine's entries kept, ours appended; an older version
+#     of one of ours (same vibe-* script) is replaced rather than duplicated
 #   - enabledPlugins: deep merge (user-enabled plugins not in repo preserved)
 #   - Destination-only top-level keys preserved (e.g. user-set skipAutoPermissionPrompt)
 if cfg_target_selected claude; then
@@ -567,7 +569,7 @@ if [[ -f "$CLAUDE_SETTINGS_SRC" ]]; then
     ADDED=$((ADDED + 1))
   elif command -v python3 >/dev/null 2>&1; then
     merged=$(python3 - "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST" <<'PYEOF'
-import json, sys
+import json, re, sys
 
 with open(sys.argv[1]) as f:
     src = json.load(f)
@@ -610,6 +612,25 @@ if isinstance(src.get("permissions"), dict) and isinstance(dst.get("permissions"
         d_list = dst["permissions"].get(k)
         if isinstance(s_list, list) or isinstance(d_list, list):
             merged["permissions"][k] = union_dedup(s_list or [], d_list or [])
+
+VIBE_SCRIPT = re.compile(r"vibe-[a-z0-9-]+")
+
+def vibe_scripts(entry):
+    """The vibe-* scripts a hook entry runs; empty for anyone else's entry."""
+    hooks = entry.get("hooks") if isinstance(entry, dict) else None
+    if not isinstance(hooks, list):
+        return frozenset()
+    return frozenset(name for h in hooks if isinstance(h, dict)
+                     for name in VIBE_SCRIPT.findall(str(h.get("command", ""))))
+
+if isinstance(src.get("hooks"), dict) and isinstance(dst.get("hooks"), dict):
+    for event, s_list in src["hooks"].items():
+        d_list = dst["hooks"].get(event)
+        if not isinstance(s_list, list) or not isinstance(d_list, list):
+            continue
+        ours = {vibe_scripts(e) for e in s_list} - {frozenset()}
+        theirs = [e for e in d_list if vibe_scripts(e) not in ours]
+        merged["hooks"][event] = union_dedup(theirs, s_list)
 
 print(json.dumps(merged, indent=2))
 PYEOF
@@ -837,9 +858,9 @@ fi
 # already on PATH the binary download is skipped and only the hook is refreshed.
 #
 # `rtk init -g` adds a PreToolUse hook to ~/.claude/settings.json. The settings
-# merge above is repo-authoritative for the hooks map, so init MUST run here
-# (after the merge) to re-apply the RTK hook on every sync instead of having it
-# clobbered. If the installer or init fails we warn and continue the sync.
+# merge above keeps hook entries the machine already has, so init runs here
+# (after the merge) only to refresh RTK's own entry on every sync. If the
+# installer or init fails we warn and continue the sync.
 #
 # Gated on the claude target for the same reason: `rtk init -g` writes into
 # ~/.claude/settings.json, so a run that excluded Claude must not reach it.

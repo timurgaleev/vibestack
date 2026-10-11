@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# vibe-compact-snapshot — Claude Code PreCompact hook that records the git state
+# of the session's working directory before the context is compacted.
+#
+# Usage (registered as a Claude Code PreCompact hook):
+#   stdin  = JSON payload: session_id, transcript_path, trigger, cwd,
+#            custom_instructions
+#   stdout = "{}" (always — this hook never blocks compaction)
+#
+# Writes ${VIBESTACK_HOME:-~/.vibestack}/projects/<slug>/compact-snapshots/<UTC>.md
+# and keeps the 10 newest per project. The snapshot holds git state and the
+# transcript's path only: a transcript carries secrets and third-party text,
+# so its contents are never read. Decisions are not captured — /context-save
+# records those.
+#
+# VIBESTACK_COMPACT_SNAPSHOT=0 turns it off.
+set -euo pipefail
+
+INPUT=$(cat)
+
+trap 'echo "{}"; exit 0' EXIT
+
+if [ "${VIBESTACK_COMPACT_SNAPSHOT:-1}" = "0" ]; then
+  exit 0
+fi
+
+(
+  set +e
+  umask 077
+
+  # One field per NUL-terminated record, in a fixed order; a malformed payload
+  # prints nothing and ends the hook here.
+  FIELDS=()
+  while IFS= read -r -d '' f; do FIELDS+=("$f"); done < <(
+    printf '%s' "$INPUT" | python3 -I -c '
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(0)
+if not isinstance(d, dict):
+    sys.exit(0)
+for k in ("session_id", "transcript_path", "trigger", "cwd"):
+    v = d.get(k)
+    v = v if isinstance(v, str) else ""
+    sys.stdout.write(v.replace("\0", "") + "\0")
+' 2>/dev/null
+  )
+  [ "${#FIELDS[@]}" -eq 4 ] || exit 0
+  SESSION_ID=${FIELDS[0]}
+  TRANSCRIPT=${FIELDS[1]}
+  TRIGGER=${FIELDS[2]}
+  CWD=${FIELDS[3]}
+  [ -n "$CWD" ] && [ -d "$CWD" ] || CWD=$(pwd)
+
+  STATE_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
+  SLUG=$(cd "$CWD" && VIBESTACK_SLUG_NO_MIGRATE=1 "$STATE_HOME/bin/vibe-slug" 2>/dev/null \
+    | sed -n 's/^SLUG=//p' | head -1)
+  printf '%s' "$SLUG" | grep -Eq '^[A-Za-z0-9._-]+$' || SLUG="unknown"
+
+  DIR="$STATE_HOME/projects/$SLUG/compact-snapshots"
+  mkdir -p "$DIR" || exit 0
+
+  TS=$(date -u +%Y%m%dT%H%M%SZ)
+  OUT="$DIR/$TS.md"
+  n=2
+  while [ -e "$OUT" ]; do
+    OUT="$DIR/$TS-$(printf '%02d' "$n").md"
+    n=$((n + 1))
+  done
+
+  if git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    BRANCH=$(git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "(unknown)")
+    STATUS=$(git -C "$CWD" status --short 2>/dev/null | head -200)
+    LOG=$(git -C "$CWD" log --oneline -10 2>/dev/null)
+    STASHES=$(git -C "$CWD" stash list 2>/dev/null | wc -l | tr -d ' ')
+  else
+    BRANCH="(not a git repo)"
+    STATUS=""
+    LOG=""
+    STASHES="0"
+  fi
+
+  {
+    printf '# Compact snapshot (git state only)\n\n'
+    printf -- '- timestamp: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf -- '- trigger: %s\n' "${TRIGGER:-unknown}"
+    printf -- '- session_id: %s\n' "${SESSION_ID:-unknown}"
+    printf -- '- cwd: %s\n' "$CWD"
+    printf -- '- branch: %s\n' "$BRANCH"
+    printf -- '- stashes: %s\n' "$STASHES"
+    printf -- '- transcript: %s\n\n' "${TRANSCRIPT:-unknown}"
+    printf '## git status --short (first 200 lines)\n\n```\n%s\n```\n\n' "$STATUS"
+    printf '## git log --oneline -10\n\n```\n%s\n```\n' "$LOG"
+  } > "$OUT"
+
+  # Newest first by timestamp, then by collision counter; the bare name of a
+  # second is its first snapshot.
+  python3 -I -c '
+import os, re, sys
+d = sys.argv[1]
+pat = re.compile(r"^(\d{8}T\d{6}Z)(?:-(\d+))?\.md$")
+files = []
+for name in os.listdir(d):
+    m = pat.match(name)
+    if m:
+        files.append(((m.group(1), int(m.group(2) or 1)), name))
+files.sort(reverse=True)
+for _, name in files[10:]:
+    try:
+        os.remove(os.path.join(d, name))
+    except OSError:
+        pass
+' "$DIR" 2>/dev/null
+) >/dev/null 2>&1
+
+# Trap above emits "{}" and exits 0

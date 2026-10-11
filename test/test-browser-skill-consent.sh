@@ -11,6 +11,7 @@
 #   /qa, /qa-only          the same consent rules for probes, a fresh run-<UTC>
 #                          report dir with a real prior baseline, red tests kept,
 #                          and (/qa) the regression test before the commit
+#   /canary                an SSE endpoint behind a login is unknown, not silent
 #
 # The /open-browser probe is also executed against a stub `$B`, so a probe that
 # boots a daemon, misreads the status, or kills a process fails here.
@@ -181,6 +182,56 @@ LOCATE="$TMP/qa-8a.md"
 section "$Q" '^### 8a\. ' '^### 8b\. ' > "$LOCATE"
 check "qa: 8a checks the fix's files for uncommitted changes" 'git status --porcelain --' "$LOCATE"
 check "qa: 8a defers a fix whose file holds an earlier uncommitted change" 'defer this issue' "$LOCATE"
+# An accessibility check that could not run (quick mode, NOT_SUPPORTED:press)
+# must not hand Accessibility its full 15% as if it had passed.
+QO="$(render qa-only)"
+check "qa-only: an unrun accessibility check leaves the category unscored" 'Accessibility has no score' "$QO"
+check "qa-only: the final score divides by the weights actually scored" 'Σ weight' "$QO"
+
+# ── /canary ──────────────────────────────────────────────────────────────────
+# The SSE probe is plain curl with none of the browse session's cookies, so a
+# stream behind a login answers 401 or a redirect. That is unknown, not a
+# silent stream: calling it CRITICAL alerts every round on a healthy app.
+echo "canary: SSE probe against a local server"
+CN="$(render canary)"
+fenced_bash <(section "$CN" '^\*\*SSE first event\*\*' '^### Phase 3') > "$TMP/sse-probe.sh"
+check "canary: SSE probe block found" 'SSE_FIRST_EVENT' "$TMP/sse-probe.sh"
+cat > "$TMP/sse-server.py" <<'PY'
+import http.server, socketserver, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/auth" and "session=ok" not in (self.headers.get("Cookie") or ""):
+            self.send_response(401); self.end_headers(); self.wfile.write(b'{"error":"login"}'); return
+        if self.path == "/login-redirect":
+            self.send_response(302); self.send_header("Location", "/login"); self.end_headers(); return
+        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+        if self.path != "/silent":
+            self.wfile.write(b"data: hi\n\n")
+    def log_message(self, *a): pass
+# HTTPServer.server_bind calls getfqdn, which can stall on reverse DNS on CI hosts.
+s = socketserver.TCPServer(("127.0.0.1", 0), H)
+print(s.server_address[1], flush=True)
+s.serve_forever()
+PY
+python3 "$TMP/sse-server.py" > "$TMP/sse-port.txt" 2> "$TMP/sse-err.txt" &
+SSE_PID=$!
+i=0; while [ "$i" -lt 50 ]; do i=$((i+1)); [ -s "$TMP/sse-port.txt" ] && break; sleep 0.2; done
+SSE_PORT="$(head -n1 "$TMP/sse-port.txt")"
+sse_probe() { # sse_probe <path> -> the probe's one line of output
+  local d="$TMP/sse-run$1"
+  mkdir -p "$d/.vibestack/canary-reports"
+  printf 'http://127.0.0.1:%s%s\n' "$SSE_PORT" "$1" > "$d/.vibestack/canary-reports/sse-url.txt"
+  (cd "$d" && bash "$TMP/sse-probe.sh" 2>/dev/null)
+}
+if [ -n "$SSE_PORT" ]; then
+  check "canary: a stream that sends data is yes" '^SSE_FIRST_EVENT: yes$' <(sse_probe /ok)
+  check "canary: a stream that sends nothing is no" '^SSE_FIRST_EVENT: no$' <(sse_probe /silent)
+  check "canary: a 401 stream is unknown, not no" '^SSE_FIRST_EVENT: unknown' <(sse_probe /auth)
+  check "canary: a redirect to login is unknown, not no" '^SSE_FIRST_EVENT: unknown' <(sse_probe /login-redirect)
+else
+  no "canary: local SSE server did not start: $(tail -n 3 "$TMP/sse-err.txt" 2>/dev/null)"
+fi
+kill "$SSE_PID" 2>/dev/null; wait "$SSE_PID" 2>/dev/null
 
 # ── /scrape ──────────────────────────────────────────────────────────────────
 # A browser-skill script runs with a read+write daemon token (it can click, fill

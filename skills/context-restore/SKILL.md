@@ -160,6 +160,30 @@ stay candidates. `IDENTITY_CHECK_UNAVAILABLE` means the installed `vibe-slug`
 cannot classify checkpoints — say identity was not checked and suggest
 `/vibe-upgrade`.
 
+**Auto snapshots.** In Claude Code a PreCompact hook writes a git-state snapshot
+to `compact-snapshots/` before every compaction. List the ones newer than the
+newest saved context:
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+SNAP_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/compact-snapshots"
+NEWEST=$(find "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/checkpoints" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r | head -1)
+if [ -d "$SNAP_DIR" ]; then
+  if [ -n "$NEWEST" ]; then
+    find "$SNAP_DIR" -maxdepth 1 -name "*.md" -type f -newer "$NEWEST" 2>/dev/null | sort -r | head -10 | sed 's/^/AUTO_SNAPSHOT: /'
+  else
+    find "$SNAP_DIR" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r | head -10 | sed 's/^/AUTO_SNAPSHOT: /'
+  fi
+fi
+```
+
+Show each `AUTO_SNAPSHOT:` path as "auto snapshot (git state only)" — it is
+never a candidate for Step 2. A snapshot holds branch, status, recent log and
+the transcript path — no decisions and no remaining work — so it never replaces
+a saved context; it only tells the user that work continued after the last
+save. When no saved context exists, offer the newest
+snapshot's git state as the only record.
+
 ### Step 2: Load the right file
 
 - If the user specified a title fragment or number: find the matching file among

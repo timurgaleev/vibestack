@@ -308,6 +308,29 @@ JSON
   fi
 }
 
+# ---------------------------------------------------------------------------
+# U11 — a hook the user had on the event we ship comes back intact
+#
+# The repo ships a PreCompact hook. The user's own PreCompact entry has to
+# survive the install next to ours and be all that is left after uninstall.
+# ---------------------------------------------------------------------------
+test_user_hook_on_shipped_event_survives() {
+  local sb; sb="$(new_sandbox)" || { _fail "U11: no sandbox"; return; }
+  cat > "$(SETTINGS "$sb")" <<'JSON'
+{"hooks": {"PreCompact": [{"hooks": [{"type": "command", "command": "my-own-precompact"}]}]}}
+JSON
+  run_install "$sb"
+  local f; f="$(SETTINGS "$sb")"
+  assert_expr "$f" "[h['command'] for e in d['hooks']['PreCompact'] for h in e['hooks']][0]" "my-own-precompact" \
+    "U11a: the install kept the user's PreCompact hook"
+  assert_expr "$f" "any('vibe-compact-snapshot' in h['command'] for e in d['hooks']['PreCompact'] for h in e['hooks'])" "True" \
+    "U11b: precondition — the install added ours next to it"
+
+  run_uninstall "$sb" >/dev/null
+  assert_expr "$f" "[h['command'] for e in d['hooks']['PreCompact'] for h in e['hooks']]" "['my-own-precompact']" \
+    "U11c: uninstall leaves exactly the user's PreCompact hook"
+}
+
 echo "uninstall --with-config: merged keys"
 test_ours_alone_is_removed
 test_grant_revoked_user_entries_kept
@@ -319,6 +342,7 @@ test_no_python_refuses
 test_unparseable_destination_is_untouched
 test_emptied_object_is_pruned
 test_value_that_matched_ours_is_not_claimed
+test_user_hook_on_shipped_event_survives
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

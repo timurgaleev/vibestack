@@ -86,9 +86,12 @@ separated tokens starting with `--`. Last flag wins on conflict.
 | `--no-execute` | — | File issue only; do NOT spawn agent (alias: `--file-only`). |
 | `--file-only` | — | Same as `--no-execute`. |
 | `--plan-file <path>` | inferred from harness | Load the spec into the specified plan file instead of inferring. |
+| `--jira <KEY>` | OFF | Read the Jira issue to seed Phase 1 and offer one Jira comment linking the filed issue (see Jira adapter below). A bare key as the first argument (`/spec PROJ-123`) also counts. |
 
 Echo the parsed flag set back to the user at the start of Phase 1 so they can
-confirm: "Flags: dedupe=ON, gate=ON, audit=OFF, execute=auto (plan mode = ...)."
+confirm: "Flags: dedupe=ON, gate=ON, audit=OFF, execute=auto (plan mode = ...), jira=OFF."
+
+{{include lib/snippets/jira-adapter.md}}
 
 ---
 
@@ -106,6 +109,11 @@ confirm: "Flags: dedupe=ON, gate=ON, audit=OFF, execute=auto (plan mode = ...)."
 5. **How will we know it's done?** (observable, measurable outcome — not vibes)
 
 Do NOT proceed until all five are answered without hand-waving.
+
+When a Jira key is active, read the issue first (Jira adapter: Reads) and seed
+the five answers from the enveloped text. A seeded answer is a draft: confirm
+each one with the user before relying on it, and treat acceptance criteria
+copied from the ticket as input to Section 10, not as finished ACs.
 
 **Step 1b (--dedupe is ON by default):** Before Phase 4, run dedupe check. Extract
 2-4 keywords from the user's request and the working title you have in mind, then
@@ -501,6 +509,12 @@ still on record and nothing points at an issue number that does not exist.
 **Capture `$ISSUE_NUMBER`** — it goes in the archive frontmatter (next step) and
 is consumed by `/ship` for auto-close.
 
+**Jira comment (only when a Jira key is active).** The GitHub issue stays the
+filed artifact; Jira gets a pointer to it. After `ISSUE_URL` is printed, offer
+one comment on the Jira issue — `Spec filed: <ISSUE_URL>` — through
+AskUserQuestion naming the key and that exact text, under the Jira adapter's
+write rules. Skip it on the manual-filing path, where no issue URL exists.
+
 #### Archive the spec (always, local by default)
 
 Resolve the archive path under the vibestack project state dir. Replace
@@ -761,10 +775,21 @@ Full paths from repo root. Line numbers when referencing specific logic.
 
 ### 10. Testable Acceptance Criteria
 
-Numbered. Pass/fail. No subjective language.
+Numbered `AC-001`, `AC-002`, … so tests, PRs and reviews can cite them. Pass/fail.
+No subjective language.
 
-- ✅ "Orders older than 30 days return HTTP 410 for all 4 user roles"
-- ✅ "Query time for 10K-row table under 100ms (EXPLAIN ANALYZE)"
+- Each AC starts with its verification method: `test:`, `manual:`, `query:` or
+  `metric:`. It may carry a `must not:` line for the behavior that has to stay
+  absent.
+- "correctly", "securely", "properly" or "handled" without an observable outcome
+  is rejected — name what is seen, returned or measured.
+- An unknown is written `TBD — needs validation via <method>`, never guessed.
+- A business constraint the stakeholder confirmed stays a constraint in the AC.
+  Only unconfirmed ones go under Assumptions.
+
+- ✅ "AC-001 test: orders older than 30 days return HTTP 410 for all 4 user roles"
+- ✅ "AC-002 query: query time for 10K-row table under 100ms (EXPLAIN ANALYZE)"
+- ✅ "AC-003 metric: p95 checkout latency TBD — needs validation via load test"
 - ❌ "The feature works correctly"
 - ❌ "Edge cases are handled"
 
@@ -824,10 +849,16 @@ left for the implementer.]
 
 ## Acceptance Criteria
 
-1. [Specific, pass/fail, no subjective language]
-2. [...]
-3. Tests written and passing
-4. No degradation of existing functionality
+- AC-001 test: [specific, pass/fail, observable outcome]
+  must not: [behavior that has to stay absent, if any]
+- AC-002 manual: [...]
+- AC-003 metric: [threshold, or `TBD — needs validation via <method>`]
+- AC-004 test: tests written and passing
+- AC-005 test: no degradation of existing functionality
+
+## Assumptions
+
+- [Only constraints the stakeholder has not confirmed; confirmed ones are ACs]
 
 ## Testing Plan
 

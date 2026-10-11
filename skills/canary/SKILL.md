@@ -100,6 +100,7 @@ When the user types `/canary`, run this skill.
 - `/canary <url> --baseline` — capture baseline screenshots (run BEFORE deploying)
 - `/canary <url> --pages /,/dashboard,/settings` — specify pages to monitor
 - `/canary <url> --quick` — single-pass health check (no continuous monitoring)
+- `/canary <url> --sse <endpoint-url>` — also probe a server-sent events endpoint for its first event
 
 ## Instructions
 
@@ -139,11 +140,14 @@ $B text > ".vibestack/canary-reports/baselines/<page-name>.txt"
 $B links
 ```
 
-Then run the link check (below) on the `links` output.
+Then run the link check (below) on the `links` output, and the asset and stream
+probes (below).
 
 Collect for each page: the screenshot path, the list of `[error]` message strings (the
 messages themselves, not a count), the broken links, the saved text snapshot path and
-the page load time from `perf`.
+the page load time from `perf`. A baseline that already serves HTML for an asset, or an
+SSE endpoint that already sends no first event, is reported to the user at capture time
+— it is a live failure, not a reference to compare against.
 
 Save the baseline manifest to `.vibestack/canary-reports/baseline.json`:
 
@@ -187,6 +191,58 @@ done
 
 `404` or `410` is broken. Any other code outside 2xx/3xx, or a curl failure (`000`), is
 `unknown` — report it, never alert on it.
+
+#### Asset and stream probes
+
+Used by Phase 2 and every round of Phase 5: the asset probe per page, right after that
+page's `$B goto`; the SSE probe once per round. Both are absolute checks — a broken asset
+or a silent stream is a failure whatever the baseline held — but they still need 2
+consecutive checks before an alert is confirmed.
+
+**Static-asset content type.** A single-page app whose server falls back to
+`index.html` answers a missing bundle with an HTML 200, so the status code looks fine
+while the page is dead. For every `<script src>` and stylesheet `<link>` on the loaded
+page, send a HEAD from the page itself and read the content type:
+
+```bash
+B='<BROWSE_BIN>'
+$B js "Promise.all([...document.querySelectorAll('script[src],link[rel~=stylesheet][href]')].map(e=>{const u=e.src||e.href;const k=e.tagName==='SCRIPT'?'js':'css';return fetch(u,{method:'HEAD'}).then(r=>({url:u,kind:k,status:r.status,type:r.headers.get('content-type')})).catch(()=>({url:u,kind:k,status:0,type:null}))})).then(a=>JSON.stringify(a))"
+```
+
+HEAD reads headers only and changes nothing. A `js` entry passes when its type names
+`javascript` or `ecmascript`, a `css` entry when it names `text/css`. A 2xx whose type
+is `text/html` is an SPA fallback serving HTML for an asset — HIGH. Status `0` (a
+cross-origin asset whose server sends no CORS headers, or a network error) and any other
+type are `unknown`: report them, never alert on them.
+
+**SSE first event** — only when the user named an SSE endpoint with `--sse`. Never guess
+one from the page. Write that URL, one line, to
+`.vibestack/canary-reports/sse-url.txt` with the Write tool, then:
+
+```bash
+sse_url=$(head -n1 ".vibestack/canary-reports/sse-url.txt")
+hdr=".vibestack/canary-reports/sse-headers.txt"
+case "$sse_url" in
+  http://*|https://*)
+    : > "$hdr"
+    if curl -N -sS --max-time 10 -D "$hdr" -- "$sse_url" 2>/dev/null | head -c 65536 | grep -q -m1 -E '^(event|data):'; then
+      echo "SSE_FIRST_EVENT: yes"
+    else
+      status=$(awk 'toupper($1) ~ /^HTTP\// {s = $2} END {print s}' "$hdr")
+      case "$status" in
+        3[0-9][0-9]|401|403) echo "SSE_FIRST_EVENT: unknown (HTTP $status)" ;;
+        *) echo "SSE_FIRST_EVENT: no" ;;
+      esac
+    fi ;;
+  *) echo "SSE_URL_INVALID: not an http(s) URL" ;;
+esac
+```
+
+The connection is bounded at 10 seconds and 64 KB. `SSE_FIRST_EVENT: no` — the stream
+did not connect, or sent no `event:` or `data:` line inside those bounds — is CRITICAL.
+`SSE_FIRST_EVENT: unknown` — a redirect, 401 or 403 — means the stream wants a login the
+probe cannot send: curl carries none of the browse session's cookies. Report it once,
+never alert on it, the same as an `unknown` link. `SSE_URL_INVALID` is not a probe result: tell the user and skip the SSE probe.
 
 ### Phase 3: Page Discovery
 
@@ -249,7 +305,8 @@ $B perf
 $B links
 ```
 
-Run the link check on the `links` output. Keep only `[error]` console lines.
+Run the link check on the `links` output and the asset and stream probes. Keep only
+`[error]` console lines.
 
 After each check, compare results against `baseline.json` (or `pre-monitor.json`):
 
@@ -257,8 +314,10 @@ After each check, compare results against `baseline.json` (or `pre-monitor.json`
 2. **New console errors** — an `[error]` message not in the page's `console_errors` list → HIGH ALERT
 3. **Performance regression** — load time exceeds 2x baseline → MEDIUM ALERT
 4. **Broken links** — a 404/410 URL not in the page's `broken_links` list → LOW ALERT
+5. **Asset served as HTML** — a script or stylesheet URL answering 2xx with `text/html` → HIGH ALERT
+6. **SSE stream silent** — `SSE_FIRST_EVENT: no` for an endpoint named with `--sse` → CRITICAL ALERT
 
-**Alert on changes, not absolutes.** Errors are compared by message, not by count. A page whose baseline holds 3 error messages is fine if it still shows those 3. One NEW message is an alert, even if another one went away.
+**Alert on changes, not absolutes** (items 5 and 6 excepted — they are absolute checks). Errors are compared by message, not by count. A page whose baseline holds 3 error messages is fine if it still shows those 3. One NEW message is an alert, even if another one went away.
 
 **Don't cry wolf.** Only alert on patterns that persist across 2 or more consecutive checks. A single transient network blip is not an alert.
 

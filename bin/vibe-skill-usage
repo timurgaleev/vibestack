@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# vibe-skill-usage — read-only report of how often each skill is used.
+#
+# Sources:
+#   - Claude Code transcripts: every *.jsonl under <claude-dir>/projects/,
+#     recursively, which includes nested <session>/subagents/*.jsonl. A user
+#     message carrying <command-name>/<name></command-name> counts as typed; an
+#     assistant tool_use block named "Skill" counts as model, by input.skill.
+#   - The analytics file bin/vibe-skill-track appends to (typed slash commands
+#     seen by the UserPromptSubmit hook), shown in its own column.
+# Transcript typed counts and analytics counts describe the same invocations
+# from two sides; they are shown side by side and never added together.
+#
+# The transcript schema is undocumented: missing fields are tolerated and an
+# unparseable line is counted, not fatal. Only skill names and counts are
+# printed — never message text or transcript paths. Cursor, Kiro and Codex keep
+# no transcript this reads, so their usage is reported as unmeasured, not zero.
+#
+# Usage: vibe-skill-usage [--days N] [--json] [--claude-dir DIR] [--analytics FILE]
+#   --days N          window in days (default 30)
+#   --json            machine-readable output
+#   --claude-dir DIR  default $HOME/.claude
+#   --analytics FILE  default ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl
+# Exit: 0 report printed (also when there is nothing to read), 2 usage error.
+set -euo pipefail
+
+DAYS=30
+JSON=0
+CLAUDE_DIR="$HOME/.claude"
+ANALYTICS="${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl"
+
+usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+need() { [ $# -ge 2 ] || { echo "vibe-skill-usage: $1 needs a value" >&2; exit 2; }; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --days)       need "$@"; DAYS="$2"; shift 2 ;;
+    --json)       JSON=1; shift ;;
+    --claude-dir) need "$@"; CLAUDE_DIR="$2"; shift 2 ;;
+    --analytics)  need "$@"; ANALYTICS="$2"; shift 2 ;;
+    -h|--help)    usage ;;
+    *) echo "vibe-skill-usage: unknown argument: $1" >&2; usage ;;
+  esac
+done
+
+case "$DAYS" in
+  ''|*[!0-9]*) echo "vibe-skill-usage: --days must be a non-negative integer" >&2; exit 2 ;;
+esac
+
+python3 -I - "$DAYS" "$JSON" "$CLAUDE_DIR" "$ANALYTICS" <<'PY'
+import datetime, json, os, re, sys
+
+days, as_json, claude_dir, analytics = int(sys.argv[1]), sys.argv[2] == "1", sys.argv[3], sys.argv[4]
+now = datetime.datetime.now(datetime.timezone.utc)
+cutoff = now - datetime.timedelta(days=days)
+NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_.-]{0,99}$")
+CMD = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
+
+
+def when(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=datetime.timezone.utc)
+    return t
+
+
+stats = {}
+
+
+def bump(name, field, t, nested=False):
+    if not isinstance(name, str) or not NAME.match(name):
+        return
+    s = stats.setdefault(name, {"typed": 0, "model": 0, "nested": 0, "tracked": 0, "last": None})
+    s[field] += 1
+    if nested:
+        s["nested"] += 1
+    if s["last"] is None or t > s["last"]:
+        s["last"] = t
+
+
+def texts(content):
+    if isinstance(content, str):
+        yield content
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                yield block["text"]
+
+
+read = unreadable = unopened = older = 0
+projects = os.path.join(claude_dir, "projects")
+for dirpath, _dirs, files in os.walk(projects):
+    for fn in files:
+        if not fn.endswith(".jsonl"):
+            continue
+        path = os.path.join(dirpath, fn)
+        nested = "subagents" in os.path.relpath(path, projects).split(os.sep)
+        try:
+            # A file last written before the window holds no entry inside it.
+            if datetime.datetime.fromtimestamp(os.path.getmtime(path), datetime.timezone.utc) < cutoff:
+                older += 1
+                continue
+            fh = open(path, encoding="utf-8", errors="replace")
+        except OSError:
+            unopened += 1
+            continue
+        read += 1
+        with fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    unreadable += 1
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                t = when(entry.get("timestamp"))
+                if t is None or t < cutoff:
+                    continue
+                msg = entry.get("message")
+                content = msg.get("content") if isinstance(msg, dict) else None
+                kind = entry.get("type")
+                if kind == "user":
+                    for text in texts(content):
+                        for name in CMD.findall(text):
+                            bump(name, "typed", t, nested)
+                elif kind == "assistant" and isinstance(content, list):
+                    for block in content:
+                        if (isinstance(block, dict) and block.get("type") == "tool_use"
+                                and block.get("name") == "Skill"):
+                            inp = block.get("input")
+                            bump(inp.get("skill") if isinstance(inp, dict) else None, "model", t, nested)
+
+analytics_rows = 0
+analytics_present = os.path.isfile(analytics)
+if analytics_present:
+    try:
+        with open(analytics, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                t = when(row.get("ts"))
+                if t is None or t < cutoff:
+                    continue
+                analytics_rows += 1
+                bump(row.get("skill"), "tracked", t)
+    except OSError:
+        analytics_present = False
+
+order = sorted(stats.items(), key=lambda kv: (-(kv[1]["typed"] + kv[1]["model"]), -kv[1]["tracked"], kv[0]))
+measured, unmeasured = ["claude"], ["cursor", "kiro", "codex"]
+
+if as_json:
+    print(json.dumps({
+        "days": days,
+        "skills": [{"skill": k, "typed": v["typed"], "model": v["model"], "nested": v["nested"],
+                    "tracked": v["tracked"],
+                    "last_seen": v["last"].strftime("%Y-%m-%d") if v["last"] else None} for k, v in order],
+        "transcripts": {"read": read, "unreadable_lines": unreadable, "unopened_files": unopened, "older_files": older},
+        "analytics_rows": analytics_rows,
+        "analytics_file": analytics_present,
+        "runtimes": {"measured": measured, "unmeasured": unmeasured},
+    }, indent=2))
+    sys.exit(0)
+
+width = max([len("skill")] + [len(k) for k in stats])
+fmt = "%-" + str(width) + "s  %5s  %5s  %6s  %-10s  %7s"
+print("SKILL USAGE (last %d days)" % days)
+print(fmt % ("skill", "typed", "model", "nested", "last_seen", "tracked"))
+for k, v in order:
+    print(fmt % (k, v["typed"], v["model"], v["nested"],
+                 v["last"].strftime("%Y-%m-%d") if v["last"] else "-", v["tracked"]))
+if not order:
+    print("(no skill invocations in the window)")
+print()
+print("TRANSCRIPTS: %d read, %d unreadable lines%s%s" % (
+    read, unreadable,
+    ", %d files could not be opened" % unopened if unopened else "",
+    ", %d files last written before the window" % older if older else ""))
+print("ANALYTICS: %d rows%s" % (analytics_rows, "" if analytics_present else " (no analytics file)"))
+print("RUNTIMES: %s measured; %s unmeasured" % (", ".join(measured), ", ".join(unmeasured)))
+print("NOTE: typed (transcripts) and tracked (analytics) overlap; never add them.")
+PY

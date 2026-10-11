@@ -23,6 +23,8 @@ Use when: "finalize this design", "turn this into HTML", "build me a page", "imp
 
 Proactively suggest when user has approved a design or has a plan ready.
 
+For a slide deck ("deck", "slides", or `--deck`), follow **Deck mode** below.
+
 Voice triggers (speech-to-text aliases): "build the design", "code the mockup", "make it real".
 
 ## Preamble
@@ -675,6 +677,69 @@ LOOP:
 
 Maximum 10 iterations. If the user hasn't said "done" after 10, use AskUserQuestion:
 "We've done 10 rounds of refinement. Want to continue iterating or call it done?"
+
+---
+
+## Deck mode
+
+Deck mode is explicit and never the default path. Enter it only when the input is a
+slide deck, the user says "deck" or "slides", or passes `--deck`. Otherwise build a
+page as above. In deck mode, Steps 0-3.5 still apply (input detection, design tokens,
+output path, live-reload server); this section replaces the page structure and the
+Step 4 verification screenshots.
+
+**Structure:**
+- One `<section class="slide">` per slide inside `<main>`, each `height: 100dvh`
+  (with a `height: 100vh` line before it for older browsers).
+- Keyboard (ArrowLeft/ArrowRight, PageUp/PageDown, Space, Home/End), wheel and touch
+  navigation between slides, plus a visible slide index.
+- Under `prefers-reduced-motion: reduce`, slide changes jump instead of animating:
+  no smooth scrolling, no reveal transitions.
+- Type and spacing scale with `clamp()` (for example
+  `font-size: clamp(1rem, 0.6rem + 1.6vw, 2.5rem)`), never below a readable size.
+
+**Density heuristics** (a starting point for splitting content, not the gate):
+
+| Slide type | Heuristic |
+|------------|-----------|
+| Title | 1 heading + 1 line |
+| Content | 1 heading + 4-6 bullets |
+| Code | 8-10 lines |
+| Grid | at most 6 cells |
+
+**The viewport-fit gate.** At 1920×1080, 1280×720 and 375×667, every slide must pass
+`scrollHeight <= clientHeight`, checked with `$B js`. A slide that fails is split into
+two slides, then the gate runs again; never clip it with `overflow: hidden` or shrink
+its type below the `clamp()` minimum, since that hides the failure instead of fixing it.
+
+If SETUP printed `BROWSE_AVAILABLE`, run the gate. As with the verification
+screenshots, set the viewport before each capture, load the live-reload server's
+`SERVER:` URL (not `file://`), and replace `<BROWSE_BIN>` with the path SETUP printed
+on its `BROWSE_BIN:` line, since this is a fresh shell:
+
+```bash
+B='<BROWSE_BIN>'
+$B goto "<SERVER URL>"
+$B viewport 1920x1080
+$B js "[...document.querySelectorAll('section.slide')].map((s, i) => s.scrollHeight <= s.clientHeight ? '' : 'OVERFLOW slide ' + (i + 1) + ': ' + s.scrollHeight + ' > ' + s.clientHeight).filter(Boolean).join('; ') || 'ALL_SLIDES_FIT'"
+$B screenshot /tmp/vibestack-deck-1920.png
+$B viewport 1280x720
+$B js "[...document.querySelectorAll('section.slide')].map((s, i) => s.scrollHeight <= s.clientHeight ? '' : 'OVERFLOW slide ' + (i + 1) + ': ' + s.scrollHeight + ' > ' + s.clientHeight).filter(Boolean).join('; ') || 'ALL_SLIDES_FIT'"
+$B screenshot /tmp/vibestack-deck-1280.png
+$B viewport 375x667
+$B js "[...document.querySelectorAll('section.slide')].map((s, i) => s.scrollHeight <= s.clientHeight ? '' : 'OVERFLOW slide ' + (i + 1) + ': ' + s.scrollHeight + ' > ' + s.clientHeight).filter(Boolean).join('; ') || 'ALL_SLIDES_FIT'"
+$B screenshot /tmp/vibestack-deck-375.png
+```
+
+Each `js` line prints `ALL_SLIDES_FIT` or one `OVERFLOW slide N` entry per failing
+slide. Split every listed slide and rerun the block until all three viewports print
+`ALL_SLIDES_FIT`. An empty or error result is not a pass: report the gate as not run.
+Show the three screenshots inline with the Read tool.
+
+If SETUP printed `BROWSE_NOT_AVAILABLE`, or the live-reload server is not running,
+report the gate as not run, text-only: list each slide with its density against the
+heuristics above and flag the ones likely to overflow. Never report the deck as fitting
+without the gate.
 
 ---
 

@@ -87,6 +87,14 @@ Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
 branch name wherever the instructions say "the base branch" or `<default>`.
 
+**Issue tracker: Jira is opt-in.** The PR goes to GitHub or GitLab as above.
+Jira is touched only when the user passed `--jira <KEY>`; then Step 19 offers a
+comment or remote link with the PR URL and Step 19.5 offers a status change
+after the merge, each approved separately. A key in the branch name is only
+printed as a hint (Step 1).
+
+{{include lib/snippets/jira-adapter.md}}
+
 ---
 
 
@@ -111,6 +119,7 @@ You are running the `/ship` workflow. This is a **non-interactive, fully automat
 - A remote lookup or push that fails (see Step 17)
 - TODOS.md missing and user wants to create one (ask — see Step 14)
 - TODOS.md disorganized and user wants to reorganize (ask — see Step 14)
+- A Jira write when `--jira <KEY>` was passed (each one asked — see Steps 19 and 19.5)
 
 **Never stop for:**
 - Uncommitted changes (always include them)
@@ -168,6 +177,29 @@ Never skip a verification step because a prior `/ship` run already performed it.
    `NEW_WORK_AFTER_MERGE`: the branch's PR merged, but HEAD carries commits made after
    it. Ship them normally — every step runs and Step 19 opens a new PR. Any other value:
    continue normally.
+
+   Then note any Jira key the branch name carries:
+
+   ```bash
+   _BR=$(git branch --show-current 2>/dev/null)
+   _KEY=$(printf '%s' "$_BR" | grep -Eo '[A-Z][A-Z0-9]+-[0-9]+' | head -n1)
+   if [ -n "$_KEY" ]; then
+     echo "JIRA_HINT: $_KEY (branch name — correlation only, not authorization)"
+   else
+     echo "JIRA_HINT: none"
+   fi
+   ```
+
+   The hint never activates a Jira write. Print `JIRA_KEY: <key>` only when the
+   user's invocation carried `--jira <KEY>` and the key matches
+   `[A-Z][A-Z0-9]+-[0-9]+`; otherwise print `JIRA_KEY: none`. When the hint and
+   the flag disagree, say so and use the flag.
+
+   A bare `--jira` with no key asks for one rather than dropping Jira: with a
+   `JIRA_HINT`, AskUserQuestion "Use <hint> for Jira?" — A) use it, B) give another
+   key, C) no Jira; with no hint, ask for the key. Print `JIRA_KEY: <key>` only for A
+   or a key from B that matches the pattern above. A headless or spawned run cannot
+   ask, so it prints `JIRA_KEY: none` and says `--jira` needs a key.
 
 2. Run `git status` (never use `-uall`). Uncommitted changes are always included — no need to ask.
 
@@ -2923,7 +2955,12 @@ rm -f "$PR_BODY_FILE"
 **If neither CLI is available:**
 Print the branch name, remote URL, and instruct the user to create the PR/MR manually via the web UI. Do not stop — the code is pushed and ready.
 
-**Output the PR/MR URL** — then proceed to Step 19.5, which tags and releases only if the PR is already merged.
+**Output the PR/MR URL.** Then, only if `JIRA_KEY` is set (Step 1), offer the Jira
+writes under the Jira adapter's rules: one AskUserQuestion for a comment
+`PR: <PR URL> (branch <branch>)` and, where the provider has a remote-link tool,
+one for a remote link to the PR URL. Each names the key and the exact action; a
+headless or spawned run prints them as not posted. Then proceed to Step 19.5,
+which tags and releases only if the PR is already merged.
 
 ---
 
@@ -2941,7 +2978,15 @@ In `/ship`, leave `PR_REF` empty — the branch is the PR's branch. At the end o
 ship the PR is still open, so the expected line is `Release deferred`; that is not a
 failure. A `BLOCKED` line stops this step: report it and continue to Step 20.
 
-**Output the Release URL** (when one was created or updated) alongside the PR URL — then proceed to Step 20.
+**Output the Release URL** (when one was created or updated) alongside the PR URL.
+
+**Jira status after the merge.** Only when `JIRA_KEY` is set and the PR is
+merged: offer a transition, never apply one automatically. Call
+`jira_get_transitions` (or `listJiraIssueTransitions`) for the key, list the
+names it returns, and let the user pick one through AskUserQuestion, or skip.
+The approval names the key and the chosen transition. A merge alone is not
+approval, and a headless or spawned run prints the offer as not posted. Then
+proceed to Step 20.
 
 ---
 

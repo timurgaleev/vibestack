@@ -76,6 +76,7 @@ implementing, investigate before fixing, review before shipping.
 | Tune which questions the skills ask you | `plan-tune` |
 | Guard a risky session | `careful`, `freeze`, `guard` (and `unfreeze` to release) |
 | Update the pack itself | `vibe-upgrade` |
+| Find and retire unused skills, hooks, permissions and caches | `vibe-gc` |
 
 Anything not listed here is in the full index — read it rather than guessing at
 a skill name:

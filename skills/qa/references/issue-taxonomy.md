@@ -71,6 +71,27 @@
 - Insufficient color contrast
 - Content not reachable by screen reader
 
+Measurable criteria (checked manually on every page; an optional axe run never replaces them, and a clean axe run is not a pass):
+
+| Check | Criterion | Severity when it fails |
+|-------|-----------|------------------------|
+| Contrast, body text | at least 4.5:1, from computed text and background colors | high |
+| Contrast, large text | at least 3:1 for text ≥24px, or ≥18.66px bold | high |
+| Contrast, non-text UI | at least 3:1 for input borders, icons and focus rings against their surroundings | high |
+| Keyboard reach | every interactive control reachable with Tab, in an order that follows the layout | critical if a control that completes a task is unreachable or traps focus, else high |
+| Focus visible | the focused control shows a visible focus state | high |
+| Accessible name | icon-only buttons, links and inputs carry a name in the accessibility tree | critical if the unlabeled control blocks a task, else medium |
+| Landmarks | a `main` landmark, and a `nav` where there is navigation | medium |
+| Heading order | one `h1`, no skipped levels | medium |
+| Target size | at least 24×24 CSS px (WCAG 2.2 SC 2.5.8) | medium |
+| Decorative images | carry `alt=""` rather than descriptive text | low |
+
+Target-size exceptions — a smaller target passes when it is:
+- an inline link inside a sentence or block of text;
+- spaced so that a 24px circle centered on it overlaps no other target or its circle;
+- sized by the browser default and not restyled by the page;
+- essential at that size, or legally required to be presented that way.
+
 ## Per-Page Exploration Checklist
 
 For each page visited during a QA session:
@@ -83,3 +104,4 @@ For each page visited during a QA session:
 6. **Console** — Run `console --errors` after interactions. Any new JS errors or failed requests?
 7. **Responsiveness** — If relevant, check mobile and tablet viewports.
 8. **Auth boundaries** — What happens when logged out? Different user roles?
+9. **Accessibility** — Check the measurable criteria in section 7: contrast, keyboard reach and focus, accessible names, landmarks and headings, target size.

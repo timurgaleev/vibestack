@@ -120,8 +120,17 @@ Caveman and Ponytail it is **on by default** within that phase — `./install --
 `curl | sh` and runs `rtk init -g` to apply the Claude Code `PreToolUse` hook.
 The install is idempotent: if `rtk` is already on `PATH` the binary download is
 skipped and only the hook is refreshed. Init runs **after** the `settings.json`
-merge so the RTK hook survives every sync (the merge is repo-authoritative for
-the hooks map and would otherwise clobber it).
+merge so the RTK hook survives every sync.
+
+The Claude projection ships an `attribution` object (empty `commit` and `pr`,
+`sessionUrl` false, so the harness adds no co-author trailer or PR footer) and a
+`PreCompact` hook that runs `vibe-compact-snapshot` (a silent no-op when that
+bin is not installed). That hook writes the git
+state and the transcript path — never its contents — to
+`~/.vibestack/projects/<slug>/compact-snapshots/` before each compaction, keeping
+the 10 newest; `VIBESTACK_COMPACT_SNAPSHOT=0` turns it off. The settings merge
+is per hook event: it sets `PreCompact` and keeps every other event a tool added
+there, such as RTK's `PreToolUse`.
 
 - Skip entirely with `-R` (or `RTK=false`).
 - The installer tracks the latest tagged release and verifies SHA-256

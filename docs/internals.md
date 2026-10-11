@@ -92,6 +92,9 @@ new.
 | `vibe-learnings-sync-plan` | Plan `/learn sync` pushes: dedup, watermark, secret redaction |
 | `vibe-render-skill` | Render-at-install: expand `{{include}}` directives |
 | `vibe-skill-track` | Opt-in skill-usage analytics hook |
+| `vibe-skill-usage` | Read-only skill-usage counts from the analytics log and Claude transcripts; other runtimes are reported unmeasured |
+| `vibe-gc` | Audit-only configuration scan for `/vibe-gc` (unclaimed skills, orphan hooks, duplicate or shadowed permissions, configured MCP servers, old caches across all four runtime roots); `trash` soft-deletes into `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, `undo <date>` moves items back. Refuses settings, `~/.claude.json`, `.mcp.json`, transcripts, project state and manifest-claimed skills |
+| `vibe-compact-snapshot` | Claude PreCompact hook: a git-state snapshot per project before compaction, never transcript content |
 | `vibe-session-kind` | Classify the session: spawned / headless / interactive. `spawned` needs `OPENCLAW_SESSION` or an affirmative `VIBE_SPAWNED` (`0`/`false`/`no`/`off` do not count); the dispatching agent sets `VIBE_SPAWNED=1`, since an agent-tool child inherits no environment |
 | `vibe-repo-mode` | Emit `REPO_MODE=solo\|collaborative` from git history |
 | `vibe-telemetry-log` | Append a telemetry event — opt-in, no-op unless enabled |
@@ -248,6 +251,10 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-update-check.sh` | `vibe-update-check` against a local fake remote: checkout discovery, `CHECK_FAILED`, the day stamp |
 | `test-vibe-upgrade-flow.sh` | `/vibe-upgrade` blocks against a fake remote: replaying the original install, stopping on a failed fetch |
 | `test-vibe-upgrade-guards.sh` | `/vibe-upgrade`'s mutating blocks refuse an empty or wrong install dir; migrations receive the install dir |
+| `test-vibe-gc.sh` | `vibe-gc`: scan flags only unclaimed skills, orphan hooks, redundant permissions, old caches and writes nothing; trash/undo round trip; refusals move nothing |
+| `test-skill-usage.sh` | `vibe-skill-usage` counts from the analytics log and transcripts, and reports other runtimes unmeasured |
+| `test-compact-snapshot.sh` | `vibe-compact-snapshot` records git state per project and never transcript content |
+| `test-jira-adapter.sh` | The Jira adapter in `/spec` and `/ship` stays opt-in |
 | `test-plan-tune-profile.sh` | `/plan-tune` profile writes land under `VIBESTACK_HOME` as numbers and nothing lands in the working directory |
 | `test-plan-review-contract.sh` | Contracts between `/autoplan` and the plan-review and `/office-hours` skills it loads from disk |
 | `test-plan-ceo-review.sh` | `/plan-ceo-review` keeps the user in control of scope and reports failed metric writes |

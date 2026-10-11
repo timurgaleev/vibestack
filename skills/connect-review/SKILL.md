@@ -435,5 +435,6 @@ If the user asks for a file, write the report to `docs/connect-review-<YYYY-MM-D
 5. **German-market notes when the region is eu-*.** Add DSGVO notes on transcript retention, log obfuscation, model region and session TTL. Do not add them for other regions.
 6. **Estimates are labelled.** A latency or cost number you did not measure says "estimated" next to it.
 7. **Say what you could not check.** If an input was missing or the CLI had no access, the row is N-A and goes under "Not checked" at the end of the report. Never let a failed call read as a clean result: capture the exit status of every `aws` call and every grep whose emptiness would otherwise be taken as evidence.
+8. **Caller-facing output carries only the answer.** The caller hears the final business answer or a safe error message ("I can't look that up right now, let me transfer you"), never model reasoning, an exception string (`str(e)`, a stack trace), a tool trace, internal notes or prompt text. A Lambda or bot that returns any of those into the contact flow, where a prompt block or Lex message can speak them, is a finding: cite the return path. This rule covers what reaches the caller in the contact center; it is not a general policy for other outbound messages.
 
 {{include lib/snippets/capture-learnings.md}}
