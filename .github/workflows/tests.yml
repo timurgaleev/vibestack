@@ -90,6 +90,7 @@ jobs:
           - test-design-shotgun-handoff.sh
           - test-devex-boomerang.sh
           - test-fresh-shell-vars.sh
+          - test-compact-snapshot.sh
     steps:
       - uses: actions/checkout@v4
 

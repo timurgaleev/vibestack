@@ -45,7 +45,10 @@ cat > "$SB/dst.json" <<'JSON'
     "defaultMode": "acceptEdits"
   },
   "theme": "dark",
-  "model": "some-local-model"
+  "model": "some-local-model",
+  "hooks": {
+    "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "rtk hook" }] }]
+  }
 }
 JSON
 
@@ -90,6 +93,17 @@ check "d['enabledPlugins'].get('deliberation@antonbabenko') is True" \
                                                                    "S12: deliberation plugin arrives enabled"
 check "d['extraKnownMarketplaces'].get('antonbabenko', {}).get('source', {}).get('repo') == 'antonbabenko/agent-plugins'" \
                                                                    "S13: deliberation marketplace arrives with its source"
+
+# The harness reads `attribution` to decide whether it appends a co-author
+# trailer or a PR footer itself; the deprecated boolean must not come back.
+check "d.get('attribution') == {'commit': '', 'pr': '', 'sessionUrl': False}" \
+                                                                   "S14: attribution setting arrives with empty commit/pr and no session URL"
+check "'includeCoAuthoredBy' not in d"                             "S15: deprecated includeCoAuthoredBy is not shipped"
+
+# hooks merge per event: a hook another tool registered survives next to ours.
+check "d.get('hooks', {}).get('PreToolUse')"                       "S16: a machine's own PreToolUse hook survives"
+check "any('vibe-compact-snapshot' in h.get('command', '') for e in d.get('hooks', {}).get('PreCompact', []) for h in e.get('hooks', []))" \
+                                                                   "S17: repo PreCompact snapshot hook arrives"
 
 echo "----"
 echo "PASS=$PASS FAIL=$FAIL"

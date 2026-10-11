@@ -327,6 +327,11 @@ If there are no saved contexts, tell the user: "No saved contexts yet. Run
 - **This is a vibestack skill, not a Claude Code built-in.** When the user types
   `/context-save`, invoke this skill via the Skill tool. The old `/checkpoint`
   name collided with Claude Code's native `/rewind` alias — the rename fixed that.
+- **Automatic snapshots are not a save.** In Claude Code a PreCompact hook writes
+  a git-state snapshot to `~/.vibestack/projects/<slug>/compact-snapshots/`
+  before every compaction. It holds git state and the transcript path only,
+  never decisions, so `/context-save` stays the way to record decisions. Other
+  runtimes have no compaction hook in this pack.
 
 ---
 

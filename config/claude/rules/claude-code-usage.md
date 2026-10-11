@@ -30,6 +30,16 @@ conventions; `CLAUDE.md` carries only the one-line summary.
 - When the next step reads a subagent's result, pass `run_in_background: false`
   and wait. A backgrounded dispatch returns before the result exists, so the
   next step would read a missing result as an empty one.
+- Every dispatched agent gets a contract: owner, file scope and forbidden paths,
+  merge gate, the evidence to return, and a handoff note.
+- Before a parallel dispatch, write a lane table and give the lanes
+  non-overlapping write surfaces — a file set, a worktree or a branch.
+  Worktrees are one option, not a requirement.
+- Never run destructive operations or migrations in parallel lanes.
+- The parent collects every result and does not end its turn while subagents
+  are still live.
+- Failure modes to avoid: many agents with no owner, work nobody can see, and
+  overlapping writes.
 
 ## Skills
 
@@ -68,3 +78,5 @@ Confirm with the user before anything externally visible or hard to reverse:
   the main context.
 - Single-file edits, standalone utilities, and doc updates are safe late in the
   window.
+- Run `/context-save` before a manual `/compact`. The PreCompact hook snapshots
+  git state automatically, but it records no decisions.

@@ -56,6 +56,24 @@
     "ponytail@ponytail": true,
     "deliberation@antonbabenko": true
   },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-compact-snapshot\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
   "tui": "fullscreen",
   "theme": "auto",
   "extraKnownMarketplaces": {

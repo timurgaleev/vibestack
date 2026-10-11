@@ -20,6 +20,10 @@ harness default that would add such attribution.
 - Do **not** append `Co-Authored-By: Claude` or any AI co-author trailer.
 - Do **not** add "Generated with Claude Code" or similar lines.
 - Follow the commit format in `git.md` (type, imperative subject, why-not-obvious body).
+- The Claude configuration sets the `attribution` setting (empty `commit` and
+  `pr`, `sessionUrl` false), so the harness itself adds no trailer or footer.
+  Cursor, Kiro and Codex have no such setting; for them the rules above are
+  what holds.
 
 ## Pull Requests
 

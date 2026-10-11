@@ -100,6 +100,12 @@ grep -i "model\|ml\|ai" ai/memory-bank/*.md
 - Data quality monitoring and inference latency tracking
 - Cost monitoring and optimization strategies
 - Continuous model improvement and version management
+- Production-agent controls:
+  - Kill switch: a flag or env var that stops tool execution without a deploy
+  - Per-run timeout and retry budget
+  - Audit log per tool call: actor, tool, argument hash, outcome
+  - Metrics defined per agent: outcome (task success), latency, error and
+    tool-failure rate, cost per task
 
 ## 💭 Your Communication Style
 

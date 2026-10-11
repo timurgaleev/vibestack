@@ -56,6 +56,17 @@ Provide code reviews that improve code quality AND developer skills:
 - Documentation gaps
 - Alternative approaches worth considering
 
+### ⚡ FastAPI lane (only when the diff touches FastAPI routes)
+- A sync HTTP or DB client called on the event loop inside an `async def` route
+  — a blocker only when it actually blocks the loop
+- `response_model` leaking password hashes, tokens or internal ids
+- `allow_origins=["*"]` together with `allow_credentials=True`
+- JWT decode without `exp`/`iss` checks or without pinning the algorithm
+- Outbound HTTP clients without a timeout
+- A DB session obtained outside `Depends` — only when it leaks across requests;
+  a direct `SessionLocal()` is not wrong by itself
+- A comment that contradicts the code → delete the comment
+
 ## 📝 Review Comment Format
 
 ```

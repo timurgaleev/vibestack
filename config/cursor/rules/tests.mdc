@@ -19,7 +19,9 @@ Write one only when all four questions have an answer:
 
 Weak tests are not coverage: a smoke test, an existence check, or "it doesn't
 throw" never counts as covering a path. A regression test is proven red against
-the code before the fix, then green after it.
+the code before the fix, then green after it. Red means the test executed and
+failed for the intended reason — an import error, a missing fixture or a typo in
+the assertion is not red.
 
 ## Testing Workflow
 
