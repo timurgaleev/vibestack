@@ -212,7 +212,7 @@ s = http.server.HTTPServer(("127.0.0.1", 0), H)
 print(s.server_address[1], flush=True)
 s.serve_forever()
 PY
-python3 "$TMP/sse-server.py" > "$TMP/sse-port.txt" &
+python3 "$TMP/sse-server.py" > "$TMP/sse-port.txt" 2> "$TMP/sse-err.txt" &
 SSE_PID=$!
 i=0; while [ "$i" -lt 50 ]; do i=$((i+1)); [ -s "$TMP/sse-port.txt" ] && break; sleep 0.2; done
 SSE_PORT="$(head -n1 "$TMP/sse-port.txt")"
@@ -228,7 +228,7 @@ if [ -n "$SSE_PORT" ]; then
   check "canary: a 401 stream is unknown, not no" '^SSE_FIRST_EVENT: unknown' <(sse_probe /auth)
   check "canary: a redirect to login is unknown, not no" '^SSE_FIRST_EVENT: unknown' <(sse_probe /login-redirect)
 else
-  no "canary: local SSE server did not start"
+  no "canary: local SSE server did not start: $(tail -n 3 "$TMP/sse-err.txt" 2>/dev/null)"
 fi
 kill "$SSE_PID" 2>/dev/null; wait "$SSE_PID" 2>/dev/null
 
