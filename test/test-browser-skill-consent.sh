@@ -214,7 +214,7 @@ s.serve_forever()
 PY
 python3 "$TMP/sse-server.py" > "$TMP/sse-port.txt" &
 SSE_PID=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TMP/sse-port.txt" ] && break; sleep 0.2; done
+i=0; while [ "$i" -lt 50 ]; do i=$((i+1)); [ -s "$TMP/sse-port.txt" ] && break; sleep 0.2; done
 SSE_PORT="$(head -n1 "$TMP/sse-port.txt")"
 sse_probe() { # sse_probe <path> -> the probe's one line of output
   local d="$TMP/sse-run$1"
