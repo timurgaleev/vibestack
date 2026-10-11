@@ -12,9 +12,14 @@
 #               as long, and nothing but whitespace after.
 #   snippets  — lib/snippets/*.md: no duplicate headings inside one snippet,
 #               no nested {{include}} directives, max 400 lines.
+#   hostvars  — warning only: inside bash/sh fences, $ARGUMENTS, and a
+#               ${CLAUDE_SKILL_DIR} whose block has neither a :- default nor a
+#               command -v fallback. Only Claude Code substitutes them; other
+#               hosts see empty or literal text. Prose mentions never warn.
 #
 # Usage: vibe-lint-sources [repo-root]   (default: repo containing this script)
-# Exit: 0 clean, 1 findings (one file:line message per finding).
+# Exit: 0 clean, 1 findings (one file:line message per finding). Warnings
+# (warn: file:line: ...) never change the exit code.
 set -uo pipefail
 
 ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -81,6 +86,34 @@ for f in "$ROOT"/lib/snippets/*.md; do
     say "$f:${dup%%:*}: duplicate heading (${dup#*: }) inside one snippet"
   fi
 done
+
+# --- host-only variables (warnings) ----------------------------------------
+HOSTDOC="see docs/agent-skills-compatibility-audit.md"
+while IFS= read -r f; do
+  awk -v file="$f" -v doc="$HOSTDOC" "$FENCE_AWK"'
+    function flush(   i) {
+      for (i = 1; i <= nb; i++) {
+        if (index(bl[i], "$ARGUMENTS"))
+          printf "warn: %s:%d: $ARGUMENTS is substituted only by Claude Code — empty on other hosts; %s\n", file, bn[i], doc
+        if (!guarded && (index(bl[i], "${CLAUDE_SKILL_DIR}") || bl[i] ~ /[$]CLAUDE_SKILL_DIR([^A-Za-z0-9_]|$)/))
+          printf "warn: %s:%d: ${CLAUDE_SKILL_DIR} is substituted only by Claude Code — empty on other hosts; %s\n", file, bn[i], doc
+      }
+      nb = 0; guarded = 0
+    }
+    {
+      was = fc; fence_step($0)
+      if (was == "" && fc != "") {
+        info = fopen; sub(/^ *[`~]+[ \t]*/, "", info); sub(/[ \t{].*$/, "", info)
+        shell = (info == "bash" || info == "sh"); nb = 0; guarded = 0
+        next
+      }
+      if (was != "" && fc == "") { if (shell) flush(); shell = 0; next }
+      if (fc != "" && shell) {
+        bl[++nb] = $0; bn[nb] = NR
+        if (index($0, "CLAUDE_SKILL_DIR:-") || index($0, "command -v")) guarded = 1
+      }
+    }'  "$f"
+done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
 
 if [ "$errors" -gt 0 ]; then
   echo "vibe-lint-sources: $errors finding(s)"

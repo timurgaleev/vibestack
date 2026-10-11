@@ -73,6 +73,30 @@ d=$(mkfix big); { echo '# big'; for i in $(seq 1 401); do echo "line $i"; done; 
 out=$(bash "$LINT" "$d" 2>&1); rc=$?
 [ "$rc" -eq 1 ] && grep -q "max 400" <<<"$out" && ok "oversized snippet caught" || no "size rule missed (rc=$rc)"
 
+# 8. hostvars: a host-only variable inside a bash fence warns without failing;
+#    the same token in prose does not warn.
+d=$(mkfix hostvar); printf '# demo\n\nPass $ARGUMENTS through.\n\n```bash\necho "$ARGUMENTS"\n```\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "hostvars warning does not fail the lint" || no "hostvars warning failed the lint (rc=$rc)"
+grep -q 'warn: .*SKILL.md:6: \$ARGUMENTS is substituted only by Claude Code' <<<"$out" \
+  && ok "\$ARGUMENTS in a bash fence warns with file:line" || no "\$ARGUMENTS in a fence not warned: $out"
+[ "$(grep -c '^warn:' <<<"$out")" -eq 1 ] && ok "prose mention does not warn" || no "prose mention warned: $out"
+
+d=$(mkfix skilldir); printf '# demo\n```bash\nbash "${CLAUDE_SKILL_DIR}/bin/x.sh"\n```\n```bash\nD="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/demo}"\n```\n```sh\ncommand -v x >/dev/null || bash "${CLAUDE_SKILL_DIR}/bin/x.sh"\n```\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && grep -q 'warn: .*SKILL.md:3: \${CLAUDE_SKILL_DIR} is substituted only by Claude Code' <<<"$out" \
+  && ok "bare \${CLAUDE_SKILL_DIR} in a fence warns" || no "bare CLAUDE_SKILL_DIR not warned (rc=$rc): $out"
+[ "$(grep -c '^warn:' <<<"$out")" -eq 1 ] && ok "a :- default or command -v fallback in the block does not warn" \
+  || no "guarded CLAUDE_SKILL_DIR warned: $out"
+
+d=$(mkfix hostsnip); printf '# snip\n~~~sh\nset -- $ARGUMENTS\n~~~\n' > "$d/lib/snippets/args.md"
+out=$(bash "$LINT" "$d" 2>&1)
+grep -q 'warn: .*args.md:3: \$ARGUMENTS' <<<"$out" && ok "snippets are checked too" || no "snippet not checked: $out"
+
+d=$(mkfix hostother); printf '# demo\n```text\n$ARGUMENTS\n```\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1)
+grep -q '^warn:' <<<"$out" && no "non-shell fence warned: $out" || ok "non-shell fence does not warn"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"
