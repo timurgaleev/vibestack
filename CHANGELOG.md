@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.54.0 — 2026-10-11
+
+### Added
+
+- **`/vibe-gc` audits runtime configuration you no longer use** — unused
+  skills, orphaned hooks, stale caches and leftover install directories across
+  the Claude, Cursor, Kiro and Codex roots. It is audit-only by default; a
+  removal is confirmed per item, moved to a trash directory and logged so it
+  can be undone. MCP servers, n8n and cron state are never touched. A skill
+  counts as unused only when transcripts were actually read.
+- **Opt-in Jira adapter in `/spec` and `/ship`.** `/spec` reads the ticket to
+  seed acceptance criteria; `/ship` comments on or transitions a ticket only
+  with a separate explicit approval, never because the branch name carries a
+  key. Specs now give each acceptance criterion an ID, a verification step,
+  and `TBD` markers for open points.
+- **Compaction snapshots (Claude Code).** A `PreCompact` hook saves a context
+  snapshot before the conversation is compacted.
+- **`/health skills`** reports skill usage (with nested subagent
+  transcripts; an unmeasured skill is reported as unmeasured, not as zero) and
+  the description budget. READY requires every category to have run.
+- **`/learn distill`** turns recurring learnings into memrain facts;
+  **`/document-generate`** gains an ADR mode that follows the repository's
+  existing ADR location; **`/skillify`** searches for an existing skill before
+  writing a new one and sanitizes captured content.
+- **`/design-html` deck mode** with a viewport-fit gate
+  (`scrollHeight <= clientHeight` per slide).
+
+### Changed
+
+- **`/careful` asks before more irreversible commands:** `terraform`/`tofu
+  destroy` and `-auto-approve`, destructive AWS verbs, `helm`/`argo` deletes,
+  `--no-verify` and `git commit -n`, package publishes (including workspace
+  forms; `--dry-run` passes), and edits to CI workflow and gate files. Global
+  options before the subcommand (`aws --profile prod …`, `helm -n prod …`,
+  `git -C dir …`) no longer slip past. A malformed custom pattern warns and is
+  skipped.
+- **Reviews check production failure modes in context:** idempotency,
+  fail-fast on missing environment, fail-open gates (`/review`), trust
+  boundaries and containment (`/mcp-review`), pinned versions and hook
+  interpolation (`/cso`), fork-PR reproduction rules (`/address-pr-review`),
+  and channel discipline (`/connect-review`).
+- **`/qa-only` makes manual accessibility checks mandatory** (axe stays
+  optional). When they did not run, Accessibility is reported as `not run`
+  and excluded from the score instead of scoring 100.
+- **`/investigate`** has an LLM-agent debugging branch; **`/plan-eng-review`**
+  writes a cold-start brief; **`/agent-eval`** reports pass@k and pass^k with
+  the independence assumption stated; **`/ai-cost-guard`** checks caching and
+  budgets; **`/canary`** probes SSE first-event and content types.
+- **Claude configuration:** commit and PR attribution is switched off through
+  the `attribution` setting; rules add a status vocabulary, a non-regression
+  boundary, non-overlapping subagent write lanes and treating inbound content
+  as untrusted; agents gain FastAPI, Kubernetes triage and AI kill-switch
+  lanes.
+
+### Fixed
+
+- **Installing the configuration keeps your own hooks.** Hook lists are merged
+  per event (yours kept, ours appended), and uninstall restores exactly the
+  hooks you had.
+- **The fresh-shell lint understands `read` flags**, so `read -r NAME` counts
+  as assigning `NAME`.
+
 ## 1.53.0 — 2026-10-09
 
 ### Fixed
