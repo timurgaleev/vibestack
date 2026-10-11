@@ -234,6 +234,7 @@ Evaluate:
 * Whether key flows deserve ASCII diagrams in the plan or in code comments.
 * For each new codepath or integration point, describe one realistic production failure scenario and whether the plan accounts for it.
 * **Distribution architecture:** If this introduces a new artifact (binary, package, container), how does it get built, published, and updated? Is the CI/CD pipeline part of the plan or deferred?
+* **Patterns to follow:** existing code the implementation should copy — an error-handling path, a test layout, a similar endpoint — cited as `file:line`. A plan that names none invites a fresh pattern beside an existing one.
 
 **STOP.** For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. The AskUserQuestion call is a tool_use, not prose — call the tool directly. Do NOT edit the plan file with the proposed fix or call ExitPlanMode before the user answers; an issue whose fix looks obvious is still an issue. Only proceed to the next section after ALL issues in this section are resolved.
 
@@ -737,7 +738,7 @@ If any failure mode has no test AND no error handling AND would be silent, flag 
 
 Analyze the plan's implementation steps for parallel execution opportunities. This helps the user split work across git worktrees (via Claude Code's Agent tool with `isolation: "worktree"` or parallel workspaces).
 
-**Skip if:** all steps touch the same primary module, or the plan has fewer than 2 independent workstreams. In that case, write: "Sequential implementation, no parallelization opportunity."
+**Skip if:** all steps touch the same primary module, or the plan has fewer than 2 independent workstreams. In that case, write: "Sequential implementation, no parallelization opportunity." Item 5 below can still apply.
 
 **Otherwise, produce:**
 
@@ -759,6 +760,14 @@ Format: `Lane A: step1 → step2 (sequential, shared models/)` / `Lane B: step3 
 3. **Execution order** — which lanes launch in parallel, which wait. Example: "Launch A + B in parallel worktrees. Merge both. Then C."
 
 4. **Conflict flags** — if two parallel lanes touch the same module directory, flag it: "Lanes X and Y both touch module/ — potential merge conflict. Consider sequential execution or careful coordination."
+
+5. **Cold-start brief per lane** — only when there are two or more lanes, or another agent or session will execute the plan (this applies even when the section above was skipped as sequential). Skip it for a single sequential lane you execute yourself. Each brief stands alone, so an executor with no access to this conversation can start from it:
+   - **Goal** — one sentence, the outcome of the lane
+   - **Files it owns** — the only files or directories it may change
+   - **Files it must not touch** — especially those another lane owns
+   - **Exit check** — the command or observation that proves the lane is done
+   - **Patterns to follow** — existing code to copy, as `file:line`
+   - **Hand back** — what it reports when finished (changed files, check output, open questions)
 
 ### Completion summary
 At the end of the review, fill in and display this summary so the user can see all findings at a glance:

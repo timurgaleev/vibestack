@@ -93,6 +93,21 @@ Gather context before forming any hypothesis.
 5. **Check investigation history:** Search prior learnings for investigations on the same files. Recurring bugs in the same area are an architectural smell. If prior investigations exist, note patterns and check if the root cause was structural.
 
 {{include lib/snippets/prior-learnings.md}}
+
+**When the failing component is an LLM agent**, reproduce first: the same prompt, the same tools and the same memory state. A failure you cannot replay is not yet evidence about any layer. Then triage by layer, each with its evidence question:
+
+- **System prompt** — did it change? Diff the prompt that ran against the last one that worked.
+- **Session history** — what was in context at the failing turn? Read the actual transcript, not the intended one.
+- **Long-term memory** — which entries were retrieved for this turn? Was a model-authored entry treated as a user-stated fact (memory contamination)?
+- **Tool selection, execution and result interpretation** — was the right tool chosen, did the call actually run and return, and was the result read correctly or misread?
+- **Hidden retry or repair loops** — does a second model call rewrite or "fix" the answer after the one you are looking at?
+- **Transport** — timeouts, truncated or cut-off streams, a client that drops part of the response.
+- **Stale state** — cached config, an old index or embedding store, state from a previous run reused as live.
+
+Also check for a requirement that exists only in the prompt and nowhere in code — for example "always call the lookup tool first". Nothing enforces it, so the model can skip it silently.
+
+The list orders the search; it is not a verdict. Assign the fault only to the layer the evidence names, and if the evidence names none, keep gathering.
+
 Output: **"Root cause hypothesis: ..."** — a specific, testable claim about what is wrong and why.
 
 ### Refresh learnings for the hypothesis you just named
