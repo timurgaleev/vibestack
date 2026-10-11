@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.54.1 — 2026-10-11
+
+### Docs
+
+- **The skills reference covers the 1.54.0 features:** Jira in `/spec` and
+  `/ship`, acceptance-criterion IDs, `/health skills` and the READY rule,
+  `/learn distill`, ADR mode, deck mode, compaction snapshots, the `/qa-only`
+  accessibility rule, `/canary` SSE and content-type probes, pass^k in
+  `/agent-eval`, cold-start briefs, the LLM-agent branch of `/investigate`,
+  and the `/skillify` search and sanitize steps.
+
 ## 1.54.0 — 2026-10-11
 
 ### Added
