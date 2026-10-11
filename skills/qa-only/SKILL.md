@@ -337,7 +337,7 @@ From the browser alone you can answer `protects` (the user-visible behavior) and
    ```
 
 **Regression mode:** After writing the report, load `$REPORT_DIR/prior-baseline.json` — never the `baseline.json` this run just wrote, so the run never compares with itself. With `PRIOR_BASELINE: none` or `BASELINE_MISSING`, skip the comparison and say why in the report. Compare:
-- Health score delta
+- Health score delta — only when both runs scored the same categories; otherwise report the per-category deltas and say which category was `not run`, since a change in what could be checked is not a change in the app
 - Issues fixed (in baseline but not current)
 - New issues (in current but not baseline)
 - Append the regression section to the report
@@ -373,7 +373,7 @@ Grade the step 8 findings this way, then deduct as above:
 - **Medium** — a target under 24×24 with no exception; skipped heading levels; a missing `main` or `nav` landmark.
 - **Low** — decorative images with descriptive alt text (they should carry `alt=""`).
 
-A check that could not run is listed in the report as not run; it never counts as a pass.
+A check that could not run is listed in the report as not run; it never counts as a pass. When any manual step 8 check did not run — every quick-mode run, `NOT_SUPPORTED:press`, a blocked `js` — Accessibility has no score: report it as `not run`, record it as `null` in `categoryScores`, and leave it out of the final score. axe is optional and never affects this.
 
 ### Weights
 | Category | Weight |
@@ -388,7 +388,7 @@ A check that could not run is listed in the report as not run; it never counts a
 | Accessibility | 15% |
 
 ### Final Score
-`score = Σ (category_score × weight)`
+`score = Σ (category_score × weight) / Σ weight`, both sums over the categories that have a score. With every category scored the divisor is 100%. When one is `not run`, label the score "partial coverage" and name the missing category next to it.
 
 ---
 

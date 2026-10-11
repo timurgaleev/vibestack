@@ -90,6 +90,10 @@ echo "/ship key detection"
 grep -q 'JIRA_HINT:' "$TMP/ship.md" && ok "ship prints JIRA_HINT:" || no "JIRA_HINT: missing"
 awk 'BEGIN{RS=""} /JIRA_KEY: <key>/ && /--jira/ {f=1} END{exit !f}' "$TMP/ship.md" \
   && ok "JIRA_KEY: comes from an explicit --jira flag" || no "JIRA_KEY: not tied to --jira"
+# A bare --jira must not silently become JIRA_KEY: none: the user asked for
+# Jira, so the key is asked for (the branch hint offered, never assumed).
+awk 'BEGIN{RS=""} /bare `--jira`/ && /AskUserQuestion/ && /JIRA_HINT/ {f=1} END{exit !f}' "$TMP/ship.md" \
+  && ok "bare --jira asks for the key, offering the branch hint" || no "bare --jira falls through to JIRA_KEY: none"
 
 # The fenced bash block that prints JIRA_HINT, run against real branches.
 awk '/^[[:space:]]*```bash$/ {buf=""; on=1; next} on && /^[[:space:]]*```$/ {on=0; if (buf ~ /JIRA_HINT:/) {printf "%s", buf; exit}} on {sub(/^   /, ""); buf = buf $0 "\n"}' \

@@ -283,14 +283,14 @@ Use these status labels:
 
 **Verdict line.** End the dashboard with one of:
 
-- `VERDICT: READY` only when every required check ran and exited 0. The required
-  checks are every `## Health Stack` entry, or every detected tool when the stack
-  was auto-detected.
+- `VERDICT: READY` only when every required check ran and exited 0 and all five
+  categories were checked. The required checks are every `## Health Stack` entry,
+  or every detected tool when the stack was auto-detected.
 - `VERDICT: NOT READY` when every required check ran and at least one exited
   non-zero.
-- `VERDICT: INCOMPLETE` when any required check was SKIPPED, FAILED or ERROR. Name
-  each one. A high composite does not change this: never `READY` with partial
-  coverage.
+- `VERDICT: INCOMPLETE` when any required check was SKIPPED, FAILED or ERROR, or
+  fewer than five categories were checked. Name each missing one. A high composite
+  does not change this: never `READY` with partial coverage.
 
 Always show the coverage lines. With skipped categories, label the score
 `— partial coverage` (e.g. `COMPOSITE SCORE: 8.0 / 10 — partial coverage`,
@@ -409,14 +409,15 @@ Both tools are read-only.
 
 ```bash
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-skill-usage" --days 90
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-context-budget" --runtime claude --rendered "$HOME/.claude/skills" --warn-only
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-context-budget" --runtime claude --rendered "$HOME/.claude/skills" --config-dir "" --top 0 --warn-only
 ```
 
 `vibe-skill-usage` counts `typed` (the user typed `/<name>`) and `model` (the model
 called the skill) from Claude Code transcripts, `nested` for the share found in
 subagent transcripts, and `tracked` from the slash-command analytics file. Typed and
 tracked overlap — never add them. `vibe-context-budget` gives each skill's
-description length.
+description length (`--top 0` lists every skill; `--config-dir ""` skips the repo
+config payload, which an installed copy does not have).
 
 Present one row per installed skill:
 

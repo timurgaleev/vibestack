@@ -76,16 +76,16 @@ session.
 | `docker rm -f` / `docker system prune` | `docker system prune -a` | Container/image loss |
 | `terraform destroy` / `tofu destroy` | `terraform destroy` | Infrastructure teardown |
 | `terraform apply ... -auto-approve` | `tofu apply -auto-approve` | Unreviewed infrastructure change |
-| `aws <service> delete-*` / `terminate-instances` / `deregister-*` | `aws ec2 terminate-instances --instance-ids i-1` | Cloud resource loss |
-| `helm uninstall` / `helm delete` | `helm uninstall web` | Release removal |
+| `aws [options] <service> delete-*` / `terminate-instances` / `deregister-*` | `aws --profile prod ec2 terminate-instances --instance-ids i-1` | Cloud resource loss |
+| `helm [options] uninstall` / `helm delete` | `helm -n prod uninstall web` | Release removal |
 | `argocd app delete` | `argocd app delete web` | Cascading resource deletion |
 | `sudo rm` | `sudo rm -r /opt/x` | Delete as root |
 | `chmod 777` | `chmod -R 777 ./uploads` | World-writable files |
-| `--no-verify` on `git commit` / `git push` | `git commit --no-verify -m x` | Bypassed hook |
-| `npm publish` / `pnpm publish` / `yarn publish` | `npm publish` | Public, hard-to-undo release |
+| `--no-verify` on `git commit` / `git push`, `git commit -n` | `git -C repo commit -n -m x` | Bypassed hook |
+| `npm publish` / `pnpm publish` / `yarn publish`, with workspace flags | `pnpm -r publish` | Public, hard-to-undo release |
 
-A plain `terraform apply` (it shows the plan and asks) and `terraform plan
--destroy` (read-only) pass.
+A plain `terraform apply` (it shows the plan and asks), `terraform plan
+-destroy` (read-only) and `npm publish --dry-run` pass.
 
 ## Gate files
 
@@ -93,7 +93,7 @@ The hook also runs on Edit and Write. An edit to a file that gates the build
 asks: lint and format config (`.eslintrc*`, `eslint.config.*`, `biome.json`,
 `ruff.toml`, `.flake8`, `.golangci.yml`, `.pre-commit-config.yaml`), type-check
 config (`tsconfig*.json`, `mypy.ini`), test and coverage config (`pytest.ini`,
-`codecov.yml`), CI (`.github/workflows/*.yml`, `.gitlab-ci.yml`, `Jenkinsfile`)
+`codecov.yml`), CI (`.github/workflows/**/*.yml`, `.gitlab-ci.yml`, `Jenkinsfile`)
 and migrations (`migrations/`, `migrate/`, `db/migrate/`, `alembic/versions/`).
 The cheapest way past a failing check is to loosen the check, so the prompt
 asks you to confirm the edit tightens or keeps it. Every other path passes.

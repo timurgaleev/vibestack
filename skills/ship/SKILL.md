@@ -195,6 +195,12 @@ Never skip a verification step because a prior `/ship` run already performed it.
    `[A-Z][A-Z0-9]+-[0-9]+`; otherwise print `JIRA_KEY: none`. When the hint and
    the flag disagree, say so and use the flag.
 
+   A bare `--jira` with no key asks for one rather than dropping Jira: with a
+   `JIRA_HINT`, AskUserQuestion "Use <hint> for Jira?" — A) use it, B) give another
+   key, C) no Jira; with no hint, ask for the key. Print `JIRA_KEY: <key>` only for A
+   or a key from B that matches the pattern above. A headless or spawned run cannot
+   ask, so it prints `JIRA_KEY: none` and says `--jira` needs a key.
+
 2. Run `git status` (never use `-uall`). Uncommitted changes are always included — no need to ask.
 
 3. Run `git diff <base>...HEAD --stat` and `git log <base>..HEAD --oneline` to understand what's being shipped.

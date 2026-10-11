@@ -120,5 +120,41 @@ refused "a path outside the known roots" "$TMP/sentinel"
 [ "$rc" -ne 0 ] && [ -f "$C/hooks/orphan.sh" ] \
   && ok "a refused path in a batch moves nothing" || no "batch with a refused path moved files (exit $rc)"
 
+# ── a second machine: partial usage, install leftovers, hook-dir noise ────
+export HOME="$TMP/home2"
+export VIBESTACK_HOME="$HOME/.vibestack"
+C2="$HOME/.claude"
+mkdir -p "$C2/skills/a" "$C2/skills/b" "$C2/hooks/__pycache__" "$C2/hooks/.git/objects/ab" \
+  "$VIBESTACK_HOME/analytics" "$C2/skills.old/foreign" "$C2/skills.staging.failed.123/x"
+printf -- '---\nname: a\n---\nbody\n' > "$C2/skills/a/SKILL.md"
+printf -- '---\nname: b\n---\nbody\n' > "$C2/skills/b/SKILL.md"
+# Analytics saw `a` typed, but there are no transcripts, so nobody measured
+# whether the model invoked `b`.
+python3 -I -c 'import datetime as d, json; print(json.dumps({"skill": "a", "ts": d.datetime.now(d.timezone.utc).isoformat()}))' \
+  > "$VIBESTACK_HOME/analytics/skill-usage.jsonl"
+printf '#!/usr/bin/env python3\n' > "$C2/hooks/h.py"
+printf 'bytecode\n' > "$C2/hooks/__pycache__/h.cpython-312.pyc"
+printf 'object\n' > "$C2/hooks/.git/objects/ab/cdef"
+printf '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/h.py"}]}]}}\n' > "$C2/settings.json"
+printf 'leftover\n' > "$C2/skills.old/foreign/SKILL.md"
+printf 'leftover\n' > "$C2/skills.staging.failed.123/x/SKILL.md"
+old_ts="$(python3 -I -c 'import datetime as d; print((d.datetime.now()-d.timedelta(days=45)).strftime("%Y%m%d%H%M"))')"
+find "$C2/skills.old" "$C2/skills.staging.failed.123" -exec touch -t "$old_ts" {} +
+
+out2="$(run_scan --days 30)"
+printf '%s\n' "$out2" | grep -q '/skills/b.*usage: none' \
+  && no "usage counted as measured with no transcripts read: $out2" || ok "no transcripts read leaves model usage unmeasured"
+printf '%s\n' "$out2" | awk -F'\t' '$2=="caches" && $3 ~ /\/\.claude\/skills\.old$/' | grep -q . \
+  && ok "install leftover skills.old beside a root is a caches candidate" || no "skills.old not flagged: $out2"
+printf '%s\n' "$out2" | awk -F'\t' '$2=="caches" && $3 ~ /\/\.claude\/skills\.staging\.failed\.123$/' | grep -q . \
+  && ok "install leftover skills.staging.* is a caches candidate" || no "skills.staging.* not flagged: $out2"
+printf '%s\n' "$out2" | grep -qE '__pycache__|/\.git/' \
+  && no "generated or VCS files listed as orphan hooks: $out2" || ok "hook scan skips __pycache__ and .git"
+(cd "$TMP" && "$GC" trash "$C2/skills.old" >/dev/null 2>&1); rc=$?
+[ "$rc" -eq 0 ] && [ ! -e "$C2/skills.old" ] && [ -d "$VIBESTACK_HOME/gc-trash/$TODAY/caches/skills.old" ] \
+  && ok "trash moves an install leftover beside a root" || no "skills.old not trashed (exit $rc)"
+mkdir -p "$C2/skills-notes"
+refused "a sibling of a root that is not an install leftover" "$C2/skills-notes"
+
 echo "vibe-gc: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

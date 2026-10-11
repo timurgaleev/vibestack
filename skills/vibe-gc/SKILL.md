@@ -52,8 +52,9 @@ What the channels mean:
 - **permissions** — duplicate `permissions.allow` entries and `Bash(...)`
   entries already covered by `Bash(*)`. The scan only reports them.
 - **mcp** — configured servers. The bin cannot see whether a server is live.
-- **caches** — `file-history`, `shell-snapshots` and leftover `*.old` /
-  `*.staging.*` install entries older than `--days`.
+- **caches** — `file-history`, `shell-snapshots` and the `skills.old` /
+  `skills.staging.*` entries an interrupted install leaves beside a skills root,
+  older than `--days`.
 
 ## Step 2: Automation status
 

@@ -122,7 +122,7 @@ if [ -z "$CMD" ]; then
   set -e
   if [ -n "$_FILE_PATH" ] && printf '%s' "$_FILE_PATH" | grep -qE \
     -e '(^|/)(\.eslintrc(\.[a-z]+)?|eslint\.config\.[a-z]+|biome\.jsonc?|\.?ruff\.toml|\.pre-commit-config\.ya?ml|tsconfig(\.[a-z]+)?\.json|\.gitlab-ci\.ya?ml|Jenkinsfile|codecov\.ya?ml|\.golangci\.ya?ml|pytest\.ini|\.flake8|mypy\.ini)$' \
-    -e '(^|/)\.github/workflows/[^/]+\.ya?ml$' \
+    -e '(^|/)\.github/workflows/.+\.ya?ml$' \
     -e '(^|/)(migrations|migrate|alembic/versions)/.+$' 2>/dev/null; then
     _vibestack_log careful ask gate-file "$_FILE_PATH"
     _vibestack_analytics ask gate_file
@@ -413,7 +413,8 @@ if [ -n "$_WIN_SCAN" ]; then
   done
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'rm[[:space:]]+(-[a-zA-Z]*[rR]|--recursive)' 2>/dev/null; then
+# rm must start a word: `terraform -chdir=x` ends in "rm -" followed by an "r".
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])rm[[:space:]]+(-[a-zA-Z]*[rR]|--recursive)' 2>/dev/null; then
   WARN="Destructive: recursive delete (rm -r). This permanently removes files."
 fi
 
@@ -461,11 +462,17 @@ if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(terraform|tofu)([[:space:]]
   WARN="Destructive: terraform apply -auto-approve changes infrastructure without showing the plan first."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'aws[[:space:]]+[a-z0-9-]+[[:space:]]+(delete-[a-z-]+|terminate-instances|deregister-[a-z-]+)' 2>/dev/null; then
+# Global options, each with an optional value in its own token (`--profile
+# prod`, `-n prod`), may sit between a CLI and its subcommand. Prod commands
+# usually carry them, so a rule that wants the subcommand right after the CLI
+# misses exactly the commands it exists for.
+_OPTS='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
+
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE "aws${_OPTS}[[:space:]]+[a-z0-9-]+[[:space:]]+(delete-[a-z-]+|terminate-instances|deregister-[a-z-]+)" 2>/dev/null; then
   WARN="Destructive: AWS delete/terminate/deregister removes cloud resources. May impact production."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'helm[[:space:]]+(uninstall|delete)([[:space:]]|$)' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE "helm${_OPTS}[[:space:]]+(uninstall|delete)([[:space:]]|\$)" 2>/dev/null; then
   WARN="Destructive: helm uninstall removes a release and its Kubernetes resources."
 fi
 
@@ -481,12 +488,21 @@ if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'chmod[[:space:]]+(-[a-zA-Z]+
   WARN="Destructive: chmod 777 makes files world-writable."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+(commit|push)' 2>/dev/null \
-  && printf '%s' "$CMD" | grep -qE -- '--no-verify' 2>/dev/null; then
+# The bypass flag has to belong to the commit or push itself: tokens between
+# them may be quoted (a message can hold a `;`) but cannot cross a command
+# separator. `-n` is --no-verify on commit only; on push it is --dry-run.
+_TOK="([^;&|[:space:]\"']|\"[^\"]*\"|'[^']*')+"
+if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE \
+  -e "git${_OPTS}[[:space:]]+(commit|push)([[:space:]]+${_TOK})*[[:space:]]+--no-verify([[:space:];&|]|\$)" \
+  -e "git${_OPTS}[[:space:]]+commit([[:space:]]+${_TOK})*[[:space:]]+-[aeiopqsvz]*n[a-zA-Z]*([[:space:];&|]|\$)" 2>/dev/null; then
   WARN="Destructive: --no-verify skips the git hooks. A bypassed hook hides the failure it exists to catch."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(npm|pnpm)[[:space:]]+publish|yarn[[:space:]]+(npm[[:space:]]+)?publish' 2>/dev/null; then
+# Judged per command: `npm publish --dry-run` uploads nothing, but a dry run
+# chained ahead of a real publish must not excuse it.
+if [ -z "$WARN" ] && printf '%s' "$CMD" | tr ';&|' '\n\n\n' \
+  | grep -E "(npm|pnpm)${_OPTS}([[:space:]]+recursive)?[[:space:]]+publish([[:space:]]|\$)|yarn[[:space:]]+(npm[[:space:]]+)?publish" 2>/dev/null \
+  | grep -qvE -- '--dry-run' 2>/dev/null; then
   WARN="Destructive: package publish is public and cannot be cleanly taken back."
 fi
 

@@ -95,9 +95,37 @@ assert_decision "git commit --no-verify asks"   "$CAREFUL" '{"tool_input":{"comm
 assert_decision "npm publish asks"              "$CAREFUL" '{"tool_input":{"command":"npm publish"}}' ask
 assert_decision "yarn npm publish asks"         "$CAREFUL" '{"tool_input":{"command":"yarn npm publish"}}' ask
 assert_decision "npm run publish-docs passes"   "$CAREFUL" '{"tool_input":{"command":"npm run publish-docs"}}' allow
+assert_decision "aws --profile before service asks" "$CAREFUL" '{"tool_input":{"command":"aws --profile prod ec2 terminate-instances --instance-ids i-1"}}' ask
+assert_decision "aws --region before service asks" "$CAREFUL" '{"tool_input":{"command":"aws --region us-east-1 rds delete-db-instance --db-instance-identifier prod"}}' ask
+assert_decision "aws --profile=prod before service asks" "$CAREFUL" '{"tool_input":{"command":"aws --profile=prod ec2 terminate-instances --instance-ids i-1"}}' ask
+assert_decision "aws --profile s3 ls passes"    "$CAREFUL" '{"tool_input":{"command":"aws --profile prod s3 ls"}}' allow
+assert_decision "helm -n before uninstall asks" "$CAREFUL" '{"tool_input":{"command":"helm -n prod uninstall web"}}' ask
+assert_decision "helm --kube-context before delete asks" "$CAREFUL" '{"tool_input":{"command":"helm --kube-context prod delete web"}}' ask
+assert_decision "helm -n list passes"           "$CAREFUL" '{"tool_input":{"command":"helm -n prod list"}}' allow
+assert_decision "git commit -n asks"            "$CAREFUL" '{"tool_input":{"command":"git commit -n -m x"}}' ask
+assert_decision "git commit -anm asks"          "$CAREFUL" '{"tool_input":{"command":"git commit -anm x"}}' ask
+assert_decision "git -C dir commit --no-verify asks" "$CAREFUL" '{"tool_input":{"command":"git -C repo commit --no-verify -m x"}}' ask
+assert_decision "git -c k=v push --no-verify asks" "$CAREFUL" '{"tool_input":{"command":"git -c core.x=y push --no-verify"}}' ask
+assert_decision "quoted ; before --no-verify asks" "$CAREFUL" '{"tool_input":{"command":"git commit -m \"a; b\" --no-verify"}}' ask
+assert_decision "git commit -uno passes"        "$CAREFUL" '{"tool_input":{"command":"git commit -uno -m x"}}' allow
+assert_decision "git push -n (dry run) passes"  "$CAREFUL" '{"tool_input":{"command":"git push -n origin main"}}' allow
+assert_decision "--no-verify on a chained command passes" "$CAREFUL" '{"tool_input":{"command":"git commit -m x && lint-staged --no-verify"}}' allow
+assert_decision "pnpm -r publish asks"          "$CAREFUL" '{"tool_input":{"command":"pnpm -r publish"}}' ask
+assert_decision "pnpm --filter publish asks"    "$CAREFUL" '{"tool_input":{"command":"pnpm --filter pkg publish"}}' ask
+assert_decision "pnpm recursive publish asks"   "$CAREFUL" '{"tool_input":{"command":"pnpm recursive publish"}}' ask
+assert_decision "npm --workspace publish asks"  "$CAREFUL" '{"tool_input":{"command":"npm --workspace a publish"}}' ask
+assert_decision "npm publish --dry-run passes"  "$CAREFUL" '{"tool_input":{"command":"npm publish --dry-run"}}' allow
+assert_decision "dry run then real publish asks" "$CAREFUL" '{"tool_input":{"command":"npm publish --dry-run && npm publish"}}' ask
+assert_decision "terraform -chdir plan passes"  "$CAREFUL" '{"tool_input":{"command":"terraform -chdir=x plan"}}' allow
+_out=$(printf '%s' '{"tool_input":{"command":"terraform -chdir=x destroy"}}' | bash "$CAREFUL" 2>/dev/null)
+case "$_out" in
+  *"terraform destroy"*) ok "terraform -chdir destroy gives the terraform reason" ;;
+  *) bad "terraform -chdir destroy gives the terraform reason" "terraform destroy warning" "$_out" ;;
+esac
 
 echo "careful — gate files on Edit/Write"
 assert_decision "workflow file asks"            "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":".github/workflows/ci.yml"}}' ask
+assert_decision "nested workflow file asks"     "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":".github/workflows/deploy/prod.yml"}}' ask
 assert_decision "tsconfig.json asks"            "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"tsconfig.json"}}' ask
 assert_decision "migration file asks"           "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"db/migrate/20240101_add_x.rb"}}' ask
 assert_decision "nested migration file asks"    "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"/repo/prisma/migrations/20240101_x/migration.sql"}}' ask

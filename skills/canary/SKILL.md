@@ -221,19 +221,28 @@ one from the page. Write that URL, one line, to
 
 ```bash
 sse_url=$(head -n1 ".vibestack/canary-reports/sse-url.txt")
+hdr=".vibestack/canary-reports/sse-headers.txt"
 case "$sse_url" in
   http://*|https://*)
-    if curl -N -sS --max-time 10 -- "$sse_url" | head -c 65536 | grep -q -m1 -E '^(event|data):'; then
+    : > "$hdr"
+    if curl -N -sS --max-time 10 -D "$hdr" -- "$sse_url" 2>/dev/null | head -c 65536 | grep -q -m1 -E '^(event|data):'; then
       echo "SSE_FIRST_EVENT: yes"
     else
-      echo "SSE_FIRST_EVENT: no"
+      status=$(awk 'toupper($1) ~ /^HTTP\// {s = $2} END {print s}' "$hdr")
+      case "$status" in
+        3[0-9][0-9]|401|403) echo "SSE_FIRST_EVENT: unknown (HTTP $status)" ;;
+        *) echo "SSE_FIRST_EVENT: no" ;;
+      esac
     fi ;;
   *) echo "SSE_URL_INVALID: not an http(s) URL" ;;
 esac
 ```
 
 The connection is bounded at 10 seconds and 64 KB. `SSE_FIRST_EVENT: no` — the stream
-did not connect, or sent no `event:` or `data:` line inside those bounds — is CRITICAL. `SSE_URL_INVALID` is not a probe result: tell the user and skip the SSE probe.
+did not connect, or sent no `event:` or `data:` line inside those bounds — is CRITICAL.
+`SSE_FIRST_EVENT: unknown` — a redirect, 401 or 403 — means the stream wants a login the
+probe cannot send: curl carries none of the browse session's cookies. Report it once,
+never alert on it, the same as an `unknown` link. `SSE_URL_INVALID` is not a probe result: tell the user and skip the SSE probe.
 
 ### Phase 3: Page Discovery
 

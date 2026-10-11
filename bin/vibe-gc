@@ -16,7 +16,8 @@
 # claim), hooks (scripts no settings entry or other hook script references), permissions (duplicate
 # or Bash(*)-shadowed allow entries; reported, never edited), mcp (configured
 # servers; liveness needs session evidence) and caches (old file-history,
-# shell-snapshots, *.old and *.staging.* entries).
+# shell-snapshots, and the <root>.old / <root>.staging.* entries ./install
+# leaves beside a skills root).
 #
 # Nothing is ever hard-deleted. Settings, ~/.claude.json, .mcp.json, transcripts
 # (~/.claude/projects), per-project state ($VIBESTACK_HOME/projects) and
@@ -166,6 +167,12 @@ def used_skill_names(days, known):
         return None
     if not isinstance(report, dict) or not isinstance(report.get("skills"), list):
         return None
+    # Model invocations are only in the transcripts; analytics records typed
+    # slash commands alone. Without a transcript read, a skill only the model
+    # calls would look unused.
+    transcripts = report.get("transcripts")
+    if not isinstance(transcripts, dict) or not transcripts.get("read"):
+        return None
     seen = {s.get("skill") for s in report["skills"] if isinstance(s, dict)}
     # A report that saw no skill at all proves nothing about any one skill: the
     # transcripts may be absent or in a shape the reader does not know.
@@ -225,6 +232,14 @@ def hook_commands(node, out):
             hook_commands(v, out)
 
 
+def walk_hooks(hooks_dir):
+    """os.walk without hidden, VCS, bytecode and dependency directories: what
+    they hold is generated or vendored, never a hook script a setting names."""
+    for d, dirs, files in os.walk(hooks_dir):
+        dirs[:] = [x for x in dirs if not x.startswith(".") and x not in ("__pycache__", "node_modules")]
+        yield d, dirs, files
+
+
 def scan_hooks():
     hooks_dir = os.path.join(CLAUDE, "hooks")
     if not os.path.isdir(hooks_dir):
@@ -241,7 +256,7 @@ def scan_hooks():
         if isinstance(data, dict):
             hook_commands(data, commands)
     texts = {}
-    for d, _, files in os.walk(hooks_dir):
+    for d, _, files in walk_hooks(hooks_dir):
         for n in files:
             p = os.path.join(d, n)
             try:
@@ -250,7 +265,7 @@ def scan_hooks():
             except OSError:
                 texts[p] = ""
     rows = []
-    for d, _, files in os.walk(hooks_dir):
+    for d, _, files in walk_hooks(hooks_dir):
         for n in sorted(files):
             p = os.path.join(d, n)
             rel = os.path.relpath(p, hooks_dir)
@@ -315,7 +330,21 @@ def scan_mcp():
     return rows
 
 
-def scan_caches(days):
+def install_leftover(p, roots):
+    """True when p is, or is inside, the <root>.old or <root>.staging.* entry
+    ./install leaves beside a skills root after an interrupted run."""
+    for root in roots:
+        r = os.path.realpath(root)
+        parent, base = os.path.dirname(r), os.path.basename(r)
+        if not under(p, parent):
+            continue
+        top = os.path.relpath(p, parent).split("/")[0]
+        if top == base + ".old" or top.startswith(base + ".staging."):
+            return True
+    return False
+
+
+def scan_caches(days, roots):
     cutoff = datetime.datetime.now().timestamp() - days * 86400
     rows = []
     for sub in ("file-history", "shell-snapshots"):
@@ -325,25 +354,21 @@ def scan_caches(days):
             m = newest_mtime(p)
             if m and m < cutoff:
                 rows.append(("caches", p, "%s entry older than %d days" % (sub, days), size_kb(p), day(m), "low"))
-    if os.path.isdir(VH):
-        skip = {os.path.join(VH, "projects"), TRASH}
-        for d, dirs, files in os.walk(VH):
-            dirs[:] = [x for x in dirs if os.path.join(d, x) not in skip]
-            for n in list(dirs) + files:
-                if not (n.endswith(".old") or ".staging." in n):
-                    continue
-                p = os.path.join(d, n)
-                m = newest_mtime(p)
-                if m and m < cutoff:
-                    rows.append(("caches", p, "leftover install entry older than %d days" % days,
-                                 size_kb(p), day(m), "medium"))
-                if n in dirs:
-                    dirs.remove(n)
+    for root in roots:
+        parent, base = os.path.dirname(root), os.path.basename(root)
+        for n in entries(parent):
+            if not (n == base + ".old" or n.startswith(base + ".staging.")):
+                continue
+            p = os.path.join(parent, n)
+            m = newest_mtime(p)
+            if m and m < cutoff:
+                rows.append(("caches", p, "leftover install entry older than %d days" % days,
+                             size_kb(p), day(m), "medium"))
     return rows
 
 
 def cmd_scan(days, roots):
-    rows = scan_skills(roots, days) + scan_hooks() + scan_permissions() + scan_mcp() + scan_caches(days)
+    rows = scan_skills(roots, days) + scan_hooks() + scan_permissions() + scan_mcp() + scan_caches(days, roots)
     rows.sort(key=lambda r: (RANK[r[5]], -r[3], r[0], r[1], r[2]))
     for i, r in enumerate(rows[:MAX_ROWS], 1):
         print("\t".join([str(i), r[0], clean(r[1]), clean(r[2]), str(r[3]), r[4], r[5]]))
@@ -402,7 +427,7 @@ def classify(raw, roots):
     for sub in ("file-history", "shell-snapshots"):
         if under(p, real(os.path.join(CLAUDE, sub))):
             return "caches", None
-    if under(p, real(VH)) and (name.endswith(".old") or ".staging." in name):
+    if install_leftover(p, roots):
         return "caches", None
     return None, "not under a known runtime root"
 

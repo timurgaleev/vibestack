@@ -58,7 +58,9 @@ LEAD = r"(?:^|[;&|(){!]|\bthen|\bdo|\belse|\btime|\bif|\belif|\bwhile|\buntil)[ 
 DECL = r"(?:export|local|readonly|declare|typeset)"
 ASSIGN = re.compile(LEAD + r"(?:" + DECL + r"(?:[ \t]+-[A-Za-z]+)*[ \t]+)?(" + NAME + r")(?:\[[^]]*\])?\+?=", re.M)
 ASSIGN_MULTI = re.compile(LEAD + DECL + r"((?:[ \t]+(?:-[A-Za-z]+|" + NAME + r"(?:=\S*)?))+)", re.M)
-READ = re.compile(r"\bread[ \t]+((?:-[A-Za-z]+(?:[ \t]+(?!-)\S+)?[ \t]+)*)(" + NAME + r"(?:[ \t]+" + NAME + r")*)")
+READ = re.compile(r"\bread[ \t]+([^\n;&|<>)]*)")
+# read's flags that take the next word as a value; -a takes an array name.
+READ_VALUED = set("dinNptu")
 FOR = re.compile(r"\bfor[ \t]+(" + NAME + r")[ \t]+in\b")
 GETOPTS = re.compile(r"\bgetopts[ \t]+\S+[ \t]+(" + NAME + r")")
 PRINTF_V = re.compile(r"\bprintf[ \t]+-v[ \t]+(" + NAME + r")")
@@ -131,12 +133,27 @@ def code_only(src):
     return "".join(res)
 
 
+def read_names(args):
+    words, out, i = re.findall(r'"[^"]*"|\S+', args), [], 0
+    while i < len(words):
+        w = words[i]
+        if w.startswith("-") and len(w) > 1:
+            if w[-1] == "a" and i + 1 < len(words):
+                out.append(words[i + 1])
+            i += 2 if w[-1] in READ_VALUED or w[-1] == "a" else 1
+            continue
+        if re.fullmatch(NAME, w):
+            out.append(w)
+        i += 1
+    return out
+
+
 def assigned(code):
     names = set(m.group(1) for m in ASSIGN.finditer(code))
     for m in ASSIGN_MULTI.finditer(code):
         names.update(t.split("=", 1)[0] for t in m.group(1).split() if not t.startswith("-"))
     for m in READ.finditer(code):
-        names.update(m.group(2).split())
+        names.update(read_names(m.group(1)))
     for rx in (FOR, GETOPTS, PRINTF_V, DEFAULT_ASSIGN):
         names.update(m.group(1) for m in rx.finditer(code))
     for rx, defs in EVAL_DEFS:
@@ -205,7 +222,10 @@ fixture local 'for X in a b; do echo "$X"; done'
 fixture caseassign 'case "$1" in a) X=$(date) ;; esac; echo "$X"'
 fixture defassign ': "${X:=$(date)}"; echo "$X"'
 fixture ifassign 'if X=$(date); then echo "$X"; fi'
-for f in cross placeholder literal tracked braced env local caseassign defassign ifassign; do
+fixture readloop 'printf "a\\n" | while IFS= read -r X; do echo "$X"; done'
+fixture readprompt 'read -r -p "Name: " X; echo "$X"'
+fixture readtwo 'read -r X Y <<< "a b"; echo "$X $Y"'
+for f in cross placeholder literal tracked braced env local caseassign defassign ifassign readloop readprompt readtwo; do
   scan "$TMP/allow.txt" "$TRACKED" "fx=$f.md=$FX/$f.md" | grep '^BAD' > "$TMP/fx-$f.out" || true
 done
 [ -s "$TMP/fx-cross.out" ] && ok "a block reading another block's variable is flagged" || no "cross-block read missed"
@@ -218,6 +238,10 @@ done
 [ ! -s "$TMP/fx-caseassign.out" ] && ok "an assignment after a case pattern counts" || no "case assignment flagged: $(cat "$TMP/fx-caseassign.out")"
 [ ! -s "$TMP/fx-defassign.out" ] && ok "a \${X:=...} default assignment counts" || no "default assignment flagged: $(cat "$TMP/fx-defassign.out")"
 [ ! -s "$TMP/fx-ifassign.out" ] && ok "an assignment in an if condition counts" || no "if assignment flagged: $(cat "$TMP/fx-ifassign.out")"
+# read's flags are not names, and only -d -i -n -N -p -t -u take a value.
+for f in readloop readprompt readtwo; do
+  [ ! -s "$TMP/fx-$f.out" ] && ok "read assigns its names ($f)" || no "read name flagged ($f): $(cat "$TMP/fx-$f.out")"
+done
 
 echo "every skill block sets the state it reads"
 render_root="$TMP/r"
