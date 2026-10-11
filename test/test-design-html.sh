@@ -18,7 +18,10 @@
 #     that sets them, since each block is a fresh shell, and the port is read
 #     only once the server listens;
 #   - Case A opens the image approved.json's approved_path names, and every
-#     skill that writes approved.json records that field.
+#     skill that writes approved.json records that field;
+#   - deck mode is explicit, its gate asserts scrollHeight <= clientHeight and
+#     splits a failing slide (never overflow: hidden), and its gate block sets
+#     each viewport before the fit check and screenshot with $B rebound.
 #
 # Usage: test/test-design-html.sh [repo-root]
 set -uo pipefail
@@ -156,6 +159,65 @@ for w in design-shotgun design-consultation office-hours; do
   grep -Fq '"approved_path": image' "$SRC/skills/$w/SKILL.md" \
     && ok "$w records approved_path" || no "$w writes approved.json without approved_path"
 done
+
+echo "Deck mode"
+present "deck mode section exists" '## Deck mode'
+DECK="$TMP/deck.md"
+python3 -I - "$R" "$DECK" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+m = re.search(r'^## Deck mode\n(.*?)(?=^## |\Z)', s, re.S | re.M)
+open(sys.argv[2], 'w').write(m.group(1) if m else '')
+PY
+if [ -s "$DECK" ]; then
+  grep -Fq 'never the default' "$DECK" && ok "deck mode is explicit, never the default" || no "deck mode is explicit, never the default"
+  GATE="$(python3 -I - "$DECK" <<'PY'
+import sys
+for p in open(sys.argv[1]).read().split('\n\n'):
+    if 'scrollHeight <= clientHeight' in p:
+        print(p)
+PY
+)"
+  [ -n "$GATE" ] && ok "gate paragraph asserts scrollHeight <= clientHeight" || no "gate paragraph asserts scrollHeight <= clientHeight"
+  printf '%s\n' "$GATE" | grep -qw 'split' && ok "gate paragraph splits a failing slide" || no "gate paragraph splits a failing slide"
+  # Clipping a slide hides the overflow instead of fixing it.
+  if grep -F 'overflow: hidden' "$DECK" | grep -vqiw 'never'; then
+    no "deck mode never proposes overflow: hidden"; grep -nF 'overflow: hidden' "$DECK" | sed 's/^/       /'
+  else
+    ok "deck mode never proposes overflow: hidden"
+  fi
+  grep -Fq 'BROWSE_NOT_AVAILABLE' "$DECK" && ok "deck mode reports text-only without browse" || no "deck mode reports text-only without browse"
+  DB="$(python3 -I - "$DECK" <<'PY'
+import re, sys
+for b in re.findall(r'^```bash\n(.*?)^```', open(sys.argv[1]).read(), re.S | re.M):
+    if '$B' in b:
+        print(b, end='')
+PY
+)"
+  if [ -n "$DB" ] && printf '%s\n' "$DB" | grep -Eq '^B='; then ok "deck gate block rebinds \$B"; else no "deck gate block rebinds \$B"; fi
+  for vp in 1920x1080 1280x720 375x667; do
+    # The viewport is set, then the fit check and screenshot run before the next viewport change.
+    if printf '%s\n' "$DB" | awk -v vp="\$B viewport $vp" '
+         $0 == vp { on = 1; next }
+         on && /^\$B viewport / { exit }
+         on && /^\$B js .*scrollHeight <= .*clientHeight/ { js = 1 }
+         on && /^\$B screenshot / && js { found = 1; exit }
+         END { exit !found }'; then
+      ok "viewport $vp set before its fit check and screenshot"
+    else
+      no "viewport $vp set before its fit check and screenshot"
+    fi
+  done
+  printf '%s\n' "$DB" | awk '/^\$B screenshot /{ exit !seen } /^\$B viewport /{ seen = 1 }' \
+    && ok "no deck screenshot before the first viewport" || no "no deck screenshot before the first viewport"
+  : > "$FS/deck-calls"
+  printf '%s\n' "$DB" | sed -e "s|<BROWSE_BIN>|$FS/browse|" -e 's|<SERVER URL>|http://127.0.0.1:1/finalized.html|' > "$FS/deck.sh"
+  (cd "$FS/work" && env -u B -u CLAUDE_SKILL_DIR HOME="$FS/home" PATH="/usr/bin:/bin" FS_CALLS="$FS/deck-calls" bash "$FS/deck.sh") >/dev/null 2>&1
+  [ "$(grep -c '' "$FS/deck-calls")" = 10 ] && [ "$(head -1 "$FS/deck-calls")" = "goto http://127.0.0.1:1/finalized.html" ] \
+    && ok "deck gate drives the browse path SETUP printed, with \$B unset" || no "deck gate with \$B unset: $(cat "$FS/deck-calls")"
+else
+  no "deck mode section has content"
+fi
 
 echo
 echo "design-html: $pass passed, $fail failed"
