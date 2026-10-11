@@ -538,6 +538,13 @@ Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`
 
 ---
 
+### `/vibe-gc`
+Audit what is installed around the agent and retire what the owner confirms. `vibe-gc scan` ranks at most 20 candidates across all four runtime roots: skill directories no `.vibestack-manifest` claims (missing or empty `SKILL.md`, duplicate names), hook scripts nothing in the user settings or another hook references, duplicate or `Bash(*)`-shadowed permission entries, configured MCP servers, and old caches. Pack-owned skills are never candidates, unmeasured usage never counts as unused, and a server that fails to connect is evidence, not a verdict. Each item is confirmed on its own; a confirmed item moves to `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, and `vibe-gc undo <date>` moves it back. Settings, `~/.claude.json`, `.mcp.json` and transcripts are refused, and MCP, cron and launchd state is never changed. Headless runs audit only.
+
+Triggers: `vibe gc`, `clean up skills`, `garbage collect config`, `prune unused skills`
+
+---
+
 ## AWS & AI systems
 
 ### `/aws-cost`

@@ -37,6 +37,7 @@ investigate before fixing. Then run the implementation and review skills.
 | Save or restore working context across sessions | `/context-save`, `/context-restore` |
 | Record or review a session learning | `/learn` |
 | Check code-quality health or find refactors | `/health`, `/improve-arch` |
+| Audit and prune the installed runtime configuration | `/vibe-gc` |
 
 ## Second opinion from another model
 

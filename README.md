@@ -117,12 +117,13 @@ reserved there for Codex's own commands.
 | `/mcp-review` | Audit an MCP server: tools, auth, validation, injection surface | |
 | `/telegram` | Read, transcribe and send Telegram messages as your own account | |
 | `/careful` `/freeze` `/guard` | Refuse destructive commands and edits outside a boundary | |
+| `/vibe-gc` | Audit skills, hooks, permissions and caches across runtimes; soft-delete with undo | |
 
 The other 38 cover design, docs, retros, context handoff, browser QA and
 release. **[Every command, with what it does: `docs/skills.md`](docs/skills.md)**
 
 <p align="center">
-  <img src="./docs/assets/skill-map.svg" alt="The sixty commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
+  <img src="./docs/assets/skill-map.svg" alt="The sixty-one commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
 </p>
 
 ---

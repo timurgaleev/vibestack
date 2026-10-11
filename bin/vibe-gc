@@ -1,0 +1,505 @@
+#!/usr/bin/env bash
+# vibe-gc — audit the installed runtime configuration and soft-delete what the
+# owner confirms.
+#
+#   vibe-gc [scan] [--days N] [--roots DIR...]   read-only; ranked TSV, at most 20 rows:
+#                                               id channel path signal size_kb mtime confidence
+#   vibe-gc trash PATH...                       move each PATH to
+#                                               $VIBESTACK_HOME/gc-trash/<date>/<channel>/<name>
+#                                               and log an undo line; any refused path moves nothing
+#   vibe-gc undo [YYYY-MM-DD]                   move that date's trashed paths back, newest first
+#   vibe-gc log                                 print the log
+#
+# --roots applies to scan only; trash always judges against the default roots.
+#
+# Channels: skills (directories a runtime root's .vibestack-manifest does not
+# claim), hooks (scripts no settings entry or other hook script references), permissions (duplicate
+# or Bash(*)-shadowed allow entries; reported, never edited), mcp (configured
+# servers; liveness needs session evidence) and caches (old file-history,
+# shell-snapshots, *.old and *.staging.* entries).
+#
+# Nothing is ever hard-deleted. Settings, ~/.claude.json, .mcp.json, transcripts
+# (~/.claude/projects), per-project state ($VIBESTACK_HOME/projects) and
+# pack-owned skills are refused. MCP, cron and launchd state are never touched.
+set -euo pipefail
+
+_SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+_USAGE_BIN=""
+if [ -x "$_SELF_DIR/vibe-skill-usage" ]; then
+  _USAGE_BIN="$_SELF_DIR/vibe-skill-usage"
+elif command -v vibe-skill-usage >/dev/null 2>&1; then
+  _USAGE_BIN="$(command -v vibe-skill-usage)"
+fi
+export VIBE_GC_USAGE_BIN="$_USAGE_BIN"
+
+command -v python3 >/dev/null 2>&1 || { echo "vibe-gc: python3 is required" >&2; exit 2; }
+
+_PY=$(cat <<'PY'
+import datetime, json, os, re, shutil, subprocess, sys
+
+HOME = os.path.expanduser("~")
+VH = os.environ.get("VIBESTACK_HOME") or os.path.join(HOME, ".vibestack")
+CLAUDE = os.path.join(HOME, ".claude")
+TRASH = os.path.join(VH, "gc-trash")
+LOG = os.path.join(VH, "gc-log.md")
+MANIFEST = ".vibestack-manifest"
+DEFAULT_ROOTS = [os.path.join(HOME, d, "skills") for d in (".claude", ".agents", ".cursor", ".kiro")]
+RANK = {"high": 0, "medium": 1, "low": 2}
+MAX_ROWS = 20
+
+
+def die(msg, code=2):
+    sys.stderr.write("vibe-gc: %s\n" % msg)
+    sys.exit(code)
+
+
+def parse(argv):
+    cmd, days, roots, rest = "scan", 30, None, []
+    if argv and argv[0] in ("scan", "trash", "undo", "log"):
+        cmd, argv = argv[0], argv[1:]
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--days":
+            if i + 1 >= len(argv) or not argv[i + 1].isdigit():
+                die("--days needs a whole number")
+            days = int(argv[i + 1]); i += 2
+        elif a == "--roots":
+            roots = []; i += 1
+            while i < len(argv) and not argv[i].startswith("--"):
+                roots.append(argv[i]); i += 1
+            if not roots:
+                die("--roots needs at least one directory")
+        elif a in ("-h", "--help"):
+            print("usage: vibe-gc [scan|trash PATH...|undo [YYYY-MM-DD]|log] [--days N] [--roots DIR...]")
+            sys.exit(0)
+        elif a.startswith("--"):
+            die("unknown flag: %s" % a)
+        else:
+            rest.append(a); i += 1
+    roots = [os.path.abspath(os.path.expanduser(r)) for r in (roots or DEFAULT_ROOTS)]
+    return cmd, days, roots, rest
+
+
+def clean(s):
+    return re.sub(r"[\t\r\n]+", " ", str(s))
+
+
+def manifest_names(root):
+    p = os.path.join(root, MANIFEST)
+    try:
+        with open(p, encoding="utf-8") as f:
+            return {l.strip() for l in f if l.strip()}
+    except OSError:
+        return set()
+
+
+def load_json(path):
+    """Parsed JSON, None when absent, or the string 'unreadable'."""
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return "unreadable"
+
+
+def size_kb(path):
+    total = 0
+    if os.path.isfile(path) or os.path.islink(path):
+        try:
+            total = os.lstat(path).st_size
+        except OSError:
+            pass
+    else:
+        for d, _, files in os.walk(path):
+            for n in files:
+                try:
+                    total += os.lstat(os.path.join(d, n)).st_size
+                except OSError:
+                    pass
+    return (total + 1023) // 1024
+
+
+def newest_mtime(path):
+    try:
+        newest = os.lstat(path).st_mtime
+    except OSError:
+        return 0
+    if os.path.isdir(path) and not os.path.islink(path):
+        for d, dirs, files in os.walk(path):
+            for n in dirs + files:
+                try:
+                    newest = max(newest, os.lstat(os.path.join(d, n)).st_mtime)
+                except OSError:
+                    pass
+    return newest
+
+
+def day(ts):
+    return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d") if ts else "-"
+
+
+def entries(d):
+    try:
+        return sorted(n for n in os.listdir(d) if not n.startswith("."))
+    except OSError:
+        return []
+
+
+def settings_files():
+    return [os.path.join(CLAUDE, n) for n in ("settings.json", "settings.local.json")]
+
+
+# ── scan channels ───────────────────────────────────────────────────────────
+
+def used_skill_names(days, known):
+    """Skill names seen in Claude usage within `days`, or None when unmeasured."""
+    bin_ = os.environ.get("VIBE_GC_USAGE_BIN") or ""
+    if not bin_:
+        return None
+    try:
+        r = subprocess.run([bin_, "--days", str(days), "--json"], capture_output=True, text=True, timeout=120)
+        report = json.loads(r.stdout) if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    if not isinstance(report, dict) or not isinstance(report.get("skills"), list):
+        return None
+    seen = {s.get("skill") for s in report["skills"] if isinstance(s, dict)}
+    # A report that saw no skill at all proves nothing about any one skill: the
+    # transcripts may be absent or in a shape the reader does not know.
+    return (seen & known) or None
+
+
+def scan_skills(roots, days):
+    rows = []
+    pack = set()
+    present = {}
+    for root in roots:
+        pack |= manifest_names(root)
+        for n in entries(root):
+            if os.path.isdir(os.path.join(root, n)):
+                present.setdefault(n, set()).add(root)
+    used = used_skill_names(days, pack | set(present))
+    claude_root = os.path.join(CLAUDE, "skills")
+    for root in roots:
+        owned = manifest_names(root)
+        for n in entries(root):
+            p = os.path.join(root, n)
+            if n in owned or not os.path.isdir(p):
+                continue
+            signals, conf = [], []
+            skill_md = os.path.join(p, "SKILL.md")
+            if not os.path.isfile(skill_md):
+                signals.append("missing SKILL.md"); conf.append("high")
+            elif os.path.getsize(skill_md) == 0:
+                signals.append("empty SKILL.md"); conf.append("high")
+            others = sorted(r for r in present.get(n, ()) if r != root)
+            if n in pack:
+                signals.append("same name as a pack skill"); conf.append("low")
+            elif others:
+                signals.append("same name in " + ", ".join(others)); conf.append("low")
+            if root == claude_root and used is not None:
+                if n not in used:
+                    signals.append("usage: none in %d days" % days); conf.append("medium")
+                else:
+                    signals.append("usage: seen")
+            else:
+                signals.append("usage: unmeasured")
+            if not conf:
+                continue
+            best = min(conf, key=RANK.get)
+            rows.append(("skills", p, "; ".join(signals), size_kb(p), day(newest_mtime(p)), best))
+    return rows
+
+
+def hook_commands(node, out):
+    if isinstance(node, str):
+        out.append(node)
+    elif isinstance(node, dict):
+        for v in node.values():
+            hook_commands(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            hook_commands(v, out)
+
+
+def scan_hooks():
+    hooks_dir = os.path.join(CLAUDE, "hooks")
+    if not os.path.isdir(hooks_dir):
+        return []
+    # Any string in the settings counts as a reference (statusLine, env and
+    # plugin entries run scripts too), and so does any other hook script's
+    # text: a helper sourced by a live hook is not an orphan.
+    commands = []
+    for s in settings_files():
+        data = load_json(s)
+        if data == "unreadable":
+            sys.stderr.write("vibe-gc: %s is not valid JSON; hook scripts not judged\n" % s)
+            return []
+        if isinstance(data, dict):
+            hook_commands(data, commands)
+    texts = {}
+    for d, _, files in os.walk(hooks_dir):
+        for n in files:
+            p = os.path.join(d, n)
+            try:
+                with open(p, encoding="utf-8", errors="replace") as f:
+                    texts[p] = f.read(1 << 20)
+            except OSError:
+                texts[p] = ""
+    rows = []
+    for d, _, files in os.walk(hooks_dir):
+        for n in sorted(files):
+            p = os.path.join(d, n)
+            rel = os.path.relpath(p, hooks_dir)
+            joined = "\n".join(commands + [t for q, t in texts.items() if q != p])
+            if n.startswith(".") or n in joined or rel in joined:
+                continue
+            st = os.lstat(p)
+            rows.append(("hooks", p, "referenced by no settings hook", size_kb(p), day(st.st_mtime), "high"))
+    return rows
+
+
+def scan_permissions():
+    rows = []
+    for s in settings_files():
+        data = load_json(s)
+        if not isinstance(data, dict):
+            continue
+        allow = (data.get("permissions") or {}).get("allow") or []
+        if not isinstance(allow, list):
+            continue
+        allow = [a for a in allow if isinstance(a, str)]
+        mt = day(os.lstat(s).st_mtime)
+        seen, dup = set(), []
+        for a in allow:
+            if a in seen and a not in dup:
+                dup.append(a)
+            seen.add(a)
+        for a in dup:
+            rows.append(("permissions", s, "duplicate allow entry: %s (report only)" % a, 0, mt, "high"))
+        if "Bash(*)" in seen or "Bash" in seen:
+            for a in sorted(seen):
+                if a.startswith("Bash(") and a != "Bash(*)":
+                    rows.append(("permissions", s, "shadowed by Bash(*): %s (report only)" % a, 0, mt, "medium"))
+    return rows
+
+
+def project_mcp_file():
+    try:
+        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
+                             text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        top = ""
+    return os.path.join(top or os.getcwd(), ".mcp.json")
+
+
+def scan_mcp():
+    rows = []
+    for path in (os.path.join(HOME, ".claude.json"), project_mcp_file()):
+        data = load_json(path)
+        if not isinstance(data, dict):
+            continue
+        names = []
+        if isinstance(data.get("mcpServers"), dict):
+            names += list(data["mcpServers"])
+        for proj in (data.get("projects") or {}).values() if isinstance(data.get("projects"), dict) else []:
+            if isinstance(proj, dict) and isinstance(proj.get("mcpServers"), dict):
+                names += list(proj["mcpServers"])
+        mt = day(os.lstat(path).st_mtime)
+        for n in sorted(set(names)):
+            rows.append(("mcp", path, "configured: %s; evidence needed (liveness is session evidence; stale is not disposable)" % n,
+                         0, mt, "low"))
+    return rows
+
+
+def scan_caches(days):
+    cutoff = datetime.datetime.now().timestamp() - days * 86400
+    rows = []
+    for sub in ("file-history", "shell-snapshots"):
+        d = os.path.join(CLAUDE, sub)
+        for n in entries(d):
+            p = os.path.join(d, n)
+            m = newest_mtime(p)
+            if m and m < cutoff:
+                rows.append(("caches", p, "%s entry older than %d days" % (sub, days), size_kb(p), day(m), "low"))
+    if os.path.isdir(VH):
+        skip = {os.path.join(VH, "projects"), TRASH}
+        for d, dirs, files in os.walk(VH):
+            dirs[:] = [x for x in dirs if os.path.join(d, x) not in skip]
+            for n in list(dirs) + files:
+                if not (n.endswith(".old") or ".staging." in n):
+                    continue
+                p = os.path.join(d, n)
+                m = newest_mtime(p)
+                if m and m < cutoff:
+                    rows.append(("caches", p, "leftover install entry older than %d days" % days,
+                                 size_kb(p), day(m), "medium"))
+                if n in dirs:
+                    dirs.remove(n)
+    return rows
+
+
+def cmd_scan(days, roots):
+    rows = scan_skills(roots, days) + scan_hooks() + scan_permissions() + scan_mcp() + scan_caches(days)
+    rows.sort(key=lambda r: (RANK[r[5]], -r[3], r[0], r[1], r[2]))
+    for i, r in enumerate(rows[:MAX_ROWS], 1):
+        print("\t".join([str(i), r[0], clean(r[1]), clean(r[2]), str(r[3]), r[4], r[5]]))
+    if len(rows) > MAX_ROWS:
+        sys.stderr.write("vibe-gc: %d more candidates not shown; rerun after this batch\n" % (len(rows) - MAX_ROWS))
+    if not rows:
+        sys.stderr.write("vibe-gc: no candidates\n")
+
+
+# ── trash / undo / log ──────────────────────────────────────────────────────
+
+def under(path, base):
+    return path != base and path.startswith(base.rstrip("/") + "/")
+
+
+def norm(p):
+    a = os.path.abspath(os.path.expanduser(p))
+    return os.path.join(os.path.realpath(os.path.dirname(a)), os.path.basename(a))
+
+
+def classify(raw, roots):
+    """(channel, None) when the path may be trashed, else (None, reason)."""
+    if "'" in raw or "\n" in raw:
+        return None, "path holds a quote or newline"
+    p = norm(raw)
+    if not os.path.lexists(p):
+        return None, "does not exist"
+    real = lambda x: os.path.realpath(x)
+    name = os.path.basename(p)
+    if p == real(os.path.join(HOME, ".claude.json")) or name == ".claude.json":
+        return None, "~/.claude.json holds MCP and account state"
+    if name == ".mcp.json":
+        return None, "MCP configuration is never touched"
+    if re.fullmatch(r"settings(\.local)?\.json.*", name):
+        return None, "settings files are edited, never moved"
+    if name in (MANIFEST, "gc-log.md"):
+        return None, "pack bookkeeping"
+    for guarded, why in ((os.path.join(CLAUDE, "projects"), "transcripts"),
+                         (os.path.join(VH, "projects"), "per-project state"),
+                         (TRASH, "already in the trash")):
+        g = real(guarded)
+        if p == g or under(p, g):
+            return None, why
+    for root in roots:
+        r = real(root)
+        if p == r:
+            return None, "a runtime root itself"
+        if under(p, r):
+            top = os.path.relpath(p, r).split("/")[0]
+            if top in manifest_names(r):
+                return None, "pack-owned skill (named in %s)" % MANIFEST
+            return "skills", None
+    hooks = real(os.path.join(CLAUDE, "hooks"))
+    if under(p, hooks):
+        return "hooks", None
+    for sub in ("file-history", "shell-snapshots"):
+        if under(p, real(os.path.join(CLAUDE, sub))):
+            return "caches", None
+    if under(p, real(VH)) and (name.endswith(".old") or ".staging." in name):
+        return "caches", None
+    return None, "not under a known runtime root"
+
+
+def now_iso():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def append_log(line):
+    os.makedirs(VH, exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def cmd_trash(paths, roots):
+    if not paths:
+        die("trash needs at least one path")
+    plan, refused = [], []
+    for raw in paths:
+        ch, why = classify(raw, roots)
+        if why:
+            refused.append("REFUSED: %s: %s" % (raw, why))
+        else:
+            plan.append((norm(raw), ch))
+    if refused:
+        for r in refused:
+            sys.stderr.write(r + "\n")
+        sys.stderr.write("vibe-gc: nothing moved\n")
+        sys.exit(3)
+    date = datetime.date.today().isoformat()
+    for src, ch in plan:
+        dest_dir = os.path.join(TRASH, date, ch)
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, os.path.basename(src))
+        k = 1
+        while os.path.lexists(dest):
+            dest = os.path.join(dest_dir, "%s.%d" % (os.path.basename(src), k)); k += 1
+        shutil.move(src, dest)
+        append_log("- %s trash from '%s' to '%s' undo: mv '%s' '%s'" % (now_iso(), src, dest, dest, src))
+        print("moved\t%s\t%s" % (src, dest))
+
+
+LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2})T\S+ trash from '([^']*)' to '([^']*)' undo: ")
+
+
+def cmd_undo(rest):
+    date = rest[0] if rest else datetime.date.today().isoformat()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        die("undo takes a date as YYYY-MM-DD")
+    try:
+        with open(LOG, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        die("no log at %s" % LOG, 1)
+    todo = [m for m in map(LINE.match, lines) if m and m.group(1) == date]
+    restored, skipped = 0, 0
+    for m in reversed(todo):
+        src, dest = m.group(2), m.group(3)
+        if not os.path.lexists(dest):
+            continue
+        if os.path.lexists(src):
+            sys.stderr.write("vibe-gc: %s exists again; left %s in the trash\n" % (src, dest))
+            skipped += 1
+            continue
+        os.makedirs(os.path.dirname(src), exist_ok=True)
+        shutil.move(dest, src)
+        append_log("- %s restored '%s' from '%s'" % (now_iso(), src, dest))
+        print("restored\t%s" % src)
+        restored += 1
+    print("restored %d, skipped %d for %s" % (restored, skipped, date))
+    if skipped:
+        sys.exit(1)
+
+
+def cmd_log():
+    try:
+        with open(LOG, encoding="utf-8") as f:
+            sys.stdout.write(f.read())
+    except OSError:
+        print("no log yet (%s)" % LOG)
+
+
+cmd, days, roots, rest = parse(sys.argv[1:])
+if cmd == "scan":
+    if rest:
+        die("scan takes no paths")
+    cmd_scan(days, roots)
+elif cmd == "trash":
+    # The roots a path may be trashed from are fixed; --roots only narrows a scan.
+    if "--roots" in sys.argv[1:]:
+        die("trash judges paths against the default runtime roots; --roots is scan-only")
+    cmd_trash(rest, roots)
+elif cmd == "undo":
+    cmd_undo(rest)
+else:
+    cmd_log()
+PY
+)
+
+exec python3 -I -c "$_PY" "$@"

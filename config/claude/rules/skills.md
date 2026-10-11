@@ -43,6 +43,7 @@ investigate before fixing. Then run the implementation and review skills.
 | Read or send Telegram messages as yourself | `/telegram` |
 | Guard a risky session | `/careful`, `/freeze`, `/guard`, `/unfreeze` |
 | Update the pack itself | `/vibe-upgrade` |
+| Audit and prune the installed runtime configuration | `/vibe-gc` |
 | Not sure which fits | `/vibe` |
 
 Use `/vibe` when unsure — it routes to the right skill or says none fits.

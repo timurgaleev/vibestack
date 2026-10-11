@@ -90,6 +90,7 @@ jobs:
           - test-design-shotgun-handoff.sh
           - test-devex-boomerang.sh
           - test-fresh-shell-vars.sh
+          - test-vibe-gc.sh
           - test-compact-snapshot.sh
           - test-jira-adapter.sh
     steps:
