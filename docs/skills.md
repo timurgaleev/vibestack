@@ -29,7 +29,7 @@ Triggers: `ceo review`, `product review`, `challenge this plan`
 ### `/plan-eng-review`
 Engineering review of a technical plan.
 
-Covers: architecture decisions, data model, API contracts, scalability assumptions, operational concerns, and risk assessment. Flags blockers and recommends the next engineering action.
+Covers: architecture decisions, data model, API contracts, scalability assumptions, operational concerns, and risk assessment. Flags blockers and recommends the next engineering action. When the plan splits into parallel lanes or will be executed by another agent, it writes a cold-start brief per lane that an executor can start from with no access to the conversation.
 
 Triggers: `eng review`, `engineering review`, `review the technical plan`
 
@@ -85,7 +85,9 @@ Triggers: `review this PR`, `code review`, `pre-landing review`
 ### `/spec`
 Turn vague intent into a precise, executable spec in five phases.
 
-Phases: understand the why (+ optional dedupe), scope and boundaries, technical interrogation (mandatory code-reading first), draft review, file. Optional codex quality gate (0-10, fail-closed secret redaction before dispatch). Archives the spec under `~/.vibestack/projects/<slug>/specs/`. Plan-mode-aware: files the issue and loads it into the active plan file in plan mode; in execution mode (or with `--execute`) it files and spawns `claude -p` only inside a fresh worktree it has verified. `/ship` can close the source issue on merge.
+Phases: understand the why (+ optional dedupe), scope and boundaries, technical interrogation (mandatory code-reading first), draft review, file. Optional codex quality gate (0-10, fail-closed secret redaction before dispatch). Archives the spec under `~/.vibestack/projects/<slug>/specs/`. Plan-mode-aware: files the issue and loads it into the active plan file in plan mode; in execution mode (or with `--execute`) it files and spawns `claude -p` only inside a fresh worktree it has verified. `/ship` can close the source issue on merge. Each acceptance criterion gets an ID and its own verification step, and open points are marked `TBD`.
+
+Jira is opt-in: `--jira <KEY>` (or a bare key such as `/spec PROJ-123`) reads the issue to seed the spec, and the only Jira write — one comment linking the filed issue — is asked for separately.
 
 Triggers: `spec this out`, `file an issue`, `write up a ticket`, `turn this into a backlog item`
 
@@ -97,6 +99,8 @@ Full ship workflow from working branch to merged PR.
 Steps: establish merge base, run tests, code review, version bump if needed, create PR. Stops at each gate — does not proceed on failure. The ship command is a checklist, not a one-click deploy.
 
 No tag or release is cut before the PR merges: the version tag goes on the merge commit, and the release follows, only once the PR is merged. Re-running `/ship` on a branch whose PR already merged opens no new PR and bumps nothing — it only tags and releases the merge.
+
+With `--jira <KEY>`, `/ship` offers to comment on or transition the Jira issue after the PR exists. Each write is asked for on its own; a key in the branch name alone never authorizes one.
 
 Triggers: `ship this`, `ship it`, `ready to ship`
 
@@ -115,6 +119,8 @@ Triggers: `address pr review`, `address review comments`, `fix review comments`,
 Systematic debugging with root cause analysis.
 
 Iron Law: **never implement a fix until the root cause is confirmed.** Four phases: investigate (collect raw data), analyze (read the full call chain), hypothesize (rank hypotheses, ask why 5 times), implement (fix root cause, add regression test).
+
+When the failing component is an LLM agent, it replays the same prompt, tools and memory state first, then triages layer by layer.
 
 If `/freeze` is active, edits are restricted to the frozen directory during investigation.
 
@@ -169,6 +175,8 @@ Same coverage as `/qa` but stops after reporting. Useful for a clean separation 
 
 Each run is written to `.vibestack/qa-reports/run-<UTC>/` and its regressions are compared against the newest earlier run. On a non-local target it looks but does not act until you answer one consent question.
 
+Manual accessibility checks are mandatory; axe is optional. When they did not run (every `--quick` run, for example), Accessibility is reported as `not run` and left out of the score, which is then labelled partial coverage.
+
 Triggers: `qa report`, `qa only`, `find bugs`
 
 ---
@@ -176,7 +184,7 @@ Triggers: `qa report`, `qa only`, `find bugs`
 ### `/canary`
 Canary deploy health check.
 
-Monitors the deployed pages with the browse shim against a pre-deploy baseline — console error identity, load time, broken links and screenshots — and alerts only on a change confirmed across two consecutive checks. Writes a status report and appends each run to the project's `canary-history.jsonl`.
+Monitors the deployed pages with the browse shim against a pre-deploy baseline — console error identity, load time, broken links and screenshots — and alerts only on a change confirmed across two consecutive checks. Writes a status report and appends each run to the project's `canary-history.jsonl`. It also checks that assets are served with the right content type, and `--sse <endpoint-url>` probes a server-sent events endpoint for its first event (a 401 or a redirect is reported as unknown, never as a failure).
 
 Triggers: `canary check`, `check canary`, `canary health`
 
@@ -218,6 +226,8 @@ Generate a realistic single-file HTML mockup.
 
 No Lorem ipsum. No placeholder content. Real copy, real data shapes, real interaction states. Outputs a self-contained HTML file you can open in a browser immediately.
 
+Deck mode (`--deck`, or "deck"/"slides") builds a slide deck instead, and gates every slide on fitting the viewport (`scrollHeight <= clientHeight`).
+
 Triggers: `design html`, `html mockup`, `build a mockup`
 
 ---
@@ -245,7 +255,7 @@ Triggers: `retro`, `weekly retro`, `retrospective`
 ### `/learn`
 Capture and persist project learnings.
 
-Writes structured learnings to a project learnings file to prevent solving the same problem twice. Covers: what was the problem, what was tried, what worked, what to do next time. Plain `/learn` runs the full loop — show recorded learnings, capture new ones from the current session, then sync consent-gated copies into connected memory (memrain). `/learn sync` runs the sync step alone.
+Writes structured learnings to a project learnings file to prevent solving the same problem twice. Covers: what was the problem, what was tried, what worked, what to do next time. Plain `/learn` runs the full loop — show recorded learnings, capture new ones from the current session, then sync consent-gated copies into connected memory (memrain). `/learn sync` runs the sync step alone. `/learn distill` finds principles that keep recurring across learnings and proposes them as rules; nothing is applied until you pick which ones.
 
 Triggers: `learn`, `save learning`, `capture this`
 
@@ -274,6 +284,8 @@ Generate complete documentation from scratch.
 
 Uses the Diataxis framework to produce structured documentation for a feature, module, or entire project: tutorials (learning-oriented), how-tos (task-oriented), reference (information-oriented), and explanation (understanding-oriented). Researches the full codebase surface first, then writes — accuracy over elegance. Can be invoked standalone or by `/document-release` to fill coverage gaps.
 
+ADR mode (`--adr`, "ADR this", "record this decision") writes an architecture decision record instead, in the location the repository already uses for ADRs.
+
 Triggers: `write docs for this`, `generate documentation`, `document this feature`, `create a tutorial`, `write a how-to`, `explain this module`
 
 ---
@@ -290,7 +302,9 @@ Triggers: `devex review`, `dx review`, `review developer experience`
 ### `/health`
 Code quality dashboard.
 
-Reports: type errors, lint warnings, test count and pass rate, coverage percentage, known security advisories, and a composite health score. Use as a quick project health snapshot.
+Reports: type errors, lint warnings, test count and pass rate, coverage percentage, known security advisories, and a composite health score. Use as a quick project health snapshot. The verdict is READY only when every category was actually checked; partial coverage is INCOMPLETE.
+
+`/health skills` reports on the installed skills instead: how often each was used (subagent transcripts included; a skill with no data is reported as unmeasured, not as zero) and how much of the description budget each takes.
 
 Triggers: `health check`, `project health`, `code quality dashboard`
 
@@ -320,6 +334,8 @@ Triggers: `landing report`, `version queue`, `ship queue`, `what version comes n
 Save working context to resume later.
 
 Captures: current branch, uncommitted changes summary, decisions made, work remaining, open questions. Writes to a context file you can restore in a future session.
+
+In Claude Code a PreCompact hook also writes a git-state snapshot before every compaction; `/context-restore` lists them. A snapshot is not a save — it holds git state and the transcript path only.
 
 Triggers: `save context`, `context save`, `save my place`
 
@@ -511,7 +527,7 @@ Triggers: `read my telegram`, `listen to the voice message`, `transcribe the voi
 ---
 
 ### `/skillify`
-Turn a working browse/scrape flow into a reusable skill — write a new `SKILL.md` from the captured steps, render-validate, brand-check, and install. By default it installs into your own skills directory (or a project's); it writes into the pack checkout only when you ask for that explicitly.
+Turn a working browse/scrape flow into a reusable skill — write a new `SKILL.md` from the captured steps, render-validate, brand-check, and install. By default it installs into your own skills directory (or a project's); it writes into the pack checkout only when you ask for that explicitly. It searches for an existing skill that already covers the flow before writing a new one, and strips machine paths, accounts and secrets from the captured steps.
 
 Triggers: `skillify this`, `make this a skill`, `save this flow as a skill`
 
@@ -559,7 +575,7 @@ Triggers: `aws cost`, `aws bill`, `why did aws cost go up`, `finops review`, `co
 ### `/ai-cost-guard`
 Put a written dollar ceiling on every paid-inference call.
 
-Finds the code paths that can run up a bill with no bound — loops, retries, fan-out, agent steps, queues — and requires a cap both in code and at the provider. Use before shipping anything that calls an LLM, speech, or image API, or after a bill came in larger than expected.
+Finds the code paths that can run up a bill with no bound — loops, retries, fan-out, agent steps, queues — and requires a cap both in code and at the provider. Use before shipping anything that calls an LLM, speech, or image API, or after a bill came in larger than expected. It also flags a stable prompt prefix that is not cached, with the estimated saving.
 
 Triggers: `ai cost guard`, `runaway api cost`, `cap llm spend`, `unbounded llm loop`, `token budget`, `bedrock spend limit`, `prevent surprise ai bill`
 
@@ -595,7 +611,7 @@ Triggers: `review contact flow`, `amazon connect review`, `lex bot review`, `voi
 ### `/agent-eval`
 Build an eval harness for an LLM agent, prompt template, or tool-using workflow — then run it.
 
-Produces a task set, deterministic and judge-based scoring, per-tag metrics, and a regression gate. Use when a prompt or model change needs to be measured instead of eyeballed, or when a project ships LLM behavior with no eval set at all.
+Produces a task set, deterministic and judge-based scoring, per-tag metrics, and a regression gate. Use when a prompt or model change needs to be measured instead of eyeballed, or when a project ships LLM behavior with no eval set at all. Reports pass@k and pass^k; pass^k is counted from observed runs, and the summary states that agent runs are usually not independent.
 
 Triggers: `agent eval`, `evaluate the agent`, `llm as judge`, `build an eval set`, `prompt regression test`, `measure prompt quality`, `eval harness`
 
@@ -604,6 +620,6 @@ Triggers: `agent eval`, `evaluate the agent`, `llm as judge`, `build an eval set
 ### `/mcp-review`
 Review an MCP server — Python FastMCP or the TypeScript SDK.
 
-Covers tool design, scope, auth, input validation, error shape, transport and prompt-injection exposure. Produces a findings table with severities and proposed tool schema changes; never modifies the server or its credentials. Use before publishing a server, before wiring one into an agent, or when someone asks whether an MCP server is safe to run.
+Covers tool design, scope, auth, input validation, error shape, transport and prompt-injection exposure. Produces a findings table with severities and proposed tool schema changes; never modifies the server or its credentials. Use before publishing a server, before wiring one into an agent, or when someone asks whether an MCP server is safe to run. It maps trust boundaries and checks containment: what a tool can reach and what limits a compromised call.
 
 Triggers: `mcp review`, `review my mcp server`, `mcp tool schema`, `mcp auth`, `mcp security`, `is this mcp server safe`
