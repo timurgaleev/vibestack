@@ -400,14 +400,15 @@ Scoring:     deterministic: <exact|regex|schema|trace|grounding>
 
 Metrics:     success rate, tool-call correctness, hallucination rate,
              refusal rate, latency p50/p95, cost per task — per tag
-Gate:        fail on success drop > N pts, cost increase > M %
+Gate:        fail on success drop > N pts, cost increase > M %,
+             golden pass^k below baseline (k = <golden_runs>)
 Cost cap:    $<x> per local run, $<y> per CI run
 
 
 RESULTS — <run file>
 ====================
 
-Run:     complete | INCOMPLETE <ran>/<total> cases (<reason>) — exit 1, gate fails
+Run:     complete | INCOMPLETE <ran>/<total> runs (<reason>) — exit 1, gate fails
 Spend:   $<x> of $<cap> cap (generator + judge)
 
 Metric                  Overall   golden   mined   adversarial   vs baseline
@@ -418,6 +419,7 @@ Hallucination rate      0.04      0.00     0.06    0.10          +0.01
 Refusal rate            0.03      0.00     0.02    0.20          0.00
 Latency p50 / p95 ms    1840/4200                                +5% / +12%
 Cost per task           $0.0042                                  +3%
+Golden pass^k (k=3)     0.90 observed (p^k 0.86, assumes independent runs)  -0.02
 Judge agreement         0.65 exact / 0.95 within-1 (20 items)
 
 Gate: PASS | FAIL (<reason>)
