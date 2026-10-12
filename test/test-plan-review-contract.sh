@@ -63,10 +63,13 @@ PY
 check_list() {
   local label="$1" list="$2" entry bad=""; shift 2
   [ -s "$list" ] || { no "$label: skip list not found"; return; }
+  # A file, not a pipe: `grep -q` exits on its first match, and under pipefail
+  # the writer's SIGPIPE would turn a found heading into a miss.
+  grep -h '^## ' "$@" | sed 's/^## //' > "$TMP/headings"
   while IFS= read -r entry; do
-    if ! grep -h '^## ' "$@" | sed 's/^## //' | grep -qF -- "$entry"; then
+    if ! grep -qF -- "$entry" "$TMP/headings"; then
       bad="$bad [$entry]"
-    elif ! grep -h '^## ' "$@" | sed 's/^## //' | awk -v e="$entry" 'index($0, e) == 1 {f=1} END {exit !f}'; then
+    elif ! awk -v e="$entry" 'index($0, e) == 1 {f=1} END {exit !f}' "$TMP/headings"; then
       bad="$bad [$entry (not a prefix)]"
     fi
   done < "$list"
