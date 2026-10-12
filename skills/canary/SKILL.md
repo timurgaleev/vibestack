@@ -209,11 +209,13 @@ B='<BROWSE_BIN>'
 $B js "Promise.all([...document.querySelectorAll('script[src],link[rel~=stylesheet][href]')].map(e=>{const u=e.src||e.href;const k=e.tagName==='SCRIPT'?'js':'css';return fetch(u,{method:'HEAD'}).then(r=>({url:u,kind:k,status:r.status,type:r.headers.get('content-type')})).catch(()=>({url:u,kind:k,status:0,type:null}))})).then(a=>JSON.stringify(a))"
 ```
 
-HEAD reads headers only and changes nothing. A `js` entry passes when its type names
-`javascript` or `ecmascript`, a `css` entry when it names `text/css`. A 2xx whose type
-is `text/html` is an SPA fallback serving HTML for an asset — HIGH. Status `0` (a
-cross-origin asset whose server sends no CORS headers, or a network error) and any other
-type are `unknown`: report them, never alert on them.
+HEAD reads headers only and changes nothing. A `js` entry passes when its status is 2xx
+and its type names `javascript` or `ecmascript`; a `css` entry when its status is 2xx and
+its type names `text/css`. The status decides first, whatever the type: a 404, 410 or
+5xx is a broken asset — HIGH. A 2xx whose type is `text/html` is an SPA fallback serving
+HTML for an asset — HIGH. Status `0` (a cross-origin asset whose server sends no CORS
+headers, or a network error), a 401 or 403, and any other status or type are `unknown`:
+report them, never alert on them.
 
 **SSE first event** — only when the user named an SSE endpoint with `--sse`. Never guess
 one from the page. Write that URL, one line, to
@@ -314,7 +316,8 @@ After each check, compare results against `baseline.json` (or `pre-monitor.json`
 2. **New console errors** — an `[error]` message not in the page's `console_errors` list → HIGH ALERT
 3. **Performance regression** — load time exceeds 2x baseline → MEDIUM ALERT
 4. **Broken links** — a 404/410 URL not in the page's `broken_links` list → LOW ALERT
-5. **Asset served as HTML** — a script or stylesheet URL answering 2xx with `text/html` → HIGH ALERT
+5. **Broken asset** — a script or stylesheet URL answering 404, 410 or 5xx, or 2xx with
+   `text/html` → HIGH ALERT
 6. **SSE stream silent** — `SSE_FIRST_EVENT: no` for an endpoint named with `--sse` → CRITICAL ALERT
 
 **Alert on changes, not absolutes** (items 5 and 6 excepted — they are absolute checks). Errors are compared by message, not by count. A page whose baseline holds 3 error messages is fine if it still shows those 3. One NEW message is an alert, even if another one went away.

@@ -200,12 +200,12 @@ Write `evals/<unit>/.gitignore` containing the single line `runs/` while scaffol
 The runner, in order:
 
 1. Load `config.json`; refuse to start if `cost_cap_usd`, `max_tokens_in`, `max_tokens_out`, `price`, or `judge_price` is missing. The token ceilings are what makes a worst-case call cost knowable in advance.
-2. Read `cases.jsonl`; fail on duplicate ids.
+2. Read `cases.jsonl`; fail on duplicate ids. Schedule every `golden` case `golden_runs` times (config, default 3, at least 3) and every other case once; each run carries its index, and run `i` uses seed `seed + i`, so the k runs are separate draws rather than one draw repeated.
 3. For each case, call the unit with a fixed seed and temperature from config, and pass `max_tokens_out` as the call's output limit so the API enforces the same ceiling the ledger reserves against. Count the input first and fail the case if it is over `max_tokens_in` rather than dispatching it — the reservation covers both halves of a call, so both halves need a ceiling that holds. Cap concurrency with a semaphore (default 4).
 4. Reserve before every paid call — generator and judge alike — and settle after it. The reservation is the worst-case cost of that call: the configured token ceilings at that model's price. Reserving and settling both happen under one lock over a single ledger, so concurrent cases can never each pass a check against the same remaining budget, and no call can start unless its whole worst case fits under the cap. Settling replaces the reservation with the usage the response actually reported, and checks it against the reservation: a call that reports more than its worst case means a ceiling did not reach the API, and the run stops there instead of continuing past the cap.
 5. Apply deterministic scorers, then the judge for cases whose `expected` carries a `rubric` key. A case with neither a deterministic check nor a rubric is an error, not a pass — stop and name the case. A judged case passes only when its judge score reaches the case's threshold (`judge_threshold`, default 4).
-6. Append one line per case that ran to `runs/results-<timestamp>.jsonl`: `id`, `tags`, `output`, `passed`, `checks`, `judge_score`, `judge_version`, `latency_ms`, `tokens_in`, `tokens_out`, `judge_tokens_in`, `judge_tokens_out`, `cost_usd`. `cost_usd` is the generator and judge cost for that case combined. A case that did not run gets no line — a record without `passed` and `tags` is worse than a missing one, because the Step 6 gate would count it.
-7. Write `summary-<timestamp>.md` with the Step 4 table, overall and per tag. If any case did not run — a reservation that did not fit, or a case that raised — head the summary with `INCOMPLETE: <ran>/<total> cases (<reason>)`, print the same line to stderr, and exit non-zero. A truncated run must never be able to satisfy the gate.
+6. Append one line per run to `runs/results-<timestamp>.jsonl`: `id`, `run`, `tags`, `output`, `passed`, `checks`, `judge_score`, `judge_version`, `latency_ms`, `tokens_in`, `tokens_out`, `judge_tokens_in`, `judge_tokens_out`, `cost_usd`. `cost_usd` is the generator and judge cost for that case combined. A case that did not run gets no line — a record without `passed` and `tags` is worse than a missing one, because the Step 6 gate would count it.
+7. Write `summary-<timestamp>.md` with the Step 4 table, overall and per tag. Rates count run 0 of each case, so they mean the same thing whatever k is; `golden` pass^k is the share of golden cases whose k runs all passed, with k and the independence note beside it. If any run did not complete — a reservation that did not fit, or a case that raised — head the summary with `INCOMPLETE: <ran>/<total> runs (<reason>)`, print the same line to stderr, and exit non-zero. A truncated run must never be able to satisfy the gate.
 
 A Python skeleton the user can start from; keep the same shape in TypeScript:
 
@@ -272,14 +272,14 @@ def load_cases():
     assert len(ids) == len(set(ids)), "duplicate case ids"
     return cases
 
-async def run_case(case, sem, ledger):
+async def run_case(case, run, sem, ledger):
     async with sem:
         expected = case.get("expected")
         judged = isinstance(expected, dict) and "rubric" in expected
         check_input(case["id"], "generator", case["input"])
         await ledger.reserve(WORST_CASE["generator"])
         t0 = time.monotonic()
-        out, usage = await call_unit(case["input"], seed=CFG["seed"],
+        out, usage = await call_unit(case["input"], seed=CFG["seed"] + run,
                                      temperature=CFG["temperature"],
                                      max_tokens_out=CFG["max_tokens_out"])
         latency_ms = int((time.monotonic() - t0) * 1000)
@@ -303,7 +303,7 @@ async def run_case(case, sem, ledger):
 
         threshold = case.get("judge_threshold", 4)
         passed = all(checks.values()) and (not judged or judge_score >= threshold)
-        return {"id": case["id"], "tags": case["tags"], "output": out, "checks": checks,
+        return {"id": case["id"], "run": run, "tags": case["tags"], "output": out, "checks": checks,
                 "passed": passed, "judge_score": judge_score, "judge_version": judge_version,
                 "latency_ms": latency_ms, "tokens_in": usage["in"], "tokens_out": usage["out"],
                 "judge_tokens_in": judge_usage["in"], "judge_tokens_out": judge_usage["out"],
@@ -313,7 +313,9 @@ async def main():
     sem = asyncio.Semaphore(CFG.get("concurrency", 4))
     ledger = Ledger(CFG["cost_cap_usd"])
     cases = load_cases()
-    settled = await asyncio.gather(*(run_case(c, sem, ledger) for c in cases),
+    k = max(3, CFG.get("golden_runs", 3))
+    jobs = [(c, i) for c in cases for i in range(k if "golden" in c["tags"] else 1)]
+    settled = await asyncio.gather(*(run_case(c, i, sem, ledger) for c, i in jobs),
                                    return_exceptions=True)
     results = [r for r in settled if not isinstance(r, Exception)]
     errors = [r for r in settled if isinstance(r, Exception)]
@@ -328,7 +330,7 @@ async def main():
         reason = "cost cap reached"
     else:
         reason = "case errors"
-    incomplete = f"INCOMPLETE: {len(results)}/{len(cases)} cases ({reason})" if errors else None
+    incomplete = f"INCOMPLETE: {len(results)}/{len(jobs)} runs ({reason})" if errors else None
     write_summary(results, ROOT / "runs" / f"summary-{stamp}.md",
                   incomplete=incomplete, spent_usd=ledger.spent)
     if errors:
@@ -354,7 +356,7 @@ Findings:
 Commit `evals/<unit>/baseline.json` from a run the user has looked at and accepted, and copy that run's `summary-<timestamp>.md` to `evals/<unit>/baseline-summary.md` in the same commit. `runs/` is gitignored by the `.gitignore` written in Step 5, so a bare filename there is not something a later reviewer can open — the committed summary is the provenance.
 
 ```json
-{"run_stamp":"20260901T101500","summary":"baseline-summary.md","judge_version":"v1","success_rate":0.87,"cost_per_task_usd":0.0042,"per_tag":{"golden":0.95,"adversarial":0.70}}
+{"run_stamp":"20260901T101500","summary":"baseline-summary.md","judge_version":"v1","success_rate":0.87,"cost_per_task_usd":0.0042,"per_tag":{"golden":0.95,"adversarial":0.70},"golden_runs":3,"golden_pass_k":0.90}
 ```
 
 The gate compares a fresh run to the baseline and fails on any of:
@@ -362,7 +364,7 @@ The gate compares a fresh run to the baseline and fails on any of:
 - a non-zero runner exit, or a summary headed `INCOMPLETE`. The run did not cover the case set, so its rates are not comparable — the gate fails without reading them, and such a run can never become a baseline.
 - success rate drop greater than N points (default 3) overall or on any tag with 5 or more cases
 - cost per task increase greater than M% (default 20)
-- on `golden` cases, observed all-run stability below its baseline: run each `golden` case k ≥ 3 times and gate on pass^k counted from those runs. Write the independence assumption into the summary — pass^k is observed, and any p^k figure printed beside it is only an estimate that assumes independent runs.
+- on `golden` cases, observed all-run stability below its baseline: the runner runs each `golden` case k ≥ 3 times; the gate fails when this run's pass^k is below the baseline's `golden_pass_k`, and a baseline without that field, or recorded at a different k, cannot be compared — record a new one. Write the independence assumption into the summary — pass^k is observed, and any p^k figure printed beside it is only an estimate that assumes independent runs.
 
 Add it as a CI step that runs on changes to prompt files, the agent loop, model config, or `evals/`. Put the thresholds in `config.json`, not in the CI yaml, so they are reviewed with the code. A gate run needs its own cost cap, lower than a local run.
 
@@ -398,14 +400,15 @@ Scoring:     deterministic: <exact|regex|schema|trace|grounding>
 
 Metrics:     success rate, tool-call correctness, hallucination rate,
              refusal rate, latency p50/p95, cost per task — per tag
-Gate:        fail on success drop > N pts, cost increase > M %
+Gate:        fail on success drop > N pts, cost increase > M %,
+             golden pass^k below baseline (k = <golden_runs>)
 Cost cap:    $<x> per local run, $<y> per CI run
 
 
 RESULTS — <run file>
 ====================
 
-Run:     complete | INCOMPLETE <ran>/<total> cases (<reason>) — exit 1, gate fails
+Run:     complete | INCOMPLETE <ran>/<total> runs (<reason>) — exit 1, gate fails
 Spend:   $<x> of $<cap> cap (generator + judge)
 
 Metric                  Overall   golden   mined   adversarial   vs baseline
@@ -416,6 +419,7 @@ Hallucination rate      0.04      0.00     0.06    0.10          +0.01
 Refusal rate            0.03      0.00     0.02    0.20          0.00
 Latency p50 / p95 ms    1840/4200                                +5% / +12%
 Cost per task           $0.0042                                  +3%
+Golden pass^k (k=3)     0.90 observed (p^k 0.86, assumes independent runs)  -0.02
 Judge agreement         0.65 exact / 0.95 within-1 (20 items)
 
 Gate: PASS | FAIL (<reason>)

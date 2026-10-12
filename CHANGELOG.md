@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.54.2 — 2026-10-12
+
+### Fixed
+
+- **`/vibe-gc` keeps a settings file's permissions** when it removes an entry.
+  The rewritten file took the umask default, so a `0600` settings file became
+  readable by other local users.
+- **`/canary` checks an asset's status before its content type.** A script or
+  stylesheet answering 404, 410 or 5xx with a JavaScript or CSS type passed;
+  it is now a broken asset and alerts.
+- **`/ship --jira <KEY>` on an already-merged PR** resolves the key before it
+  jumps to the release step, so the post-merge Jira status change is offered.
+- **`/agent-eval` can compute the pass^k gate it asks for.** The runner runs
+  each `golden` case `golden_runs` times (at least 3, a different seed per
+  run), records the run index, and the baseline stores `golden_pass_k`.
+- **`/qa-only` contrast measures translucent text correctly.** Text colour is
+  composited over its background before the ratio is taken, so muted
+  `rgba()` text no longer reads as 21:1; a translucent background goes to the
+  screenshot check.
+
+### Tests
+
+- The plan-review contract no longer fails at random on Linux: headings are
+  read from a file instead of a pipe that `grep -q` could cut short under
+  `pipefail`.
+- Upgrading over an older copy of the PreCompact hook leaves one copy, and
+  uninstall then leaves only the user's own hook.
+
 ## 1.54.1 — 2026-10-11
 
 ### Docs

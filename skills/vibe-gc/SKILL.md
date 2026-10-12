@@ -113,7 +113,7 @@ _VH="${VIBESTACK_HOME:-$HOME/.vibestack}"
 _BACKUP="$_VH/gc-trash/$_DAY/permissions/$(basename "$_SETTINGS").$(date +%H%M%S)"
 mkdir -p "$(dirname "$_BACKUP")" && cp "$_SETTINGS" "$_BACKUP" || { echo "BACKUP_FAILED"; exit 1; }
 python3 -I -c '
-import json, sys
+import json, os, sys
 settings, entry_file = sys.argv[1], sys.argv[2]
 entry = open(entry_file, encoding="utf-8").read()
 with open(settings, encoding="utf-8") as f:
@@ -123,7 +123,10 @@ if entry not in allow:
     sys.exit("ENTRY_NOT_FOUND")
 i = len(allow) - 1 - allow[::-1].index(entry)
 del allow[i]
-with open(settings + ".gc-tmp", "w", encoding="utf-8") as f:
+# The new file takes the original mode, so the rename cannot widen a 0600 file.
+fd = os.open(settings + ".gc-tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.fchmod(fd, os.stat(settings).st_mode & 0o7777)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
     f.write("\n")
 ' "$_SETTINGS" "$_VH/gc-entry.txt" || { echo "EDIT_FAILED"; exit 1; }

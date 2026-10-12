@@ -331,6 +331,45 @@ JSON
     "U11c: uninstall leaves exactly the user's PreCompact hook"
 }
 
+# ---------------------------------------------------------------------------
+# U12 — an older copy of our hook is replaced on upgrade and gone after uninstall
+#
+# A machine upgraded from a release whose PreCompact command differed must not
+# end up with both commands, and uninstall must leave only the user's hook
+# rather than resurrect the old copy.
+# ---------------------------------------------------------------------------
+test_stale_hook_replaced_then_removed() {
+  local sb; sb="$(new_sandbox)" || { _fail "U12: no sandbox"; return; }
+  local f; f="$(SETTINGS "$sb")"
+  cat > "$f" <<'JSON'
+{"hooks": {"PreCompact": [{"hooks": [{"type": "command", "command": "my-own-precompact"}]}]}}
+JSON
+  run_install "$sb"
+  # Rewrite our command, in the file and in the post snapshot, to what an older
+  # release would have left.
+  local p
+  for p in "$f" "$sb/state/vibekit/postmerge_claude_settings.json"; do
+    python3 - "$p" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+for e in d["hooks"]["PreCompact"]:
+    for h in e["hooks"]:
+        if "vibe-compact-snapshot" in h["command"]:
+            h["command"] = "bash ~/.vibestack/bin/vibe-compact-snapshot --old-flag"
+json.dump(d, open(p, "w"))
+PY
+  done
+  run_install "$sb"
+  assert_expr "$f" "sum('vibe-compact-snapshot' in h['command'] for e in d['hooks']['PreCompact'] for h in e['hooks'])" "1" \
+    "U12a: the upgrade leaves one copy of our PreCompact hook"
+  assert_expr "$f" "any('--old-flag' in h['command'] for e in d['hooks']['PreCompact'] for h in e['hooks'])" "False" \
+    "U12b: the older copy is gone"
+
+  run_uninstall "$sb" >/dev/null
+  assert_expr "$f" "[h['command'] for e in d['hooks']['PreCompact'] for h in e['hooks']]" "['my-own-precompact']" \
+    "U12c: uninstall leaves exactly the user's PreCompact hook"
+}
+
 echo "uninstall --with-config: merged keys"
 test_ours_alone_is_removed
 test_grant_revoked_user_entries_kept
@@ -343,6 +382,7 @@ test_unparseable_destination_is_untouched
 test_emptied_object_is_pruned
 test_value_that_matched_ours_is_not_claimed
 test_user_hook_on_shipped_event_survives
+test_stale_hook_replaced_then_removed
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"
