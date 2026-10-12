@@ -156,5 +156,23 @@ printf '%s\n' "$out2" | grep -qE '__pycache__|/\.git/' \
 mkdir -p "$C2/skills-notes"
 refused "a sibling of a root that is not an install leftover" "$C2/skills-notes"
 
+# The skill's permission-removal block rewrites settings through a temp file;
+# the rename must not widen a 0600 settings file to the umask default.
+SET="$TMP/perm-settings.json"
+printf '{"permissions":{"allow":["Bash(ls:*)","WebFetch"]}}\n' > "$SET"; chmod 600 "$SET"
+printf 'WebFetch' > "$VIBESTACK_HOME/gc-entry.txt"
+python3 -I - "$ROOT/skills/vibe-gc/SKILL.md" "$SET" > "$TMP/perm-block.sh" <<'PY'
+import sys
+s, settings = open(sys.argv[1], encoding="utf-8").read(), sys.argv[2]
+i = s.index("_SETTINGS='<settings file path from the row>'")
+end = 'echo "REMOVED_FROM: $_SETTINGS"'
+j = s.index(end, i) + len(end)
+print(s[i:j].replace("<settings file path from the row>", settings))
+PY
+(umask 022; bash "$TMP/perm-block.sh" >/dev/null 2>&1)
+mode=$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$SET")
+[ "$mode" = "0o600" ] && ! grep -q WebFetch "$SET" \
+  && ok "permission removal keeps a 0600 settings file at 0600" || no "settings mode after removal: $mode"
+
 echo "vibe-gc: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
