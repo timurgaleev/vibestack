@@ -171,8 +171,9 @@ Never skip a verification step because a prior `/ship` run already performed it.
    ```
 
    `MERGED`: this is a re-run after the merge, with nothing new on the branch. Say
-   "PR already merged — releasing it, not shipping it again." and jump to **Step 19.5**,
-   then Step 20. Skip every step in between: a bump here would claim a second version
+   "PR already merged — releasing it, not shipping it again.", resolve the Jira key
+   below first (Step 19.5 reads it after the merge), then jump to
+   **Step 19.5**, then Step 20. Skip every other step in between: a bump here would claim a second version
    for work that already landed, and Step 19 would open a duplicate PR.
    `NEW_WORK_AFTER_MERGE`: the branch's PR merged, but HEAD carries commits made after
    it. Ship them normally — every step runs and Step 19 opens a new PR. Any other value:
