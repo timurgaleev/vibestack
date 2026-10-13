@@ -23,7 +23,8 @@ less install                     # review
 ```
 
 The configuration phase is opt-in: `./install` on its own installs the skills
-and leaves your ~/.claude, ~/.cursor, ~/.kiro and ~/.codex configuration alone.
+and leaves your ~/.claude, ~/.cursor, ~/.kiro, ~/.codex and ~/.copilot configuration
+alone.
 `--with-config` is what puts this repository's CLAUDE.md, rules, sub-agents and
 statusline on your machine, and `--only=config` runs that half by itself.
 
@@ -128,7 +129,8 @@ bounded on several sides:
   catch this.
 - Files that vibekit merges rather than owns (`claude/CLAUDE.md`,
   `codex/config.toml`, `codex/hooks.json`, `cursor/hooks.json`,
-  `codex/rules/default.rules`, `kiro/agents/default.json`)
+  `codex/rules/default.rules`, `kiro/agents/default.json`,
+  `copilot/copilot-instructions.md`, `copilot/settings.json`)
   are deliberately never recorded in the manifest, so they can never be pruned —
   they hold runtime state the repo does not own.
 - Filenames containing a newline are skipped rather than recorded, since the
