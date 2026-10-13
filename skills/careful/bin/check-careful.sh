@@ -8,6 +8,8 @@
 #   MEDIUM — the destructive families below return "ask" (always overridable).
 # The decision MUST be nested under hookSpecificOutput — Claude Code ignores a
 # top-level permissionDecision, which silently no-ops the warning.
+# The same decision is also emitted flat at the top level, the form Copilot CLI
+# documents; the inline fallback envelope below carries both copies too.
 set -euo pipefail
 
 # Opt-in debug logging. No-op unless VIBESTACK_DEBUG=1.
@@ -78,7 +80,7 @@ _HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # install must degrade to an ASK (this is the ask-tier hook), never silence.
 _HOOK_HELPER="$_HOOK_DIR/hook-extract.sh"
 if [ ! -f "$_HOOK_HELPER" ] || ! . "$_HOOK_HELPER" 2>/dev/null; then
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"[careful] Hook helpers unavailable (broken install?) - cannot safety-check this command. Approve only if you know what it does."}}\n'
+  printf '{"permissionDecision":"ask","permissionDecisionReason":"[careful] Hook helpers unavailable (broken install?) - cannot safety-check this command. Approve only if you know what it does.","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"[careful] Hook helpers unavailable (broken install?) - cannot safety-check this command. Approve only if you know what it does."}}\n'
   exit 0
 fi
 
