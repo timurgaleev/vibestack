@@ -5,19 +5,19 @@
       {
         "type": "command",
         "matcher": "Bash",
-        "bash": "f=\"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "bash": "for f in \"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\" \".github/skills/careful/bin/check-careful.sh\"; do [ -f \"$f\" ] && exec bash \"$f\"; done; exit 0",
         "timeoutSec": 15
       },
       {
         "type": "command",
         "matcher": "Edit|Write",
-        "bash": "f=\"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "bash": "for f in \"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\" \".github/skills/careful/bin/check-careful.sh\"; do [ -f \"$f\" ] && exec bash \"$f\"; done; exit 0",
         "timeoutSec": 15
       },
       {
         "type": "command",
         "matcher": "Edit|Write",
-        "bash": "f=\"${COPILOT_HOME:-$HOME/.copilot}/skills/freeze/bin/check-freeze.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "bash": "for f in \"${COPILOT_HOME:-$HOME/.copilot}/skills/freeze/bin/check-freeze.sh\" \".github/skills/freeze/bin/check-freeze.sh\"; do [ -f \"$f\" ] && exec bash \"$f\"; done; [ -f \"${VIBESTACK_HOME:-$HOME/.vibestack}/freeze-dir.txt\" ] || exit 0; printf '%s\\n' '{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[freeze] A freeze boundary is set but check-freeze.sh is not installed - blocked, fail closed. Reinstall vibestack or run /unfreeze.\"}'",
         "timeoutSec": 15
       }
     ],
