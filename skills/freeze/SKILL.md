@@ -46,6 +46,13 @@ to run there; outside Claude Code `/freeze` is instruction-only. On those
 hosts, tell the user the boundary is advisory: you will keep your own edits
 inside it, but nothing blocks an edit that lands outside.
 
+Copilot CLI is the exception. When the configuration payload is installed
+(`./install --with-config` or `--only=config`), the user hook file
+`~/.copilot/hooks/vibestack.json` (under `$COPILOT_HOME` when set) runs the same
+check on every edit, and it blocks only while a freeze directory is set: after
+`/unfreeze`, or before `/freeze` is ever run, every edit goes through. Without
+the configuration payload it is instruction-only there as well.
+
 ## Setup
 
 Ask the user which directory to restrict edits to:

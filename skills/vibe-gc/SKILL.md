@@ -41,8 +41,8 @@ the scan prints nothing, say the configuration is clean and stop.
 What the channels mean:
 
 - **skills** — directories in `~/.claude/skills`, `~/.agents/skills`,
-  `~/.cursor/skills` or `~/.kiro/skills` that the root's `.vibestack-manifest`
-  does not claim. A missing or empty `SKILL.md` is high confidence; a name that
+  `~/.cursor/skills`, `~/.kiro/skills` or `~/.copilot/skills` (`$COPILOT_HOME/skills`
+  when set) that the root's `.vibestack-manifest` does not claim. A missing or empty `SKILL.md` is high confidence; a name that
   repeats another root's skill is low. `usage: unmeasured` means no usage data
   exists for that root — it never makes an item more disposable.
 - **hooks** — scripts under `~/.claude/hooks/` that nothing in the user
