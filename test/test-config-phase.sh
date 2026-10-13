@@ -285,15 +285,9 @@ run_copilot_config() {
   ' _ "$REPO" 2>&1
 }
 
-# The shipped payload plus a hooks file, so deploying everything under
-# config/copilot/ is exercised whether or not the repo ships one yet.
 copilot_payload() {
   local sb="$1"
   cp -R "$REPO/config" "$sb/payload"
-  if [[ ! -f "$sb/payload/copilot/hooks/vibestack.json" ]]; then
-    mkdir -p "$sb/payload/copilot/hooks"
-    printf '{"version":1,"hooks":{}}\n' > "$sb/payload/copilot/hooks/vibestack.json"
-  fi
 }
 
 COPILOT_END='<!-- END vibekit-managed copilot-instructions.md — lines below are yours and survive every sync -->'
@@ -315,6 +309,9 @@ test_copilot_deploys() {
   [[ -f "$c/agents/code-reviewer.agent.md" && -f "$c/hooks/vibestack.json" ]] \
     && _pass "P10: agents/ and hooks/ deployed from config/copilot/" \
     || _fail "P10: agents/*.agent.md or hooks/vibestack.json not deployed"
+  cmp -s "$REPO/config/copilot/hooks/vibestack.json" "$c/hooks/vibestack.json" \
+    && _pass "P10: hooks/vibestack.json deployed byte-identical to the shipped file" \
+    || _fail "P10: hooks/vibestack.json differs from config/copilot/hooks/vibestack.json"
   if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("includeCoAuthoredBy") is False else 1)' \
        "$c/settings.json" 2>/dev/null; then
     _pass "P10: settings.json carries includeCoAuthoredBy: false"
