@@ -5,6 +5,8 @@
 # Returns a PreToolUse hookSpecificOutput with permissionDecision "deny" to block,
 # or {} to allow. The decision MUST be nested under hookSpecificOutput — Claude
 # Code ignores a top-level permissionDecision, which silently no-ops the block.
+# The same decision is also emitted flat at the top level, the form Copilot CLI
+# documents; the inline envelopes below carry both copies too.
 #
 # Polarity: freeze is a DENY-tier hook, so an unreadable payload DENIES
 # (fail closed), and so does a payload that parses but carries no path: the
@@ -25,7 +27,7 @@ _freeze_backstop() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ -z "$_FREEZE_DECIDED" ]; then
     _FREEZE_DECIDED=1
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook failed unexpectedly (exit %s) - blocked, fail closed. Check ~/.vibestack/freeze-dir.txt or run /unfreeze."}}\n' "$rc"
+    printf '{"permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook failed unexpectedly (exit %s) - blocked, fail closed. Check ~/.vibestack/freeze-dir.txt or run /unfreeze.","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook failed unexpectedly (exit %s) - blocked, fail closed. Check ~/.vibestack/freeze-dir.txt or run /unfreeze."}}\n' "$rc" "$rc"
     exit 0
   fi
 }
@@ -98,7 +100,7 @@ _HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # (an if-guard cannot catch it) — the existence check must come first.
 _HOOK_HELPER="$_HOOK_DIR/../../careful/bin/hook-extract.sh"
 if [ ! -f "$_HOOK_HELPER" ] || ! . "$_HOOK_HELPER" 2>/dev/null; then
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook helpers unavailable (broken install?) - blocked, fail closed. Reinstall vibestack or run /unfreeze."}}\n'
+  printf '{"permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook helpers unavailable (broken install?) - blocked, fail closed. Reinstall vibestack or run /unfreeze.","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook helpers unavailable (broken install?) - blocked, fail closed. Reinstall vibestack or run /unfreeze."}}\n'
   _FREEZE_DECIDED=1
   exit 0
 fi
