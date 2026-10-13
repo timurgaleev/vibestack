@@ -43,12 +43,19 @@ bash_with() {
 echo "router: index lookup"
 IDX="$TMP/index.sh"
 bash_with "$ROUTER" "skills-index.md" > "$IDX" || no "no index-lookup block in the router"
-for host in agents cursor kiro; do
+for host in agents cursor kiro copilot; do
   H="$TMP/home-$host"; mkdir -p "$H/.$host/skills/vibe" "$TMP/cwd-$host"
   printf 'INDEX-%s\n' "$host" > "$H/.$host/skills/vibe/skills-index.md"
-  out=$(cd "$TMP/cwd-$host" && HOME="$H" env -u CLAUDE_SKILL_DIR bash "$IDX" 2>/dev/null | head -1)
+  out=$(cd "$TMP/cwd-$host" && HOME="$H" env -u CLAUDE_SKILL_DIR -u COPILOT_HOME bash "$IDX" 2>/dev/null | head -1)
   chk "index found under ~/.$host/skills with CLAUDE_SKILL_DIR unset" "$out" "INDEX-$host"
 done
+H="$TMP/home-cph"; mkdir -p "$H/alt/skills/vibe" "$TMP/cwd-cph"
+printf 'INDEX-cph\n' > "$H/alt/skills/vibe/skills-index.md"
+out=$(cd "$TMP/cwd-cph" && HOME="$H" COPILOT_HOME="$H/alt" env -u CLAUDE_SKILL_DIR bash "$IDX" 2>/dev/null | head -1)
+chk "index found under \$COPILOT_HOME/skills" "$out" "INDEX-cph"
+P="$TMP/proj-gh"; mkdir -p "$P/.github/skills/vibe"; printf 'INDEX-gh\n' > "$P/.github/skills/vibe/skills-index.md"
+out=$(cd "$P" && HOME="$TMP/nowhere" env -u CLAUDE_SKILL_DIR -u COPILOT_HOME bash "$IDX" 2>/dev/null | head -1)
+chk "index found under a project's .github/skills" "$out" "INDEX-gh"
 H="$TMP/home-dir"; mkdir -p "$H/sd"; printf 'INDEX-dir\n' > "$H/sd/skills-index.md"
 out=$(cd "$TMP" && HOME="$TMP/nowhere" CLAUDE_SKILL_DIR="$H/sd" bash "$IDX" 2>/dev/null | head -1)
 chk "CLAUDE_SKILL_DIR still wins when set" "$out" "INDEX-dir"
@@ -63,6 +70,7 @@ chk "Claude Code session -> HOST: claude" "$(host CLAUDECODE=1)" "HOST: claude"
 chk "neither -> HOST: other" "$(host)" "HOST: other"
 has "HOST: codex routes to claude" "$ROUTER" '`HOST: codex` → `claude`'
 has "HOST: claude routes to codex" "$ROUTER" '`HOST: claude` → `codex`'
+has "HOST: other names Copilot CLI" "$ROUTER" '`HOST: other` (Cursor, Kiro, Copilot CLI)'
 
 echo "router: invoke, don't list"
 has "the router tells the agent to invoke the skill" "$ROUTER" "Invoke it, don't describe it."
@@ -102,7 +110,8 @@ grep -q 'genuinely different model' "$PRE" \
   || ok "the preflight no longer calls the Codex subagent a different model"
 
 echo "memrain rule: code questions"
-for f in config/claude/rules/memrain.md config/cursor/rules/memrain.mdc config/codex/AGENTS.md; do
+for f in config/claude/rules/memrain.md config/cursor/rules/memrain.mdc config/codex/AGENTS.md \
+         config/copilot/copilot-instructions.md; do
   for tool in code_def code_callers code_refs code_callees code_blast code_flow; do
     grep -qF "$tool" "$ROOT/$f" || no "$f does not route to $tool"
   done

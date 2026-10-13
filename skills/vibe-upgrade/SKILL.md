@@ -107,7 +107,7 @@ plain directory.
 
 ```bash
 REPO=""
-for _l in "$HOME"/.claude/skills/*/bin "$HOME"/.cursor/skills/*/bin "$HOME"/.kiro/skills/*/bin "$HOME"/.agents/skills/*/bin; do
+for _l in "$HOME"/.claude/skills/*/bin "$HOME"/.cursor/skills/*/bin "$HOME"/.kiro/skills/*/bin "$HOME"/.agents/skills/*/bin "${COPILOT_HOME:-$HOME/.copilot}"/skills/*/bin; do
   [ -L "$_l" ] || continue
   _T="$(readlink "$_l")"; _C="${_T%/skills/*/bin}"
   [ "$_C" != "$_T" ] && [ -f "$_C/install" ] && [ -f "$_C/VERSION" ] && REPO="$_C" && break
@@ -182,8 +182,8 @@ or `rm` against an empty or wrong path.
 
 The upgrade re-runs `./install` exactly as it was originally run — the same
 runtimes, the same scope, config only where config was deployed. It never uses
-`--yes`, which means "all four runtimes" and would widen a Claude-only install
-into Cursor, Kiro and Codex. The choices are read from what the install left
+`--yes`, which means "all five runtimes" and would widen a Claude-only install
+into Cursor, Kiro, Codex and Copilot CLI. The choices are read from what the install left
 behind: the `.vibestack-manifest` in each skills root, and the config manifests
 under `~/.local/state/vibekit/`. Substitute `REPO` (Step 2) and `_ROOT` (Step
 2.5). The result is a small replay script, printed so the user can see it.
@@ -199,12 +199,13 @@ _VH="${VIBESTACK_HOME:-$HOME/.vibestack}"
 REPLAY="$_VH/upgrade-replay.sh"
 _STATE="${XDG_STATE_HOME:-$HOME/.local/state}/vibekit"
 _USER_T=""; _CFG_T=""; _PROJ_T=""
-for t in claude cursor kiro codex; do
+for t in claude cursor kiro codex copilot; do
   case "$t" in
     claude) r="$HOME/.claude/skills"; rel=".claude/skills" ;;
     cursor) r="$HOME/.cursor/skills"; rel=".cursor/skills" ;;
     kiro)   r="$HOME/.kiro/skills";   rel=".kiro/skills" ;;
     codex)  r="$HOME/.agents/skills"; rel=".agents/skills" ;;
+    copilot) r="${COPILOT_HOME:-$HOME/.copilot}/skills"; rel=".github/skills" ;;
   esac
   if [ -f "$r/.vibestack-manifest" ] || [ -f "$r/vibe-upgrade/SKILL.md" ] \
      || { [ "$t" = codex ] && [ -f "${CODEX_HOME:-$HOME/.codex}/skills/vibe-upgrade/SKILL.md" ]; }; then

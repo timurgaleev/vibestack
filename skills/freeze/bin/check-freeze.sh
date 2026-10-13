@@ -5,6 +5,8 @@
 # Returns a PreToolUse hookSpecificOutput with permissionDecision "deny" to block,
 # or {} to allow. The decision MUST be nested under hookSpecificOutput — Claude
 # Code ignores a top-level permissionDecision, which silently no-ops the block.
+# The same decision is also emitted flat at the top level, the form Copilot CLI
+# documents; the inline envelopes below carry both copies too.
 #
 # Polarity: freeze is a DENY-tier hook, so an unreadable payload DENIES
 # (fail closed), and so does a payload that parses but carries no path: the
@@ -25,7 +27,7 @@ _freeze_backstop() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ -z "$_FREEZE_DECIDED" ]; then
     _FREEZE_DECIDED=1
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook failed unexpectedly (exit %s) - blocked, fail closed. Check ~/.vibestack/freeze-dir.txt or run /unfreeze."}}\n' "$rc"
+    printf '{"permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook failed unexpectedly (exit %s) - blocked, fail closed. Check ~/.vibestack/freeze-dir.txt or run /unfreeze.","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook failed unexpectedly (exit %s) - blocked, fail closed. Check ~/.vibestack/freeze-dir.txt or run /unfreeze."}}\n' "$rc" "$rc"
     exit 0
   fi
 }
@@ -98,7 +100,7 @@ _HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # (an if-guard cannot catch it) — the existence check must come first.
 _HOOK_HELPER="$_HOOK_DIR/../../careful/bin/hook-extract.sh"
 if [ ! -f "$_HOOK_HELPER" ] || ! . "$_HOOK_HELPER" 2>/dev/null; then
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook helpers unavailable (broken install?) - blocked, fail closed. Reinstall vibestack or run /unfreeze."}}\n'
+  printf '{"permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook helpers unavailable (broken install?) - blocked, fail closed. Reinstall vibestack or run /unfreeze.","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"[freeze] Hook helpers unavailable (broken install?) - blocked, fail closed. Reinstall vibestack or run /unfreeze."}}\n'
   _FREEZE_DECIDED=1
   exit 0
 fi
@@ -161,6 +163,12 @@ if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
   FILE_PATH=$(vibe_hook_extract_field "$INPUT" notebook_path)
   EXTRACT_RC=$?
 fi
+# Copilot CLI's edit and create tools name the file tool_input.path.
+if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
+  PATH_FIELD=path
+  FILE_PATH=$(vibe_hook_extract_field "$INPUT" path)
+  EXTRACT_RC=$?
+fi
 set -e
 
 # Unparseable payload (or no parser available): DENY. A boundary hook that
@@ -174,12 +182,12 @@ if [ "$EXTRACT_RC" -ne 0 ]; then
   exit 0
 fi
 
-# Parsed fine but neither path field is present: the hook cannot tell what
+# Parsed fine but no path field is present: the hook cannot tell what
 # the edit touches, so it cannot vouch for the boundary — deny.
 if [ -z "$FILE_PATH" ]; then
   _vibestack_log freeze deny no-file-path ""
   _vibestack_analytics deny no_file_path
-  vibe_hook_decision deny "[freeze] The tool payload names no file_path or notebook_path, so the freeze boundary cannot be checked. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
+  vibe_hook_decision deny "[freeze] The tool payload names no file_path, notebook_path or path, so the freeze boundary cannot be checked. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
   _FREEZE_DECIDED=1
   exit 0
 fi

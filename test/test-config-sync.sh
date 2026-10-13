@@ -462,6 +462,62 @@ test_managed_block_refuses_malformed_source() {
   rm -rf "$sandbox"
 }
 
+# A1: the append strategy takes its end marker from the file it is merging.
+# ~/.copilot/copilot-instructions.md gets its own marker, and the user's lines
+# below it survive repeated syncs exactly as they do in ~/.claude/CLAUDE.md.
+test_append_managed_copilot_marker() {
+  local HOME MANIFEST_DIR PREVIEW_ONLY SANDBOX
+  _setup
+  local sandbox="$SANDBOX"
+  local markers
+  markers="$(bash -c '
+    source "$1/lib/config-install.sh" >/dev/null 2>&1 || exit 1
+    declare -F managed_end_marker >/dev/null || exit 1
+    managed_end_marker copilot copilot-instructions.md; echo
+    managed_end_marker claude CLAUDE.md; echo
+  ' _ "$REPO_ROOT" 2>/dev/null)"
+  local copilot_marker claude_marker
+  copilot_marker="$(sed -n 1p <<<"$markers")"
+  claude_marker="$(sed -n 2p <<<"$markers")"
+
+  assert_eq "$copilot_marker" \
+    "<!-- END vibekit-managed copilot-instructions.md — lines below are yours and survive every sync -->" \
+    "A1: copilot-instructions.md has its own end marker"
+  assert_eq "$claude_marker" \
+    "<!-- END vibekit-managed CLAUDE.md — lines below are yours and survive every sync -->" \
+    "A1: CLAUDE.md keeps its frozen end marker"
+
+  local src="$sandbox/src.md" dst="$sandbox/.copilot/copilot-instructions.md"
+  printf '# repo body\nrule one\n' > "$src"
+  sync_append_managed "$src" "$dst" "$copilot_marker"
+  printf 'my own line\n' >> "$dst"
+  printf '# repo body\nrule one\nrule two\n' > "$src"
+  sync_append_managed "$src" "$dst" "$copilot_marker"
+  sync_append_managed "$src" "$dst" "$copilot_marker"
+
+  assert_contains "$dst" 'rule two' "A1: repo body updated across syncs"
+  assert_contains "$dst" 'my own line' "A1: user line below the marker survived two syncs"
+  assert_eq "$(grep -cFx "$copilot_marker" "$dst")" "1" "A1: exactly one marker after three syncs"
+  rm -rf "$sandbox"
+}
+
+# A2: an append file with no declared marker has no boundary for the user's
+# tail, so the merge refuses loudly (3) rather than reporting "unchanged".
+test_append_managed_refuses_empty_marker() {
+  local HOME MANIFEST_DIR PREVIEW_ONLY SANDBOX
+  _setup
+  local sandbox="$SANDBOX"
+  local src="$sandbox/src.md" dst="$sandbox/dst.md"
+  printf '# repo body\n\nrule\n' > "$src"
+  printf 'theirs\n' > "$dst"
+  sync_append_managed "$src" "$dst" ""
+  assert_eq "$?" "3" "A2: empty end marker is refused with 3"
+  assert_eq "$(cat "$dst")" "theirs" "A2: destination untouched"
+  rm -rf "$sandbox"
+}
+
+test_append_managed_copilot_marker
+test_append_managed_refuses_empty_marker
 test_prune_removes_stale
 test_prune_spares_user_files
 test_prune_refuses_symlink_escape

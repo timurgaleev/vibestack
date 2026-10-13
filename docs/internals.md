@@ -57,7 +57,8 @@ other than a project's own record:
 - **`<target skills root>/.vibestack-manifest`** — the list of skill names
   `./install` last wrote into that root, one per line, sitting inside the root
   itself (`~/.claude/skills/`, `~/.cursor/skills/`, `~/.kiro/skills/`,
-  `~/.agents/skills/`, or the project-scope equivalent). The next install reads
+  `~/.agents/skills/`, `${COPILOT_HOME:-~/.copilot}/skills/`, or the
+  project-scope equivalent). The next install reads
   it to tell a skill the pack withdrew from a skill some other tool put there:
   without the record both look identical once the name leaves the pack, and the
   adopt-back step that protects other installers' work carries the withdrawn one
@@ -93,7 +94,7 @@ new.
 | `vibe-render-skill` | Render-at-install: expand `{{include}}` directives |
 | `vibe-skill-track` | Opt-in skill-usage analytics hook |
 | `vibe-skill-usage` | Read-only skill-usage counts from the analytics log and Claude transcripts; other runtimes are reported unmeasured |
-| `vibe-gc` | Audit-only configuration scan for `/vibe-gc` (unclaimed skills, orphan hooks, duplicate or shadowed permissions, configured MCP servers, old caches across all four runtime roots); `trash` soft-deletes into `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, `undo <date>` moves items back. Refuses settings, `~/.claude.json`, `.mcp.json`, transcripts, project state and manifest-claimed skills |
+| `vibe-gc` | Audit-only configuration scan for `/vibe-gc` (unclaimed skills, orphan hooks, duplicate or shadowed permissions, configured MCP servers, old caches across all five runtime roots); `trash` soft-deletes into `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, `undo <date>` moves items back. Refuses settings, `~/.claude.json`, `.mcp.json`, transcripts, project state and manifest-claimed skills |
 | `vibe-compact-snapshot` | Claude PreCompact hook: a git-state snapshot per project before compaction, never transcript content |
 | `vibe-session-kind` | Classify the session: spawned / headless / interactive. `spawned` needs `OPENCLAW_SESSION` or an affirmative `VIBE_SPAWNED` (`0`/`false`/`no`/`off` do not count); the dispatching agent sets `VIBE_SPAWNED=1`, since an agent-tool child inherits no environment |
 | `vibe-repo-mode` | Emit `REPO_MODE=solo\|collaborative` from git history |
@@ -119,7 +120,7 @@ new.
 | `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose. A single argument after `--` runs as a shell command line and is recorded verbatim. `check` narrows with `--expect-cmd C` (the recorded line must equal C), `--max-age H` (older passes are STALE) and `--allow-paths P` (a run at another tree still counts when only release bookkeeping such as `CHANGELOG.md,VERSION` differs); a recorded tree the object store no longer has never matches |
 | `vibe-version-bump` | Move VERSION, `package.json` and the lockfiles together or not at all; `--root` for a manifest in a subdirectory |
 | `vibe-detach` | Run a command past the turn boundary; `status` separates running (exit 2) from failed (exit 1) |
-| `vibe-context-budget` | Measure the always-loaded skill listing (rendered name + description per skill) against a runtime's budget — Codex 8,000 chars by default; exit 1 over budget, `--warn-only` reports without failing; CI reports it on every PR |
+| `vibe-context-budget` | Measure the always-loaded skill listing (rendered name + description per skill) against a runtime's budget — Codex 8,000 chars by default; `--runtime copilot` enforces Copilot's 1,024-char per-description cap and reports the total without gating it; exit 1 over budget, `--warn-only` reports without failing; CI reports it on every PR |
 | `vibe-codex-probe` | Whether Codex is *usable*, not merely installed — cheap negatives first, one cached round trip for the positive |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
@@ -263,6 +264,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-autoplan-ledger.sh` | `/autoplan` audit records: well-formed tables and one voice record per review |
 | `test-config-claude_md_preserve.sh` | The deployed `~/.claude/CLAUDE.md` is merged, so lines a third party appended survive a sync |
 | `test-config-codex_agents.sh` | `config/codex/AGENTS.md` matches what `scripts/gen-codex-agents.py` generates from its sources |
+| `test-config-copilot.sh` | `config/copilot/copilot-instructions.md` and `agents/*.agent.md` match their generators, carry no Claude-only constructs, and every Claude agent has a Copilot twin |
 | `test-config-deliberation.sh` | The opt-in deliberation plugin install, which leaves its own config to the plugin's setup |
 | `test-config-install_bootstrap.sh` | The configuration library finds its own files under `bash -c "$(curl …)"` |
 | `test-config-rtk.sh` | `rtk init -g` runs after the settings merge, and the RTK installer is downloaded to a file before it runs |

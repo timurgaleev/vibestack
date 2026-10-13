@@ -1,7 +1,8 @@
 # Hook Verification — Manual Procedure
 
 **Audience:** anyone who installs vibestack into Cursor or Kiro and uses the
-hook-bearing skills (`careful`, `freeze`, `guard`, `investigate`).
+hook-bearing skills (`careful`, `freeze`, `guard`, `investigate`). Copilot CLI
+works differently and has its own section: [Copilot CLI](#copilot-cli).
 
 **Why this exists.** The Agent Skills open standard (agentskills.io) standardizes
 the SKILL.md file shape. It does **not** standardize per-skill `PreToolUse` hooks,
@@ -135,6 +136,72 @@ commands manually.
 - If this is the failure mode, file an issue. The fix is either a per-target
   env var shim in install (track as v1.5 candidate `vibe certify` /
   `vibe-hook-shim`) or a per-target frontmatter rewrite.
+
+## Copilot CLI
+
+Copilot CLI ignores the `hooks:` key in SKILL.md frontmatter: its hooks are
+user-level, not skill-scoped. vibestack enforces `careful` and `freeze` there
+through one user hook file, `config/copilot/hooks/vibestack.json`, which the
+configuration phase deploys to `${COPILOT_HOME:-~/.copilot}/hooks/vibestack.json`
+(`./install --with-config` or `--only=config`). A skills-only install ships no
+hook file, so both skills stay instruction-only.
+
+The file registers three `PreToolUse` entries and one `PreCompact` entry under
+the PascalCase event names, which give the snake_case payload
+(`tool_name`, `tool_input`) the scripts already read and Claude-style matchers:
+
+| Event | Matcher | Runs | Copilot tools matched |
+|---|---|---|---|
+| `PreToolUse` | `Bash` | `skills/careful/bin/check-careful.sh` | `bash`, `powershell` |
+| `PreToolUse` | `Edit\|Write` | `skills/careful/bin/check-careful.sh` (gate files) | `edit`, `str_replace_editor`, `apply_patch`, `create` |
+| `PreToolUse` | `Edit\|Write` | `skills/freeze/bin/check-freeze.sh` | same |
+| `PreCompact` | none | `~/.vibestack/bin/vibe-compact-snapshot` | every compaction |
+
+Each command resolves its script under `${COPILOT_HOME:-$HOME/.copilot}/skills`,
+then under `.github/skills` at the git root (a project-scope install, found
+from any subdirectory), then under `~/.agents/skills` (a Codex install, which
+Copilot also loads), and exits 0 with no output when none has it, which Copilot treats as "no decision". The one
+exception is freeze: when no `check-freeze.sh` is found but
+`${VIBESTACK_HOME:-$HOME/.vibestack}/freeze-dir.txt` exists, the command prints
+a flat deny, because a boundary nothing enforces must not pass silently.
+Copilot's edit and create tools name the file `tool_input.path` rather than
+`file_path`; both scripts read either. `timeoutSec` is 15 (10 for `PreCompact`), below the 30-second
+default, because a timeout fails open on Copilot even for `PreToolUse`.
+
+**Decision envelope.** Claude Code reads the decision only when it is nested
+under `hookSpecificOutput`; Copilot CLI documents only the flat top-level
+`permissionDecision` / `permissionDecisionReason`. The hooks print both copies
+in one JSON object:
+
+```json
+{"permissionDecision":"ask","permissionDecisionReason":"<r>","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"<r>"}}
+```
+
+`bash test/test-hooks.sh` asserts that every ask/deny carries both copies and
+that they agree, and runs each command from the hook file against a scratch
+`HOME` and `COPILOT_HOME`.
+
+**Differences from Claude Code** (documented, not bugs):
+
+- `/careful` is always on once the hook file is deployed, because the hook is
+  not tied to invoking the skill. Most matches ask; the catastrophic set denies.
+- `/freeze` is unchanged: with no `~/.vibestack/freeze-dir.txt` it allows.
+  `/guard` and `/investigate` reach the same two scripts through the same file.
+- A hook that exits non-zero (other than 2) is a deny on Copilot, where Claude
+  Code shows a non-blocking error.
+- `NotebookEdit` has no Copilot tool, so there is no matcher for it.
+- The entries carry only a `bash` command; native Windows PowerShell sessions
+  run no command for them.
+
+### Live verification
+
+Recorded 2026-10-13 against GitHub Copilot CLI 1.0.96 and Claude Code.
+
+| Check | Procedure | Result |
+|---|---|---|
+| Live Copilot CLI enforcement | Installed this tree with `--target=copilot --with-config` into a scratch `COPILOT_HOME`, with a freeze boundary set. A create outside the boundary was refused: `Denied by preToolUse hook: [freeze] Blocked: path ... is outside the freeze boundary`. A create inside it went through. `git push --force origin main` was refused: `Denied by preToolUse hook (unable to ask user for confirmation): [careful] Destructive: git force-push rewrites remote history.` In `-p` (non-interactive) mode Copilot cannot prompt, so an ask becomes a deny. | PASS |
+| Copilot payload shape | Copilot sends `{"hook_event_name":"PreToolUse","tool_name":"Write"\|"Edit"\|"Bash"\|"Read","tool_input":{...}}`. Edits carry `tool_input.path` (plus `file_text` on create), not `file_path`; `Bash` carries `tool_input.command`. | Recorded; both scripts read `path` |
+| Claude Code tolerates the extra top-level keys | A `PreToolUse` hook printing the two-copy envelope (flat `permissionDecision` plus nested `hookSpecificOutput`) with `deny` blocked the Bash call: `PreToolUse:Bash hook error: <reason>`. The extra top-level keys are tolerated. | PASS |
 
 ## What we did NOT verify in v1.4.0
 

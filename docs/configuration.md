@@ -3,11 +3,11 @@
 The pack has two halves. `./install` installs the skills; `./install
 --with-config` also deploys the always-on configuration described here —
 `CLAUDE.md`, the behaviour rules, the sub-agents and the statusline — into
-`~/.claude`, `~/.cursor`, `~/.kiro` and `~/.codex`. `--only=config` runs that
+`~/.claude`, `~/.cursor`, `~/.kiro`, `~/.codex` and `~/.copilot`. `--only=config` runs that
 half alone, and `./uninstall --with-config` removes it again.
 
 The payload lives under `config/` in this repository: `config/claude/`,
-`config/cursor/`, `config/kiro/` and `config/codex/`, one directory per
+`config/cursor/`, `config/kiro/`, `config/codex/` and `config/copilot/`, one directory per
 destination. Everything on this page is optional — the defaults work out of the
 box, so reach for it only when you want to change something.
 
@@ -47,6 +47,36 @@ overwriting:
 | `hooks.json` | Adds only missing keys. |
 
 `kiro/agents/default.json` uses the same add-only-missing merge.
+
+## Copilot CLI
+
+`config/copilot/` deploys to `${COPILOT_HOME:-~/.copilot}/`. The skills
+themselves install separately, into `${COPILOT_HOME:-~/.copilot}/skills/` (or
+`.github/skills/` with `--scope=project`), and Copilot invokes them as `/name`.
+
+| File | How it syncs |
+|------|--------------|
+| `copilot-instructions.md` | **Generated** from `config/claude/CLAUDE.md` + `config/claude/rules/` by `scripts/gen-codex-agents.py --target copilot`, self-contained like Codex's `AGENTS.md`. Replaces only the region above its own end marker (`<!-- END vibekit-managed copilot-instructions.md … -->`); lines you add below it survive every sync, and uninstall strips only the managed region. |
+| `agents/*.agent.md` | **Generated** from every `config/claude/agents/*.md` (except `README.md`) by `scripts/gen-copilot-agents.py`. `name`, `description` and `tools` carry over; `model` is dropped, since Claude tier names are not Copilot model ids. Whole files, owned by the manifest. |
+| `hooks/vibestack.json` | Whole file, owned by the manifest. Wires `/careful` and `/freeze` into Copilot's `PreToolUse` and the context snapshot into `PreCompact`. Each command exits silently when the script it calls is not installed. |
+| `settings.json` | Adds only missing keys. It carries exactly one, `"includeCoAuthoredBy": false` — Copilot otherwise defaults it to `true` and adds an AI co-author trailer to every commit it makes. A value you already set is kept, and `./uninstall --with-config` restores or drops the key through the same pre/post snapshots as the other merged files. |
+
+`config.json` in that directory is never read or written: it is Copilot's own
+internal state (auth, trusted folders, plugins), and the setting keys it
+contains are ignored by Copilot anyway.
+
+Copilot hooks are user-level, not scoped to a skill, so the `hooks:` frontmatter
+that drives `/careful` and `/freeze` in Claude Code is inert there. Once
+`hooks/vibestack.json` is deployed, **`/careful` is always on** under Copilot —
+every destructive command asks, whether or not you invoked the skill. `/freeze`
+still enforces only while `~/.vibestack/freeze-dir.txt` exists. The hook file
+installs only with `--with-config` or `--only=config`; a skills-only install
+leaves both instruction-only. A crash in a hook script counts as a deny under
+Copilot, and a hook that runs past its timeout fails open.
+
+Copilot also reads `~/.agents/skills` (when `COPILOT_HOME` is unset), so a
+Codex-only install already exposes the skills there — without the hook file,
+the instructions or the agents.
 
 ## Pruning removed files
 

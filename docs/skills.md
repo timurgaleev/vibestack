@@ -361,7 +361,7 @@ The same hook runs on Edit and Write: an edit to a gate file — lint, format an
 
 PowerShell (Claude Code's shell on Windows) and any `pwsh`/`powershell`/`cmd` launched from Bash get a trimmed Windows set: recursive or forced `Remove-Item` and its aliases, `Get-ChildItem -Recurse` piped into `Remove-Item`, cmd `rd /s` and `del /s`, `Format-Volume`/`Clear-Disk`, `[IO.Directory]::Delete`, and `-EncodedCommand`/`Invoke-Expression`, which cannot be inspected. All of them prompt.
 
-Active for the session until you end it. The hook runs only in Claude Code; in Cursor, Kiro and Codex `/careful` is instruction-only.
+Active for the session until you end it. The hook runs in Claude Code, and in Copilot CLI once the configuration payload has installed `~/.copilot/hooks/vibestack.json` — there it is always on, not per session, and it covers gate-file edits as well as commands. In Cursor, Kiro, Codex and a skills-only Copilot install `/careful` is instruction-only.
 
 **Your own patterns.** Add one POSIX ERE per line to
 `~/.vibestack/careful-patterns.txt` (or, for one project only,
@@ -390,7 +390,7 @@ Records the directory in `~/.vibestack/freeze-dir.txt` through `freeze-state.sh`
 
 Read and Bash operations are unaffected.
 
-The boundary lives in the state file, not in the session: it persists until `/unfreeze`, and any later session that loads the freeze hook (`/freeze`, `/guard`, `/investigate`) enforces it again. The hook runs only in Claude Code; in Cursor, Kiro and Codex `/freeze` is instruction-only.
+The boundary lives in the state file, not in the session: it persists until `/unfreeze`, and any later session that loads the freeze hook (`/freeze`, `/guard`, `/investigate`) enforces it again. The hook runs in Claude Code, and in Copilot CLI once the configuration payload has installed `~/.copilot/hooks/vibestack.json`. In Cursor, Kiro, Codex and a skills-only Copilot install `/freeze` is instruction-only.
 
 Triggers: `freeze edits to directory`, `lock editing scope`, `restrict file changes`, `only edit this folder`
 
@@ -410,7 +410,7 @@ Full safety mode: `/careful` + `/freeze` combined.
 
 Activates the destructive-command guard (warnings, plus the non-overridable tier described under `/careful`) and edit-scope restriction in one command. Use when touching production systems or debugging live issues.
 
-The edit boundary persists in `~/.vibestack/freeze-dir.txt` until `/unfreeze`, across sessions. Ending the session turns off the destructive-command guard only. The hooks run only in Claude Code; in Cursor, Kiro and Codex `/guard` is instruction-only.
+The edit boundary persists in `~/.vibestack/freeze-dir.txt` until `/unfreeze`, across sessions. Ending the session turns off the destructive-command guard only. The hooks run in Claude Code, and in Copilot CLI once the configuration payload has installed `~/.copilot/hooks/vibestack.json` (where the destructive-command guard is always on). In Cursor, Kiro, Codex and a skills-only Copilot install `/guard` is instruction-only.
 
 Triggers: `full safety mode`, `guard against mistakes`, `maximum safety`, `guard mode`, `lock it down`
 
@@ -555,7 +555,7 @@ Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`
 ---
 
 ### `/vibe-gc`
-Audit what is installed around the agent and retire what the owner confirms. `vibe-gc scan` ranks at most 20 candidates across all four runtime roots: skill directories no `.vibestack-manifest` claims (missing or empty `SKILL.md`, duplicate names), hook scripts nothing in the user settings or another hook references, duplicate or `Bash(*)`-shadowed permission entries, configured MCP servers, and old caches. Pack-owned skills are never candidates, unmeasured usage never counts as unused, and a server that fails to connect is evidence, not a verdict. Each item is confirmed on its own; a confirmed item moves to `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, and `vibe-gc undo <date>` moves it back. Settings, `~/.claude.json`, `.mcp.json` and transcripts are refused, and MCP, cron and launchd state is never changed. Headless runs audit only.
+Audit what is installed around the agent and retire what the owner confirms. `vibe-gc scan` ranks at most 20 candidates across all five runtime roots: skill directories no `.vibestack-manifest` claims (missing or empty `SKILL.md`, duplicate names), hook scripts nothing in the user settings or another hook references, duplicate or `Bash(*)`-shadowed permission entries, configured MCP servers, and old caches. Pack-owned skills are never candidates, unmeasured usage never counts as unused, and a server that fails to connect is evidence, not a verdict. Each item is confirmed on its own; a confirmed item moves to `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, and `vibe-gc undo <date>` moves it back. Settings, `~/.claude.json`, `.mcp.json` and transcripts are refused, and MCP, cron and launchd state is never changed. Headless runs audit only.
 
 Triggers: `vibe gc`, `clean up skills`, `garbage collect config`, `prune unused skills`
 

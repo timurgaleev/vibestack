@@ -73,7 +73,8 @@ this target. List every runtime's skill roots — the user's words never go into
 a shell pattern; you match the site against the names yourself:
 
 ```bash
-ls -1 ~/.claude/skills ~/.agents/skills ~/.cursor/skills ~/.kiro/skills .claude/skills .agents/skills 2>/dev/null
+ls -1 ~/.claude/skills ~/.agents/skills ~/.cursor/skills ~/.kiro/skills "${COPILOT_HOME:-$HOME/.copilot}/skills" \
+  .claude/skills .agents/skills .github/skills 2>/dev/null
 ```
 
 Then ask the browse daemon for its browser-skills (a meta verb only the full

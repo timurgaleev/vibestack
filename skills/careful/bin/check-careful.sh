@@ -8,6 +8,8 @@
 #   MEDIUM — the destructive families below return "ask" (always overridable).
 # The decision MUST be nested under hookSpecificOutput — Claude Code ignores a
 # top-level permissionDecision, which silently no-ops the warning.
+# The same decision is also emitted flat at the top level, the form Copilot CLI
+# documents; the inline fallback envelope below carries both copies too.
 set -euo pipefail
 
 # Opt-in debug logging. No-op unless VIBESTACK_DEBUG=1.
@@ -78,7 +80,7 @@ _HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # install must degrade to an ASK (this is the ask-tier hook), never silence.
 _HOOK_HELPER="$_HOOK_DIR/hook-extract.sh"
 if [ ! -f "$_HOOK_HELPER" ] || ! . "$_HOOK_HELPER" 2>/dev/null; then
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"[careful] Hook helpers unavailable (broken install?) - cannot safety-check this command. Approve only if you know what it does."}}\n'
+  printf '{"permissionDecision":"ask","permissionDecisionReason":"[careful] Hook helpers unavailable (broken install?) - cannot safety-check this command. Approve only if you know what it does.","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"[careful] Hook helpers unavailable (broken install?) - cannot safety-check this command. Approve only if you know what it does."}}\n'
   exit 0
 fi
 
@@ -119,6 +121,8 @@ fi
 if [ -z "$CMD" ]; then
   set +e
   _FILE_PATH=$(vibe_hook_extract_field "$INPUT" file_path)
+  # Copilot CLI's edit and create tools name the file tool_input.path.
+  [ -n "$_FILE_PATH" ] || _FILE_PATH=$(vibe_hook_extract_field "$INPUT" path)
   set -e
   if [ -n "$_FILE_PATH" ] && printf '%s' "$_FILE_PATH" | grep -qE \
     -e '(^|/)(\.eslintrc(\.[a-z]+)?|eslint\.config\.[a-z]+|biome\.jsonc?|\.?ruff\.toml|\.pre-commit-config\.ya?ml|tsconfig(\.[a-z]+)?\.json|\.gitlab-ci\.ya?ml|Jenkinsfile|codecov\.ya?ml|\.golangci\.ya?ml|pytest\.ini|\.flake8|mypy\.ini)$' \

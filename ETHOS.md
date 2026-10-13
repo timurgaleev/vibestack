@@ -15,7 +15,7 @@ Write like you're briefing a smart colleague, not programming a machine.
 Before creating a new skill, check what already exists. Ask: could an existing skill handle this with a different invocation? Could it be a trigger alias rather than a new file? Three layers to check:
 
 1. Existing skills in this repo
-2. Built-in behaviors of your agent (Claude Code, Cursor, Kiro, and Codex CLI all ship native commands)
+2. Built-in behaviors of your agent (Claude Code, Cursor, Kiro, Codex CLI and Copilot CLI all ship native commands)
 3. Whether it's actually a problem worth solving
 
 Skills multiply complexity. Add one only when you'd reach for it repeatedly.

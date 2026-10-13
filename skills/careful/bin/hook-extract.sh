@@ -54,10 +54,12 @@ vibe_hook_json_string() {
 #   Emits the full PreToolUse hookSpecificOutput envelope with REASON safely
 #   JSON-encoded. DECISION is "ask" or "deny". The decision MUST be nested
 #   under hookSpecificOutput — Claude Code ignores a top-level
-#   permissionDecision, which silently no-ops the block.
+#   permissionDecision, which silently no-ops the block. Copilot CLI documents
+#   only the flat top-level form, so the same decision is emitted at both
+#   levels in one object; each host reads the copy it understands.
 vibe_hook_decision() {
   _vhd_decision="$1"
   _vhd_reason="$2"
   _vhd_encoded=$(vibe_hook_json_string "$_vhd_reason")
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":%s}}\n' "$_vhd_decision" "$_vhd_encoded"
+  printf '{"permissionDecision":"%s","permissionDecisionReason":%s,"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":%s}}\n' "$_vhd_decision" "$_vhd_encoded" "$_vhd_decision" "$_vhd_encoded"
 }

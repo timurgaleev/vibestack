@@ -9,7 +9,7 @@
   <rect x="0" y="0" width="880" height="400" rx="18" fill="url(#mapbg)"/>
 
   <text x="40" y="50" fill="#E6EDF3" font-size="22" font-weight="700">60 commands, six jobs</text>
-  <text x="40" y="72" fill="#7D8590" font-size="13" font-weight="500">one source, four runtimes — the commands you reach for most, per stage</text>
+  <text x="40" y="72" fill="#7D8590" font-size="13" font-weight="500">one source, five runtimes — the commands you reach for most, per stage</text>
 
   <!-- row 1 -->
   <g>

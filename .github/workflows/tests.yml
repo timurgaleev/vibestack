@@ -46,6 +46,7 @@ jobs:
           - test-plan-review-contract.sh
           - test-config-claude_md_preserve.sh
           - test-config-codex_agents.sh
+          - test-config-copilot.sh
           - test-config-deliberation.sh
           - test-config-install_bootstrap.sh
           - test-config-rtk.sh
@@ -215,6 +216,9 @@ jobs:
         run: |
           status=0
           bin/vibe-context-budget --runtime codex --top 15 > /tmp/context-budget.txt || status=$?
+          # Copilot caps each description at 1,024 chars; its total listing
+          # budget is undocumented, so only the per-description cap gates.
+          bin/vibe-context-budget --runtime copilot --top 15 >> /tmp/context-budget.txt || status=$?
           cat /tmp/context-budget.txt
           { echo '```'; cat /tmp/context-budget.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"

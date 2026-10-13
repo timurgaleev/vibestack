@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# vibestack install — register skills with Claude Code, Cursor, Kiro, Codex CLI
+# vibestack install — register skills with Claude Code, Cursor, Kiro, Codex CLI,
+# Copilot CLI
 # v1.5.0: install plan UX + per-target atomic stage-and-swap
 
 set -uo pipefail
@@ -49,7 +50,8 @@ bun_version_at_least() {
 # Multi-target configuration (v1.4.0+)
 #
 # vibestack installs into one or more agent runtimes that adopt the Agent
-# Skills open standard (agentskills.io): Claude Code, Cursor, Kiro, Codex CLI.
+# Skills open standard (agentskills.io): Claude Code, Cursor, Kiro, Codex CLI,
+# Copilot CLI.
 # Same rendered SKILL.md to each target's conventional skills path. See
 # docs/agent-skills-compatibility-audit.md for runtime caveats.
 # ───────────────────────────────────────────────────────────────────────────
@@ -59,10 +61,11 @@ usage() {
 Usage: ./install [options]
 
 Options:
-  --target=<list>   Comma-separated targets: claude, cursor, kiro, codex, or all.
-                    Bypasses the interactive prompt. Default behavior asks.
-                    `all` = claude, cursor, kiro, codex.
-  --yes, -y         Non-interactive: install into the default set (all four).
+  --target=<list>   Comma-separated targets: claude, cursor, kiro, codex,
+                    copilot, or all. Bypasses the interactive prompt. Default
+                    behavior asks.
+                    `all` = claude, cursor, kiro, codex, copilot.
+  --yes, -y         Non-interactive: install into the default set (all five).
                     Equivalent to --target=all.
   --scope=<s>       user (default) installs into ~/. project installs skills
                     into <project-root>/.claude/skills etc. — pins the pack's
@@ -75,7 +78,7 @@ Options:
 Configuration phase:
   The pack also ships the always-on configuration — CLAUDE.md, the behaviour
   rules, the sub-agents and the statusline — under config/. It deploys into
-  ~/.claude, ~/.cursor, ~/.kiro and ~/.codex, alongside the skills.
+  ~/.claude, ~/.cursor, ~/.kiro, ~/.codex and ~/.copilot, alongside the skills.
 
   --with-config     Deploy the configuration as well as the skills.
   --no-config       Skills only (the current default).
@@ -91,18 +94,22 @@ Configuration phase:
 Default behavior:
   Interactive (TTY):     shows write plan + Enter installs detected
   Non-interactive (CI):  installs into the default set (claude, cursor, kiro,
-                         codex)
+                         codex, copilot)
 
   Codex reads user skills from ~/.agents/skills and repo skills from
   .agents/skills — not from ~/.codex, which holds only its config. A superseded
   copy under ~/.codex/skills is pruned (our skill names only).
 
+  Copilot CLI reads user skills from $COPILOT_HOME/skills (default
+  ~/.copilot/skills) and repo skills from .github/skills.
+
 Examples:
   ./install                          # Interactive: install plan + Enter
-  ./install --target=all             # claude, cursor, kiro, codex (default set)
+  ./install --target=all             # claude, cursor, kiro, codex, copilot (default set)
   ./install --target=cursor          # Cursor only
   ./install --target=cursor,kiro     # Cursor + Kiro
   ./install --target=codex           # Codex CLI only
+  ./install --target=copilot         # Copilot CLI only
   ./install --yes                    # Default set, skip prompts (CI-friendly)
   ./install --dry-run                # Interactive preview, write nothing
   ./install --scope=project --project-root=~/code/myapp --target=claude
@@ -122,6 +129,7 @@ declare -A TARGET_LABEL=(
   [cursor]="Cursor"
   [kiro]="Kiro"
   [codex]="Codex CLI"
+  [copilot]="Copilot CLI"
 )
 # Config dir — drives detection only, never receives skills.
 declare -A TARGET_CONFIG_DIR=(
@@ -129,6 +137,7 @@ declare -A TARGET_CONFIG_DIR=(
   [cursor]="$HOME/.cursor"
   [kiro]="$HOME/.kiro"
   [codex]="${CODEX_HOME:-$HOME/.codex}"
+  [copilot]="${COPILOT_HOME:-$HOME/.copilot}"
 )
 declare -A TARGET_ROOT=(
   [claude]="$HOME/.claude/skills"
@@ -137,6 +146,9 @@ declare -A TARGET_ROOT=(
   # Codex's documented user-skill scope. Not under $CODEX_HOME — the docs place
   # user skills at $HOME/.agents/skills regardless of where its config lives.
   [codex]="$HOME/.agents/skills"
+  # Copilot also reads ~/.agents/skills, but only while $COPILOT_HOME is unset;
+  # a root of its own keeps one manifest per target and honors $COPILOT_HOME.
+  [copilot]="${COPILOT_HOME:-$HOME/.copilot}/skills"
 )
 # Project scope (`--scope=project`), relative to the project root.
 declare -A TARGET_PROJECT_REL=(
@@ -144,6 +156,8 @@ declare -A TARGET_PROJECT_REL=(
   [cursor]=".cursor/skills"
   [kiro]=".kiro/skills"
   [codex]=".agents/skills"
+  # Highest-priority repo root Copilot scans, ahead of .agents and .claude.
+  [copilot]=".github/skills"
 )
 
 # Superseded user-scope roots. vibestack shipped codex installs into
@@ -155,7 +169,7 @@ declare -A TARGET_LEGACY_ROOT=(
 )
 
 # Default "all"/`--yes` set — every runtime whose skill-loading path is verified.
-ALL_TARGETS=("claude" "cursor" "kiro" "codex")
+ALL_TARGETS=("claude" "cursor" "kiro" "codex" "copilot")
 
 target_label() {
   echo "${TARGET_LABEL[$1]:-$1}"
@@ -294,7 +308,7 @@ esac
 
 # Asking for one of the optional tools is asking for the phase that installs
 # them — but only when the user has not already said the phase is off. Turning
-# it back on there would let `--no-config -C` write to four config directories
+# it back on there would let `--no-config -C` write to the config directories
 # the user just excluded. --no-rtk never turns the phase on: it turns something
 # off.
 if [ "$CFG_CAVEMAN" = "true" ] || [ "$CFG_PONYTAIL" = "true" ] || [ "$CFG_DELIBERATION" = "true" ]; then
@@ -342,8 +356,8 @@ case "$SCOPE" in
     ;;
 esac
 
-# The configuration phase deploys into ~/.claude, ~/.cursor, ~/.kiro and
-# ~/.codex. Project scope pins skills per repo; those files have no per-repo
+# The configuration phase deploys into ~/.claude, ~/.cursor, ~/.kiro, ~/.codex
+# and ~/.copilot. Project scope pins skills per repo; those files have no per-repo
 # counterpart, so the combination is refused rather than silently ignored.
 if [ "$WITH_CONFIG" = "1" ] && [ "$SCOPE" = "project" ]; then
   echo "ERROR: the configuration phase is user scope only (--scope=project installs skills)" >&2
@@ -408,7 +422,7 @@ run_config_phase() {
     return 1
   fi
 
-  # Without this the library falls back to its own four-target list, so
+  # Without this the library falls back to its own all-target list, so
   # `--target=codex` would rewrite Claude, Cursor and Kiro configuration too.
   CFG_TARGETS="$1"
 
@@ -492,9 +506,9 @@ print_install_plan() {
 #
 # Priority order (eng-review R2 ordering preserved):
 #   1. --target=<list>   → use as-is (validated)
-#   2. --yes / -y        → all four
+#   2. --yes / -y        → all five
 #   3. TTY available     → install plan + Enter UX (NEW v1.5.0)
-#   4. Non-TTY (CI)      → all four
+#   4. Non-TTY (CI)      → all five
 # ───────────────────────────────────────────────────────────────────────────
 declare -a TARGETS
 
@@ -542,7 +556,7 @@ elif [ -r /dev/tty ] && [ -t 0 ]; then
       ""|y|Y)
         if [ "${#default_targets[@]}" -eq 0 ]; then
           echo ""
-          echo "No targets detected. Run with \`a\` to install all four, or pass" >&2
+          echo "No targets detected. Run with \`a\` to install all five, or pass" >&2
           echo "\`--target=<list>\` explicitly." >&2
           exit 0
         fi
@@ -592,7 +606,7 @@ elif [ -r /dev/tty ] && [ -t 0 ]; then
         # Dry-run from prompt (eng-review R3: empty defaults → exit with hint).
         if [ "${#default_targets[@]}" -eq 0 ]; then
           echo ""
-          echo "Nothing to dry-run — no targets detected. Use \`a\` to preview all 3," >&2
+          echo "Nothing to dry-run — no targets detected. Use \`a\` to preview all targets," >&2
           echo "or pass \`--target=<list>\` explicitly." >&2
           exit 0
         fi
@@ -1112,6 +1126,17 @@ done
 # non-claude target landed hook-bearing skills (R15 — surfaces safety info
 # even on partial success). Happy-path CTA suppressed on any failure.
 # ───────────────────────────────────────────────────────────────────────────
+# Copilot ignores the `hooks:` frontmatter; careful and freeze run there from
+# the user hook file the configuration phase deploys.
+copilot_hook_note() {
+  case " ${TARGETS[*]} " in
+    *" copilot "*)
+      echo "    Copilot CLI runs them from ${TARGET_CONFIG_DIR[copilot]}/hooks/vibestack.json,"
+      echo "    deployed with --with-config; without it they are instruction-only."
+      ;;
+  esac
+}
+
 any_failed=0
 for t in "${TARGETS[@]}"; do
   [ "${target_status[$t]:-}" = "failed" ] && any_failed=1
@@ -1148,7 +1173,8 @@ if [ "$any_failed" = "1" ]; then
     echo ""
     echo "  ⚠ Hook-bearing skills (careful, freeze, guard, investigate) were"
     echo "    installed into non-Claude targets that completed. Their PreToolUse"
-    echo "    hooks may not fire identically across Cursor/Kiro/Codex."
+    echo "    hooks may not fire identically across Cursor/Kiro/Codex/Copilot."
+    copilot_hook_note
     echo "    Verify per: docs/hook-verification.md"
   fi
   # Happy-path CTA suppressed on partial failure.
@@ -1176,7 +1202,8 @@ if [ "$DRY_RUN" != "1" ] && [ "$hook_skills_installed_non_claude" -gt 0 ]; then
   echo ""
   echo "  ⚠ Hook-bearing skills (careful, freeze, guard, investigate) were"
   echo "    installed into non-Claude targets. Their PreToolUse hooks may"
-  echo "    not fire identically across Cursor/Kiro/Codex."
+  echo "    not fire identically across Cursor/Kiro/Codex/Copilot."
+  copilot_hook_note
   echo "    Verify per: docs/hook-verification.md"
 fi
 

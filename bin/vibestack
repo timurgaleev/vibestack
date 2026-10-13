@@ -7,7 +7,7 @@
 #   vibestack                  # status overview
 #   vibestack help             # list subcommands
 #   vibestack version          # installed pack version
-#   vibestack skills [target]  # list installed skills (claude|cursor|kiro|codex)
+#   vibestack skills [target]  # list installed skills (claude|cursor|kiro|codex|copilot)
 #   vibestack doctor           # health check: bins, skills, state dirs
 #   vibestack <tool> [args…]   # dispatch to vibe-<tool> (config, decision-log,
 #                              # decision-search, learnings-search, slug, …)
@@ -47,13 +47,14 @@ skills_dir_for() {
     cursor) printf '%s\n' "$HOME/.cursor/skills" ;;
     kiro)   printf '%s\n' "$HOME/.kiro/skills" ;;
     codex)  printf '%s\n' "$HOME/.agents/skills" ;;
+    copilot) printf '%s\n' "${COPILOT_HOME:-$HOME/.copilot}/skills" ;;
     *)      return 1 ;;
   esac
 }
 
 cmd_skills() {
   local target="${1:-claude}" dir
-  dir="$(skills_dir_for "$target")" || { echo "unknown target: $target (claude|cursor|kiro|codex)" >&2; return 1; }
+  dir="$(skills_dir_for "$target")" || { echo "unknown target: $target (claude|cursor|kiro|codex|copilot)" >&2; return 1; }
   [ -d "$dir" ] || { echo "no skills installed for $target ($dir missing)"; return 1; }
   ls -1 "$dir"
 }
@@ -62,7 +63,7 @@ cmd_status() {
   echo "vibestack $(pack_version)"
   echo "home:   $VIBE_HOME"
   local n
-  for t in claude cursor kiro codex; do
+  for t in claude cursor kiro codex copilot; do
     local d; d="$(skills_dir_for "$t")"
     if [ -d "$d" ]; then n=$(ls -1 "$d" 2>/dev/null | wc -l | tr -d ' '); echo "skills: $t $n"; fi
   done
@@ -118,7 +119,7 @@ doctor_state_root() {
 # the pack withdrew.
 doctor_manifests() {
   local t d
-  for t in claude cursor kiro codex; do
+  for t in claude cursor kiro codex copilot; do
     d="$(skills_dir_for "$t")"
     [ -d "$d" ] || continue
     if [ -f "$d/.vibestack-manifest" ]; then echo "  ok   $t skills manifest"
@@ -156,7 +157,7 @@ cmd_doctor() {
     if tool_path "$t" >/dev/null; then echo "  ok   vibe-$t"; else echo "  MISS vibe-$t"; bad=1; fi
   done
   local d found=0
-  for t in claude cursor kiro codex; do
+  for t in claude cursor kiro codex copilot; do
     d="$(skills_dir_for "$t")"
     local n=0
     [ -d "$d" ] && n=$(ls -1 "$d" 2>/dev/null | wc -l | tr -d ' ')

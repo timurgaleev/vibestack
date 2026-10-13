@@ -66,6 +66,20 @@ run --skills-dir "$SK" --config-dir ""
 run --skills-dir "$SK" --config-dir "" --runtime claude
 [ "$(field BUDGET)" = none ] && [ "$RC" = 0 ] && ok "runtime without a known cap reports, does not gate" \
   || bad "runtime without a known cap reports, does not gate (rc=$RC)" "$OUT"
+# Copilot documents no total listing cap, but each description is capped at
+# 1024 chars; a longer one is a skill that does not load as written.
+run --skills-dir "$SK" --config-dir "" --runtime copilot
+[ "$(field BUDGET)" = none ] && [ "$RC" = 0 ] && ok "copilot reports the total, does not gate it" \
+  || bad "copilot reports the total, does not gate it (rc=$RC)" "$OUT"
+CAP="$TMP/cap"
+mk_skill "$CAP" ok1024 "description: $(printf 'x%.0s' $(seq 1024))"
+run --skills-dir "$CAP" --config-dir "" --runtime copilot
+[ "$RC" = 0 ] && ok "copilot accepts a 1024-char description" || bad "copilot accepts a 1024-char description (rc=$RC)" "$OUT"
+mk_skill "$CAP" long1025 "description: $(printf 'x%.0s' $(seq 1025))"
+run --skills-dir "$CAP" --config-dir "" --runtime copilot
+[ "$RC" = 1 ] && printf '%s\n' "$OUT" | grep -q 'long1025.*1025.*1024' \
+  && ok "copilot rejects a 1025-char description and names it" \
+  || bad "copilot rejects a 1025-char description and names it (rc=$RC)" "$OUT"
 run --skills-dir "$SK" --config-dir "" --runtime nope
 [ "$RC" = 2 ] && ok "unknown runtime exits 2" || bad "unknown runtime exits 2 (rc=$RC)" "$OUT"
 run --skills-dir "$SK" --config-dir "" --budget lots
@@ -108,6 +122,10 @@ real_total="$(field TOTAL)"
 [ "$RC" = 0 ] && [ -n "$real_total" ] && [ "$real_total" -le 8000 ] \
   && ok "the pack fits the default codex budget ($real_total <= 8000)" \
   || bad "the pack fits the default codex budget (TOTAL ${real_total:-?}, rc=$RC)" "$(printf '%s\n' "$OUT" | grep -E '^(TOTAL|BUDGET|OVER BUDGET)')"
+
+run --config-dir "" --runtime copilot
+[ "$RC" = 0 ] && ok "every pack description fits copilot's 1024-char cap" \
+  || bad "every pack description fits copilot's 1024-char cap (rc=$RC)" "$(printf '%s\n' "$OUT" | grep -i 'cap')"
 
 echo
 echo "$pass passed, $fail failed"

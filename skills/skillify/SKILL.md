@@ -89,9 +89,11 @@ the printed repo path:
 TERMS_FILE='<TERMS_FILE>'
 REPO='<REPO>'
 _TOP=$(git rev-parse --show-toplevel 2>/dev/null || true)
-_ROOTS=("$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills" "$REPO/skills")
+_ROOTS=("$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills"
+        "${COPILOT_HOME:-$HOME/.copilot}/skills" "$REPO/skills")
 if [ -n "$_TOP" ]; then
-  _ROOTS+=("$_TOP/.claude/skills" "$_TOP/.agents/skills" "$_TOP/.cursor/skills" "$_TOP/.kiro/skills")
+  _ROOTS+=("$_TOP/.claude/skills" "$_TOP/.agents/skills" "$_TOP/.cursor/skills" "$_TOP/.kiro/skills"
+           "$_TOP/.github/skills")
 fi
 _HITS=0
 for _root in "${_ROOTS[@]}"; do
@@ -131,10 +133,12 @@ the active runtime:
 | Cursor | `cursor` | `~/.cursor/skills` | `.cursor/skills` |
 | Kiro | `kiro` | `~/.kiro/skills` | `.kiro/skills` |
 | Codex CLI | `codex` | `~/.agents/skills` | `.agents/skills` |
+| Copilot CLI | `copilot` | `~/.copilot/skills` (`$COPILOT_HOME/skills` when set) | `.github/skills` |
 
 `<INVOKE>` below is how the active runtime invokes the new skill: `/<name>` in
-Claude Code, Cursor and Kiro, and `$<name>` in Codex CLI, which reserves `/` for
-its own commands and references a skill as `$<name>` inside a message.
+Claude Code, Cursor, Kiro and Copilot CLI, and `$<name>` in Codex CLI, which
+reserves `/` for its own commands and references a skill as `$<name>` inside a
+message.
 
 Use AskUserQuestion: "Where should `<INVOKE>` live?
 A) User scope — `<user root>/<name>`. Recommended: only you see it.
@@ -156,6 +160,7 @@ case "$RUNTIME" in
   cursor) USER_ROOT="$HOME/.cursor/skills";  PROJECT_REL=".cursor/skills" ;;
   kiro)   USER_ROOT="$HOME/.kiro/skills";    PROJECT_REL=".kiro/skills" ;;
   codex)  USER_ROOT="$HOME/.agents/skills";  PROJECT_REL=".agents/skills" ;;
+  copilot) USER_ROOT="${COPILOT_HOME:-$HOME/.copilot}/skills"; PROJECT_REL=".github/skills" ;;
   *)      echo "unknown runtime: $RUNTIME" >&2; exit 1 ;;
 esac
 case "$CHOICE" in

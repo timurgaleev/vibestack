@@ -28,6 +28,9 @@ setup_fake_home() {
   export HOME="$FAKE_HOME"
   # Override VIBESTACK_HOME so state doesn't leak into the real ~/.vibestack/
   export VIBESTACK_HOME="$FAKE_HOME/.vibestack"
+  # Runtime homes from the developer's shell would redirect installs out of the
+  # fake HOME — Copilot's skills root follows $COPILOT_HOME.
+  unset COPILOT_HOME CODEX_HOME
   # Test-only seam: disables the `command -v` half of target_detected() so
   # the dev machine's real claude/cursor/kiro binaries don't confuse tests.
   # Detection is then controlled solely by $HOME/.<target>/ presence.
@@ -222,6 +225,7 @@ test_default_non_tty_installs_all_three() {
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
   assert_file_exists "$HOME/.kiro/skills/office-hours/SKILL.md" || return 1
   assert_file_exists "$HOME/.agents/skills/office-hours/SKILL.md" || return 1
+  assert_file_exists "$HOME/.copilot/skills/office-hours/SKILL.md" || return 1
   # Never the config dir — ~/.codex holds config, not skills.
   assert_file_missing "$HOME/.codex/skills" || return 1
 }
@@ -266,15 +270,17 @@ test_dry_run_reports_all_three_targets() {
   if grep -q "\.codex/skills" <<<"$out"; then
     echo "    dry-run plan still points codex at ~/.codex/skills" >&2; return 1
   fi
+  grep -q "Copilot CLI" <<<"$out" || { echo "    missing Copilot CLI in dry-run output" >&2; return 1; }
+  grep -q "\.copilot/skills" <<<"$out" || { echo "    dry-run plan does not name ~/.copilot/skills for copilot" >&2; return 1; }
 }
 
-# --- All 3 targets get byte-identical content for the same skill
+# --- Every target gets byte-identical content for the same skill
 # Skills carrying no ${CLAUDE_SKILL_DIR} token render identically for every
 # target; ones that do carry it are per-target by design (v1.29.0 substitutes
 # the install dir), so they get an expected-render comparison instead.
 test_all_three_targets_byte_identical_per_skill() {
   "$INSTALL" --target=all < /dev/null >/dev/null 2>&1
-  local skill t root rendered probe h_claude h_cursor h_kiro h_codex
+  local skill t root rendered probe h_claude h_cursor h_kiro h_codex h_copilot
   for skill in office-hours review ship; do
     # Whether a skill is per-target cannot be read off its source: the
     # ${CLAUDE_SKILL_DIR} token often arrives through an {{include}}d snippet.
@@ -286,7 +292,7 @@ test_all_three_targets_byte_identical_per_skill() {
       rm -f "$probe"
       # Per-target by design: each target's copy must equal a render made with
       # that target's own --skill-dir, and must carry that target's path.
-      for t in claude cursor kiro codex; do
+      for t in claude cursor kiro codex copilot; do
         if [ "$t" = "codex" ]; then root="$HOME/.agents/skills"; else root="$HOME/.$t/skills"; fi
         rendered=$(mktemp)
         "$REPO_DIR/bin/vibe-render-skill" --skill-dir "$root/$skill" \
@@ -307,7 +313,9 @@ test_all_three_targets_byte_identical_per_skill() {
       h_cursor=$(file_hash "$HOME/.cursor/skills/$skill/SKILL.md") || return 1
       h_kiro=$(file_hash "$HOME/.kiro/skills/$skill/SKILL.md") || return 1
       h_codex=$(file_hash "$HOME/.agents/skills/$skill/SKILL.md") || return 1
-      if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ] || [ "$h_claude" != "$h_codex" ]; then
+      h_copilot=$(file_hash "$HOME/.copilot/skills/$skill/SKILL.md") || return 1
+      if [ "$h_claude" != "$h_cursor" ] || [ "$h_claude" != "$h_kiro" ] || [ "$h_claude" != "$h_codex" ] \
+          || [ "$h_claude" != "$h_copilot" ]; then
         echo "    drift on $skill: claude=$h_claude cursor=$h_cursor kiro=$h_kiro" >&2
         return 1
       fi
@@ -353,7 +361,7 @@ test_install_idempotent_per_target() {
   assert_eq "$h1" "$h2" "rendered hash"
 }
 
-# --- Install all 3 → uninstall all 3 → zero residual files
+# --- Install all → uninstall all → zero residual files
 test_install_all_then_uninstall_all_zero_residue() {
   "$INSTALL" --target=all < /dev/null >/dev/null 2>&1
   "$UNINSTALL" --target=all < /dev/null >/dev/null 2>&1
@@ -361,7 +369,9 @@ test_install_all_then_uninstall_all_zero_residue() {
     assert_file_missing "$HOME/.claude/skills/$skill/SKILL.md" || return 1
     assert_file_missing "$HOME/.cursor/skills/$skill/SKILL.md" || return 1
     assert_file_missing "$HOME/.kiro/skills/$skill/SKILL.md" || return 1
+    assert_file_missing "$HOME/.copilot/skills/$skill/SKILL.md" || return 1
   done
+  assert_file_missing "$HOME/.copilot/skills/.vibestack-manifest" || return 1
   assert_file_missing "$VIBESTACK_HOME/bin/.vibestack-tools" || return 1
 }
 
@@ -447,6 +457,7 @@ test_install_plan_a_installs_all_three() {
   assert_file_exists "$HOME/.claude/skills/office-hours/SKILL.md" || return 1
   assert_file_exists "$HOME/.cursor/skills/office-hours/SKILL.md" || return 1
   assert_file_exists "$HOME/.kiro/skills/office-hours/SKILL.md" || return 1
+  assert_file_exists "$HOME/.copilot/skills/office-hours/SKILL.md" || return 1
 }
 
 # --- #3: `q` exits 0 with "Nothing to install"
@@ -476,15 +487,16 @@ test_install_plan_empty_default_enter_exits_with_hint() {
 test_install_plan_e_falls_through_to_per_target() {
   mark_detected claude
   # `e`, then one Enter per entry in ALL_TARGETS: Claude (default Y, detected),
-  # then Cursor, Kiro and Codex (default N).
+  # then Cursor, Kiro, Codex and Copilot (default N).
   local out="$FAKE_HOME/out.log"
-  pty_install "$out" 'e\n\n\n\n\n'
+  pty_install "$out" 'e\n\n\n\n\n\n'
   [ "$RC" = "77" ] && return 77
   assert_eq "0" "$RC" "exit code" || { cat "$out" >&2; return 1; }
   assert_file_exists "$HOME/.claude/skills/office-hours/SKILL.md" || return 1
   assert_file_missing "$HOME/.cursor/skills" || return 1
   assert_file_missing "$HOME/.kiro/skills" || return 1
   assert_file_missing "$HOME/.agents/skills" || return 1
+  assert_file_missing "$HOME/.copilot/skills" || return 1
 }
 
 # --- #7: partial-fail continues across targets, exits non-zero
@@ -651,6 +663,70 @@ test_install_codex_project_scope_uses_agents_dir() {
   assert_file_exists "$proj/.agents/skills/office-hours/SKILL.md" || return 1
   assert_file_missing "$proj/.codex/skills" || {
     echo "    project scope installed into .codex/skills" >&2; return 1; }
+}
+
+# --- copilot project scope resolves to .github/skills, Copilot's highest-priority
+#     repo root — never a .copilot/ tree inside the project.
+test_install_copilot_project_scope_uses_github_skills() {
+  local proj="$FAKE_HOME/proj"
+  mkdir -p "$proj"
+  "$INSTALL" --scope=project --project-root="$proj" --target=copilot < /dev/null >/dev/null 2>&1
+  assert_file_exists "$proj/.github/skills/office-hours/SKILL.md" || return 1
+  assert_file_missing "$proj/.copilot" || {
+    echo "    project scope installed into .copilot/" >&2; return 1; }
+  # Uninstall must resolve the same project path, or it reports "not found".
+  "$UNINSTALL" --scope=project --project-root="$proj" --target=copilot < /dev/null >/dev/null 2>&1
+  assert_file_missing "$proj/.github/skills/office-hours/SKILL.md" || {
+    echo "    project-scope uninstall left .github/skills behind" >&2; return 1; }
+}
+
+# --- copilot user scope follows $COPILOT_HOME, where Copilot reads personal skills
+test_install_copilot_honors_copilot_home() {
+  local alt="$FAKE_HOME/alt-copilot"
+  COPILOT_HOME="$alt" "$INSTALL" --target=copilot --yes < /dev/null >/dev/null 2>&1
+  assert_file_exists "$alt/skills/office-hours/SKILL.md" || return 1
+  assert_file_missing "$HOME/.copilot/skills" || {
+    echo "    install ignored \$COPILOT_HOME" >&2; return 1; }
+  COPILOT_HOME="$alt" "$UNINSTALL" --target=copilot < /dev/null >/dev/null 2>&1
+  assert_file_missing "$alt/skills/office-hours/SKILL.md" || {
+    echo "    uninstall ignored \$COPILOT_HOME" >&2; return 1; }
+}
+
+# --- the configuration phase accepts copilot as a target, like codex
+test_install_config_only_accepts_copilot() {
+  local out rc
+  out=$("$INSTALL" --only=config --target=copilot --dry-run --no-rtk < /dev/null 2>&1); rc=$?
+  if grep -q "unknown target" <<<"$out"; then
+    echo "    --only=config rejected copilot: $out" >&2; return 1
+  fi
+  assert_eq "0" "$rc" "exit code (--only=config --target=copilot)" || { echo "$out" >&2; return 1; }
+}
+
+# --- uninstall --with-config --target=copilot takes back exactly what the
+#     configuration phase left: manifest-owned files, the managed region of
+#     copilot-instructions.md (lines below the marker stay), and the settings.json
+#     key it filled in (a key the user added stays).
+test_uninstall_with_config_copilot() {
+  local dest="$HOME/.copilot" state="$HOME/.local/state/vibekit"
+  local marker='<!-- END vibekit-managed copilot-instructions.md — lines below are yours and survive every sync -->'
+  mkdir -p "$dest/agents" "$dest/hooks" "$state"
+  echo "agent" > "$dest/agents/planner.agent.md"
+  echo '{"version":1,"hooks":{}}' > "$dest/hooks/vibestack.json"
+  printf 'agents/planner.agent.md\nhooks/vibestack.json\n' > "$state/manifest_copilot"
+  printf '# managed\nrule one\n%s\nmy own line\n' "$marker" > "$dest/copilot-instructions.md"
+  printf '{"theme":"dark"}\n' > "$state/premerge_copilot_settings.json"
+  printf '{"theme":"dark","includeCoAuthoredBy":false}\n' > "$state/postmerge_copilot_settings.json"
+  printf '{"theme":"dark","includeCoAuthoredBy":false,"mine":1}\n' > "$dest/settings.json"
+
+  local out rc
+  out=$("$UNINSTALL" --with-config --target=copilot < /dev/null 2>&1); rc=$?
+  assert_eq "0" "$rc" "uninstall exit code" || { echo "$out" >&2; return 1; }
+  assert_file_missing "$dest/agents/planner.agent.md" || return 1
+  assert_file_missing "$dest/hooks/vibestack.json" || return 1
+  assert_file_missing "$state/manifest_copilot" || return 1
+  assert_eq "my own line" "$(cat "$dest/copilot-instructions.md")" "copilot-instructions.md after uninstall" || return 1
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d == {"theme":"dark","mine":1} else 1)' \
+    "$dest/settings.json" || { echo "    settings.json not restored: $(cat "$dest/settings.json")" >&2; return 1; }
 }
 
 # --- #13b: the swap must NOT delete skills vibestack does not own.
@@ -949,6 +1025,10 @@ run_test "swap preserves foreign skills (.system, others)"      test_install_pre
 run_test "withdrawn skill removed, foreign kept"                 test_install_removes_withdrawn_skill
 run_test "codex installs to .agents/skills, prunes legacy root" test_install_codex_prunes_superseded_root
 run_test "codex project scope uses .agents/skills"              test_install_codex_project_scope_uses_agents_dir
+run_test "copilot project scope uses .github/skills"            test_install_copilot_project_scope_uses_github_skills
+run_test "copilot honors \$COPILOT_HOME"                         test_install_copilot_honors_copilot_home
+run_test "config phase accepts the copilot target"              test_install_config_only_accepts_copilot
+run_test "uninstall --with-config takes back copilot config"    test_uninstall_with_config_copilot
 run_test "v1.5: staging failure preserves prod"                 test_install_staging_failure_preserves_prod
 run_test "v1.5: recovery cleans orphaned staging"               test_install_recovery_orphaned_staging
 run_test "v1.5: rapid rerun does not nest .old (codex P2 fix)"  test_install_rapid_rerun_does_not_nest_old

@@ -2,7 +2,40 @@
 
 ## Open
 
+### Track B for Copilot CLI
+
+The copilot target installs and its hook file is checked structurally, but no
+recorded run under a live `copilot` session confirms: a destructive command
+reaching the `/careful` ask prompt, an edit outside a frozen directory being
+denied with its reason, `/env` listing the three hooks from the user source,
+`allowed-tools` with Claude tool names mapping to Copilot's own, and
+`copilot skill list --json` showing each skill once. Record the outcome in
+`docs/hook-verification.md` and add the copilot column to the audit matrix.
+
 ## Completed
+
+### GitHub Copilot CLI is a default target (2026-10-13)
+
+Shipped in the next release. `copilot` joins `ALL_TARGETS`, so `./install`,
+`--target=all` and `--yes` cover five runtimes.
+
+- Skills install into `${COPILOT_HOME:-~/.copilot}/skills`, and into
+  `.github/skills` at project scope — the highest-priority location Copilot
+  documents. Copilot invokes them as `/name`. Its own root, not the shared
+  `~/.agents/skills`, keeps one `.vibestack-manifest` per target; Copilot ranks
+  `~/.copilot/skills` above `~/.agents/skills`, so a machine with both codex and
+  copilot installed lists each skill once. A codex-only install is already
+  visible to Copilot through `~/.agents/skills`.
+- The configuration payload deploys `copilot-instructions.md` (generated,
+  append-managed under its own end marker), `agents/*.agent.md` (generated from
+  every Claude agent, `model` dropped), `hooks/vibestack.json` (whole file) and
+  `settings.json` (fill-missing, carrying only `includeCoAuthoredBy: false`, so
+  Copilot adds no AI co-author trailer). `config.json` is never touched.
+- Copilot hooks are user-level, so with the payload installed `/careful` is
+  always on and `/freeze` enforces whenever its boundary file exists. The hook
+  file ships only with `--with-config` / `--only=config`.
+
+**Completed:** next release (2026-10-13)
 
 ### Fit the skill listing into Codex's 8,000-char budget (2026-10-09)
 

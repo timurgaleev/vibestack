@@ -12,14 +12,16 @@
 #   config/kiro/   -> ~/.kiro/
 #   config/cursor/ -> ~/.cursor/
 #   config/codex/  -> ~/.codex/
+#   config/copilot/ -> ${COPILOT_HOME:-~/.copilot}/
 #
 # Each sync records the files it manages in ~/.local/state/vibekit/manifest_<target>
 # and prunes deployed files the repo has since dropped. Files absent from that
 # manifest were installed by the user and are never touched. Configuration the
 # target app rewrites at runtime (codex/config.toml, codex/rules/default.rules,
-# codex/hooks.json, kiro/agents/default.json) — and claude/CLAUDE.md, which
-# third-party tools append to — is merged rather than overwritten; see
-# lib/config-sync.sh.
+# codex/hooks.json, kiro/agents/default.json, copilot/settings.json) — and
+# claude/CLAUDE.md and copilot/copilot-instructions.md, which third-party tools
+# append to — is merged rather than overwritten; see lib/config-sync.sh.
+# Copilot's config.json is its internal state and is never shipped.
 #
 # The manifest directory and the in-file markers still carry the name the
 # config project shipped under. They are frozen on purpose: they identify
@@ -92,6 +94,7 @@ DEPLOY_TARGETS=(
   "kiro:${HOME}/.kiro"
   "cursor:${HOME}/.cursor"
   "codex:${HOME}/.codex"
+  "copilot:${COPILOT_HOME:-${HOME}/.copilot}"
 )
 
 PREVIEW_ONLY=false
@@ -126,6 +129,8 @@ MERGE_MANAGED=(
   "cursor:hooks.json:json"
   "codex:rules/default.rules:block"
   "kiro:agents/default.json:json"
+  "copilot:copilot-instructions.md:append"
+  "copilot:settings.json:json"
 )
 
 # merge_strategy_for <target> <relpath> — echoes the strategy, or nothing.
@@ -142,6 +147,19 @@ merge_strategy_for() {
 # ~/.claude/CLAUDE.md is repo-managed down to this line; `rtk init` and anything
 # else that wants to be loaded appends below it, and stays there across syncs.
 CLAUDE_MD_END="<!-- END vibekit-managed CLAUDE.md — lines below are yours and survive every sync -->"
+
+# The same contract for ~/.copilot/copilot-instructions.md, under its own name
+# so a marker copied between the two files never matches the wrong one.
+COPILOT_INSTRUCTIONS_END="<!-- END vibekit-managed copilot-instructions.md — lines below are yours and survive every sync -->"
+
+# managed_end_marker <target> <relpath> — the end marker an `append` file
+# carries, or nothing for a file with no append contract.
+managed_end_marker() {
+  case "$1:$2" in
+    claude:CLAUDE.md)                printf '%s' "$CLAUDE_MD_END" ;;
+    copilot:copilot-instructions.md) printf '%s' "$COPILOT_INSTRUCTIONS_END" ;;
+  esac
+}
 
 # Codex rewrites ~/.codex/rules/default.rules whenever the user approves a
 # command prefix, so only the region between these markers is repo-managed.
@@ -444,6 +462,15 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
     # state along with our entries. Everything else is manifest-tracked and
     # therefore prunable.
     if [[ -z "$merge_mode" ]]; then
+      # A differing file the previous manifest never claimed is the user's own
+      # (a hand-written agent that shares a shipped name). Overwriting it would
+      # also record it as ours, and uninstall would then delete it.
+      if [[ -f "$dst_file" ]] && ! grep -qxF -- "$rel_path" "$(manifest_path "$src_subdir")" 2>/dev/null \
+         && [[ "$(file_hash "$src_file")" != "$(file_hash "$dst_file")" ]]; then
+        msg_warn "KEEP: $rel_path is not ours (no earlier install claimed it) — left untouched"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+      fi
       if ! printf '%s\n' "$rel_path" >> "$manifest_tmp"; then
         msg_warn "$src_subdir: could not record $rel_path — aborting before prune"
         target_failed=true
@@ -472,7 +499,8 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
         json)  json_fill_missing "$src_file" "$dst_file" "$src_subdir" "$rel_path" || rc=$? ;;
         block) sync_managed_block "$src_file" "$dst_file" \
                  "$CODEX_RULES_BEGIN" "$CODEX_RULES_END" || rc=$? ;;
-        append) sync_append_managed "$src_file" "$dst_file" "$CLAUDE_MD_END" || rc=$? ;;
+        append) sync_append_managed "$src_file" "$dst_file" \
+                  "$(managed_end_marker "$src_subdir" "$rel_path")" || rc=$? ;;
       esac
       case "$rc" in
         0) SKIPPED=$((SKIPPED + 1)) ;;

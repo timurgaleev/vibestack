@@ -24,7 +24,7 @@ cd vibestack
 
 No other dependencies. vibestack requires only Bash and at least one
 [Agent Skills standard](https://agentskills.io/specification) host —
-Claude Code, Cursor, Kiro, or Codex CLI. The install asks per target.
+Claude Code, Cursor, Kiro, Codex CLI, or Copilot CLI. The install asks per target.
 
 ## Adding a skill
 
@@ -158,7 +158,7 @@ bash test/test-fresh-shell-vars.sh
 bash test/test-untrusted-shell-text.sh
 bash test/test-dispatch-flags.sh
 
-# Test the full skill in your agent (Claude Code, Cursor, Kiro, or Codex CLI):
+# Test the full skill in your agent (Claude Code, Cursor, Kiro, Codex CLI, or Copilot CLI):
 # Start a new session and invoke /my-skill — in Codex, write $my-skill in a message
 # For hook-bearing skills, see docs/hook-verification.md to confirm
 # the hook actually fires in non-Claude targets.
@@ -197,6 +197,6 @@ Before submitting:
 - [ ] Body is prose instructions, not bash
 - [ ] Follows the skill authoring conventions in `CLAUDE.md`; the four suites in step 4 pass
 - [ ] If hooks: scripts are POSIX-portable and tested directly
-- [ ] Invoked at least once in a real agent session (Claude Code, Cursor, Kiro, or Codex CLI)
+- [ ] Invoked at least once in a real agent session (Claude Code, Cursor, Kiro, Codex CLI, or Copilot CLI)
 - [ ] If hook-bearing: hook tier documented in `docs/agent-skills-compatibility-audit.md`
 - [ ] README, docs/skills.md, and the `/vibe` router updated

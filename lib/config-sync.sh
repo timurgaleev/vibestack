@@ -286,8 +286,8 @@ commit_manifest() {
 # Fill-missing merges
 #
 # Claude's settings.json, Kiro's agents/default.json, Codex's hooks.json and
-# config.toml are all mutated by the app at runtime (hook registration, project
-# trust, TUI state). Overwriting them wholesale loses those keys on every sync,
+# config.toml, Cursor's hooks.json and Copilot's settings.json are all mutated by
+# the app at runtime (hook registration, project trust, TUI state, preferences). Overwriting them wholesale loses those keys on every sync,
 # so we add only the keys the destination does not already have.
 #
 # All three return: 0 = unchanged, 1 = updated, 2 = created.
@@ -648,9 +648,15 @@ sync_managed_block() {
 # exactly the body we shipped plus a tail. Anything else is somebody's own file
 # and is left alone — refusing is what the old overwrite should have done.
 #
-# Returns 0 unchanged or refused, 1 updated, 2 created.
+# Returns 0 unchanged or refused, 1 updated, 2 created, 3 no marker given.
 sync_append_managed() {
   local src="$1" dst="$2" marker="$3"
+
+  # No marker, no boundary between our body and the user's tail.
+  if [[ -z "$marker" ]]; then
+    msg_warn "No end marker declared for $dst — leaving it untouched"
+    return 3
+  fi
 
   if grep -Fxq "$marker" "$src"; then
     msg_warn "$(basename "$src") already carries the managed end marker — leaving $dst untouched"

@@ -8,7 +8,7 @@ This page documents the gap honestly so you can decide whether to install the de
 
 ## Supported agent runtimes
 
-vibestack installs into four agent runtimes that all implement
+vibestack installs into five agent runtimes that all implement
 the [Agent Skills open standard](https://agentskills.io/specification):
 
 - **Claude Code** — `~/.claude/skills/`. Full feature support (hooks, subagents).
@@ -26,6 +26,12 @@ the [Agent Skills open standard](https://agentskills.io/specification):
   message, or triggered implicitly from their `description` — `/` is reserved for
   Codex's own commands and does not complete skill names.
   Runtime hooks unverified — same status as Cursor/Kiro before their Track B pass.
+- **GitHub Copilot CLI** — `${COPILOT_HOME:-~/.copilot}/skills/` (user scope),
+  `.github/skills` (repo scope); invoked as `/name`. Hooks are user-level there,
+  so `/careful` and `/freeze` are enforced by `~/.copilot/hooks/vibestack.json`,
+  which only `--with-config` installs; with it, `/careful` is always on. Copilot
+  also reads `~/.agents/skills`, so a Codex-only install already exposes the
+  skills to it.
 
 Other Agent-Skills-compatible runtimes (Gemini CLI, Antigravity, OpenCode,
 Windsurf) are not yet a `--target=` option. The SKILL.md files would work; the

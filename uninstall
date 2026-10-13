@@ -14,7 +14,8 @@ usage() {
 Usage: ./uninstall [options]
 
 Options:
-  --target=<list>     Comma-separated targets: claude, cursor, kiro, codex, or all.
+  --target=<list>     Comma-separated targets: claude, cursor, kiro, codex,
+                      copilot, or all.
   --scope=<s>         user (default) or project — must match how you installed.
   --project-root=<d>  Project root for --scope=project (default: $PWD).
                       Default: claude (preserves v1.3.x behavior).
@@ -25,9 +26,9 @@ Options:
                       VIBESTACK_HOME other than ~/.vibestack is left in place
                       and the removal command is printed instead.
   --with-config       Also remove the configuration this pack deployed into
-                      ~/.claude, ~/.cursor, ~/.kiro and ~/.codex. Only files
-                      the install manifest recorded are removed, plus the
-                      marked region of the two files we co-own, plus the keys
+                      ~/.claude, ~/.cursor, ~/.kiro, ~/.codex and ~/.copilot.
+                      Only files the install manifest recorded are removed,
+                      plus the marked region of the files we co-own, plus the keys
                       the install merged into settings.json, cli-config.json,
                       hooks.json and agents/default.json — each restored to the
                       value it had before, or dropped if it had none. A value
@@ -38,7 +39,7 @@ Options:
 
 Examples:
   ./uninstall                          # Claude Code only
-  ./uninstall --target=all             # Claude + Cursor + Kiro + Codex
+  ./uninstall --target=all             # Claude + Cursor + Kiro + Codex + Copilot
   ./uninstall --target=cursor          # Cursor only
   ./uninstall --target=all --delete-state  # full removal, non-interactive
 EOF
@@ -137,15 +138,15 @@ if [ -z "$TARGETS_RAW" ]; then
   TARGETS=("claude")
 else
   if [ "$TARGETS_RAW" = "all" ]; then
-    TARGETS=("claude" "cursor" "kiro" "codex")
+    TARGETS=("claude" "cursor" "kiro" "codex" "copilot")
   else
     IFS=',' read -ra TARGETS <<< "$TARGETS_RAW"
   fi
   for t in "${TARGETS[@]}"; do
     case "$t" in
-      claude|cursor|kiro|codex) ;;
+      claude|cursor|kiro|codex|copilot) ;;
       *)
-        echo "ERROR: unknown target '$t'. Valid: claude, cursor, kiro, codex, all." >&2
+        echo "ERROR: unknown target '$t'. Valid: claude, cursor, kiro, codex, copilot, all." >&2
         exit 2
         ;;
     esac
@@ -175,6 +176,11 @@ target_root() {
     # Codex reads skills from .agents/skills, not .codex/skills — ~/.codex holds
     # its config only. Matches install's TARGET_ROOT / TARGET_PROJECT_REL.
     codex)  echo "$SCOPE_BASE/.agents/skills" ;;
+    # Copilot's user and repo roots differ in shape, so SCOPE_BASE alone cannot
+    # build both: $COPILOT_HOME/skills for the user, .github/skills for a repo.
+    copilot)
+      if [ "$SCOPE" = project ]; then echo "$SCOPE_BASE/.github/skills"
+      else echo "${COPILOT_HOME:-$HOME/.copilot}/skills"; fi ;;
     *)      echo "" ;;
   esac
 }
@@ -264,10 +270,8 @@ for target in "${TARGETS[@]}"; do
   for skill_dir in "$SKILLS_SRC"/*/; do
     [ -f "$skill_dir/SKILL.md" ] || continue
 
-    set +e
-    uninstall_skill_from_target "$skill_dir" "$root"
-    rc=$?
-    set -e
+    rc=0
+    uninstall_skill_from_target "$skill_dir" "$root" || rc=$?
 
     case "$rc" in
       0) removed=$((removed + 1)) ;;
@@ -312,7 +316,7 @@ fi
 #
 # The install records every file it deployed and owns in a per-target manifest;
 # that list is exactly what is safe to delete. Files the user put there are not
-# in it. The two marker-delimited files are co-owned: our region is bounded and
+# in it. The marker-delimited files are co-owned: our region is bounded and
 # provably ours, so it goes, and everything the user or another tool wrote
 # outside it stays.
 #
@@ -327,27 +331,31 @@ declare -A CONFIG_DEST=(
   [cursor]="$HOME/.cursor"
   [kiro]="$HOME/.kiro"
   [codex]="${CODEX_HOME:-$HOME/.codex}"
+  [copilot]="${COPILOT_HOME:-$HOME/.copilot}"
 )
 CLAUDE_MD_END="<!-- END vibekit-managed CLAUDE.md — lines below are yours and survive every sync -->"
 CODEX_RULES_BEGIN="# BEGIN vibekit managed codex rules"
 CODEX_RULES_END="# END vibekit managed codex rules"
+COPILOT_INSTRUCTIONS_END="<!-- END vibekit-managed copilot-instructions.md — lines below are yours and survive every sync -->"
 
 config_manifest_path() {
   printf '%s/manifest_%s' "$CONFIG_MANIFEST_DIR" "${1//\//_}"
 }
 
-# Drop our region from ~/.claude/CLAUDE.md, keeping every line below the marker.
-# No marker means the file is not one we deployed, so it is left as it is.
-remove_claude_md_region() {
-  local file="$1"
+# remove_managed_region <file> <end-marker>
+# Drop our region from an append-managed file (~/.claude/CLAUDE.md,
+# copilot-instructions.md), keeping every line below the marker. No marker
+# means the file is not one we deployed, so it is left as it is.
+remove_managed_region() {
+  local file="$1" marker="$2"
   [ -f "$file" ] || return 0
-  if ! grep -qxF "$CLAUDE_MD_END" "$file"; then
+  if ! grep -qxF "$marker" "$file"; then
     echo "  - kept $file (no managed marker — not ours to edit)"
     return 0
   fi
   local tmp
   tmp="$(mktemp "${file}.vibekit.XXXXXX")" || { echo "  ! could not stage $file"; return 1; }
-  awk -v marker="$CLAUDE_MD_END" '
+  awk -v marker="$marker" '
     seen { print; next }
     $0 == marker { seen = 1 }
   ' "$file" > "$tmp" || { rm -f "$tmp"; echo "  ! could not rewrite $file"; return 1; }
@@ -368,6 +376,7 @@ declare -A CONFIG_MERGED_JSON=(
   [cursor]="cli-config.json hooks.json"
   [codex]="hooks.json"
   [kiro]="agents/default.json"
+  [copilot]="settings.json"
 )
 
 snapshot_file() { # snapshot_file <pre|post> <target> <rel>
@@ -604,8 +613,9 @@ if [ "$WITH_CONFIG" = "1" ]; then
 
   for target in "${TARGETS[@]}"; do
     case "$target" in
-      claude) remove_claude_md_region "$HOME/.claude/CLAUDE.md" ;;
-      codex)  remove_codex_rules_region "${CODEX_HOME:-$HOME/.codex}/rules/default.rules" ;;
+      claude)  remove_managed_region "$HOME/.claude/CLAUDE.md" "$CLAUDE_MD_END" ;;
+      codex)   remove_codex_rules_region "${CODEX_HOME:-$HOME/.codex}/rules/default.rules" ;;
+      copilot) remove_managed_region "${CONFIG_DEST[copilot]}/copilot-instructions.md" "$COPILOT_INSTRUCTIONS_END" ;;
     esac
   done
 

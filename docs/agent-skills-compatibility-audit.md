@@ -23,6 +23,27 @@ and Codex caps its initial skill list at 2% of the context window (or 8,000
 chars), shortening descriptions and possibly omitting skills beyond that — with
 61 skills, some may not surface in the initial list.
 
+**GitHub Copilot CLI** is the fifth target, at `${COPILOT_HOME:-~/.copilot}/skills/`
+(user) and `.github/skills` (repo, its highest-priority project location). It
+reads the same file shape — unknown frontmatter fields such as `triggers:` and
+`hooks:` load silently — and invokes skills as `/name`, so there is no `$name`
+form to learn. Its runtime column is not in the per-skill table either; Track B
+has not been run against it. What differs:
+
+- **Hooks are user-level, not skill-scoped.** The `hooks:` frontmatter is inert.
+  The configuration payload ships `~/.copilot/hooks/vibestack.json`, which runs
+  `check-careful.sh` on `Bash` and `check-freeze.sh` on `Edit|Write` for every
+  session — so with the payload installed `careful` is **always on** under
+  Copilot, and `freeze` enforces whenever its boundary file exists. Without
+  `--with-config` the three hook-bearing skills are instruction-only. A hook
+  script crash is a deny there; a hook timeout fails open.
+- **`allowed-tools` is not translated.** The Claude tool names are left as
+  written; whether Copilot maps them to its own tools is unverified, and the
+  worst case is a permission prompt where Claude Code would pre-approve.
+- **A Codex-only install already reaches Copilot**, which also reads
+  `~/.agents/skills` when `COPILOT_HOME` is unset. With both targets installed,
+  `~/.copilot/skills` wins by name and each skill lists once.
+
 **Track A (file-shape spec compliance)** is below. **Track B (per-target runtime
 verification)** has been completed empirically against installed Cursor and Kiro;
 results are in the new "Track B — Empirical Verification" section near the end.
@@ -157,7 +178,9 @@ field — the Agent Skills spec doesn't standardize it.
 `PowerShell` (Claude Code's shell on Windows), and the same script on `Edit` and
 `Write` for gate-file edits. Outside Claude Code `careful`,
 `freeze` and `guard` say in their bodies that they are instruction-only: nothing
-intercepts the tool call, and the freeze boundary file is not enforced.
+intercepts the tool call, and the freeze boundary file is not enforced. The one
+exception is Copilot CLI with the configuration payload installed, where the
+user hook file above enforces both.
 
 **Sub-finding F2a:** `guard` and `investigate` reuse the hook scripts of
 `careful` and `freeze` respectively, via cross-skill `${CLAUDE_SKILL_DIR}/../`

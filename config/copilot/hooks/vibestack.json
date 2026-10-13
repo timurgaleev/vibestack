@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "Bash",
+        "bash": "r=$(git rev-parse --show-toplevel 2>/dev/null || pwd); for f in \"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\" \"$r/.github/skills/careful/bin/check-careful.sh\" \"$HOME/.agents/skills/careful/bin/check-careful.sh\"; do [ -f \"$f\" ] && exec bash \"$f\"; done; exit 0",
+        "timeoutSec": 15
+      },
+      {
+        "type": "command",
+        "matcher": "Edit|Write",
+        "bash": "r=$(git rev-parse --show-toplevel 2>/dev/null || pwd); for f in \"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\" \"$r/.github/skills/careful/bin/check-careful.sh\" \"$HOME/.agents/skills/careful/bin/check-careful.sh\"; do [ -f \"$f\" ] && exec bash \"$f\"; done; exit 0",
+        "timeoutSec": 15
+      },
+      {
+        "type": "command",
+        "matcher": "Edit|Write",
+        "bash": "r=$(git rev-parse --show-toplevel 2>/dev/null || pwd); for f in \"${COPILOT_HOME:-$HOME/.copilot}/skills/freeze/bin/check-freeze.sh\" \"$r/.github/skills/freeze/bin/check-freeze.sh\" \"$HOME/.agents/skills/freeze/bin/check-freeze.sh\"; do [ -f \"$f\" ] && exec bash \"$f\"; done; [ -f \"${VIBESTACK_HOME:-$HOME/.vibestack}/freeze-dir.txt\" ] || exit 0; printf '%s\\n' '{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"[freeze] A freeze boundary is set but check-freeze.sh is not installed - blocked, fail closed. Reinstall vibestack or run /unfreeze.\"}'",
+        "timeoutSec": 15
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "bash": "f=\"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-compact-snapshot\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}
