@@ -163,6 +163,12 @@ if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
   FILE_PATH=$(vibe_hook_extract_field "$INPUT" notebook_path)
   EXTRACT_RC=$?
 fi
+# Copilot CLI's edit and create tools name the file tool_input.path.
+if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
+  PATH_FIELD=path
+  FILE_PATH=$(vibe_hook_extract_field "$INPUT" path)
+  EXTRACT_RC=$?
+fi
 set -e
 
 # Unparseable payload (or no parser available): DENY. A boundary hook that
@@ -176,12 +182,12 @@ if [ "$EXTRACT_RC" -ne 0 ]; then
   exit 0
 fi
 
-# Parsed fine but neither path field is present: the hook cannot tell what
+# Parsed fine but no path field is present: the hook cannot tell what
 # the edit touches, so it cannot vouch for the boundary — deny.
 if [ -z "$FILE_PATH" ]; then
   _vibestack_log freeze deny no-file-path ""
   _vibestack_analytics deny no_file_path
-  vibe_hook_decision deny "[freeze] The tool payload names no file_path or notebook_path, so the freeze boundary cannot be checked. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
+  vibe_hook_decision deny "[freeze] The tool payload names no file_path, notebook_path or path, so the freeze boundary cannot be checked. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
   _FREEZE_DECIDED=1
   exit 0
 fi

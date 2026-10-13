@@ -121,6 +121,8 @@ fi
 if [ -z "$CMD" ]; then
   set +e
   _FILE_PATH=$(vibe_hook_extract_field "$INPUT" file_path)
+  # Copilot CLI's edit and create tools name the file tool_input.path.
+  [ -n "$_FILE_PATH" ] || _FILE_PATH=$(vibe_hook_extract_field "$INPUT" path)
   set -e
   if [ -n "$_FILE_PATH" ] && printf '%s' "$_FILE_PATH" | grep -qE \
     -e '(^|/)(\.eslintrc(\.[a-z]+)?|eslint\.config\.[a-z]+|biome\.jsonc?|\.?ruff\.toml|\.pre-commit-config\.ya?ml|tsconfig(\.[a-z]+)?\.json|\.gitlab-ci\.ya?ml|Jenkinsfile|codecov\.ya?ml|\.golangci\.ya?ml|pytest\.ini|\.flake8|mypy\.ini)$' \
