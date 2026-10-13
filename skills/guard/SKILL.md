@@ -68,9 +68,9 @@ blocks a tool call you get wrong.
 Copilot CLI is the exception. When the configuration payload is installed
 (`./install --with-config` or `--only=config`), the user hook file
 `~/.copilot/hooks/vibestack.json` (under `$COPILOT_HOME` when set) enforces
-both halves: the destructive-command check is always on, in every session, and
-the edit boundary blocks while a freeze directory is set. Without the
-configuration payload it is instruction-only there as well.
+both halves: the destructive-command and gate-file check is always on, in every
+session, and the edit boundary blocks while a freeze directory is set. Without
+the configuration payload it is instruction-only there as well.
 
 ## Setup
 

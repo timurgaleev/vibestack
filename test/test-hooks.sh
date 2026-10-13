@@ -365,6 +365,14 @@ for _skill in careful freeze guard; do
   else
     bad "$_skill discloses instruction-only outside Claude Code" "instruction-only paragraph" "missing"
   fi
+  # Copilot CLI does run these hooks once the user hook file is installed, so
+  # the body must name that file rather than leave Copilot under "instruction-only".
+  if grep -q 'Copilot CLI is the exception' "$ROOT/skills/$_skill/SKILL.md" \
+     && grep -qF '~/.copilot/hooks/vibestack.json' "$ROOT/skills/$_skill/SKILL.md"; then
+    ok "$_skill discloses Copilot CLI enforcement via the user hook file"
+  else
+    bad "$_skill discloses Copilot CLI enforcement via the user hook file" "Copilot CLI paragraph" "missing"
+  fi
 done
 # The boundary file survives the session; telling users that ending it removes
 # the boundary made the next session's denies look inexplicable.

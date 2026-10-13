@@ -361,7 +361,7 @@ The same hook runs on Edit and Write: an edit to a gate file — lint, format an
 
 PowerShell (Claude Code's shell on Windows) and any `pwsh`/`powershell`/`cmd` launched from Bash get a trimmed Windows set: recursive or forced `Remove-Item` and its aliases, `Get-ChildItem -Recurse` piped into `Remove-Item`, cmd `rd /s` and `del /s`, `Format-Volume`/`Clear-Disk`, `[IO.Directory]::Delete`, and `-EncodedCommand`/`Invoke-Expression`, which cannot be inspected. All of them prompt.
 
-Active for the session until you end it. The hook runs in Claude Code, and in Copilot CLI once the configuration payload has installed `~/.copilot/hooks/vibestack.json` — there it is always on, not per session. In Cursor, Kiro, Codex and a skills-only Copilot install `/careful` is instruction-only.
+Active for the session until you end it. The hook runs in Claude Code, and in Copilot CLI once the configuration payload has installed `~/.copilot/hooks/vibestack.json` — there it is always on, not per session, and it covers gate-file edits as well as commands. In Cursor, Kiro, Codex and a skills-only Copilot install `/careful` is instruction-only.
 
 **Your own patterns.** Add one POSIX ERE per line to
 `~/.vibestack/careful-patterns.txt` (or, for one project only,

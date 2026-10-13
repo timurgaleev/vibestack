@@ -54,8 +54,9 @@ one.
 Copilot CLI is the exception. When the configuration payload is installed
 (`./install --with-config` or `--only=config`), the user hook file
 `~/.copilot/hooks/vibestack.json` (under `$COPILOT_HOME` when set) runs the same
-check on every Bash and PowerShell command, so on Copilot CLI `/careful` is
-always on, in every session, whether or not it was invoked. Without the
+check on every Bash and PowerShell command and on every edit to a gate file
+(see Gate files below), so on Copilot CLI `/careful` is always on, in every
+session, whether or not it was invoked. Without the
 configuration payload it is instruction-only there as well.
 
 ## Two tiers
