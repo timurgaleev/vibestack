@@ -377,9 +377,8 @@ PY
 # fill-missing merge: the user's own value always wins, and uninstall takes back
 # only a key the install introduced.
 #
-# The install side drives the config library directly (./install's copilot
-# registration lives elsewhere); the uninstall side needs ./uninstall to accept
-# --target=copilot and is reported as skipped until it does.
+# The install side drives the config library directly, so these cases isolate
+# the settings.json merge from the skills install.
 # ---------------------------------------------------------------------------
 new_copilot_sandbox() {
   local d
@@ -405,13 +404,6 @@ run_copilot_uninstall() {
     bash "$REPO/uninstall" --target=copilot --with-config 2>&1
 }
 
-copilot_uninstall_supported() {
-  local sb="$1" err
-  err=$(env -u COPILOT_HOME HOME="$sb/probe" MANIFEST_DIR="$sb/probe/state" \
-        bash "$REPO/uninstall" --target=copilot --with-config 2>&1 >/dev/null)
-  ! grep -q "unknown target 'copilot'" <<<"$err"
-}
-
 CSETTINGS() { printf '%s/home/.copilot/settings.json' "$1"; }
 
 test_copilot_ours_alone() {
@@ -419,7 +411,6 @@ test_copilot_ours_alone() {
   run_copilot_install "$sb"
   assert_expr "$(CSETTINGS "$sb")" "d" "{'includeCoAuthoredBy': False}" \
     "C1a: install writes includeCoAuthoredBy: false and nothing else"
-  copilot_uninstall_supported "$sb" || { echo "  SKIP: C1b: ./uninstall does not accept --target=copilot yet"; return; }
   run_copilot_uninstall "$sb" >/dev/null
   assert_absent "$(CSETTINGS "$sb")" "C1b: a copilot settings.json with nothing of yours in it is removed"
 }
@@ -430,7 +421,6 @@ test_copilot_user_key_survives() {
   run_copilot_install "$sb"
   assert_expr "$(CSETTINGS "$sb")" "d" "{'theme': 'dark', 'banner': 'never', 'includeCoAuthoredBy': False}" \
     "C2a: install adds our key next to the user's"
-  copilot_uninstall_supported "$sb" || { echo "  SKIP: C2b: ./uninstall does not accept --target=copilot yet"; return; }
   run_copilot_uninstall "$sb" >/dev/null
   assert_expr "$(CSETTINGS "$sb")" "d" "{'theme': 'dark', 'banner': 'never'}" \
     "C2b: uninstall drops our key and keeps exactly the user's"
@@ -442,10 +432,48 @@ test_copilot_user_value_kept() {
   run_copilot_install "$sb"
   assert_expr "$(CSETTINGS "$sb")" "d.get('includeCoAuthoredBy')" "True" \
     "C3a: a user who set includeCoAuthoredBy keeps their value through install"
-  copilot_uninstall_supported "$sb" || { echo "  SKIP: C3b: ./uninstall does not accept --target=copilot yet"; return; }
   run_copilot_uninstall "$sb" >/dev/null
   assert_expr "$(CSETTINGS "$sb")" "d.get('includeCoAuthoredBy')" "True" \
     "C3b: ...and through uninstall"
+}
+
+# ---------------------------------------------------------------------------
+# U13 / C4 — skills and configuration together, the way a user installs
+#
+# Removing the skills runs first, and a shell option left behind by that loop
+# used to abort the script at the first zero-match count in the merged-key
+# pass: exit 1, our keys left in place, the state directory never reached. The
+# cases above install only the configuration, so no skills root existed and the
+# loop never ran.
+# ---------------------------------------------------------------------------
+full_round_trip() { # full_round_trip <sb> <target> -> uninstall exit code
+  local sb="$1" target="$2"
+  env -u COPILOT_HOME -u CODEX_HOME -u VIBESTACK_HOME HOME="$sb/home" \
+      XDG_STATE_HOME="$sb/state" MANIFEST_DIR="$sb/state/vibekit" \
+      bash "$REPO/install" --with-config --no-rtk --yes --target="$target" >/dev/null 2>&1
+  env -u COPILOT_HOME -u CODEX_HOME -u VIBESTACK_HOME HOME="$sb/home" \
+      XDG_STATE_HOME="$sb/state" MANIFEST_DIR="$sb/state/vibekit" \
+      bash "$REPO/uninstall" --with-config --target="$target" </dev/null >/dev/null 2>&1
+}
+
+test_full_round_trip_claude() {
+  local sb; sb="$(new_sandbox)" || { _fail "U13: no sandbox"; return; }
+  printf '{"theme": "dark"}\n' > "$(SETTINGS "$sb")"
+  local rc=0; full_round_trip "$sb" claude || rc=$?
+  [[ "$rc" -eq 0 ]] && _pass "U13a: uninstall of skills + config exits 0" \
+                    || _fail "U13a: uninstall of skills + config exited $rc"
+  assert_expr "$(SETTINGS "$sb")" "d" "{'theme': 'dark'}" \
+    "U13b: ...and takes back every merged key, leaving the user's"
+}
+
+test_full_round_trip_copilot() {
+  local sb; sb="$(new_copilot_sandbox)" || { _fail "C4: no sandbox"; return; }
+  printf '{"theme": "dark"}\n' > "$(CSETTINGS "$sb")"
+  local rc=0; full_round_trip "$sb" copilot || rc=$?
+  [[ "$rc" -eq 0 ]] && _pass "C4a: copilot uninstall of skills + config exits 0" \
+                    || _fail "C4a: copilot uninstall of skills + config exited $rc"
+  assert_expr "$(CSETTINGS "$sb")" "d" "{'theme': 'dark'}" \
+    "C4b: ...and drops includeCoAuthoredBy, leaving the user's key"
 }
 
 echo "uninstall --with-config: merged keys"
@@ -464,6 +492,8 @@ test_stale_hook_replaced_then_removed
 test_copilot_ours_alone
 test_copilot_user_key_survives
 test_copilot_user_value_kept
+test_full_round_trip_claude
+test_full_round_trip_copilot
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

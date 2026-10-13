@@ -270,10 +270,8 @@ for target in "${TARGETS[@]}"; do
   for skill_dir in "$SKILLS_SRC"/*/; do
     [ -f "$skill_dir/SKILL.md" ] || continue
 
-    set +e
-    uninstall_skill_from_target "$skill_dir" "$root"
-    rc=$?
-    set -e
+    rc=0
+    uninstall_skill_from_target "$skill_dir" "$root" || rc=$?
 
     case "$rc" in
       0) removed=$((removed + 1)) ;;
