@@ -195,6 +195,8 @@ config/claude/   CLAUDE.md, rules/, agents/, settings.json, statusline.py -> ~/.
 config/cursor/   settings.json, cli-config.json, hooks.json, rules/*.mdc   -> ~/.cursor
 config/kiro/     agents/default.json                                       -> ~/.kiro
 config/codex/    AGENTS.md, config.toml, hooks.json, rules/default.rules   -> ~/.codex
+config/copilot/  copilot-instructions.md, agents/*.agent.md,
+                 hooks/vibestack.json, settings.json            -> ${COPILOT_HOME:-~/.copilot}
 ```
 
 `lib/config-install.sh` deploys it and `lib/config-sync.sh` holds the merge
@@ -205,6 +207,11 @@ Three rules govern edits here:
 
 - **`config/codex/AGENTS.md` is generated**, from `config/claude/CLAUDE.md` plus
   `config/claude/rules/` by `scripts/gen-codex-agents.py`. Edit the sources.
+- **`config/copilot/copilot-instructions.md` and `config/copilot/agents/*.agent.md`
+  are generated** — the first by `scripts/gen-codex-agents.py --target copilot`,
+  the second from `config/claude/agents/*.md` by `scripts/gen-copilot-agents.py`.
+  Edit the sources. Nothing ever writes `~/.copilot/config.json`: that is
+  Copilot's own internal state.
 - **The marker strings and the manifest directory are frozen.** They name state
   already written to installed machines (`~/.claude/CLAUDE.md` carries the end
   marker; `~/.local/state/vibekit/` holds the per-target manifests). Renaming
@@ -232,29 +239,31 @@ the suite to run after touching any of this;
 ## Install and update
 
 ```bash
-./install                          # interactive: asks per-target (claude, cursor, kiro, codex)
+./install                          # interactive: asks per-target (claude, cursor, kiro, codex, copilot)
 ./install --with-config            # skills + the configuration payload
 ./install --only=config            # the configuration payload alone
 ./install --no-config              # skills only (the default)
-./install --target=all             # all four, non-interactive
+./install --target=all             # all five, non-interactive
 ./install --target=claude          # claude only
 ./install --target=cursor,kiro     # cursor + kiro
 ./install --target=codex           # Codex CLI only
+./install --target=copilot         # Copilot CLI only
 ./install --scope=project --project-root=<dir> --target=claude
                                    # project-local: pins the pack into <dir>/.claude/skills
-./install --yes                    # all four, skip prompts (CI-friendly)
+./install --yes                    # all five, skip prompts (CI-friendly)
 ./install --dry-run --target=all   # preview, no writes
 
 ./uninstall                        # claude only (default for v1.3.x compat)
 ./uninstall --with-config          # also remove the deployed configuration
-./uninstall --target=all           # remove from all four
+./uninstall --target=all           # remove from all five
 ./uninstall --target=cursor        # cursor only
 ```
 
-vibestack supports four agent runtimes via the [Agent Skills open
+vibestack supports five agent runtimes via the [Agent Skills open
 standard](https://agentskills.io/specification): Claude Code
 (`~/.claude/skills/`), Cursor (`~/.cursor/skills/`), Kiro
-(`~/.kiro/skills/`), and Codex CLI (`~/.agents/skills/`). The same rendered
+(`~/.kiro/skills/`), Codex CLI (`~/.agents/skills/`), and GitHub Copilot CLI
+(`${COPILOT_HOME:-~/.copilot}/skills/`; `.github/skills` at project scope). The same rendered
 `SKILL.md` is written to each target's directory — no format translation.
 `bin/` and sub-doc symlinks are installed per target so the "edit source,
 immediately reflected" workflow works in any chosen target.
@@ -266,7 +275,11 @@ only), `TARGET_ROOT` (user scope) and `TARGET_PROJECT_REL` (project scope).
 `TARGET_LEGACY_ROOT` names superseded roots; `prune_legacy_root` removes **our
 own skill names** from them (never the root — Codex's bundled `.system/` lives
 there). Adding a runtime is one row per map. The `agents/openai.yaml` manifest
-registers the pack with Codex.
+registers the pack with Codex. Copilot honors `COPILOT_HOME` in every map, and
+its project root is `.github/skills` — its highest-priority project location.
+Copilot also reads `~/.agents/skills`, so a codex-only install is already
+visible there (skills only, no hooks or instructions); when both targets are
+installed, Copilot's own root wins by name and each skill lists once.
 
 **Withdrawing a skill needs the install manifest.** `prune_removed_skills`
 writes `.vibestack-manifest` — the names `vibestack_owned_names` emitted, one per
@@ -279,8 +292,8 @@ deletes the manifest with the skills. Deleting `skills/<name>/` is therefore the
 whole of a removal — the pruning follows from the name leaving
 `vibestack_owned_names`.
 
-Invocation differs per runtime. Claude Code, Cursor and Kiro expose skills as
-`/name`. **Codex does not** — `/` there is reserved for its own commands, so `/office-hours`
+Invocation differs per runtime. Claude Code, Cursor, Kiro and Copilot CLI expose
+skills as `/name`. **Codex does not** — `/` there is reserved for its own commands, so `/office-hours`
 completes to nothing. A Codex skill is referenced as `$name` inside an ordinary message
 (`Use $office-hours to shape this idea`), or triggered implicitly from its `description`,
 which its bundled `skill-creator` calls "the primary triggering mechanism". Verified
@@ -294,7 +307,7 @@ hot-reload; otherwise start a new session.
 ## Multi-target output
 
 When adding a new skill, remember it'll install into Claude Code, Cursor,
-Kiro, and Codex CLI by default. Three implications:
+Kiro, Codex CLI and Copilot CLI by default. Three implications:
 
 1. **Write skill bodies in tool-name terms that modern LLMs understand.**
    Claude Code tools like `AskUserQuestion`, `Agent`, `Read`, `Edit` are
@@ -303,8 +316,12 @@ Kiro, and Codex CLI by default. Three implications:
 
 2. **Hook-bearing skills (`hooks:` frontmatter) get a tier disclosure.**
    Claude Code intercepts via `PreToolUse`. Cursor/Kiro behavior is
-   verified manually per `docs/hook-verification.md`. The install prints
-   a one-line warning when hook-bearing skills land in non-Claude targets.
+   verified manually per `docs/hook-verification.md`. Copilot hooks are
+   user-level, not skill-scoped: `config/copilot/hooks/vibestack.json` wires
+   `check-careful.sh` and `check-freeze.sh` for every session, installed only
+   with the configuration payload — so under Copilot `/careful` is always on.
+   The install prints a one-line warning when hook-bearing skills land in
+   non-Claude targets.
 
 3. **Run `bash test/test-install-integration.sh` after touching install/
    uninstall.** Covers regression (claude byte-identical), multi-target

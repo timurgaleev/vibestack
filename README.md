@@ -21,7 +21,8 @@ It also installs the standing rules those commands assume — plan before coding
 never commit without being asked, write commits in the author's voice — so the
 assistant behaves that way between commands too.
 
-Works in Claude Code, Cursor, Kiro and Codex CLI from one source. MIT, no
+Works in Claude Code, Cursor, Kiro, Codex CLI and GitHub Copilot CLI from one
+source. MIT, no
 telemetry, no account, no cloud service of its own. Some commands do reach out
 by design — `/codex` sends your diff to a second model, `/telegram`
 sends messages as you, `/pair-agent` opens a tunnel — and each says so before it
@@ -32,7 +33,7 @@ runs.
 | A command per job, not a prompt per job | The process is written down once and runs the same way every time |
 | A second pass before you ship | `/review` runs an adversarial pass in a fresh context, and a genuine second model when the Codex CLI is installed — it says which one it got |
 | Standing rules, always on | The assistant plans and asks before it commits, without being reminded |
-| One source, four runtimes | Switch tools and keep the same commands — nothing is vendor-shaped |
+| One source, five runtimes | Switch tools and keep the same commands — nothing is vendor-shaped |
 | Plain bash, no daemon | `git pull && ./install` is the whole update story |
 | Your machine by default | State lives in `~/.vibestack/`. Nothing phones home; the commands that call another model say so first |
 
@@ -87,7 +88,11 @@ Pick a mode and it asks the questions that mode needs, then writes the doc you
 can hand to `/plan-eng-review`.
 
 In Codex CLI the same commands are `$office-hours`, `$review`, `$ship` — `/` is
-reserved there for Codex's own commands.
+reserved there for Codex's own commands. Copilot CLI uses `/name` like Claude Code,
+reading the commands from `${COPILOT_HOME:-~/.copilot}/skills` (or `.github/skills`
+in a project-scope install). A Codex-only install already shows up in Copilot
+too, because Copilot also reads `~/.agents/skills` — without the hooks or the
+standing rules.
 
 ---
 
@@ -130,7 +135,8 @@ release. **[Every command, with what it does: `docs/skills.md`](docs/skills.md)*
 
 ## How it writes into your files
 
-`--with-config` deploys into `~/.claude`, `~/.cursor`, `~/.kiro` and `~/.codex` —
+`--with-config` deploys into `~/.claude`, `~/.cursor`, `~/.kiro`, `~/.codex` and
+`~/.copilot` —
 directories that already hold your settings. That is the part worth understanding
 before you run it, so here is the whole contract.
 
@@ -158,7 +164,8 @@ before you run it, so here is the whole contract.
 **What it costs you in context:** the always-on part is 13 rule files plus an
 index — 31 KB, about 7,800 tokens, **3.9% of a 200k window**. The 33 sub-agents
 load only when a command hands work to one. Codex gets a single self-contained
-`AGENTS.md` instead, at about 5,900 tokens.
+`AGENTS.md` instead, at about 5,900 tokens, and Copilot a generated
+`copilot-instructions.md` plus the same sub-agents as `agents/*.agent.md`.
 
 **The trust decision, stated plainly.** The payload adds `Bash(*)` to Claude
 Code's allow-list and sets `defaultMode: acceptEdits` — together that is "run
@@ -175,7 +182,7 @@ Full reference: [`docs/configuration.md`](docs/configuration.md).
 
 | | Needed for | If it is missing |
 |---|---|---|
-| One of Claude Code, Cursor, Kiro, Codex CLI | Anything at all | Undetected runtimes are skipped, not failed |
+| One of Claude Code, Cursor, Kiro, Codex CLI, Copilot CLI | Anything at all | Undetected runtimes are skipped, not failed |
 | bash 4+ | The installer's own arrays | It refuses and tells you `brew install bash` — the commands themselves run on 3.2 |
 | python3 | Merging `settings.json` and `hooks.json` | The merge is refused, never performed unchecked; the rest installs |
 | python3 **3.11+** | Merging Codex's `config.toml` (needs `tomllib` to verify the result) | Same: refused, not written unchecked. macOS ships 3.9 as `/usr/bin/python3` |
@@ -186,7 +193,7 @@ Full reference: [`docs/configuration.md`](docs/configuration.md).
 ## More
 
 ```bash
-./install --target=all             # Claude Code + Cursor + Kiro + Codex, non-interactive
+./install --target=all             # Claude Code + Cursor + Kiro + Codex + Copilot, non-interactive
 ./install --only=config            # the standing rules alone
 ./install --scope=project --project-root=.   # pin the commands into this repo, for a team
 ./install --dry-run                # preview everything, write nothing
@@ -207,8 +214,11 @@ vibestack doctor                   # what is installed, where, and whether it is
 
 > **Caveat worth knowing.** `/careful`, `/freeze` and `/guard` enforce hard blocks in
 > Claude Code. In Cursor and Kiro they degrade to a soft nudge the model can talk
-> itself past, and on Codex CLI the hooks have never been verified. Treat them as
-> a seatbelt there, not a lock — the compatibility audit has the per-runtime detail.
+> itself past, and on Codex CLI the hooks have never been verified. On Copilot CLI
+> they are enforced by a user hook file (`~/.copilot/hooks/vibestack.json`) that
+> installs only with `--with-config`; there `/careful` is always on, not per
+> session. Treat them as a seatbelt outside Claude Code, not a lock — the
+> compatibility audit has the per-runtime detail.
 
 <p align="center">
   <a href="https://github.com/timurgaleev/vibestack/releases"><img src="https://img.shields.io/github/v/release/timurgaleev/vibestack?style=flat-square&color=000" alt="Release"></a>
