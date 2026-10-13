@@ -370,6 +370,84 @@ PY
     "U12c: uninstall leaves exactly the user's PreCompact hook"
 }
 
+# ---------------------------------------------------------------------------
+# C1-C3 — ~/.copilot/settings.json: the one key we ship, includeCoAuthoredBy
+#
+# Copilot defaults includeCoAuthoredBy to true, so the pack ships false. It is a
+# fill-missing merge: the user's own value always wins, and uninstall takes back
+# only a key the install introduced.
+#
+# The install side drives the config library directly (./install's copilot
+# registration lives elsewhere); the uninstall side needs ./uninstall to accept
+# --target=copilot and is reported as skipped until it does.
+# ---------------------------------------------------------------------------
+new_copilot_sandbox() {
+  local d
+  d="$(new_sandbox)" || return 1
+  mkdir -p "$d/home/.copilot"
+  printf '%s' "$d"
+}
+
+run_copilot_install() {
+  local sb="$1"
+  env -u COPILOT_HOME HOME="$sb/home" XDG_STATE_HOME="$sb/state" MANIFEST_DIR="$sb/state/vibekit" \
+    bash -c '
+      source "$1/lib/config-install.sh"
+      CFG_TARGETS="copilot"; PREVIEW_ONLY=false
+      CAVEMAN=false; PONYTAIL=false; DELIBERATION=false; RTK=false
+      config_phase_run
+    ' _ "$REPO" >/dev/null 2>&1
+}
+
+run_copilot_uninstall() {
+  local sb="$1"
+  env -u COPILOT_HOME HOME="$sb/home" XDG_STATE_HOME="$sb/state" MANIFEST_DIR="$sb/state/vibekit" \
+    bash "$REPO/uninstall" --target=copilot --with-config 2>&1
+}
+
+copilot_uninstall_supported() {
+  local sb="$1" err
+  err=$(env -u COPILOT_HOME HOME="$sb/probe" MANIFEST_DIR="$sb/probe/state" \
+        bash "$REPO/uninstall" --target=copilot --with-config 2>&1 >/dev/null)
+  ! grep -q "unknown target 'copilot'" <<<"$err"
+}
+
+CSETTINGS() { printf '%s/home/.copilot/settings.json' "$1"; }
+
+test_copilot_ours_alone() {
+  local sb; sb="$(new_copilot_sandbox)" || { _fail "C1: no sandbox"; return; }
+  run_copilot_install "$sb"
+  assert_expr "$(CSETTINGS "$sb")" "d" "{'includeCoAuthoredBy': False}" \
+    "C1a: install writes includeCoAuthoredBy: false and nothing else"
+  copilot_uninstall_supported "$sb" || { echo "  SKIP: C1b: ./uninstall does not accept --target=copilot yet"; return; }
+  run_copilot_uninstall "$sb" >/dev/null
+  assert_absent "$(CSETTINGS "$sb")" "C1b: a copilot settings.json with nothing of yours in it is removed"
+}
+
+test_copilot_user_key_survives() {
+  local sb; sb="$(new_copilot_sandbox)" || { _fail "C2: no sandbox"; return; }
+  printf '{"theme": "dark", "banner": "never"}\n' > "$(CSETTINGS "$sb")"
+  run_copilot_install "$sb"
+  assert_expr "$(CSETTINGS "$sb")" "d" "{'theme': 'dark', 'banner': 'never', 'includeCoAuthoredBy': False}" \
+    "C2a: install adds our key next to the user's"
+  copilot_uninstall_supported "$sb" || { echo "  SKIP: C2b: ./uninstall does not accept --target=copilot yet"; return; }
+  run_copilot_uninstall "$sb" >/dev/null
+  assert_expr "$(CSETTINGS "$sb")" "d" "{'theme': 'dark', 'banner': 'never'}" \
+    "C2b: uninstall drops our key and keeps exactly the user's"
+}
+
+test_copilot_user_value_kept() {
+  local sb; sb="$(new_copilot_sandbox)" || { _fail "C3: no sandbox"; return; }
+  printf '{"includeCoAuthoredBy": true}\n' > "$(CSETTINGS "$sb")"
+  run_copilot_install "$sb"
+  assert_expr "$(CSETTINGS "$sb")" "d.get('includeCoAuthoredBy')" "True" \
+    "C3a: a user who set includeCoAuthoredBy keeps their value through install"
+  copilot_uninstall_supported "$sb" || { echo "  SKIP: C3b: ./uninstall does not accept --target=copilot yet"; return; }
+  run_copilot_uninstall "$sb" >/dev/null
+  assert_expr "$(CSETTINGS "$sb")" "d.get('includeCoAuthoredBy')" "True" \
+    "C3b: ...and through uninstall"
+}
+
 echo "uninstall --with-config: merged keys"
 test_ours_alone_is_removed
 test_grant_revoked_user_entries_kept
@@ -383,6 +461,9 @@ test_emptied_object_is_pruned
 test_value_that_matched_ours_is_not_claimed
 test_user_hook_on_shipped_event_survives
 test_stale_hook_replaced_then_removed
+test_copilot_ours_alone
+test_copilot_user_key_survives
+test_copilot_user_value_kept
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

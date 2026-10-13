@@ -265,6 +265,169 @@ test_uninstall_round_trip() {
   fi
 }
 
+# --- Copilot CLI ------------------------------------------------------------
+# ./install's --target=copilot is registered outside this library, so these
+# cases drive config_phase_run directly — the code under test either way.
+# COPILOT_HOME is cleared unless a case sets it, so a developer's own value can
+# never point a test at a real directory.
+
+# run_copilot_config <sandbox> [VAR=value...] — copilot-only config phase.
+run_copilot_config() {
+  local sb="$1"; shift
+  env -u COPILOT_HOME -u CODEX_HOME -u VIBESTACK_HOME \
+      HOME="$sb/home" XDG_STATE_HOME="$sb/state" MANIFEST_DIR="$sb/state/vibekit" \
+      PAYLOAD_DIR="$sb/payload" "$@" bash -c '
+    set -uo pipefail
+    source "$1/lib/config-install.sh"
+    CFG_TARGETS="copilot"; PREVIEW_ONLY=false
+    CAVEMAN=false; PONYTAIL=false; DELIBERATION=false; RTK=false
+    config_phase_run
+  ' _ "$REPO" 2>&1
+}
+
+# The shipped payload plus a hooks file, so deploying everything under
+# config/copilot/ is exercised whether or not the repo ships one yet.
+copilot_payload() {
+  local sb="$1"
+  cp -R "$REPO/config" "$sb/payload"
+  if [[ ! -f "$sb/payload/copilot/hooks/vibestack.json" ]]; then
+    mkdir -p "$sb/payload/copilot/hooks"
+    printf '{"version":1,"hooks":{}}\n' > "$sb/payload/copilot/hooks/vibestack.json"
+  fi
+}
+
+COPILOT_END='<!-- END vibekit-managed copilot-instructions.md — lines below are yours and survive every sync -->'
+
+tree_hash() { (cd "$1" 2>/dev/null && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256); }
+
+# --- P10: the copilot payload lands in ~/.copilot and only there -------------
+test_copilot_deploys() {
+  local sb; sb="$(new_sandbox)" || { _fail "P10: no sandbox"; return; }
+  copilot_payload "$sb"
+  run_copilot_config "$sb" >/dev/null
+  local c="$sb/home/.copilot"
+
+  if [[ -f "$c/copilot-instructions.md" ]] && grep -qxF "$COPILOT_END" "$c/copilot-instructions.md"; then
+    _pass "P10: copilot-instructions.md deployed with its own end marker"
+  else
+    _fail "P10: copilot-instructions.md missing or without the copilot end marker"
+  fi
+  [[ -f "$c/agents/code-reviewer.agent.md" && -f "$c/hooks/vibestack.json" ]] \
+    && _pass "P10: agents/ and hooks/ deployed from config/copilot/" \
+    || _fail "P10: agents/*.agent.md or hooks/vibestack.json not deployed"
+  if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("includeCoAuthoredBy") is False else 1)' \
+       "$c/settings.json" 2>/dev/null; then
+    _pass "P10: settings.json carries includeCoAuthoredBy: false"
+  else
+    _fail "P10: settings.json missing or does not disable the co-author trailer"
+  fi
+  [[ ! -e "$c/config.json" ]] \
+    && _pass "P10: config.json (Copilot's internal state) is never written" \
+    || _fail "P10: config.json was written"
+  local outside; outside=$(find "$sb/home" -type f -not -path "$c/*" | wc -l | tr -d ' ')
+  [[ "$outside" -eq 0 ]] \
+    && _pass "P10: nothing written outside ~/.copilot" \
+    || _fail "P10: $outside file(s) written outside ~/.copilot"
+  local m="$sb/state/vibekit/manifest_copilot"
+  if grep -qxF 'hooks/vibestack.json' "$m" 2>/dev/null \
+     && grep -qxF 'agents/code-reviewer.agent.md' "$m" \
+     && ! grep -qxF 'settings.json' "$m" \
+     && ! grep -qxF 'copilot-instructions.md' "$m"; then
+    _pass "P10: whole files are manifest-owned, merged files are not"
+  else
+    _fail "P10: manifest_copilot ownership is wrong"
+  fi
+
+  local before after
+  before=$(tree_hash "$c")
+  run_copilot_config "$sb" >/dev/null
+  after=$(tree_hash "$c")
+  [[ -n "$before" && "$before" == "$after" ]] \
+    && _pass "P10: a second run leaves ~/.copilot byte-identical" \
+    || _fail "P10: the second run changed ~/.copilot"
+}
+
+# --- P11: COPILOT_HOME moves the whole payload -------------------------------
+test_copilot_honors_copilot_home() {
+  local sb; sb="$(new_sandbox)" || { _fail "P11: no sandbox"; return; }
+  copilot_payload "$sb"
+  run_copilot_config "$sb" COPILOT_HOME="$sb/alt" >/dev/null
+  [[ -f "$sb/alt/copilot-instructions.md" && -f "$sb/alt/settings.json" && ! -e "$sb/home/.copilot" ]] \
+    && _pass "P11: COPILOT_HOME receives the payload, ~/.copilot is untouched" \
+    || _fail "P11: COPILOT_HOME was not honored"
+}
+
+# --- P12: the user's own copilot content survives a sync ---------------------
+test_copilot_user_content_survives() {
+  local sb; sb="$(new_sandbox)" || { _fail "P12: no sandbox"; return; }
+  copilot_payload "$sb"
+  mkdir -p "$sb/home/.copilot"
+  # A user who opted into the trailer keeps that choice; their other keys stay.
+  printf '{"includeCoAuthoredBy": true, "theme": "dark"}\n' > "$sb/home/.copilot/settings.json"
+  run_copilot_config "$sb" >/dev/null
+  printf 'my own instruction\n' >> "$sb/home/.copilot/copilot-instructions.md"
+  run_copilot_config "$sb" >/dev/null
+
+  local f="$sb/home/.copilot/copilot-instructions.md"
+  if grep -q '^my own instruction$' "$f" 2>/dev/null \
+     && [[ "$(grep -cxF "$COPILOT_END" "$f")" == 1 ]]; then
+    _pass "P12: lines below the marker survive, one marker after two syncs"
+  else
+    _fail "P12: the sync lost the user's tail or duplicated the marker"
+  fi
+  if python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+sys.exit(0 if d.get("includeCoAuthoredBy") is True and d.get("theme")=="dark" else 1)' \
+       "$sb/home/.copilot/settings.json" 2>/dev/null; then
+    _pass "P12: the user's settings.json values win over the shipped default"
+  else
+    _fail "P12: the merge overwrote the user's settings.json"
+  fi
+}
+
+# ./uninstall's --target=copilot belongs to the install registry; until it is
+# registered the round trip cannot run, and saying so beats a silent pass.
+uninstall_knows_copilot() {
+  local h err
+  h="$(mktemp -d)" || return 1
+  err=$(env -u COPILOT_HOME HOME="$h" MANIFEST_DIR="$h/state" \
+        bash "$REPO/uninstall" --target=copilot --with-config 2>&1 >/dev/null)
+  rm -rf "$h"
+  ! grep -q "unknown target 'copilot'" <<<"$err"
+}
+
+# --- P13: uninstall --with-config removes ours and keeps theirs --------------
+test_copilot_uninstall_round_trip() {
+  if ! uninstall_knows_copilot; then
+    echo "  SKIP: P13: ./uninstall does not accept --target=copilot yet (install registry change pending)"
+    return
+  fi
+  local sb; sb="$(new_sandbox)" || { _fail "P13: no sandbox"; return; }
+  copilot_payload "$sb"
+  mkdir -p "$sb/home/.copilot/agents"
+  echo mine > "$sb/home/.copilot/agents/my-own.agent.md"
+  run_copilot_config "$sb" >/dev/null
+  printf 'my own instruction\n' >> "$sb/home/.copilot/copilot-instructions.md"
+
+  env -u COPILOT_HOME HOME="$sb/home" XDG_STATE_HOME="$sb/state" MANIFEST_DIR="$sb/state/vibekit" \
+    bash "$REPO/uninstall" --target=copilot --with-config >/dev/null 2>&1
+
+  local c="$sb/home/.copilot"
+  [[ ! -e "$c/agents/code-reviewer.agent.md" && ! -e "$c/hooks/vibestack.json" ]] \
+    && _pass "P13: agents and hooks the manifest recorded are gone" \
+    || _fail "P13: manifest-recorded copilot files survived uninstall"
+  [[ -f "$c/agents/my-own.agent.md" ]] \
+    && _pass "P13: an agent the user added was left alone" \
+    || _fail "P13: uninstall deleted a user agent"
+  if [[ -f "$c/copilot-instructions.md" ]] && grep -q '^my own instruction$' "$c/copilot-instructions.md" \
+     && ! grep -q '## Authorship' "$c/copilot-instructions.md"; then
+    _pass "P13: managed region stripped, the user's lines below it kept"
+  else
+    _fail "P13: copilot-instructions.md region not stripped, or user tail lost"
+  fi
+}
+
 echo "configuration phase (executable)"
 echo ""
 test_install_and_idempotency
@@ -276,6 +439,10 @@ test_contradictory_options_refused
 test_only_config_validates_targets
 test_dry_run_writes_nothing
 test_uninstall_round_trip
+test_copilot_deploys
+test_copilot_honors_copilot_home
+test_copilot_user_content_survives
+test_copilot_uninstall_round_trip
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"
