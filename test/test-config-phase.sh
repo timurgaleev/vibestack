@@ -425,6 +425,60 @@ test_copilot_uninstall_round_trip() {
   fi
 }
 
+# --- P14: a differing file nothing claimed is the user's, not ours ----------
+# Regression: a hand-written ~/.copilot/agents/<name>.agent.md that shares a
+# shipped name was overwritten, recorded in the manifest, and then deleted by
+# uninstall.
+test_copilot_foreign_file_kept() {
+  local sb; sb="$(new_sandbox)" || { _fail "P14: no sandbox"; return; }
+  local c="$sb/home/.copilot" m="$sb/state/vibekit/manifest_copilot"
+  local mine="$c/agents/code-reviewer.agent.md"
+  mkdir -p "$c/agents"
+  echo 'my own reviewer' > "$mine"
+  # Identical to what ships: nothing is lost by claiming it.
+  cp "$REPO/config/copilot/agents/system-designer.agent.md" "$c/agents/system-designer.agent.md"
+
+  (unset COPILOT_HOME CODEX_HOME VIBESTACK_HOME; run_config "$sb" --target=copilot >/dev/null 2>&1)
+  [[ "$(cat "$mine" 2>/dev/null)" == 'my own reviewer' ]] \
+    && _pass "P14: install left the user's code-reviewer.agent.md untouched" \
+    || _fail "P14: install overwrote the user's code-reviewer.agent.md"
+  [[ -f "$m" ]] && ! grep -qxF 'agents/code-reviewer.agent.md' "$m" \
+    && _pass "P14: manifest_copilot does not claim the user's file" \
+    || _fail "P14: manifest_copilot missing or claims the user's file"
+  grep -qxF 'agents/system-designer.agent.md' "$m" 2>/dev/null \
+    && _pass "P14: an identical pre-existing file is claimed normally" \
+    || _fail "P14: an identical pre-existing file was not claimed"
+
+  (unset COPILOT_HOME CODEX_HOME VIBESTACK_HOME; run_config "$sb" --target=copilot >/dev/null 2>&1)
+  [[ "$(cat "$mine" 2>/dev/null)" == 'my own reviewer' ]] && ! grep -qxF 'agents/code-reviewer.agent.md' "$m" \
+    && _pass "P14: a second install still leaves it alone" \
+    || _fail "P14: the second install overwrote or claimed the user's file"
+
+  env -u COPILOT_HOME -u CODEX_HOME -u VIBESTACK_HOME HOME="$sb/home" XDG_STATE_HOME="$sb/state" \
+    MANIFEST_DIR="$sb/state/vibekit" bash "$REPO/uninstall" --target=copilot --with-config >/dev/null 2>&1
+  [[ "$(cat "$mine" 2>/dev/null)" == 'my own reviewer' ]] \
+    && _pass "P14: uninstall kept the user's file" \
+    || _fail "P14: uninstall deleted the user's file"
+  [[ ! -e "$c/agents/system-designer.agent.md" ]] \
+    && _pass "P14: uninstall removed the claimed identical file" \
+    || _fail "P14: uninstall left the claimed identical file"
+}
+
+# --- P15: a file an earlier install claimed is still upgraded ---------------
+test_copilot_claimed_file_updates() {
+  local sb; sb="$(new_sandbox)" || { _fail "P15: no sandbox"; return; }
+  copilot_payload "$sb"
+  run_copilot_config "$sb" >/dev/null
+  printf '\nchanged in a later release\n' >> "$sb/payload/copilot/agents/code-reviewer.agent.md"
+  local out; out=$(run_copilot_config "$sb" DEBUG_TESTS=1)
+  if cmp -s "$sb/payload/copilot/agents/code-reviewer.agent.md" "$sb/home/.copilot/agents/code-reviewer.agent.md" \
+     && grep -qxF 'agents/code-reviewer.agent.md' "$sb/state/vibekit/manifest_copilot"; then
+    _pass "P15: a claimed file whose source changed is updated and stays claimed"
+  else
+    _fail "P15: a claimed file was not updated on upgrade: $(grep -E 'KEEP|UPDATE' <<<"$out" | head -3)"
+  fi
+}
+
 echo "configuration phase (executable)"
 echo ""
 test_install_and_idempotency
@@ -440,6 +494,8 @@ test_copilot_deploys
 test_copilot_honors_copilot_home
 test_copilot_user_content_survives
 test_copilot_uninstall_round_trip
+test_copilot_foreign_file_kept
+test_copilot_claimed_file_updates
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

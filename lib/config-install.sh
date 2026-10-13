@@ -462,6 +462,15 @@ for entry in "${DEPLOY_TARGETS[@]}"; do
     # state along with our entries. Everything else is manifest-tracked and
     # therefore prunable.
     if [[ -z "$merge_mode" ]]; then
+      # A differing file the previous manifest never claimed is the user's own
+      # (a hand-written agent that shares a shipped name). Overwriting it would
+      # also record it as ours, and uninstall would then delete it.
+      if [[ -f "$dst_file" ]] && ! grep -qxF -- "$rel_path" "$(manifest_path "$src_subdir")" 2>/dev/null \
+         && [[ "$(file_hash "$src_file")" != "$(file_hash "$dst_file")" ]]; then
+        msg_warn "KEEP: $rel_path is not ours (no earlier install claimed it) — left untouched"
+        SKIPPED=$((SKIPPED + 1))
+        continue
+      fi
       if ! printf '%s\n' "$rel_path" >> "$manifest_tmp"; then
         msg_warn "$src_subdir: could not record $rel_path — aborting before prune"
         target_failed=true
