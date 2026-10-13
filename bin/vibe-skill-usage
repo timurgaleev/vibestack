@@ -13,8 +13,9 @@
 #
 # The transcript schema is undocumented: missing fields are tolerated and an
 # unparseable line is counted, not fatal. Only skill names and counts are
-# printed — never message text or transcript paths. Cursor, Kiro and Codex keep
-# no transcript this reads, so their usage is reported as unmeasured, not zero.
+# printed — never message text or transcript paths. Cursor, Kiro, Codex and
+# Copilot keep no transcript this reads, so their usage is reported as
+# unmeasured, not zero.
 #
 # Usage: vibe-skill-usage [--days N] [--json] [--claude-dir DIR] [--analytics FILE]
 #   --days N          window in days (default 30)
@@ -159,7 +160,7 @@ if analytics_present:
         analytics_present = False
 
 order = sorted(stats.items(), key=lambda kv: (-(kv[1]["typed"] + kv[1]["model"]), -kv[1]["tracked"], kv[0]))
-measured, unmeasured = ["claude"], ["cursor", "kiro", "codex"]
+measured, unmeasured = ["claude"], ["cursor", "kiro", "codex", "copilot"]
 
 if as_json:
     print(json.dumps({
