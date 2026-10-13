@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Build codex/AGENTS.md from claude/CLAUDE.md + claude/rules/.
+"""Build codex/AGENTS.md (or copilot/copilot-instructions.md) from
+claude/CLAUDE.md + claude/rules/.
 
 Claude Code loads CLAUDE.md *and* every rules/*.md file, so the hub can stay
-thin and point at spokes. Codex loads a single AGENTS.md and has no rules
-directory, so the same content has to arrive inlined. Rather than maintain two
-copies by hand, expand the hub's pointers into the rule bodies.
+thin and point at spokes. Codex loads a single AGENTS.md, and Copilot CLI a
+single personal copilot-instructions.md; neither has a rules directory, so the
+same content has to arrive inlined. Rather than maintain copies by hand, expand
+the hub's pointers into the rule bodies.
 
-    ./scripts/gen-codex-agents.py            # write codex/AGENTS.md
-    ./scripts/gen-codex-agents.py --check    # exit 1 if the file is out of date
+    ./scripts/gen-codex-agents.py                    # write codex/AGENTS.md
+    ./scripts/gen-codex-agents.py --check            # exit 1 if it is out of date
+    ./scripts/gen-codex-agents.py --target copilot   # copilot/copilot-instructions.md
 
 A rule referenced from more than one section is inlined once, at its first
 mention; later mentions become a cross-reference.
@@ -63,6 +66,47 @@ DANGLING = [
     (re.compile(r"`git\.md`"), "**Git Safety**"),
     (re.compile(rf"`rules/({RULE_NAME})\.md`"), r"the **\1** rules"),
 ]
+
+# Per-target output. Codex is the default and its output is unchanged by the
+# copilot entry; everything a target does differently is declared here.
+TARGETS = {
+    "codex": {
+        "out": OUT,
+        "sections": SECTIONS,
+        "overrides": OVERRIDES,
+        "title": "# AGENTS.md",
+        "runtime": "Codex",
+        "structure": (
+            "This is the *only* global instruction file Codex loads automatically, so\n"
+            "every rule is written out in full below. An `AGENTS.md` in the project root\n"
+            "takes precedence — the deeper file wins.\n\n"
+        ),
+        "dangling": DANGLING,
+    },
+    "copilot": {
+        "out": ROOT / "config" / "copilot" / "copilot-instructions.md",
+        "sections": Path(__file__).resolve().parent / "copilot-sections",
+        "overrides": {"Claude Code Usage": ("Copilot Usage", "copilot-usage.md")},
+        "title": "# copilot-instructions.md",
+        "runtime": "Copilot CLI",
+        "structure": (
+            "Copilot CLI loads this file from `~/.copilot` every session and has no\n"
+            "rules directory to point at, so every rule is written out in full below.\n"
+            "Repository instructions (`.github/copilot-instructions.md`, `AGENTS.md`,\n"
+            "`CLAUDE.md`) load alongside it; where they conflict, the repository wins.\n\n"
+        ),
+        "dangling": [
+            (re.compile(r"See `rules/skills\.md` for the\ntask → skill map\."),
+             "See **Copilot Usage** for how skills are resolved."),
+            # Copilot does have a setting for this, and the pack ships it.
+            (re.compile(r"- The Claude configuration sets the `attribution` setting.*?what holds\.",
+                        re.DOTALL),
+             "- The configuration ships `~/.copilot/settings.json` with\n"
+             "  `includeCoAuthoredBy` set to `false`, so Copilot itself adds no\n"
+             "  co-author trailer. Never add one by hand either."),
+        ] + DANGLING[1:],
+    },
+}
 
 # A line that hands off to a rule file, e.g. "Full rule: `rules/git.md`".
 POINTER = re.compile(rf"^(?:Full rule|Details and examples):\s*`rules/({RULE_NAME})\.md`\s*$")
@@ -156,20 +200,19 @@ def split_sections(text: str) -> tuple[str, list[tuple[str, str]]]:
     return "\n".join(preamble), [(t, "\n".join(b)) for t, b in sections]
 
 
-def build() -> str:
+def build(target: str = "codex") -> str:
+    cfg = TARGETS[target]
     preamble, sections = split_sections(HUB.read_text())
 
-    preamble = preamble.replace("# CLAUDE.md", "# AGENTS.md", 1)
+    preamble = preamble.replace("# CLAUDE.md", cfg["title"], 1)
     preamble = preamble.replace(
         "Global instructions for Claude Code.",
-        "Global instructions for Codex.",
+        f"Global instructions for {cfg['runtime']}.",
     )
-    # The hub explains its own index/spoke split; AGENTS.md has no spokes.
+    # The hub explains its own index/spoke split; the output has no spokes.
     preamble = re.sub(
         r"\*\*Structure\*\*.*?(?=\n## |\Z)",
-        "This is the *only* global instruction file Codex loads automatically, so\n"
-        "every rule is written out in full below. An `AGENTS.md` in the project root\n"
-        "takes precedence — the deeper file wins.\n\n",
+        lambda _: cfg["structure"],
         preamble,
         flags=re.DOTALL,
     )
@@ -182,9 +225,9 @@ def build() -> str:
         if title in DROP:
             continue
 
-        if title in OVERRIDES:
-            new_title, filename = OVERRIDES[title]
-            out.append(f"## {new_title}\n\n{(SECTIONS / filename).read_text().rstrip()}\n")
+        if title in cfg["overrides"]:
+            new_title, filename = cfg["overrides"][title]
+            out.append(f"## {new_title}\n\n{(cfg['sections'] / filename).read_text().rstrip()}\n")
             continue
 
         rendered = []
@@ -222,34 +265,40 @@ def build() -> str:
 
     # Rewrite dangling links outside fenced blocks only, so a fenced example
     # that quotes a rules/ path keeps its literal text.
-    return rewrite_outside_fences(document, DANGLING) + "\n"
+    return rewrite_outside_fences(document, cfg["dangling"]) + "\n"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--target", choices=sorted(TARGETS), default="codex",
+                        help="which runtime's file to build (default: codex)")
     parser.add_argument("--check", action="store_true",
-                        help="exit 1 if codex/AGENTS.md differs from the generated output")
+                        help="exit 1 if the target file differs from the generated output")
     parser.add_argument("--report-rules", action="store_true",
                         help="print the rules actually inlined or appended, one per line")
     args = parser.parse_args()
 
-    generated = build()
+    out = TARGETS[args.target]["out"]
+    rel = out.relative_to(ROOT / "config")
+    generated = build(args.target)
 
     if args.report_rules:
         print("\n".join(sorted(RULES_USED)))
         return 0
 
     if args.check:
-        current = OUT.read_text() if OUT.exists() else ""
+        current = out.read_text() if out.exists() else ""
         if current == generated:
-            print("codex/AGENTS.md is up to date")
+            print(f"{rel} is up to date")
             return 0
-        print("codex/AGENTS.md is out of date — run scripts/gen-codex-agents.py",
+        flag = "" if args.target == "codex" else f" --target {args.target}"
+        print(f"{rel} is out of date — run scripts/gen-codex-agents.py{flag}",
               file=sys.stderr)
         return 1
 
-    OUT.write_text(generated)
-    print(f"wrote {OUT.relative_to(ROOT)} ({len(generated.splitlines())} lines)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(generated)
+    print(f"wrote {out.relative_to(ROOT)} ({len(generated.splitlines())} lines)")
     return 0
 
 

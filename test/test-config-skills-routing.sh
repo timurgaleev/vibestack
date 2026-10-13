@@ -77,6 +77,29 @@ else
   _pass "H1: hub does not name /code-review"
 fi
 
+# C1-C2: Copilot reads one generated instructions file. It must route review to
+# the pack's /review too, and every /name it routes to must ship — Copilot
+# invokes skills by that exact name.
+COPILOT_OUT="$ROOT/config/copilot/copilot-instructions.md"
+if [[ ! -f "$COPILOT_OUT" ]]; then
+  _fail "C1: config/copilot/copilot-instructions.md missing"
+elif grep -qF '/code-review' "$COPILOT_OUT" || ! grep -qF '`/review`' "$COPILOT_OUT"; then
+  _fail "C1: copilot-instructions.md names /code-review or does not route to /review"
+else
+  _pass "C1: copilot-instructions.md routes pre-merge review to /review"
+fi
+copilot_missing=""
+if [[ -f "$COPILOT_OUT" ]]; then
+  while read -r _ name _; do
+    [[ -f "$SKILLS_DIR/$name/SKILL.md" ]] || copilot_missing="$copilot_missing /$name"
+  done < <(routing_tokens "$COPILOT_OUT")
+fi
+if [[ -f "$COPILOT_OUT" && -z "$copilot_missing" ]]; then
+  _pass "C2: every /name in copilot-instructions.md is a shipped skill"
+else
+  _fail "C2: copilot-instructions.md missing, or routes to skills that do not ship:$copilot_missing"
+fi
+
 # T1-T2: every runtime gets the same test policy. A coverage percentage left in
 # one runtime's always-loaded rules contradicts the value bar the skills carry,
 # and a rule that routes review to an agent instead of /review bypasses it.
