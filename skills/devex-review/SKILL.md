@@ -207,7 +207,8 @@ which ships with `plan-devex-review`. Resolve it once:
 
 ```bash
 HOF="${CLAUDE_SKILL_DIR}/../plan-devex-review/dx-hall-of-fame.md"
-for _d in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills"; do
+for _d in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills" \
+          "${COPILOT_HOME:-$HOME/.copilot}/skills"; do
   [ -f "$HOF" ] && break
   HOF="$_d/plan-devex-review/dx-hall-of-fame.md"
 done

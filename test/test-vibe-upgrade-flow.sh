@@ -17,7 +17,7 @@ SKILL="${1:-$ROOT/skills/vibe-upgrade/SKILL.md}"
 [ -f "$SKILL" ] || { echo "no such file: $SKILL" >&2; exit 2; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-unset VIBESTACK_HOME XDG_STATE_HOME CODEX_HOME VIBESTACK_AUTO_UPGRADE
+unset VIBESTACK_HOME XDG_STATE_HOME CODEX_HOME COPILOT_HOME VIBESTACK_AUTO_UPGRADE
 
 pass=0; fail=0
 ok() { pass=$((pass+1)); echo "  ok   $1"; }
@@ -104,7 +104,7 @@ setup; mkdir -p "$H/.claude/skills"; : > "$H/.claude/skills/.vibestack-manifest"
 out="$(replay_block "$T/co" 2>&1)"; rc=$?
 R="$H/.vibestack/upgrade-replay.sh"
 if [ $rc -eq 0 ] && grep -q -- "--only=skills --target=claude || exit 1" "$R" 2>/dev/null \
-   && ! grep -qE -- "--yes|cursor|kiro|codex|--only=config" "$R"; then
+   && ! grep -qE -- "--yes|cursor|kiro|codex|copilot|--only=config" "$R"; then
   ok "a Claude-only install replays --target=claude only"
 else
   no "replay: rc=$rc '$out'"
@@ -132,6 +132,34 @@ if [ $rc -ne 0 ] && case "$out" in REPLAY_UNKNOWN*) true ;; *) false ;; esac; th
 else
   no "no manifest: rc=$rc '$out'"
 fi
+
+# Copilot CLI keeps its skills in $COPILOT_HOME/skills (default ~/.copilot/skills)
+# and its project skills in .github/skills.
+setup; R="$H/.vibestack/upgrade-replay.sh"; mkdir -p "$H/.copilot/skills"; : > "$H/.copilot/skills/.vibestack-manifest"
+mkdir -p "$H/.local/state/vibekit"; : > "$H/.local/state/vibekit/manifest_copilot"
+replay_block "$T/co" >/dev/null 2>&1
+grep -q -- "--only=skills --target=copilot || exit 1" "$R" 2>/dev/null \
+  && ok "a Copilot-only install replays --target=copilot" || no "copilot replay: $(cat "$R" 2>/dev/null)"
+grep -q -- "--only=config --target=copilot" "$R" 2>/dev/null \
+  && ok "a copilot config manifest adds a copilot config replay" || no "no copilot config replay"
+setup; R="$H/.vibestack/upgrade-replay.sh"; mkdir -p "$H/alt/skills"; : > "$H/alt/skills/.vibestack-manifest"
+HOME="$H" COPILOT_HOME="$H/alt" bash -c "$(X '### Step 3.5' | fill REPO="$T/co" _ROOT=)" >/dev/null 2>&1
+grep -q -- "--target=copilot" "$R" 2>/dev/null && ok "COPILOT_HOME locates the Copilot skills root" \
+                                              || no "COPILOT_HOME install not replayed"
+setup; R="$H/.vibestack/upgrade-replay.sh"; P="$T/proj"; mkdir -p "$P/.github/skills/careful"; : > "$P/.github/skills/.vibestack-manifest"
+ln -s "$T/co/skills/careful/bin" "$P/.github/skills/careful/bin"
+HOME="$H" bash -c "$(X '### Step 3.5' | fill REPO="$T/co" _ROOT="$P")" >/dev/null 2>&1
+grep -q -- "--scope=project .*--target=copilot" "$R" 2>/dev/null \
+  && ok "a .github/skills project install replays --scope=project --target=copilot" \
+  || no "copilot project replay: $(cat "$R" 2>/dev/null)"
+
+echo "Step 2: locate the checkout"
+# A Copilot-only install is found through its skills' bin symlinks, also under
+# a non-default COPILOT_HOME.
+setup; mkdir -p "$H/alt/skills/careful"; ln -s "$T/co/skills/careful/bin" "$H/alt/skills/careful/bin"
+out="$(HOME="$H" COPILOT_HOME="$H/alt" bash -c "$(X '### Step 2: Locate')" 2>&1)"
+case "$out" in "REPO=$T/co "*) ok "a Copilot skills bin symlink locates the checkout" ;;
+  *) no "copilot locate: '$out'" ;; esac
 
 echo "Step 4, git checkout"
 setup; prep_replay; git -C "$T/co" remote set-url origin "$T/missing.git"

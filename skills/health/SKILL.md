@@ -422,7 +422,7 @@ config payload, which an installed copy does not have).
 Present one row per installed skill:
 
 ```
-SKILL HEALTH (last 90 days, claude measured; cursor, kiro, codex unmeasured)
+SKILL HEALTH (last 90 days, claude measured; cursor, kiro, codex, copilot unmeasured)
 Skill           Typed  Model  Last seen    Desc chars  Proposal
 --------------  -----  -----  -----------  ----------  ------------------------------
 ship               12     30  2026-10-09          112  Keep — used weekly, both ways
@@ -435,8 +435,8 @@ per skill, with a reason a reader can check without this conversation (the count
 the overlapping skill, the description problem).
 
 Rules:
-- **Unmeasured is not zero.** Usage on Cursor, Kiro or Codex, and in transcripts the
-  tool could not read, is unmeasured, and unmeasured never justifies Retire. Say
+- **Unmeasured is not zero.** Usage on Cursor, Kiro, Codex or Copilot CLI, and in
+  transcripts the tool could not read, is unmeasured, and unmeasured never justifies Retire. Say
   which runtimes the user works in before proposing Retire; a skill with zero Claude
   use may be in daily use elsewhere.
 - **Retire is a proposal.** This target never deletes, moves or edits a skill. Point

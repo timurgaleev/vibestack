@@ -18,8 +18,8 @@ triggers:
 
 Use when the task clearly wants a vibestack workflow but the right one is not
 obvious, or when the host has no slash-command picker and the pack has to be
-found by name. In Claude Code, Cursor and Kiro, skills are `/name`. In Codex
-there is no `/` picker — reference a skill as `$name` inside an ordinary
+found by name. In Claude Code, Cursor, Kiro and Copilot CLI, skills are
+`/name`. In Codex there is no `/` picker — reference a skill as `$name` inside an ordinary
 message (`Use $office-hours to shape this idea`).
 
 # /vibe — pick the right skill
@@ -84,14 +84,15 @@ a skill name:
 ```bash
 _found=""
 for _d in "${CLAUDE_SKILL_DIR:-}" "$HOME/.agents/skills/vibe" "$HOME/.claude/skills/vibe" \
-          "$HOME/.cursor/skills/vibe" "$HOME/.kiro/skills/vibe" \
-          ".agents/skills/vibe" ".claude/skills/vibe" ".cursor/skills/vibe" ".kiro/skills/vibe"; do
+          "$HOME/.cursor/skills/vibe" "$HOME/.kiro/skills/vibe" "${COPILOT_HOME:-$HOME/.copilot}/skills/vibe" \
+          ".agents/skills/vibe" ".claude/skills/vibe" ".cursor/skills/vibe" ".kiro/skills/vibe" ".github/skills/vibe"; do
   if [ -n "$_d" ] && [ -r "$_d/skills-index.md" ]; then
     cat "$_d/skills-index.md"; _found=1; break
   fi
 done
 if [ -z "$_found" ]; then
-  for _r in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills"; do
+  for _r in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills" \
+            "${COPILOT_HOME:-$HOME/.copilot}/skills"; do
     [ -d "$_r" ] && { echo "$_r:"; ls "$_r"; }
   done
 fi
@@ -110,13 +111,15 @@ else echo "HOST: other"; fi
 ```
 
 `HOST: claude` → `codex`. `HOST: codex` → `claude` (`codex` refuses to run
-nested under Codex, and would be the same model anyway). `HOST: other` (Cursor,
-Kiro) → `codex`, unless the session's own model is GPT, then `claude`.
+nested under Codex, and would be the same model anyway).
+`HOST: other` (Cursor, Kiro, Copilot CLI) → `codex`, unless the session's own
+model is GPT, then `claude`. Copilot CLI sets no documented session variable,
+so it always reports `HOST: other`.
 
 Rules when routing:
 
 - **Invoke it, don't describe it.** Once a skill fits, hand off: invoke it
-  through the Skill tool (Claude Code, Cursor, Kiro), or on Codex load that
+  through the Skill tool (Claude Code, Cursor, Kiro, Copilot CLI), or on Codex load that
   skill's `SKILL.md` and follow it (users invoke it there as `Use $<name>`). Do not answer with a list of
   options, and do not do the skill's work freehand when the skill exists.
 - **Answer directly instead** when the request is a quick factual question
