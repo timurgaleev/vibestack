@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.55.0 — 2026-10-13
+
+### Added
+
+- **GitHub Copilot CLI is the fifth install target.** `./install --target=copilot`
+  (or `all`) writes the skills to `${COPILOT_HOME:-~/.copilot}/skills`, and
+  project scope writes `.github/skills`. Skills are invoked as `/name`.
+  `uninstall`, `vibestack doctor`, `/vibe-upgrade`, `/vibe-gc`,
+  `vibe-update-check`, `vibe-certify` and `vibe-context-budget --runtime copilot`
+  all know the new root.
+- **Copilot configuration payload** (`--with-config`):
+  - `copilot-instructions.md`, generated from the Claude rules into a managed
+    block. Your lines below the marker survive every sync.
+  - Every sub-agent as `agents/<name>.agent.md`.
+  - `hooks/vibestack.json`, which wires `/careful` and `/freeze`.
+  - `settings.json` with `includeCoAuthoredBy: false`, so Copilot adds no AI
+    co-author trailer to commits.
+  - Copilot's own `config.json` is never touched.
+- **`/careful` and `/freeze` enforce under Copilot.**
+  - The hooks are user-level there, so `/careful` is always on once the
+    payload is installed.
+  - `/freeze` denies when a boundary is set but its script cannot be found.
+  - Hook decisions are emitted in both Copilot's flat form and Claude Code's
+    nested form; both runtimes were verified live.
+
+### Fixed
+
+- **`uninstall --with-config` restores merged settings again.** After removing
+  skills, the script stopped before taking back merged keys such as the Claude
+  `settings.json` entries.
+- **The config phase no longer overwrites a file it never installed.** A
+  differing file at a shipped path, such as your own `agents/code-reviewer.agent.md`,
+  is kept and left out of the manifest, so uninstall cannot delete it.
+- **`/careful` and `/freeze` read `tool_input.path`** as well as `file_path`,
+  the field Copilot's edit tools send.
+
 ## 1.54.2 — 2026-10-12
 
 ### Fixed
