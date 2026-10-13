@@ -18,7 +18,7 @@ skill asks you, and what comes back. What each skill covers is in
 reads `${CLAUDE_SKILL_DIR}`, and the compatibility matrix rates all four `full` in
 Claude Code, Cursor and Kiro — see the per-skill rows in
 [`docs/agent-skills-compatibility-audit.md`](agent-skills-compatibility-audit.md).
-Codex CLI has no runtime data in that matrix, so treat it as untested. All four
+Codex CLI and Copilot CLI have no runtime data in that matrix, so treat them as untested. All four
 list `AskUserQuestion` in `allowed-tools`, which the same audit classes as a
 Claude Code tool; `/aws-cost` uses it to pick between AWS profiles and
 `/bedrock-guardrails` to settle the EU residency question.

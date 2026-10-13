@@ -274,7 +274,7 @@ test_dry_run_reports_all_three_targets() {
   grep -q "\.copilot/skills" <<<"$out" || { echo "    dry-run plan does not name ~/.copilot/skills for copilot" >&2; return 1; }
 }
 
-# --- All 3 targets get byte-identical content for the same skill
+# --- Every target gets byte-identical content for the same skill
 # Skills carrying no ${CLAUDE_SKILL_DIR} token render identically for every
 # target; ones that do carry it are per-target by design (v1.29.0 substitutes
 # the install dir), so they get an expected-render comparison instead.
@@ -361,7 +361,7 @@ test_install_idempotent_per_target() {
   assert_eq "$h1" "$h2" "rendered hash"
 }
 
-# --- Install all 3 → uninstall all 3 → zero residual files
+# --- Install all → uninstall all → zero residual files
 test_install_all_then_uninstall_all_zero_residue() {
   "$INSTALL" --target=all < /dev/null >/dev/null 2>&1
   "$UNINSTALL" --target=all < /dev/null >/dev/null 2>&1

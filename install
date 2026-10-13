@@ -308,7 +308,7 @@ esac
 
 # Asking for one of the optional tools is asking for the phase that installs
 # them — but only when the user has not already said the phase is off. Turning
-# it back on there would let `--no-config -C` write to four config directories
+# it back on there would let `--no-config -C` write to the config directories
 # the user just excluded. --no-rtk never turns the phase on: it turns something
 # off.
 if [ "$CFG_CAVEMAN" = "true" ] || [ "$CFG_PONYTAIL" = "true" ] || [ "$CFG_DELIBERATION" = "true" ]; then
@@ -422,7 +422,7 @@ run_config_phase() {
     return 1
   fi
 
-  # Without this the library falls back to its own four-target list, so
+  # Without this the library falls back to its own all-target list, so
   # `--target=codex` would rewrite Claude, Cursor and Kiro configuration too.
   CFG_TARGETS="$1"
 
@@ -606,7 +606,7 @@ elif [ -r /dev/tty ] && [ -t 0 ]; then
         # Dry-run from prompt (eng-review R3: empty defaults → exit with hint).
         if [ "${#default_targets[@]}" -eq 0 ]; then
           echo ""
-          echo "Nothing to dry-run — no targets detected. Use \`a\` to preview all 3," >&2
+          echo "Nothing to dry-run — no targets detected. Use \`a\` to preview all targets," >&2
           echo "or pass \`--target=<list>\` explicitly." >&2
           exit 0
         fi

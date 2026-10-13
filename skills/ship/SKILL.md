@@ -2483,7 +2483,7 @@ Save this summary — it goes into the PR body in Step 19.
 
 **Sequencing:** This step runs AFTER Step 14 (TODOS) and BEFORE Step 15 (Commit). Its edits are committed with the rest of the branch in Step 15.1 and pass through Step 16's verification gate before anything is pushed — no documentation writer runs after the push. The PR is created once from final HEAD with the `## Documentation` section baked into the initial body.
 
-**Locate the sibling skill first.** /document-release is installed next to this skill, in whichever root this runtime loads skills from (Claude Code, Codex, Cursor and Kiro each have their own). Check it is readable before dispatching:
+**Locate the sibling skill first.** /document-release is installed next to this skill, in whichever root this runtime loads skills from (Claude Code, Codex, Cursor, Kiro and Copilot CLI each have their own). Check it is readable before dispatching:
 
 ```bash
 DOC_RELEASE_SKILL="${CLAUDE_SKILL_DIR}/../document-release/SKILL.md"

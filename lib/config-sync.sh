@@ -286,8 +286,8 @@ commit_manifest() {
 # Fill-missing merges
 #
 # Claude's settings.json, Kiro's agents/default.json, Codex's hooks.json and
-# config.toml are all mutated by the app at runtime (hook registration, project
-# trust, TUI state). Overwriting them wholesale loses those keys on every sync,
+# config.toml, Cursor's hooks.json and Copilot's settings.json are all mutated by
+# the app at runtime (hook registration, project trust, TUI state, preferences). Overwriting them wholesale loses those keys on every sync,
 # so we add only the keys the destination does not already have.
 #
 # All three return: 0 = unchanged, 1 = updated, 2 = created.
