@@ -158,8 +158,9 @@ the PascalCase event names, which give the snake_case payload
 | `PreCompact` | none | `~/.vibestack/bin/vibe-compact-snapshot` | every compaction |
 
 Each command resolves its script under `${COPILOT_HOME:-$HOME/.copilot}/skills`,
-then under `./.github/skills` (a project-scope install), and exits 0 with no
-output when neither has it, which Copilot treats as "no decision". The one
+then under `.github/skills` at the git root (a project-scope install, found
+from any subdirectory), then under `~/.agents/skills` (a Codex install, which
+Copilot also loads), and exits 0 with no output when none has it, which Copilot treats as "no decision". The one
 exception is freeze: when no `check-freeze.sh` is found but
 `${VIBESTACK_HOME:-$HOME/.vibestack}/freeze-dir.txt` exists, the command prints
 a flat deny, because a boundary nothing enforces must not pass silently.

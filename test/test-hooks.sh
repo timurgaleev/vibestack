@@ -646,6 +646,23 @@ _out=$(run_copilot_hook "$_freeze_cmd" "{\"hook_event_name\":\"PreToolUse\",\"to
 [ "$_out" = "{}" ] && ok "freeze hook runs ./.github/skills script and allows inside" || bad "freeze hook runs ./.github/skills script and allows inside" "{}" "$_out"
 rm -f "$CP_HOME/state/freeze-dir.txt"
 rm -rf "$CP_CWD/.github"
+# A session started in a subdirectory still finds the repository root's
+# .github/skills.
+_cp_cwd_saved="$CP_CWD"
+CP_CWD="$TMPHOME/copilot-repo/src"
+mkdir -p "$CP_CWD" "$TMPHOME/copilot-repo/.github/skills"
+git -C "$TMPHOME/copilot-repo" init -q
+ln -s "$ROOT/skills/careful" "$TMPHOME/copilot-repo/.github/skills/careful"
+_v=$(envelope_verdict "$(run_copilot_hook "$_careful_cmd" "$_rm")")
+[ "$_v" = ask ] && ok "careful hook finds the repo root's .github/skills from a subdirectory" || bad "careful hook finds the repo root's .github/skills from a subdirectory" "ask" "$_v"
+CP_CWD="$_cp_cwd_saved"
+rm -rf "$TMPHOME/copilot-repo"
+# Copilot also loads ~/.agents/skills, where a Codex install puts the skills.
+mkdir -p "$CP_HOME/.agents/skills"
+ln -s "$ROOT/skills/careful" "$CP_HOME/.agents/skills/careful"
+_v=$(envelope_verdict "$(run_copilot_hook "$_careful_cmd" "$_rm")")
+[ "$_v" = ask ] && ok "careful hook asks via ~/.agents/skills" || bad "careful hook asks via ~/.agents/skills" "ask" "$_v"
+rm -rf "$CP_HOME/.agents"
 # Skills installed under the default ~/.copilot/skills (COPILOT_HOME unset).
 mkdir -p "$CP_HOME/.copilot/skills"
 ln -s "$ROOT/skills/careful" "$CP_HOME/.copilot/skills/careful"
