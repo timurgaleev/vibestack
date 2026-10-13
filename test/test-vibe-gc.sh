@@ -156,6 +156,22 @@ printf '%s\n' "$out2" | grep -qE '__pycache__|/\.git/' \
 mkdir -p "$C2/skills-notes"
 refused "a sibling of a root that is not an install leftover" "$C2/skills-notes"
 
+# Copilot's skills root is a default root too, at $COPILOT_HOME/skills.
+CP="$HOME/.copilot/skills"
+mkdir -p "$CP/pack" "$CP/stray"
+printf 'pack\n' > "$CP/.vibestack-manifest"
+printf -- '---\nname: pack\n---\nbody\n' > "$CP/pack/SKILL.md"
+printf 'notes\n' > "$CP/stray/README.md"
+out3="$(env -u COPILOT_HOME "$GC" scan --days 30 2>/dev/null)"
+printf '%s\n' "$out3" | awk -F'\t' '$2=="skills" && $3 ~ /\/\.copilot\/skills\/stray$/' | grep -q . \
+  && ok "a stray directory in ~/.copilot/skills is a skills candidate" || no "copilot root not scanned: $out3"
+ALT="$TMP/alt-copilot"
+mkdir -p "$ALT/skills/elsewhere"
+printf 'notes\n' > "$ALT/skills/elsewhere/README.md"
+out3="$(COPILOT_HOME="$ALT" "$GC" scan --days 30 2>/dev/null)"
+printf '%s\n' "$out3" | awk -F'\t' '$2=="skills" && $3 ~ /\/alt-copilot\/skills\/elsewhere$/' | grep -q . \
+  && ok "the copilot root follows \$COPILOT_HOME" || no "\$COPILOT_HOME root not scanned: $out3"
+
 # The skill's permission-removal block rewrites settings through a temp file;
 # the rename must not widen a 0600 settings file to the umask default.
 SET="$TMP/perm-settings.json"

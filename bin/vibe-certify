@@ -2,7 +2,7 @@
 # vibe-certify — cross-runtime conformance report.
 #
 # Renders and installs the full pack into a throwaway fixture tree per target
-# runtime (claude, cursor, kiro, codex) using the real ./install --scope=project
+# runtime (claude, cursor, kiro, codex, copilot) using the real ./install --scope=project
 # path, then verifies every installed skill:
 #
 #   frontmatter   name: present and matches the directory
@@ -14,12 +14,12 @@
 # target passes, 1 otherwise. Live smoke prompts are out of scope (see
 # `bun run test:evals` for real-session evals on the claude runtime).
 #
-# Usage: vibe-certify [target ...]   (default: claude cursor kiro codex)
+# Usage: vibe-certify [target ...]   (default: claude cursor kiro codex copilot)
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 TARGETS=("$@")
-[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(claude cursor kiro codex)
+[ ${#TARGETS[@]} -eq 0 ] && TARGETS=(claude cursor kiro codex copilot)
 
 FIX="$(mktemp -d "${TMPDIR:-/tmp}/vibe-certify.XXXXXX")" || exit 3
 trap 'rm -rf "$FIX"' EXIT INT TERM
@@ -41,11 +41,12 @@ for t in "${TARGETS[@]}"; do
     continue
   fi
 
-  # A target's directory is not its name — Codex uses .agents/skills. Mirrors
-  # install's TARGET_PROJECT_REL.
+  # A target's directory is not its name — Codex uses .agents/skills, Copilot
+  # .github/skills. Mirrors install's TARGET_PROJECT_REL.
   case "$t" in
-    codex) skills_root="$root/.agents/skills" ;;
-    *)     skills_root="$root/.$t/skills" ;;
+    codex)   skills_root="$root/.agents/skills" ;;
+    copilot) skills_root="$root/.github/skills" ;;
+    *)       skills_root="$root/.$t/skills" ;;
   esac
   installed=$(find "$skills_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
   fails=0

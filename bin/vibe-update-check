@@ -43,7 +43,8 @@ resolve_root() {
   own="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd || true)"
   if is_checkout "$own"; then echo "$own"; return 0; fi
   for link in "$HOME"/.claude/skills/*/bin "$HOME"/.cursor/skills/*/bin \
-              "$HOME"/.kiro/skills/*/bin "$HOME"/.agents/skills/*/bin; do
+              "$HOME"/.kiro/skills/*/bin "$HOME"/.agents/skills/*/bin \
+              "${COPILOT_HOME:-$HOME/.copilot}"/skills/*/bin; do
     [ -L "$link" ] || continue
     target="$(readlink "$link" 2>/dev/null || true)"
     cand="${target%/skills/*/bin}"

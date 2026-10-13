@@ -635,6 +635,24 @@ out="$(HOME="$DOCH" VIBESTACK_HOME="$DOCI" env PATH="$DOCI/bin:/usr/bin:/bin" "$
 echo "$out" | grep -Eq '^  ok   version 1\.2\.3 \(stamp\)' \
   && ok "doctor (installed): reports the installed stamp" || no "doctor (installed): stamp not reported: $out"
 
+# --- copilot skills root ------------------------------------------------------
+# Copilot reads personal skills from $COPILOT_HOME/skills (default ~/.copilot).
+COPH="$TMP/copilot-home"
+mkdir -p "$COPH/.copilot/skills/review"
+: > "$COPH/.copilot/skills/.vibestack-manifest"
+out="$(env -u COPILOT_HOME HOME="$COPH" VIBESTACK_HOME="$DOCV" "$BIN/vibestack" skills copilot 2>&1)"; rc=$?
+[ "$rc" = 0 ] && echo "$out" | grep -qx 'review' \
+  && ok "skills copilot lists ~/.copilot/skills" || no "skills copilot rc=$rc: $out"
+out="$(env -u COPILOT_HOME HOME="$COPH" VIBESTACK_HOME="$DOCV" env PATH="$DOCV/bin:/usr/bin:/bin" "$BIN/vibestack" doctor 2>&1)"
+echo "$out" | grep -Eq "^  ok   skills: copilot \(1 in $COPH/.copilot/skills\)" \
+  && ok "doctor counts the copilot root" || no "doctor: no copilot skills row: $out"
+echo "$out" | grep -Eq '^  ok   copilot skills manifest' \
+  && ok "doctor checks the copilot manifest" || no "doctor: no copilot manifest row: $out"
+mkdir -p "$COPH/alt/skills/ship"
+out="$(HOME="$COPH" COPILOT_HOME="$COPH/alt" VIBESTACK_HOME="$DOCV" "$BIN/vibestack" skills copilot 2>&1)"
+echo "$out" | grep -qx 'ship' && ! echo "$out" | grep -qx 'review' \
+  && ok "skills copilot follows \$COPILOT_HOME" || no "skills copilot ignored \$COPILOT_HOME: $out"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

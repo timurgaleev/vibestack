@@ -55,7 +55,7 @@ r=$(row codex)
 [ -z "$(row retro)" ] && ok "retro outside the 30-day window" || no "retro counted at --days 30"
 grep -q 'TRANSCRIPTS: 2 read, 1 unreadable' <<<"$out" && ok "1 unreadable line counted" || no "transcript footer: $out"
 grep -q 'ANALYTICS: 1 rows' <<<"$out" && ok "analytics rows reported" || no "analytics footer: $out"
-grep -q 'RUNTIMES: claude measured; cursor, kiro, codex unmeasured' <<<"$out" \
+grep -q 'RUNTIMES: claude measured; cursor, kiro, codex, copilot unmeasured' <<<"$out" \
   && ok "unmeasured runtimes named" || no "runtimes footer: $out"
 grep -q 'SECRET-MARKER-7b2' <<<"$out" && no "message text leaked" || ok "message text never printed"
 grep -q "$H" <<<"$out" && no "transcript path leaked" || ok "no paths printed"

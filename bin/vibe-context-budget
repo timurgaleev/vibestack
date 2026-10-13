@@ -7,6 +7,8 @@
 # descriptions and may drop skills from the list entirely, so a skill silently
 # stops triggering while every test still passes. This prints what the listing
 # costs, per skill, and fails when the total is over the runtime's budget.
+# Copilot CLI documents no total cap but rejects a description over 1,024
+# chars, so under --runtime copilot each description is checked against that.
 #
 # It also reports, without gating on them, the other always-loaded payload the
 # pack ships: config/claude/CLAUDE.md + rules/ (read every session) and the
@@ -19,7 +21,7 @@
 #   vibe-context-budget [options]
 #
 # Options:
-#   --runtime NAME     codex (default), claude, cursor, kiro
+#   --runtime NAME     codex (default), claude, cursor, kiro, copilot
 #   --budget N         listing budget in chars; overrides the runtime default
 #                      (also VIBESTACK_CONTEXT_BUDGET)
 #   --skills-dir DIR   source skills to render and measure (default: <repo>/skills)
@@ -33,7 +35,8 @@
 #   --warn-only        report an over-budget total but exit 0
 #
 # Exit 0 within budget (or --warn-only, or no budget known for the runtime),
-# 1 over budget, 2 usage or input error.
+# 1 over budget or over the runtime's per-description cap, 2 usage or input
+# error.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,7 +50,7 @@ TOP=10
 TARGET_LEN=200
 WARN_ONLY=0
 
-usage() { sed -n '2,36p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 need() { [ $# -ge 2 ] && [ -n "${2+x}" ] || { echo "vibe-context-budget: $1 needs a value" >&2; exit 2; }; }
 
 while [ $# -gt 0 ]; do
@@ -66,8 +69,8 @@ while [ $# -gt 0 ]; do
 done
 
 case "$RUNTIME" in
-  codex|claude|cursor|kiro) ;;
-  *) echo "vibe-context-budget: unknown runtime: $RUNTIME (codex, claude, cursor, kiro)" >&2; exit 2 ;;
+  codex|claude|cursor|kiro|copilot) ;;
+  *) echo "vibe-context-budget: unknown runtime: $RUNTIME (codex, claude, cursor, kiro, copilot)" >&2; exit 2 ;;
 esac
 # Only Codex documents a hard listing cap. The others get a budget only when
 # one is passed; without it they are reported, not gated.
@@ -170,6 +173,11 @@ if not skills:
     print(f"vibe-context-budget: no skills found under {measure_dir}", file=sys.stderr)
     sys.exit(2)
 
+# A per-description cap is a load limit, not a budget: a description past it
+# breaks that one skill, so --warn-only does not soften it.
+desc_cap = 1024 if runtime == "copilot" else None
+over_cap = [(s, d) for s, _, d in skills if desc_cap is not None and d > desc_cap]
+
 total = sum(n + d for _, n, d in skills)
 ranked = sorted(skills, key=lambda s: (-(s[1] + s[2]), s[0]))
 
@@ -218,6 +226,13 @@ if config_dir:
 
 for p in problems:
     print(f"warning: {p}", file=sys.stderr)
+
+if over_cap:
+    print()
+    for sname, d in sorted(over_cap):
+        print(f"DESCRIPTION OVER CAP: {sname} {d} > {desc_cap} chars")
+    print(f"{runtime} does not load a skill whose description exceeds {desc_cap} chars.")
+    sys.exit(1)
 
 if budget is None:
     print(f"\nNo listing budget is known for {runtime}; pass --budget to gate.")

@@ -101,6 +101,28 @@ case "$out" in
   *) no "credentialed remote: got '$out'" ;;
 esac
 
+echo "copilot-only install"
+# A Copilot-only user has no ~/.claude/skills; the checkout must still be found
+# behind ~/.copilot/skills (or $COPILOT_HOME/skills).
+git -C "$TMP/co" remote set-url origin "$TMP/remote.git"
+for HC in "$TMP/hc" "$TMP/hc-alt"; do
+  mkdir -p "$HC/.vibestack/bin"
+  cp "$BIN" "$HC/.vibestack/bin/vibe-update-check"; chmod +x "$HC/.vibestack/bin/vibe-update-check"; echo 1.0.0 > "$HC/.vibestack/version"
+done
+mkdir -p "$TMP/hc/.copilot/skills/careful" "$TMP/hc-alt/elsewhere/skills/careful"
+ln -s "$TMP/co/skills/careful/bin" "$TMP/hc/.copilot/skills/careful/bin"
+ln -s "$TMP/co/skills/careful/bin" "$TMP/hc-alt/elsewhere/skills/careful/bin"
+out="$(env -u COPILOT_HOME HOME="$TMP/hc" "$TMP/hc/.vibestack/bin/vibe-update-check" --force)"
+case "$out" in
+  "UPDATE: vibestack"*) ok "finds the checkout through a ~/.copilot/skills bin link" ;;
+  *) no "copilot-only install: got '$out'" ;;
+esac
+out="$(HOME="$TMP/hc-alt" COPILOT_HOME="$TMP/hc-alt/elsewhere" "$TMP/hc-alt/.vibestack/bin/vibe-update-check" --force)"
+case "$out" in
+  "UPDATE: vibestack"*) ok "finds the checkout through \$COPILOT_HOME/skills" ;;
+  *) no "COPILOT_HOME install: got '$out'" ;;
+esac
+
 echo "no checkout"
 H2="$TMP/h2"
 mkdir -p "$H2/.vibestack/bin"
