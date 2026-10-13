@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.55.1 — 2026-10-13
+
+### Fixed
+
+- **The remaining docs count Copilot CLI.** `SECURITY.md` lists `~/.copilot`
+  among the directories a skills-only install leaves alone and names Copilot's
+  merged files (`copilot-instructions.md`, `settings.json`) as never pruned.
+  `ETHOS.md`'s hook caveat explains Copilot's user-level hook file, and the
+  authorship rule notes that the Copilot configuration turns off
+  `includeCoAuthoredBy`.
+
 ## 1.55.0 — 2026-10-13
 
 ### Added
