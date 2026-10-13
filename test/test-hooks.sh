@@ -24,13 +24,41 @@ trap 'rm -rf "$TMPHOME"' EXIT
 ok()   { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
 bad()  { FAIL=$((FAIL + 1)); printf '  FAIL %s\n     expected: %s\n     got:      %s\n' "$1" "$2" "$3"; }
 
+# envelope_verdict OUT
+#   Prints the decision an ask/deny envelope carries, or what is wrong with it.
+#   One envelope serves two hosts: Claude Code reads only the decision nested
+#   under hookSpecificOutput (a top-level one alone is a silent no-op there),
+#   and Copilot CLI documents only the flat top-level form. Both copies must be
+#   present in ONE JSON object and agree — otherwise one host acts on a
+#   decision the other never sees.
+envelope_verdict() {
+  printf '%s' "$1" | python3 -c 'import sys,json
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    print("not one parseable JSON object"); sys.exit()
+if not isinstance(d, dict) or d == {}:
+    print("allowed"); sys.exit()
+h = d.get("hookSpecificOutput")
+if not isinstance(h, dict) or h.get("hookEventName") != "PreToolUse":
+    print("no nested hookSpecificOutput (Claude Code ignores a top-level decision)"); sys.exit()
+if "permissionDecision" not in d:
+    print("no flat permissionDecision (Copilot CLI reads only the top level)"); sys.exit()
+if d["permissionDecision"] != h.get("permissionDecision"):
+    print("flat and nested decisions disagree"); sys.exit()
+r = d.get("permissionDecisionReason")
+if not isinstance(r, str) or not r or r != h.get("permissionDecisionReason"):
+    print("flat and nested reasons missing or disagree"); sys.exit()
+print(d["permissionDecision"])'
+}
+
 # assert_decision NAME SCRIPT PAYLOAD EXPECTED
-#   EXPECTED is "allow", "ask" or "deny". An ask/deny must arrive nested under
-#   hookSpecificOutput — a top-level permissionDecision is exactly the no-op
-#   this suite exists to catch, so it is scored as a failure, not a pass.
+#   EXPECTED is "allow", "ask" or "deny". An ask/deny must carry the decision
+#   both nested under hookSpecificOutput and flat at the top level (see
+#   envelope_verdict); either copy missing is scored as a failure.
 assert_decision() {
   local name="$1" script="$2" payload="$3" expected="$4"
-  local out
+  local out verdict
   out=$(printf '%s' "$payload" | bash "$script" 2>/dev/null)
 
   if [ "$expected" = "allow" ]; then
@@ -38,16 +66,12 @@ assert_decision() {
     return
   fi
 
-  case "$out" in
-    '{}')
-      bad "$name" "$expected decision" "{} (allowed)" ;;
-    '{"hookSpecificOutput":'*'"permissionDecision":"'"$expected"'"'*)
-      ok "$name" ;;
-    '{"permissionDecision"'*)
-      bad "$name" "$expected nested under hookSpecificOutput" "top-level permissionDecision (Claude Code ignores this)" ;;
-    *)
-      bad "$name" "$expected decision" "$out" ;;
-  esac
+  verdict=$(envelope_verdict "$out")
+  if [ "$verdict" = "$expected" ]; then
+    ok "$name"
+  else
+    bad "$name" "$expected decision, flat and nested" "$verdict: $out"
+  fi
 }
 
 # assert_valid_json NAME PAYLOAD — the emitted envelope must parse.
@@ -184,11 +208,13 @@ mkdir -p "$FORCE_REPO"
 assert_decision_in() {
   local dir="$1" name="$2" payload="$3" expected="$4" out
   out=$(cd "$dir" && printf '%s' "$payload" | bash "$CAREFUL" 2>/dev/null)
-  case "$out" in
-    '{}') [ "$expected" = allow ] && ok "$name" || bad "$name" "$expected" "{} (allowed)" ;;
-    '{"hookSpecificOutput":'*'"permissionDecision":"'"$expected"'"'*) ok "$name" ;;
-    *) bad "$name" "$expected decision" "$out" ;;
-  esac
+  if [ "$out" = "{}" ]; then
+    [ "$expected" = allow ] && ok "$name" || bad "$name" "$expected" "{} (allowed)"
+  elif [ "$(envelope_verdict "$out")" = "$expected" ]; then
+    ok "$name"
+  else
+    bad "$name" "$expected decision, flat and nested" "$(envelope_verdict "$out"): $out"
+  fi
 }
 
 # Every case below needs the repo to HAVE a default branch: the hook resolves it
@@ -512,6 +538,89 @@ cp "$ROOT/skills/freeze/bin/check-freeze.sh" "$BROKEN/freeze/bin/"
 printf '/\n' > "$VIBESTACK_HOME/freeze-dir.txt"
 assert_decision "helper missing denies"         "$BROKEN/freeze/bin/check-freeze.sh" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" deny
 assert_decision "helper missing: careful asks"  "$BROKEN/careful/bin/check-careful.sh" '{"tool_input":{"command":"ls"}}' ask
+
+echo "copilot — user hook file"
+# Copilot CLI has no skill-scoped hooks, so careful and freeze are enforced
+# there by one user hook file deployed with the configuration payload.
+COPILOT_HOOKS="$ROOT/config/copilot/hooks/vibestack.json"
+_shape=$(python3 - "$COPILOT_HOOKS" <<'PY' 2>&1
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception as e:
+    print("unreadable: %s" % e); sys.exit()
+problems = []
+if d.get("version") != 1:
+    problems.append("version is not 1")
+hooks = d.get("hooks")
+if not isinstance(hooks, dict) or sorted(hooks) != ["PreCompact", "PreToolUse"]:
+    problems.append("events are not exactly PreToolUse and PreCompact")
+    hooks = hooks if isinstance(hooks, dict) else {}
+for event, entries in hooks.items():
+    for e in entries if isinstance(entries, list) else [None]:
+        if not isinstance(e, dict) or e.get("type") != "command" or not isinstance(e.get("bash"), str):
+            problems.append("%s entry is not a command hook with a bash field" % event); continue
+        if '|| exit 0' not in e["bash"] or '[ -f "$f" ]' not in e["bash"]:
+            problems.append("%s entry is not guarded by [ -f \"$f\" ] || exit 0" % event)
+        # A timeout fails OPEN on Copilot, even for PreToolUse.
+        if not isinstance(e.get("timeoutSec"), int) or not 0 < e["timeoutSec"] < 30:
+            problems.append("%s entry timeoutSec is not set below the 30s default" % event)
+pairs = [(e.get("matcher"), e.get("bash", "")) for e in hooks.get("PreToolUse", []) if isinstance(e, dict)]
+for matcher, script in (("Bash", "careful/bin/check-careful.sh"),
+                        ("Edit|Write", "careful/bin/check-careful.sh"),
+                        ("Edit|Write", "freeze/bin/check-freeze.sh")):
+    if not any(m == matcher and script in cmd for m, cmd in pairs):
+        problems.append("no PreToolUse %s entry runs %s" % (matcher, script))
+print("; ".join(problems) or "ok")
+PY
+)
+[ "$_shape" = ok ] && ok "hook file shape" || bad "hook file shape" "ok" "$_shape"
+
+# Run each registered command the way Copilot does: through bash, with only
+# HOME/COPILOT_HOME/VIBESTACK_HOME pointing at a scratch tree.
+CP_HOME="$TMPHOME/copilot-home"
+mkdir -p "$CP_HOME"
+_careful_cmd=$(python3 -c 'import json,sys; print(next(e["bash"] for e in json.load(open(sys.argv[1]))["hooks"]["PreToolUse"] if e.get("matcher")=="Bash"))' "$COPILOT_HOOKS" 2>/dev/null)
+_freeze_cmd=$(python3 -c 'import json,sys; print(next(e["bash"] for e in json.load(open(sys.argv[1]))["hooks"]["PreToolUse"] if "check-freeze" in e["bash"]))' "$COPILOT_HOOKS" 2>/dev/null)
+_compact_cmd=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hooks"]["PreCompact"][0]["bash"])' "$COPILOT_HOOKS" 2>/dev/null)
+run_copilot_hook() {
+  # run_copilot_hook CMD PAYLOAD [COPILOT_HOME value, empty = unset]
+  local cmd="$1" payload="$2" chome="${3:-}"
+  if [ -n "$chome" ]; then
+    printf '%s' "$payload" | env -i PATH="$PATH" HOME="$CP_HOME" VIBESTACK_HOME="$CP_HOME/state" COPILOT_HOME="$chome" bash -c "$cmd" 2>/dev/null
+  else
+    printf '%s' "$payload" | env -i PATH="$PATH" HOME="$CP_HOME" VIBESTACK_HOME="$CP_HOME/state" bash -c "$cmd" 2>/dev/null
+  fi
+}
+_rm='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /var/important"}}'
+# Skills not installed: the hook must be a silent no-op (empty stdout, exit 0),
+# never a deny from a missing file — a config-only install would brick tools.
+for _c in careful freeze compact; do
+  eval "_cmd=\$_${_c}_cmd"
+  if [ -z "$_cmd" ]; then bad "$_c hook: no-op when not installed" "a registered command" "missing"; continue; fi
+  _out=$(run_copilot_hook "$_cmd" "$_rm"); _rc=$?
+  [ "$_rc" -eq 0 ] && [ -z "$_out" ] && ok "$_c hook: no-op when not installed" || bad "$_c hook: no-op when not installed" "exit 0, empty stdout" "exit $_rc, $_out"
+done
+# Skills installed under the default ~/.copilot/skills (COPILOT_HOME unset).
+mkdir -p "$CP_HOME/.copilot/skills"
+ln -s "$ROOT/skills/careful" "$CP_HOME/.copilot/skills/careful"
+ln -s "$ROOT/skills/freeze" "$CP_HOME/.copilot/skills/freeze"
+_v=$(envelope_verdict "$(run_copilot_hook "$_careful_cmd" "$_rm")")
+[ "$_v" = ask ] && ok "careful hook asks via ~/.copilot/skills" || bad "careful hook asks via ~/.copilot/skills" "ask" "$_v"
+_out=$(run_copilot_hook "$_freeze_cmd" '{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.txt"}}')
+[ "$_out" = "{}" ] && ok "freeze hook allows with no boundary" || bad "freeze hook allows with no boundary" "{}" "$_out"
+mkdir -p "$CP_HOME/state" "$CP_HOME/in"
+printf '%s\n' "$(cd "$CP_HOME/in" && pwd -P)" > "$CP_HOME/state/freeze-dir.txt"
+_v=$(envelope_verdict "$(run_copilot_hook "$_freeze_cmd" '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/etc/hosts"}}')")
+[ "$_v" = deny ] && ok "freeze hook denies outside the boundary" || bad "freeze hook denies outside the boundary" "deny" "$_v"
+rm -f "$CP_HOME/state/freeze-dir.txt"
+# COPILOT_HOME moves the skills root; the default root must then be ignored.
+mkdir -p "$CP_HOME/alt"
+_out=$(run_copilot_hook "$_careful_cmd" "$_rm" "$CP_HOME/alt"); _rc=$?
+[ -n "$_careful_cmd" ] && [ "$_rc" -eq 0 ] && [ -z "$_out" ] && ok "careful hook follows an empty COPILOT_HOME" || bad "careful hook follows an empty COPILOT_HOME" "exit 0, empty stdout" "exit $_rc, $_out"
+mv "$CP_HOME/.copilot/skills" "$CP_HOME/alt/skills"
+_v=$(envelope_verdict "$(run_copilot_hook "$_careful_cmd" "$_rm" "$CP_HOME/alt")")
+[ "$_v" = ask ] && ok "careful hook asks via \$COPILOT_HOME/skills" || bad "careful hook asks via \$COPILOT_HOME/skills" "ask" "$_v"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
