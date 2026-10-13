@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "Bash",
+        "bash": "f=\"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "timeoutSec": 15
+      },
+      {
+        "type": "command",
+        "matcher": "Edit|Write",
+        "bash": "f=\"${COPILOT_HOME:-$HOME/.copilot}/skills/careful/bin/check-careful.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "timeoutSec": 15
+      },
+      {
+        "type": "command",
+        "matcher": "Edit|Write",
+        "bash": "f=\"${COPILOT_HOME:-$HOME/.copilot}/skills/freeze/bin/check-freeze.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "timeoutSec": 15
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "bash": "f=\"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-compact-snapshot\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

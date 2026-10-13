@@ -1,7 +1,8 @@
 # Hook Verification — Manual Procedure
 
 **Audience:** anyone who installs vibestack into Cursor or Kiro and uses the
-hook-bearing skills (`careful`, `freeze`, `guard`, `investigate`).
+hook-bearing skills (`careful`, `freeze`, `guard`, `investigate`). Copilot CLI
+works differently and has its own section: [Copilot CLI](#copilot-cli).
 
 **Why this exists.** The Agent Skills open standard (agentskills.io) standardizes
 the SKILL.md file shape. It does **not** standardize per-skill `PreToolUse` hooks,
@@ -135,6 +136,67 @@ commands manually.
 - If this is the failure mode, file an issue. The fix is either a per-target
   env var shim in install (track as v1.5 candidate `vibe certify` /
   `vibe-hook-shim`) or a per-target frontmatter rewrite.
+
+## Copilot CLI
+
+Copilot CLI ignores the `hooks:` key in SKILL.md frontmatter: its hooks are
+user-level, not skill-scoped. vibestack enforces `careful` and `freeze` there
+through one user hook file, `config/copilot/hooks/vibestack.json`, which the
+configuration phase deploys to `${COPILOT_HOME:-~/.copilot}/hooks/vibestack.json`
+(`./install --with-config` or `--only=config`). A skills-only install ships no
+hook file, so both skills stay instruction-only.
+
+The file registers three `PreToolUse` entries and one `PreCompact` entry under
+the PascalCase event names, which give the snake_case payload
+(`tool_name`, `tool_input`) the scripts already read and Claude-style matchers:
+
+| Event | Matcher | Runs | Copilot tools matched |
+|---|---|---|---|
+| `PreToolUse` | `Bash` | `skills/careful/bin/check-careful.sh` | `bash`, `powershell` |
+| `PreToolUse` | `Edit\|Write` | `skills/careful/bin/check-careful.sh` (gate files) | `edit`, `str_replace_editor`, `apply_patch`, `create` |
+| `PreToolUse` | `Edit\|Write` | `skills/freeze/bin/check-freeze.sh` | same |
+| `PreCompact` | none | `~/.vibestack/bin/vibe-compact-snapshot` | every compaction |
+
+Each command resolves its script under `${COPILOT_HOME:-$HOME/.copilot}/skills`
+and exits 0 with no output when the script is absent, which Copilot treats as
+"no decision". `timeoutSec` is 15 (10 for `PreCompact`), below the 30-second
+default, because a timeout fails open on Copilot even for `PreToolUse`.
+
+**Decision envelope.** Claude Code reads the decision only when it is nested
+under `hookSpecificOutput`; Copilot CLI documents only the flat top-level
+`permissionDecision` / `permissionDecisionReason`. The hooks print both copies
+in one JSON object:
+
+```json
+{"permissionDecision":"ask","permissionDecisionReason":"<r>","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"<r>"}}
+```
+
+`bash test/test-hooks.sh` asserts that every ask/deny carries both copies and
+that they agree, and runs each command from the hook file against a scratch
+`HOME` and `COPILOT_HOME`.
+
+**Differences from Claude Code** (documented, not bugs):
+
+- `/careful` is always on once the hook file is deployed, because the hook is
+  not tied to invoking the skill. Most matches ask; the catastrophic set denies.
+- `/freeze` is unchanged: with no `~/.vibestack/freeze-dir.txt` it allows.
+  `/guard` and `/investigate` reach the same two scripts through the same file.
+- A hook that exits non-zero (other than 2) is a deny on Copilot, where Claude
+  Code shows a non-blocking error.
+- `NotebookEdit` has no Copilot tool, so there is no matcher for it.
+- The entries carry only a `bash` command; native Windows PowerShell sessions
+  run no command for them.
+
+### Pending manual verification
+
+The automated suite checks the hook file and the envelope; it cannot run a
+live host. These two checks are **pending** and must be recorded here before
+the Copilot hooks are called hard-enforced:
+
+| Check | Procedure | Result |
+|---|---|---|
+| Live Copilot CLI enforcement | Install with `--with-config --target=copilot` into a scratch `COPILOT_HOME`. In `copilot`, `/env` lists the three `PreToolUse` hooks and the `PreCompact` hook from the user source; asking it to run `rm -rf /tmp/vibestack-hook-test/x` produces an ask prompt with the `[careful]` reason; with `/freeze` set to the test directory, an edit to a file outside it is denied with the `[freeze]` reason. | PENDING |
+| Claude Code tolerates the extra top-level keys | Under Claude Code with the updated scripts, run `/careful` and ask for `rm -rf /tmp/vibestack-hook-test/x`; the ask must still fire. Repeat with `/freeze` and an out-of-boundary edit; the deny must still fire. A silent pass means Claude Code rejected the envelope and the flat copy must be split out. | PENDING |
 
 ## What we did NOT verify in v1.4.0
 
