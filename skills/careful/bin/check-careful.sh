@@ -492,6 +492,20 @@ if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'chmod[[:space:]]+(-[a-zA-Z]+
   WARN="Destructive: chmod 777 makes files world-writable."
 fi
 
+# A permission rule cannot catch this: Claude Code splits on | before matching,
+# so no single rule sees the download and the shell together.
+# Joined onto one line first: `curl x |` + newline + `bash` is the same pipeline.
+# Any later stage counts (`curl x | tee f | sh`), as do a wrapper (sudo -E, doas,
+# env), a path-qualified shell (/bin/bash) and process substitution.
+_FETCH='(^|[^[:alnum:]_])(curl|wget)([[:space:]]|$)'
+_SHNAME='(/[^[:space:]|;&]*/)?(ba|z|da|k|fi)?sh'
+_WRAP='((sudo|doas)([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]|][^[:space:]|]*)?)*[[:space:]]+(--[[:space:]]+)?|env[[:space:]]+)?'
+if [ -z "$WARN" ] && printf '%s' "$CMD" | tr '\n' ' ' | grep -qE \
+  -e "${_FETCH}.*\\|&?[[:space:]]*(\\([[:space:]]*)?${_WRAP}${_SHNAME}([^[:alnum:]_-]|\$)" \
+  -e "(^|[^[:alnum:]_])${_SHNAME}[[:space:]]+(-c[[:space:]]+)?[\"']?(<\\(|\\\$\\()[[:space:]]*(curl|wget)([[:space:]]|\$)" 2>/dev/null; then
+  WARN="Destructive: piping a download into a shell runs code nobody has read."
+fi
+
 # The bypass flag has to belong to the commit or push itself: tokens between
 # them may be quoted (a message can hold a `;`) but cannot cross a command
 # separator. `-n` is --no-verify on commit only; on push it is --dry-run.
