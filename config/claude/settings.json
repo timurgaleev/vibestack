@@ -17,9 +17,7 @@
     ],
     "deny": [
       "Bash(chmod -R 777 /:*)",
-      "Bash(chown -R * /:*)",
-      "Bash(curl * | bash:*)",
-      "Bash(curl * | sh:*)",
+      "Bash(chown -R * /)",
       "Bash(dd if=/dev/zero:*)",
       "Bash(fdisk:*)",
       "Bash(gdisk:*)",

@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.55.2 — 2026-10-15
+
+### Fixed
+
+- **No more permission warnings at session start.** Three deny rules in the
+  Claude settings mixed `*` with a trailing `:*`, which Claude Code reads as a
+  literal prefix and flags on every launch. The `chown` rule is now
+  `Bash(chown -R * /)`. The two `curl … | bash/sh` rules are gone: Claude Code
+  splits a command on `|` before matching, so they never blocked anything.
+- **Re-installing clears the old rules from your settings.** The settings merge
+  keeps every permission a machine already has, so the withdrawn rules would
+  have stayed in `~/.claude/settings.json` forever. The merge now drops those
+  exact strings; your own rules are untouched.
+
+### Added
+
+- **`/careful` asks before a download is piped into a shell.** `curl`/`wget`
+  into `bash`, `sh`, `zsh`, `dash`, `ksh` or `fish` — through `sudo`, `doas`,
+  `env`, a path like `/bin/bash`, a middle pipe stage or a line break — and
+  `bash <(curl …)` / `sh -c "$(curl …)"` now prompt.
+
 ## 1.55.1 — 2026-10-13
 
 ### Fixed

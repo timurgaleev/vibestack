@@ -606,6 +606,15 @@ with open(sys.argv[2]) as f:
 
 PERMISSION_ARRAY_KEYS = ("allow", "deny", "ask", "additionalDirectories")
 
+# Rules an earlier pack shipped and then withdrew. The union below would keep
+# them on every machine that ever installed them, so they are dropped by exact
+# string. All three mix * with a trailing :*, which Claude Code reads as a
+# literal prefix and warns about at every session start; the curl-pipe ones
+# could not match anyway, since a command is split on | before matching.
+RETIRED_PERMISSIONS = {
+    "deny": {"Bash(chown -R * /:*)", "Bash(curl * | bash:*)", "Bash(curl * | sh:*)"},
+}
+
 def deep_merge(s, d):
     if not isinstance(s, dict) or not isinstance(d, dict):
         return s
@@ -638,6 +647,9 @@ if isinstance(src.get("permissions"), dict) and isinstance(dst.get("permissions"
     for k in PERMISSION_ARRAY_KEYS:
         s_list = src["permissions"].get(k)
         d_list = dst["permissions"].get(k)
+        if isinstance(d_list, list):
+            d_list = [r for r in d_list
+                      if not (isinstance(r, str) and r in RETIRED_PERMISSIONS.get(k, ()))]
         if isinstance(s_list, list) or isinstance(d_list, list):
             merged["permissions"][k] = union_dedup(s_list or [], d_list or [])
 
