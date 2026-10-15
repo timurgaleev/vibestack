@@ -41,7 +41,7 @@ cat > "$SB/dst.json" <<'JSON'
   "enabledPlugins": { "their-plugin@somebody-else": true },
   "permissions": {
     "allow": ["Bash(their-own-tool:*)"],
-    "deny": ["Bash(their-own-danger:*)"],
+    "deny": ["Bash(their-own-danger:*)", "Bash(curl * | bash:*)", "Bash(curl * | sh:*)", "Bash(chown -R * /:*)", {"not": "a string"}],
     "defaultMode": "acceptEdits"
   },
   "theme": "dark",
@@ -76,6 +76,8 @@ check "'somebody-else' in d['extraKnownMarketplaces']"            "S2: a machine
 check "'their-plugin@somebody-else' in d['enabledPlugins']"        "S3: a machine's own plugin survives"
 check "'Bash(their-own-tool:*)' in d['permissions']['allow']"      "S4: a machine's own allow entry survives"
 check "'Bash(their-own-danger:*)' in d['permissions']['deny']"     "S5: a machine's own deny entry survives"
+check "not {'Bash(curl * | bash:*)', 'Bash(curl * | sh:*)', 'Bash(chown -R * /:*)'} & {r for r in d['permissions']['deny'] if isinstance(r, str)}" "S5b: deny rules the pack withdrew are dropped"
+check "{'not': 'a string'} in d['permissions']['deny']" "S5c: a non-string deny entry survives the retirement filter"
 check "d.get('model') == 'some-local-model'"                       "S6: a key the repo does not ship survives"
 
 # Repo-shipped state arrives.
