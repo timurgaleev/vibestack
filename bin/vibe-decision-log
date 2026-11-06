@@ -47,8 +47,8 @@ SECRET_PATTERNS = [
     ("Private key block", r"-----BEGIN[^-\n]*PRIVATE KEY-----"),
     ("AWS secret key", r"aws_secret_access_key[^A-Za-z0-9\n]+[A-Za-z0-9/+=]{40}"),
     ("SecretAccessKey field", r"\"?SecretAccessKey\"?[ \t]*[:=][ \t]*\"?[A-Za-z0-9/+=]{40}"),
-    ("env-style secret", r"^[ \t+-]{0,2}[ \t]*(export[ \t]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+"),
-    ("DSN credentials", r"://[^\s:/@]{1,255}:[^\s@/]{1,255}@"),
+    ("env-style secret", r"^[ \t+-]{0,2}[ \t]*(-[ \t]+)?(export[ \t]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+"),
+    ("DSN credentials", r"://[^\s:/@]{0,255}:[^\s@/]{1,255}@"),
 ]
 _SECRET_RES = [(label, re.compile(pat, re.M)) for label, pat in SECRET_PATTERNS]
 _BEARER = re.compile(r"Bearer[ \t]+([A-Za-z0-9._~+/=-]{20,})")
@@ -67,11 +67,13 @@ def _secret_placeholder(label, span):
         v = v[:-1] if v.endswith(q) else v
     if re.match(r"(your[_-]|<[^>]*>$|[*]+$|x{6,}$|changeme$|redacted|placeholder|dummy|fake)", v, re.I):
         return True
-    if re.fullmatch(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?", v):
+    if re.fullmatch(r"\$(\{?[A-Za-z_][A-Za-z0-9_]*\}?|[0-9@*#])", v):
         return True
-    if re.match(r"[$][({]", v) or v.endswith("..."):
+    # A short stub before "..." (sk-..., ghp_...) is a placeholder; a long
+    # value with dots on the end is still a value.
+    if re.match(r"[$][({]", v) or (v.endswith("...") and len(v) <= 11):
         return True
-    if label == "DSN credentials" and ("$" in v or "{" in v or len(v) < 8 or re.fullmatch(
+    if label == "DSN credentials" and ("\x24{" in v or "\x24(" in v or len(v) < 8 or re.fullmatch(
             r"pass|password|postgres|root|test|secret|admin|change-?me|p", v, re.I)
             or v == span[3:].split(":", 1)[0]):
         return True

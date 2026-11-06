@@ -110,7 +110,7 @@ SECRET = re.compile(
     r"|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{16,}"
     r"|xox[abps]-|AIza[0-9A-Za-z_-]{10,}"
     r"|-----BEGIN [A-Z ]*PRIVATE KEY"
-    r"|://[^/\s:@]+:[^@\s/]+@"                        # user:pass@ in URLs
+    r"|://[^/\s:@]*:[^@\s/]+@"                        # user:pass@ in URLs
     r"|Bearer\s+[A-Za-z0-9._-]{20,}"
     r"|[A-Za-z_]*(?i:token|secret|password)\s*[=:]\s*\S{6,}"
     r"|[A-Za-z_]*(?i:key)\s*=\s*\S{6,}"               # '=' only: facts are 'key: text'

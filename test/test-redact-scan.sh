@@ -234,6 +234,34 @@ for entry in "${NEW_SHAPES[@]}"; do
   syncplan_skips "$value" && ok "sync plan skips $label" || no "sync plan would push $label"
 done
 
+# 13c. Shapes a placeholder rule must not swallow: a generated password with a
+#      "$" in it, a long value that happens to end in "...", a docker-compose
+#      list item, and a URL whose user name is empty.
+SMUGGLED=(
+  'DSN with $ in the password|postgres://svc:Xk9$mP2qLz7Rt4@db/app'
+  'long value ending in ...|DB_PASSWORD=CorrectHorseBattery123...'
+  'YAML list item|      - OPENAI_API_KEY='"${B16}"'Yu9Io3Kj'
+  'DSN with no user name|redis://:'"${B16}"'@redis:6379/0'
+)
+for entry in "${SMUGGLED[@]}"; do
+  label="${entry%%|*}"; value="${entry#*|}"
+  for s in $SINKS; do
+    sink "$s" "$value"; rc=$?
+    [ "$rc" -eq 0 ] && ok "$s refuses a $label" || no "$s accepted a $label (rc=$rc)"
+  done
+done
+# A positional parameter is an expansion, not a value: shell scripts pass
+# tokens through as "$1".
+for s in $SINKS; do
+  sink "$s" '    API_TOKEN="$1"'; rc=$?
+  [ "$rc" -eq 1 ] && ok "$s passes API_TOKEN=\"\$1\"" || no "$s refused API_TOKEN=\"\$1\" (rc=$rc)"
+done
+# diff.external would hand the hook a tool's rendering instead of git's diff.
+git -C "$R" config diff.external true
+sink prepush "SERVICE_TOKEN=${B16}Yu9Io3Kj"; rc=$?
+git -C "$R" config --unset diff.external
+[ "$rc" -eq 0 ] && ok "prepush scans git's own diff under diff.external" || no "diff.external hid a secret from prepush (rc=$rc)"
+
 # 14. Green path: placeholders, plain URLs and SSH remotes pass every sink.
 NEGATIVES=(
   "see https://host/path for details"
@@ -334,10 +362,16 @@ push_file() {
 L7="<<<<<<<"; R7=">>>>>>>"; E7="======="
 push_file a.txt "keep\n$L7 HEAD\nours\n$E7\ntheirs\n$R7 feature\n"; rc=$?
 [ "$rc" -eq 1 ] && ok "conflict markers block the push" || no "conflict markers pushed (rc=$rc)"
-for marker in "$L7 HEAD" "$L7" "$E7" "$R7 topic"; do
+for marker in "$L7 HEAD" "$L7" "$R7 topic"; do
   push_file b.txt "x\n$marker\ny\n"; rc=$?
   [ "$rc" -eq 1 ] && ok "a lone '$marker' blocks" || no "lone '$marker' pushed (rc=$rc)"
 done
+# Seven "=" under a seven-letter title is a setext heading, not a conflict; it
+# counts only beside an opener or closer added to the same file.
+push_file README.md "Install\n$E7\n\nrun it\n"; rc=$?
+[ "$rc" -eq 0 ] && ok "a setext heading underline is not a marker" || no "setext heading blocked (rc=$rc)"
+push_file d.txt "x\n$E7\ny\n$R7 topic\n"; rc=$?
+[ "$rc" -eq 1 ] && ok "'$E7' beside a closer still blocks" || no "'$E7' beside a closer pushed (rc=$rc)"
 for line in "$E7 note" "${L7}< deeper" "  $L7 indented"; do
   push_file c.txt "$line\n"; rc=$?
   [ "$rc" -eq 0 ] && ok "'$line' is not a marker" || no "'$line' blocked (rc=$rc)"
@@ -361,6 +395,52 @@ printf '%b' "$L7 HEAD\n" > "$R/d.txt"; git -C "$R" add d.txt; git -C "$R" commit
   | VIBESTACK_REDACT_PREPUSH=skip "$BIN/vibe-redact-prepush" >/dev/null 2>&1); rc=$?
 git -C "$R" reset -q --hard "$base"
 [ "$rc" -eq 0 ] && ok "VIBESTACK_REDACT_PREPUSH=skip bypasses the marker guard" || no "skip did not bypass markers (rc=$rc)"
+
+# Value: protects=a live credential-in-URL on a later line or after a placeholder URL is still refused by every sink; fails_when=a sink judges only the first DSN match or lets one placeholder excuse the whole text; why_new=section 14 only feeds single-line placeholders and section 13 only single live values; seam=none
+MIXED_DSN="DATABASE_URL=postgres://postgres:postgres@localhost/test
+prod=postgres://admin:${B16}@db.internal/app"
+for s in $SINKS; do
+  sink "$s" "$MIXED_DSN"; rc=$?
+  [ "$rc" -eq 0 ] && ok "$s refuses a live DSN after a placeholder DSN" || no "$s accepted a live DSN after a placeholder DSN (rc=$rc)"
+  sink "$s" "dev postgres://postgres:postgres@a/t, prod postgres://admin:${B16}@b/app"; rc=$?
+  [ "$rc" -eq 0 ] && ok "$s refuses a live DSN on the same line as a placeholder DSN" || no "$s accepted a live DSN beside a placeholder DSN (rc=$rc)"
+done
+
+# Value: protects=the documented under-8-character DSN password allowance ends exactly at 8; fails_when=the length rule is dropped or becomes <=8; why_new=section 14 short passwords (pass, postgres) are also in the common-word list so the length rule alone is never exercised; seam=none
+for s in $SINKS; do
+  sink "$s" "postgres://admin:Kq7xP2m@db.internal/app"; rc=$?
+  [ "$rc" -eq 1 ] && ok "$s accepts a 7-character DSN password" || no "$s refused a 7-character DSN password (rc=$rc)"
+  sink "$s" "postgres://admin:Kq7xP2mZ@db.internal/app"; rc=$?
+  [ "$rc" -eq 0 ] && ok "$s refuses an 8-character DSN password" || no "$s accepted an 8-character DSN password (rc=$rc)"
+done
+
+# Value: protects=env-style names containing digits (S3_, OAUTH2_, STRIPE2_) are secrets; fails_when=the name class reverts to [A-Z_] only; why_new=every section 13/15 env canary is SERVICE_TOKEN, which has no digit; seam=none
+for s in $SINKS; do
+  sink "$s" "S3_SECRET_KEY=${B16}Yu9Io3Kj"; rc=$?
+  [ "$rc" -eq 0 ] && ok "$s refuses an env secret whose name has a digit" || no "$s accepted S3_SECRET_KEY (rc=$rc)"
+done
+
+# Value: protects=a marker after a closed text fence in a .md is refused and a fenced one added mid-file is excused; fails_when=fence state is not reset on the closing fence, or hunk line numbers are mis-mapped for edits to an existing file; why_new=section 16 only adds whole new files with one fence or none; seam=none
+md_base_commit() {
+  printf '%b' "# t\n\n\`\`\`text\nours\ntheirs\n\`\`\`\n\nend\n" > "$R/e.md"
+  git -C "$R" add e.md; git -C "$R" commit -qm editbase
+  md_base=$(git -C "$R" rev-parse HEAD)
+}
+md_push_edit() {
+  local rc
+  printf '%b' "$1" > "$R/e.md"
+  git -C "$R" add e.md && git -C "$R" commit -qm editmarker
+  (cd "$R" && printf 'refs/heads/main %s refs/heads/main %s\n' "$(git rev-parse HEAD)" "$md_base" \
+    | "$BIN/vibe-redact-prepush" >/dev/null 2>&1); rc=$?
+  git -C "$R" reset -q --hard "$base"
+  return "$rc"
+}
+md_base_commit
+md_push_edit "# t\n\n\`\`\`text\n$L7 HEAD\nours\ntheirs\n\`\`\`\n\nend\n"; rc=$?
+[ "$rc" -eq 0 ] && ok "a marker added inside a text fence of an existing .md passes" || no "mid-file fenced marker blocked (rc=$rc)"
+md_base_commit
+md_push_edit "# t\n\n\`\`\`text\nours\ntheirs\n\`\`\`\n$L7 HEAD\n\nend\n"; rc=$?
+[ "$rc" -eq 1 ] && ok "a marker right after a closed text fence in a .md blocks" || no "marker after closed fence pushed (rc=$rc)"
 
 echo ""
 echo "redact-scan: $pass passed, $fail failed"

@@ -70,7 +70,7 @@ pushed_diff_for() {
   fi
   # Fixed prefixes and raw paths, whatever diff.noprefix or core.quotePath say:
   # conflict_markers_in reads the path back out of the "+++ b/" header.
-  git -c core.quotePath=false diff --unified=0 --no-color \
+  git -c core.quotePath=false diff --unified=0 --no-color --no-ext-diff --no-textconv --text \
     --src-prefix=a/ --dst-prefix=b/ "$range" 2>/dev/null
 }
 
@@ -117,8 +117,16 @@ conflict_markers_in() {
     header { next }
     /^\+/ {
       line = substr($0, 2)
-      if (line ~ /^(<<<<<<<|>>>>>>>)( |$)/ || line ~ /^=======$/) print path "\t" n
+      if (line ~ /^(<<<<<<<|>>>>>>>)( |$)/) { print path "\t" n; marked[path] = 1 }
+      else if (line ~ /^=======$/) eq[path] = eq[path] n " "
       n++
+    }
+    END {
+      for (p in eq) {
+        if (!(p in marked)) continue
+        k = split(eq[p], ns, " ")
+        for (i = 1; i <= k; i++) print p "\t" ns[i]
+      }
     }
   ')
   [ -n "$hits" ] || return 0
@@ -153,8 +161,8 @@ PATTERNS=(
   'Private key block|-----BEGIN[^-]*PRIVATE KEY-----'
   'AWS secret key|aws_secret_access_key[^A-Za-z0-9]+[A-Za-z0-9/+=]{40}'
   'SecretAccessKey field|"?SecretAccessKey"?[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9/+=]{40}'
-  'env-style secret|^[[:space:]+-]{0,2}[[:space:]]*(export[[:space:]]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+'
-  'DSN credentials|://[^[:space:]:/@]{1,255}:[^[:space:]@/]{1,255}@'
+  'env-style secret|^[[:space:]+-]{0,2}[[:space:]]*(-[[:space:]]+)?(export[[:space:]]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+'
+  'DSN credentials|://[^[:space:]:/@]{0,255}:[^[:space:]@/]{1,255}@'
 )
 
 # A matched span that is itself a documentation placeholder is not a finding:
@@ -175,10 +183,15 @@ redact_is_placeholder() {
   esac
   v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
   printf '%s' "$v" | grep -qiE '^(your[_-]|<[^>]*>$|[*]+$|x{6,}$|changeme$|redacted|placeholder|dummy|fake)' && return 0
-  printf '%s' "$v" | grep -qE '^[$][{]?[A-Za-z_][A-Za-z0-9_]*[}]?$' && return 0
-  case "$v" in '$('*|'${'*|*...) return 0 ;; esac
+  printf '%s' "$v" | grep -qE '^[$]([{]?[A-Za-z_][A-Za-z0-9_]*[}]?|[0-9@*#])$' && return 0
+  case "$v" in '$('*|'${'*) return 0 ;; esac
+  # A short stub before "..." (sk-..., ghp_...) is a placeholder; a long value
+  # with dots on the end is still a value.
+  case "$v" in *...) [ "${#v}" -le 11 ] && return 0 ;; esac
   if [ "$label" = "DSN credentials" ]; then
-    case "$v" in *'$'*|*'{'*) return 0 ;; esac
+    # ${USER:-x}:${PASS}@ splits at the default's colon, so judge the whole
+    # span for an expansion; a bare "$" inside a generated password is not one.
+    case "$v" in *'${'*|*'$('*) return 0 ;; esac
     [ "${#v}" -lt 8 ] && return 0
     u="${span#://}"; [ "$v" = "${u%%:*}" ] && return 0
     printf '%s' "$v" | grep -qiE '^(pass|password|postgres|root|test|secret|admin|change-?me|p)$' && return 0
