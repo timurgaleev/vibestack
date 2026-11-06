@@ -156,18 +156,188 @@ case "$_out" in
   *) bad "terraform -chdir destroy gives the terraform reason" "terraform destroy warning" "$_out" ;;
 esac
 
+# careful_rows DIR — reads "want<TAB>command" lines; a literal \n in the
+# command becomes a newline. Runs in DIR, which is not a git repository, so a
+# force-push asks instead of resolving a default branch.
+careful_rows() {
+  local dir="$1" _want _cmd _payload
+  while IFS=$'\t' read -r _want _cmd; do
+    [ -n "$_want" ] || continue
+    _payload=$(python3 -c 'import json,sys;print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1].replace("\\n","\n")}}))' "$_cmd")
+    assert_decision_in "$dir" "$_cmd -> $_want" "$_payload" "$_want"
+  done
+}
+assert_decision_in() {
+  local dir="$1" name="$2" payload="$3" expected="$4" out
+  out=$(cd "$dir" && printf '%s' "$payload" | bash "$CAREFUL" 2>/dev/null)
+  if [ "$out" = "{}" ]; then
+    [ "$expected" = allow ] && ok "$name" || bad "$name" "$expected" "{} (allowed)"
+  elif [ "$(envelope_verdict "$out")" = "$expected" ]; then
+    ok "$name"
+  else
+    bad "$name" "$expected decision, flat and nested" "$(envelope_verdict "$out"): $out"
+  fi
+}
+
+echo "careful — git and kubectl global options before the subcommand"
+careful_rows "$TMPHOME" <<'CASES'
+ask	git -C r push --force origin feat
+ask	git -c a=b reset --hard
+ask	git --no-pager push origin +feat
+ask	git -C r checkout .
+ask	kubectl -n prod delete pod x
+ask	kubectl --context prod delete deploy web
+allow	kubectl -n prod get pods
+allow	git -C r push origin feat
+allow	git -C r status
+CASES
+
+echo "careful — destructive git family"
+careful_rows "$TMPHOME" <<'CASES'
+ask	git clean -fdx
+ask	git clean -d --force
+ask	git -C r clean -xfd
+ask	git branch -D feat
+ask	git branch --delete --force feat
+ask	git branch -d -f feat
+ask	git branch -df feat
+ask	git stash drop
+ask	git stash clear
+ask	git reflog expire --expire=now --all
+ask	git reflog delete HEAD@{1}
+ask	git update-ref -d refs/heads/x
+ask	git push origin --delete feat
+ask	git push -d origin feat
+ask	git push --mirror backup
+ask	git push origin :feat
+ask	git checkout -- .
+ask	git checkout -f .
+ask	git restore --source=HEAD~1 .
+ask	git restore --worktree src/
+ask	git -c a=b restore :/
+allow	git clean -n
+allow	git clean -nd
+allow	git branch -d x
+allow	git branch feature
+allow	git restore --staged f
+allow	git restore --staged .
+allow	git stash pop
+allow	git stash list
+allow	git checkout -- f.txt
+allow	git checkout -- .gitignore
+allow	git restore f.txt
+allow	git reflog show
+allow	git update-ref refs/heads/x HEAD
+allow	git push origin feat
+CASES
+
+echo "careful — a commit message is text, not a command"
+careful_rows "$TMPHOME" <<'CASES'
+allow	git commit -m "drop table users from the legacy schema"
+allow	git commit -m "truncate long log lines"
+allow	git commit -m "note: rm -rf build is no longer needed"
+allow	git commit --message="docs: drop database steps"
+allow	git commit --message "docs: chmod 777 is never ok"
+allow	git commit -m "docs: install with curl -fsSL x | sh"
+allow	git commit -m "docs: never git push --force to main"
+allow	git commit -am 'chore: kubectl delete is gated now'
+allow	git -C repo commit -s -m "fix: git reset --hard recovery notes"
+allow	git commit -m "a" -m "git clean -fdx runs in CI"
+allow	git commit -m "$(cat <<'EOF'\nfix: drop table on rollback\n\nrm -rf build is gone\nEOF\n)"
+allow	git commit -m "docs: explain --no-verify"
+allow	git commit -m "docs: never rm -rf /"
+ask	git commit -m "x" && psql -c "drop table users"
+ask	git commit -m '"'; rm -rf src; echo '"'
+ask	git commit -m "$(rm -rf src)"
+ask	git commit -m x\nrm -rf src
+ask	git commit -m 'rm -rf src' | sh
+ask	git commit -m "`rm -rf src`"
+ask	git commit -m "oops rm -rf src
+ask	git commit -m "fix" --no-verify
+ask	git commit -nm "fix"
+ask	git commit -m "fix"; git push --force
+allow	git commit -m "$(cat <<'EOF'\nfix(careful): drop table handling\nEOF\n)"
+ask	git commit -m "$(cat <<'EOF'\n)"; rm -rf src; echo "\nEOF\n)"
+ask	git commit -m "$(cat <<'EOF'\n"(" )\nrm -rf src\nEOF\n)"
+ask	git commit -m "$(cat <<'EOF'\nfix\nEOF\n)" && rm -rf src
+CASES
+# Known limit: the obfuscation tripwire reads the raw text, message included.
+careful_rows "$TMPHOME" <<'CASES'
+ask	git commit -m 'docs: never use ${IFS} in scripts'
+CASES
+
+echo "careful — hooks disabled through config"
+careful_rows "$TMPHOME" <<'CASES'
+ask	git -c core.hooksPath=/dev/null commit -m x
+ask	git -c CORE.HOOKSPATH=x push
+ask	git -c "core.hooksPath=/dev/null" commit -m x
+ask	git --config-env=core.hooksPath=HP commit -m x
+ask	git config core.hooksPath /dev/null
+ask	git config --local core.hooksPath .nohooks
+ask	git config --unset core.hooksPath
+ask	HUSKY=0 git commit -m x
+ask	export HUSKY=0; git commit -m x
+allow	echo HUSKY=0 > INSTALL.md
+allow	git config --get core.hooksPath
+allow	git config core.hooksPath
+allow	git -c user.name=x commit -m y
+CASES
+
+echo "careful — a wrapper in front of a root delete"
+careful_rows "$TMPHOME" <<'CASES'
+deny	doas rm -rf /
+deny	env rm -rf ~
+deny	env FOO=1 rm -rf /
+deny	command rm -rf /
+deny	nice -n 10 rm -rf /
+deny	\rm -rf /
+deny	sudo -u root rm -rf /
+ask	env rm -rf ./tmp
+ask	sudo -u root rm -rf /opt/x
+CASES
+
 echo "careful — gate files on Edit/Write"
-assert_decision "workflow file asks"            "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":".github/workflows/ci.yml"}}' ask
-assert_decision "nested workflow file asks"     "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":".github/workflows/deploy/prod.yml"}}' ask
-assert_decision "tsconfig.json asks"            "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"tsconfig.json"}}' ask
-assert_decision "migration file asks"           "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"db/migrate/20240101_add_x.rb"}}' ask
-assert_decision "nested migration file asks"    "$CAREFUL" '{"tool_name":"Write","tool_input":{"file_path":"/repo/prisma/migrations/20240101_x/migration.sql"}}' ask
-assert_decision "migrations doc passes"         "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":"/repo/docs/migrations.md"}}' allow
-assert_decision "ordinary source passes"        "$CAREFUL" '{"tool_name":"Edit","tool_input":{"file_path":"src/app.ts"}}' allow
+# The gate files exist: an edit to an existing gate asks, while creating one
+# that is not there yet passes (see the new-file rows below).
+GATE="$TMPHOME/gate"
+for _f in .github/workflows/ci.yml .github/workflows/deploy/prod.yml tsconfig.json \
+  db/migrate/20240101_add_x.rb prisma/migrations/20240101_x/migration.sql docs/migrations.md src/app.ts \
+  ESLINT.CONFIG.JS eslint.config.base.mjs prettier.config.cjs .stylelintrc.json .markdownlintrc \
+  .eslintignore .gitleaks.toml .husky/pre-commit lefthook.yml .git/hooks/pre-commit Jenkinsfile .prettierrc setup.cfg; do
+  mkdir -p "$GATE/$(dirname "$_f")" && : > "$GATE/$_f"
+done
+gate_payload() { python3 -c 'import json,sys;print(json.dumps({"tool_name":sys.argv[1],"tool_input":{sys.argv[2]:sys.argv[3]}}))' "$@"; }
+assert_decision "workflow file asks"            "$CAREFUL" "$(gate_payload Edit file_path "$GATE/.github/workflows/ci.yml")" ask
+assert_decision "nested workflow file asks"     "$CAREFUL" "$(gate_payload Edit file_path "$GATE/.github/workflows/deploy/prod.yml")" ask
+assert_decision "tsconfig.json asks"            "$CAREFUL" "$(gate_payload Write file_path "$GATE/tsconfig.json")" ask
+assert_decision "migration file asks"           "$CAREFUL" "$(gate_payload Write file_path "$GATE/db/migrate/20240101_add_x.rb")" ask
+assert_decision "nested migration file asks"    "$CAREFUL" "$(gate_payload Write file_path "$GATE/prisma/migrations/20240101_x/migration.sql")" ask
+assert_decision "Jenkinsfile asks"              "$CAREFUL" "$(gate_payload Edit file_path "$GATE/Jenkinsfile")" ask
+assert_decision "migrations doc passes"         "$CAREFUL" "$(gate_payload Edit file_path "$GATE/docs/migrations.md")" allow
+assert_decision "ordinary source passes"        "$CAREFUL" "$(gate_payload Edit file_path "$GATE/src/app.ts")" allow
 assert_decision "empty tool_input passes"       "$CAREFUL" '{"tool_input":{}}' allow
 # Copilot CLI's edit and create tools name the file tool_input.path.
-assert_decision "Copilot edit of a workflow file asks" "$CAREFUL" '{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"path":".github/workflows/ci.yml"}}' ask
+assert_decision "Copilot edit of a workflow file asks" "$CAREFUL" "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"path\":\"$GATE/.github/workflows/ci.yml\"}}" ask
 assert_decision "Copilot create of ordinary source passes" "$CAREFUL" '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"path":"/repo/src/app.ts","file_text":"x"}}' allow
+# Upper-case names, qualified configs, ignore files and hook managers gate too.
+assert_decision "upper-case ESLINT.CONFIG.JS asks" "$CAREFUL" "$(gate_payload Edit file_path "$GATE/ESLINT.CONFIG.JS")" ask
+assert_decision "eslint.config.base.mjs asks"   "$CAREFUL" "$(gate_payload Edit file_path "$GATE/eslint.config.base.mjs")" ask
+assert_decision "prettier.config.cjs asks"      "$CAREFUL" "$(gate_payload Edit file_path "$GATE/prettier.config.cjs")" ask
+assert_decision ".stylelintrc.json asks"        "$CAREFUL" "$(gate_payload Edit file_path "$GATE/.stylelintrc.json")" ask
+assert_decision ".markdownlintrc asks"          "$CAREFUL" "$(gate_payload Edit file_path "$GATE/.markdownlintrc")" ask
+assert_decision ".eslintignore asks"            "$CAREFUL" "$(gate_payload Edit file_path "$GATE/.eslintignore")" ask
+assert_decision ".gitleaks.toml asks"           "$CAREFUL" "$(gate_payload Edit file_path "$GATE/.gitleaks.toml")" ask
+assert_decision ".husky/pre-commit asks"        "$CAREFUL" "$(gate_payload Write file_path "$GATE/.husky/pre-commit")" ask
+assert_decision "lefthook.yml asks"             "$CAREFUL" "$(gate_payload Edit file_path "$GATE/lefthook.yml")" ask
+assert_decision ".git/hooks/pre-commit asks"    "$CAREFUL" "$(gate_payload Write file_path "$GATE/.git/hooks/pre-commit")" ask
+# Creating a gate that does not exist yet adds a check rather than loosening
+# one — except an ignore file, whose only effect is to exempt files.
+assert_decision "new eslint.config.mjs passes"  "$CAREFUL" "$(gate_payload Write file_path "$GATE/new/eslint.config.mjs")" allow
+assert_decision "new workflow file passes"      "$CAREFUL" "$(gate_payload Write file_path "$GATE/new/.github/workflows/release.yml")" allow
+assert_decision "new migration passes"          "$CAREFUL" "$(gate_payload Write file_path "$GATE/new/db/migrate/20250101_add_y.rb")" allow
+assert_decision "new .eslintignore still asks"  "$CAREFUL" "$(gate_payload Write file_path "$GATE/new/.eslintignore")" ask
+assert_decision ".prettierrc stays out"         "$CAREFUL" "$(gate_payload Edit file_path "$GATE/.prettierrc")" allow
+assert_decision "setup.cfg stays out"           "$CAREFUL" "$(gate_payload Edit file_path "$GATE/setup.cfg")" allow
 for _skill in careful guard; do
   for _m in Edit Write; do
     if awk -v m="matcher: \"$_m\"" 'index($0,m){f=1;next} f&&/matcher:/{f=0} f&&/check-careful\.sh/{found=1} END{exit !found}' "$ROOT/skills/$_skill/SKILL.md"; then
@@ -217,18 +387,6 @@ mkdir -p "$FORCE_REPO"
   git update-ref refs/remotes/origin/main HEAD
 ) >/dev/null 2>&1
 
-assert_decision_in() {
-  local dir="$1" name="$2" payload="$3" expected="$4" out
-  out=$(cd "$dir" && printf '%s' "$payload" | bash "$CAREFUL" 2>/dev/null)
-  if [ "$out" = "{}" ]; then
-    [ "$expected" = allow ] && ok "$name" || bad "$name" "$expected" "{} (allowed)"
-  elif [ "$(envelope_verdict "$out")" = "$expected" ]; then
-    ok "$name"
-  else
-    bad "$name" "$expected decision, flat and nested" "$(envelope_verdict "$out"): $out"
-  fi
-}
-
 # Every case below needs the repo to HAVE a default branch: the hook resolves it
 # from origin/HEAD (falling back to origin/main / origin/master), and a CI
 # checkout has none — which is why these have to run in the built repo, not
@@ -250,6 +408,20 @@ assert_decision_in "$FORCE_REPO" "--force origin main denied" '{"tool_input":{"c
 # A feature branch is not the catastrophic case, and lease is the safe variant.
 assert_decision_in "$FORCE_REPO" "--force origin feature asks" '{"tool_input":{"command":"git push --force origin feature"}}' ask
 assert_decision_in "$FORCE_REPO" "--force-with-lease asks"     '{"tool_input":{"command":"git push --force-with-lease origin"}}' ask
+# Global options before push neither hide the push nor lend it a target: the
+# value of -C is a directory, not the ref being pushed.
+assert_decision_in "$FORCE_REPO" "git -C r push -f origin main denied" '{"tool_input":{"command":"git -C r push -f origin main"}}' deny
+assert_decision_in "$FORCE_REPO" "--git-dir= push --force main denied" '{"tool_input":{"command":"git --git-dir=.git push --force origin main"}}' deny
+assert_decision_in "$FORCE_REPO" "-c k=v push +main denied"            '{"tool_input":{"command":"git -c push.default=current push origin +main"}}' deny
+assert_decision_in "$FORCE_REPO" "git -C main push --force feat asks"  '{"tool_input":{"command":"git -C main push --force origin feat"}}' ask
+# The default and current branch belong to the -C repo, not the hook's cwd:
+# a bare force-push into a sibling repo on a feature branch asks, never denies.
+(
+  cd "$FORCE_REPO"
+  git init -q -b feat other
+  git -C other -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init
+) >/dev/null 2>&1
+assert_decision_in "$FORCE_REPO" "git -C other push --force reads other's branch" '{"tool_input":{"command":"git -C other push --force"}}' ask
 
 echo "careful — the home directory written out in full"
 assert_decision "rm -rf \$HOME denied"          "$CAREFUL" "{\"tool_input\":{\"command\":\"rm -rf $HOME\"}}" deny
@@ -359,6 +531,17 @@ ask	Bash	cmd /c rd /s/q build
 ask	PowerShell	Remove-Item C:\x -Recurse
 allow	Bash	echo hi | pwsh -Command -
 ask	PowerShell	rd C:\x /s
+ask	PowerShell	& $cmd -Recurse
+ask	PowerShell	$x = "Remove-Item"; & $x C:\data
+ask	PowerShell	& ("Remove" + "-Item") C:\data
+ask	PowerShell	Start-Process bash -ArgumentList "-c ./x.sh"
+ask	PowerShell	Start-Process wsl -ArgumentList "./x.sh"
+ask	PowerShell	Start-Process -FilePath sh
+allow	PowerShell	& { Get-ChildItem }
+allow	PowerShell	. .\build.ps1
+allow	PowerShell	git status && git log
+allow	PowerShell	Start-Process ssh -ArgumentList host
+allow	PowerShell	Start-Process notepad foo.sh
 CASES
 for _skill in careful guard; do
   if grep -q 'matcher: "PowerShell"' "$ROOT/skills/$_skill/SKILL.md"; then
@@ -563,6 +746,20 @@ cp "$ROOT/skills/freeze/bin/check-freeze.sh" "$BROKEN/freeze/bin/"
 printf '/\n' > "$VIBESTACK_HOME/freeze-dir.txt"
 assert_decision "helper missing denies"         "$BROKEN/freeze/bin/check-freeze.sh" "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" deny
 assert_decision "helper missing: careful asks"  "$BROKEN/careful/bin/check-careful.sh" '{"tool_input":{"command":"ls"}}' ask
+
+echo "hooks — a json.py in the working directory is never imported"
+# The hooks run in the session's directory, which may be an untrusted checkout.
+# Without isolation, python3 puts that directory first on sys.path and the
+# repository's own json.py runs inside the hook.
+HOSTILE="$TMPHOME/hostile"
+mkdir -p "$HOSTILE"
+printf 'import os\nopen(os.path.join(os.path.dirname(os.path.abspath(__file__)), "MARKER"), "w").close()\n' > "$HOSTILE/json.py"
+printf '%s\n' "$(cd "$FZ/in" && pwd -P)" > "$VIBESTACK_HOME/freeze-dir.txt"
+(cd "$HOSTILE" && printf '%s' '{"tool_input":{"command":"rm -rf /var/x"}}' | bash "$CAREFUL" >/dev/null 2>&1)
+(cd "$HOSTILE" && printf '%s' '{"tool_name":"PowerShell","tool_input":{"command":"Remove-Item C:\\x -Recurse"}}' | bash "$CAREFUL" >/dev/null 2>&1)
+(cd "$HOSTILE" && printf '%s' "{\"tool_input\":{\"file_path\":\"$FZ/out/target.txt\"}}" | bash "$FREEZE" >/dev/null 2>&1)
+[ ! -e "$HOSTILE/MARKER" ] && ok "hooks ignore a json.py in the working directory" || bad "hooks ignore a json.py in the working directory" "no MARKER file" "json.py was imported"
+rm -f "$VIBESTACK_HOME/freeze-dir.txt"
 
 echo "copilot — user hook file"
 # Copilot CLI has no skill-scoped hooks, so careful and freeze are enforced
