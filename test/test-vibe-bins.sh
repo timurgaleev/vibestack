@@ -653,6 +653,132 @@ out="$(HOME="$COPH" COPILOT_HOME="$COPH/alt" VIBESTACK_HOME="$DOCV" "$BIN/vibest
 echo "$out" | grep -qx 'ship' && ! echo "$out" | grep -qx 'review' \
   && ok "skills copilot follows \$COPILOT_HOME" || no "skills copilot ignored \$COPILOT_HOME: $out"
 
+# --- vibe-diff-scope ----------------------------------------------------------
+# A file can belong to several categories at once; a classifier that stops at the
+# first matching pattern skips the specialist for the others. The git shim feeds
+# a canned file list (SCOPE_FILES) and fails on demand (SCOPE_GIT_FAIL), so each
+# row pins one path's flags without building a repository.
+DS="$TMP/ds"; mkdir -p "$DS/bin"
+cat > "$DS/bin/git" <<'SH'
+#!/usr/bin/env bash
+[ "${SCOPE_GIT_FAIL:-}" = all ] && exit 128
+case "$1" in
+  rev-parse)  echo 1111111111111111111111111111111111111111 ;;
+  merge-base) [ "${SCOPE_GIT_FAIL:-}" = merge-base ] && exit 1
+              echo 2222222222222222222222222222222222222222 ;;
+  diff)       [ "${SCOPE_GIT_FAIL:-}" = diff ] && exit 128
+              printf '%s\n' "${SCOPE_FILES:-}" ;;
+esac
+SH
+chmod +x "$DS/bin/git"
+scope_of() { SCOPE_FILES="$1" PATH="$DS/bin:$PATH" "$BIN/vibe-diff-scope" main 2>/dev/null; }
+# expect_flags <path> <FLAG...>: every named flag is true for that path.
+expect_flags() {
+  local f="$1" o miss=""; shift
+  o="$(scope_of "$f")"
+  for flag in "$@"; do printf '%s\n' "$o" | grep -qx "SCOPE_$flag=true" || miss="$miss $flag"; done
+  [ -z "$miss" ] && ok "diff-scope: $f -> $*" || no "diff-scope: $f missing$miss: $(printf '%s' "$o" | grep '=true' | tr '\n' ' ')"
+}
+expect_flags openapi.yaml API CONFIG
+expect_flags docs/openapi.yaml API
+expect_flags app/models/api_token.rb AUTH BACKEND
+expect_flags src/components/Button.ts FRONTEND BACKEND
+expect_flags components/Button.ts FRONTEND BACKEND
+expect_flags app/controllers/sessions_controller.rb API AUTH BACKEND
+expect_flags test_models.py TESTS BACKEND
+expect_flags pkg/tests/test_models.py TESTS BACKEND
+expect_flags lib/test/helper.rb TESTS BACKEND
+expect_flags web/src/__tests__/app.js TESTS BACKEND
+expect_flags src/test/java/com/acme/BillingTest.java TESTS BACKEND
+expect_flags Tests/AppTests/LoginTests.swift TESTS BACKEND
+# Value: protects=colocated pytest files count as tests; fails_when=*/test_*.py is dropped as "covered by test_*.py" (case * spans /, but test_*.py is anchored at the root); why_new=pkg/tests/test_models.py also matches */tests/*; seam=none
+expect_flags pkg/test_models.py TESTS BACKEND
+# Value: protects=nested tests/ dirs (Rust integration tests) count as tests; fails_when=*/tests/* is dropped; why_new=the only nested tests/ row also matches */test_*.py; seam=none
+expect_flags crates/core/tests/parse.rs TESTS BACKEND
+# Value: protects=the decision that UI-only extensions stay FRONTEND-only; fails_when=.tsx/.jsx join the "any code" BACKEND list; why_new=no row checks a flag is false except README.md; seam=none
+o="$(scope_of src/App.tsx)"
+printf '%s\n' "$o" | grep -qx 'SCOPE_FRONTEND=true' && printf '%s\n' "$o" | grep -qx 'SCOPE_BACKEND=false' \
+  && ok "diff-scope: a .tsx file is FRONTEND and not BACKEND" || no "diff-scope: src/App.tsx: $(printf '%s' "$o" | grep '=true' | tr '\n' ' ')"
+for ext in kt kts swift cs dart scala c cc cpp h; do expect_flags "src/main.$ext" BACKEND; done
+# Shell scripts and extensionless tools in bin/ are code too.
+expect_flags scripts/deploy.sh BACKEND
+expect_flags bin/vibe-tool BACKEND
+# PascalCase names (Java, C#, PHP, Swift) must not slip past the auth/API globs.
+expect_flags src/Auth/LoginService.cs AUTH BACKEND
+expect_flags app/Http/Controllers/UserController.php API BACKEND
+o="$(scope_of README.md)"
+printf '%s\n' "$o" | grep -qx 'SCOPE_DOCS=true' && [ "$(printf '%s\n' "$o" | grep -c '=true')" = 1 ] \
+  && ok "diff-scope: a docs-only change sets DOCS and nothing else" || no "diff-scope: README.md over-flagged: $o"
+
+# No base to compare against is "unknown", not "nothing changed": all-false would
+# quietly skip every conditional specialist.
+# Callers eval the output, so any SCOPE_*=false line next to UNAVAILABLE reads as "nothing changed".
+o="$(SCOPE_GIT_FAIL=all scope_of server.py)"; rc=$?
+[ "$rc" = 2 ] && [ "$o" = 'SCOPE_UNAVAILABLE=true' ] \
+  && ok "diff-scope: git failure prints only SCOPE_UNAVAILABLE=true and exits 2" \
+  || no "diff-scope: git failure rc=$rc: $o"
+o="$(SCOPE_GIT_FAIL=merge-base scope_of server.py)"; rc=$?
+[ "$rc" = 2 ] && printf '%s\n' "$o" | grep -qx 'SCOPE_UNAVAILABLE=true' \
+  && ok "diff-scope: no merge-base prints SCOPE_UNAVAILABLE=true and exits 2" \
+  || no "diff-scope: no merge-base rc=$rc: $o"
+# Value: protects=a failing `git diff` after a good merge-base is unavailable, not empty; fails_when=FILES falls back to "" (the `|| echo ""` shape) and prints all-false; why_new=the shim never failed diff alone; seam=none (test-only git shim)
+o="$(SCOPE_GIT_FAIL=diff scope_of server.py)"; rc=$?
+[ "$rc" = 2 ] && [ "$o" = 'SCOPE_UNAVAILABLE=true' ] \
+  && ok "diff-scope: a failing git diff prints only SCOPE_UNAVAILABLE=true and exits 2" \
+  || no "diff-scope: git diff failure rc=$rc: $o"
+
+# Real repository: a stale local base must not pull the base's own newer commits
+# into the branch's scope. origin/main gained app.css after local main was
+# cloned; the branch, cut from origin/main, only touched server.py.
+DR="$TMP/ds-repo"; mkdir -p "$DR"
+dgit() { git -c user.name=t -c user.email=t@example.com -c init.defaultBranch=main -c commit.gpgsign=false "$@"; }
+( set -e
+  dgit init -q --bare "$DR/origin.git"
+  dgit clone -q "$DR/origin.git" "$DR/up" 2>/dev/null
+  cd "$DR/up"; echo a > README.md; dgit add .; dgit commit -qm a; dgit push -q origin HEAD:main
+  dgit clone -q "$DR/origin.git" "$DR/work"
+  cd "$DR/up"; echo 'a{}' > app.css; dgit add .; dgit commit -qm b; dgit push -q origin HEAD:main
+  cd "$DR/work"; dgit fetch -q origin; dgit checkout -q -b feature origin/main
+  echo 'x = 1' > server.py; dgit add .; dgit commit -qm c
+) >/dev/null 2>&1 || no "diff-scope: fixture repo setup failed"
+o="$(cd "$DR/work" && "$BIN/vibe-diff-scope" main 2>&1)"; rc=$?
+[ "$rc" = 0 ] && printf '%s\n' "$o" | grep -qx 'SCOPE_BACKEND=true' \
+  && printf '%s\n' "$o" | grep -qx 'SCOPE_FRONTEND=false' && ! printf '%s\n' "$o" | grep -q 'SCOPE_UNAVAILABLE' \
+  && ok "diff-scope: scope is measured from merge-base with origin/<base>, exit 0" \
+  || no "diff-scope: stale local base leaked into scope, rc=$rc: $(printf '%s' "$o" | tr '\n' ' ')"
+# land-and-deploy passes the fetched base as a commit sha, not a branch name.
+sha="$(cd "$DR/work" && git rev-parse origin/main)"
+o="$(cd "$DR/work" && "$BIN/vibe-diff-scope" "$sha" 2>&1)"; rc=$?
+[ "$rc" = 0 ] && printf '%s\n' "$o" | grep -qx 'SCOPE_BACKEND=true' && ! printf '%s\n' "$o" | grep -q 'SCOPE_UNAVAILABLE' \
+  && ok "diff-scope: a base given as a sha resolves, exit 0" || no "diff-scope: sha base rc=$rc: $(printf '%s' "$o" | tr '\n' ' ')"
+# Uncommitted edits are part of what /review reads, so they count toward scope.
+mkdir -p "$DR/work/db/migrate"; echo 'up' > "$DR/work/db/migrate/001_add.rb"
+(cd "$DR/work" && git add db/migrate/001_add.rb)
+o="$(cd "$DR/work" && "$BIN/vibe-diff-scope" main 2>&1)"
+printf '%s\n' "$o" | grep -qx 'SCOPE_MIGRATIONS=true' \
+  && ok "diff-scope: staged but uncommitted changes are classified" || no "diff-scope: uncommitted change ignored: $(printf '%s' "$o" | tr '\n' ' ')"
+# A rename must keep the old path in scope: README.md moved away is still a docs change.
+(cd "$DR/work" && git mv README.md notes.txt)
+o="$(cd "$DR/work" && "$BIN/vibe-diff-scope" main 2>&1)"
+printf '%s\n' "$o" | grep -qx 'SCOPE_DOCS=true' \
+  && ok "diff-scope: a renamed file's old path is classified" || no "diff-scope: rename hid the old path: $(printf '%s' "$o" | tr '\n' ' ')"
+# Untracked files ship with the branch, so they count.
+echo 'x = 1' > "$DR/work/auth_helper.py"
+o="$(cd "$DR/work" && "$BIN/vibe-diff-scope" main 2>&1)"
+printf '%s\n' "$o" | grep -qx 'SCOPE_AUTH=true' \
+  && ok "diff-scope: untracked files are classified" || no "diff-scope: untracked file ignored: $(printf '%s' "$o" | tr '\n' ' ')"
+# git quotes a non-ASCII path in plain output ("app/views/caf\303\251..."), which no glob matches.
+mkdir -p "$DR/work/app/views"; echo x > "$DR/work/app/views/café.html.erb"
+(cd "$DR/work" && git add app/views)
+o="$(cd "$DR/work" && "$BIN/vibe-diff-scope" main 2>&1)"
+printf '%s\n' "$o" | grep -qx 'SCOPE_FRONTEND=true' \
+  && ok "diff-scope: a non-ASCII path is classified" || no "diff-scope: quoted path missed: $(printf '%s' "$o" | tr '\n' ' ')"
+# diff.relative would narrow the diff to the directory the command runs from.
+(cd "$DR/work" && git config diff.relative true)
+o="$(cd "$DR/work/db" && "$BIN/vibe-diff-scope" main 2>&1)"
+printf '%s\n' "$o" | grep -qx 'SCOPE_FRONTEND=true' && printf '%s\n' "$o" | grep -qx 'SCOPE_AUTH=true' \
+  && ok "diff-scope: a subdirectory with diff.relative still sees the whole repo" || no "diff-scope: diff.relative narrowed scope: $(printf '%s' "$o" | tr '\n' ' ')"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"
