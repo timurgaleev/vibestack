@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.55.9 — 2026-11-07
+
+### Fixed
+
+- **Secrets no longer slip past the redact checks on formatting alone.** An
+  `export` in front, indentation, a diff marker or a docker-compose `- KEY=`
+  item no longer hides a `*_KEY`/`*_TOKEN`/`*_SECRET`/`*_PASSWORD` value, and
+  temporary AWS keys (`ASIA...`), passwords in connection strings
+  (`postgres://user:pass@host`, including an empty user name) and a JSON or CLI
+  `SecretAccessKey` field are caught. The pre-push guard, `vibe-redact scan`
+  and every log that persists text share the same rules.
+- **Placeholders stay quiet without opening a hole.** A whole-value expansion
+  (`${DB_PASSWORD}`, `$(gh auth token)`, `$1`), a short stub like `sk-...`, or a
+  common dev password in a local connection string (`postgres:postgres`, a
+  password that repeats the user name) passes; a generated password with a `$`
+  in it, or a long value that happens to end in `...`, does not.
+- **Learnings, question and timeline logs refuse secrets.** A learning or
+  question event carrying a credential is rejected and a timeline event is
+  dropped, instead of being written to disk.
+- **The pre-push guard stops unresolved merge conflicts.** An added
+  `<<<<<<<` or `>>>>>>>` line blocks the push, with `=======` counted only
+  beside them so a setext heading underline is not a conflict; markers quoted
+  in a `text` or `diff` fence of a Markdown file are documentation.
+  `VIBESTACK_REDACT_PREPUSH=skip` bypasses it like the secret check. The guard
+  scans git's own diff, whatever external diff driver or textconv is set.
+
 ## 1.55.8 — 2026-11-06
 
 ### Fixed
