@@ -424,9 +424,21 @@ Check whether this PR's claimed VERSION still points at a free slot in the queue
 BRANCH_VERSION=$(git show HEAD:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
 BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)
 BASE_VERSION=$(git show origin/$BASE_BRANCH:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
+# Query at the level this PR releases: a coarser one answers a later slot and
+# the comparison below calls a free PR stale.
+_BUMP=patch
+if [ -n "$BRANCH_VERSION" ] && [ -n "$BASE_VERSION" ]; then
+  _B_MAJ=${BRANCH_VERSION%%.*}; _R_MAJ=${BASE_VERSION%%.*}
+  _B_MIN=$(echo "$BRANCH_VERSION" | cut -d. -f2); _R_MIN=$(echo "$BASE_VERSION" | cut -d. -f2)
+  _B_PAT=$(echo "$BRANCH_VERSION" | cut -d. -f3); _R_PAT=$(echo "$BASE_VERSION" | cut -d. -f3)
+  if [ "$_B_MAJ" != "$_R_MAJ" ]; then _BUMP=major
+  elif [ "$_B_MIN" != "$_R_MIN" ]; then _BUMP=minor
+  elif [ "$_B_PAT" = "$_R_PAT" ]; then case "$BRANCH_VERSION" in *.*.*.*) _BUMP=micro ;; esac
+  fi
+fi
 QUEUE_JSON=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
   --base "$BASE_BRANCH" \
-  --bump patch \
+  --bump "$_BUMP" \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
 NEXT_SLOT=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
 CLAIMED_COUNT=$(echo "$QUEUE_JSON" | jq -r '.claimed | length // 0')

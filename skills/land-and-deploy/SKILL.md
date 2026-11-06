@@ -584,13 +584,16 @@ fi
 # for a PR claiming v1.34.0 off base v1.33.2, a patch query answers "v1.33.3 is
 # free", and the later `BRANCH_VERSION >= NEXT_SLOT` comparison then passes —
 # even when another open PR is claiming v1.34.0 too. The level has to match the
-# release the PR is actually making.
+# release the PR is actually making. A four-part version with PATCH unchanged
+# is a micro release; a patch query would answer the next PATCH and STOP it.
 _BUMP=patch
 if [ -n "$BRANCH_VERSION" ] && [ -n "$BASE_VERSION" ]; then
   _B_MAJ=${BRANCH_VERSION%%.*}; _R_MAJ=${BASE_VERSION%%.*}
   _B_MIN=$(echo "$BRANCH_VERSION" | cut -d. -f2); _R_MIN=$(echo "$BASE_VERSION" | cut -d. -f2)
+  _B_PAT=$(echo "$BRANCH_VERSION" | cut -d. -f3); _R_PAT=$(echo "$BASE_VERSION" | cut -d. -f3)
   if [ "$_B_MAJ" != "$_R_MAJ" ]; then _BUMP=major
   elif [ "$_B_MIN" != "$_R_MIN" ]; then _BUMP=minor
+  elif [ "$_B_PAT" = "$_R_PAT" ]; then case "$BRANCH_VERSION" in *.*.*.*) _BUMP=micro ;; esac
   fi
 fi
 # --exclude-pr is not optional here: this PR is itself open and its title
