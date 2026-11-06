@@ -499,9 +499,9 @@ ci_gate() {
             --jq '.check_suites[] | [.status, (.app.slug // "unknown-app")] | @tsv' 2>"$_err") \
     || { echo "VERDICT ERROR $PR_HEAD"; head -3 "$_err"; rm -f "$_err"; return 0; }
   rm -f "$_err"
-  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($1 != "completed") ? "pending" : (($2 == "skipped") ? "skip" : (($2 ~ /^(success|neutral)$/) ? "pass" : "fail")); print b " " $3 }'
-             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($1 == "success") ? "pass" : (($1 == "pending") ? "pending" : "fail"); print b " " $2 }'
-             printf '%s\n' "$_suites" | awk -F'\t' 'NF >= 2 && $1 != "completed" { print "pending suite:" $2 }'; } )
+  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($(1) != "completed") ? "pending" : (($(2) == "skipped") ? "skip" : (($(2) ~ /^(success|neutral)$/) ? "pass" : "fail")); print b " " $(3) }'
+             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($(1) == "success") ? "pass" : (($(1) == "pending") ? "pending" : "fail"); print b " " $(2) }'
+             printf '%s\n' "$_suites" | awk -F'\t' 'NF >= 2 && $(1) != "completed" { print "pending suite:" $(2) }'; } )
   if [ -z "$_rows" ]; then _v=NO_CHECKS
   elif printf '%s\n' "$_rows" | grep -q '^fail '; then _v=FAIL
   elif printf '%s\n' "$_rows" | grep -q '^pending '; then _v=PENDING
@@ -983,7 +983,7 @@ READBACK=$(gh api graphql -f query='query($owner:String!,$name:String!,$number:I
 rm -f "$_err"
 printf '%s' "$READBACK" | jq -e '((.errors // []) | length == 0) and (.data.repository.pullRequest | type == "object" and has("state") and has("headRefOid") and has("baseRefName") and has("mergeCommit") and has("autoMergeRequest") and has("mergeQueueEntry"))' >/dev/null 2>&1 \
   || { echo "MERGE_ACTION UNKNOWN"; echo "readback incomplete"; exit 1; }
-_pr() { printf '%s' "$READBACK" | jq -r ".data.repository.pullRequest | $1"; }
+_pr() { printf '%s' "$READBACK" | jq -r ".data.repository.pullRequest | ${1}"; }
 PR_STATE=$(_pr .state); CURRENT_HEAD=$(_pr .headRefOid); CURRENT_BASE=$(_pr .baseRefName)
 MERGE_SHA=$(_pr '.mergeCommit.oid // ""')
 AUTO_MERGE=$(_pr '.autoMergeRequest != null'); QUEUE=$(_pr '.mergeQueueEntry.state // "none"')
@@ -1094,9 +1094,9 @@ ci_gate() {
             --jq '.check_suites[] | [.status, (.app.slug // "unknown-app")] | @tsv' 2>"$_err") \
     || { echo "VERDICT ERROR $PR_HEAD"; head -3 "$_err"; rm -f "$_err"; return 0; }
   rm -f "$_err"
-  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($1 != "completed") ? "pending" : (($2 == "skipped") ? "skip" : (($2 ~ /^(success|neutral)$/) ? "pass" : "fail")); print b " " $3 }'
-             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($1 == "success") ? "pass" : (($1 == "pending") ? "pending" : "fail"); print b " " $2 }'
-             printf '%s\n' "$_suites" | awk -F'\t' 'NF >= 2 && $1 != "completed" { print "pending suite:" $2 }'; } )
+  _rows=$( { printf '%s\n' "$_runs" | awk -F'\t' 'NF >= 3 { b = ($(1) != "completed") ? "pending" : (($(2) == "skipped") ? "skip" : (($(2) ~ /^(success|neutral)$/) ? "pass" : "fail")); print b " " $(3) }'
+             printf '%s\n' "$_stats" | awk -F'\t' 'NF >= 2 { b = ($(1) == "success") ? "pass" : (($(1) == "pending") ? "pending" : "fail"); print b " " $(2) }'
+             printf '%s\n' "$_suites" | awk -F'\t' 'NF >= 2 && $(1) != "completed" { print "pending suite:" $(2) }'; } )
   if [ -z "$_rows" ]; then _v=NO_CHECKS
   elif printf '%s\n' "$_rows" | grep -q '^fail '; then _v=FAIL
   elif printf '%s\n' "$_rows" | grep -q '^pending '; then _v=PENDING

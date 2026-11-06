@@ -101,10 +101,10 @@ else
     CLASSIFIED=$(printf '%s\n' "$ALL" | "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" --classify-checkpoints 2>/dev/null)
     TAB=$(printf '\t')
     if [ -n "$CLASSIFIED" ] && ! printf '%s\n' "$CLASSIFIED" | grep -qvE "^(match|unstamped|foreign)${TAB}"; then
-      printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1 == "foreign" { print $2 }' | while IFS= read -r f; do
+      printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$(1) == "foreign" { print $(2) }' | while IFS= read -r f; do
         echo "PROJECT MISMATCH: $f ($(grep -m1 '^remote:' "$f" 2>/dev/null), $(grep -m1 '^project_root:' "$f" 2>/dev/null))"
       done
-      ALL=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$1 != "foreign" { print $2 }')
+      ALL=$(printf '%s\n' "$CLASSIFIED" | awk -F'\t' '$(1) != "foreign" { print $(2) }')
     else
       echo "IDENTITY_CHECK_UNAVAILABLE"
     fi

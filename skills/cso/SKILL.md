@@ -192,7 +192,7 @@ git log --all -G "password|secret|token|api_key" --format='%h %an %ad' --name-on
 ```bash
 redact() {
   LC_ALL=C awk '
-    { out = ""; s = $0; l = tolower(s)
+    { out = ""; s = $(0); l = tolower(s)
       while (match(l, /(password|passwd|secret|token|api_key)[ \t]+[^ \t:=]/)) {
         out = out substr(s, 1, RSTART + RLENGTH - 2) "…[redacted]"
         s = substr(s, RSTART + RLENGTH - 1); match(s, /^[^ \t]+/); s = substr(s, RLENGTH + 1); l = tolower(s)
@@ -200,7 +200,7 @@ redact() {
       print out s }' \
   | LC_ALL=C awk '
     function cut(v) { return (length(v) >= 16 && v !~ /[ \t]/ ? substr(v, 1, 4) : "") "…[redacted]" }
-    { out = ""; s = $0
+    { out = ""; s = $(0)
       while (match(s, /[:=][ \t]*/)) {
         out = out substr(s, 1, RSTART + RLENGTH - 1); s = substr(s, RSTART + RLENGTH); q = substr(s, 1, 1)
         if (q == "\"" || q == "\047") {
@@ -237,10 +237,10 @@ for r in $(git remote); do
   if ! refs=$(git ls-remote "$r" 2>/dev/null); then
     echo "remote $r: unreachable"; [ "$exposure" = remote ] || exposure=unknown; continue
   fi
-  for oid in $(printf '%s\n' "$refs" | awk '{print $1}' | sort -u); do
+  for oid in $(printf '%s\n' "$refs" | awk '{print $(1)}' | sort -u); do
     git cat-file -e "$oid^{commit}" 2>/dev/null || continue
     if git merge-base --is-ancestor "$SHA" "$oid" 2>/dev/null; then
-      echo "remote $r: $(printf '%s\n' "$refs" | awk -v o="$oid" '$1 == o {print $2; exit}')"; exposure=remote; break
+      echo "remote $r: $(printf '%s\n' "$refs" | awk -v o="$oid" '$(1) == o {print $(2); exit}')"; exposure=remote; break
     fi
   done
 done

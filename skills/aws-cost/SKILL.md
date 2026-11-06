@@ -159,8 +159,8 @@ rest into an `Other` row so the table still sums to the total.
 
 What a finding looks like:
 
-- **HIGH** — total up more than 20% month over month, or a single service up more than $500.
-- **MEDIUM** — a service that was under $50 last month is now in the top 10.
+- **HIGH** — total up more than 20% month over month, or a single service up more than USD 500.
+- **MEDIUM** — a service that was under USD 50 last month is now in the top 10.
 - **LOW** — a service down more than 30% (worth a line: was something turned off on purpose?).
 
 When `ORG_ROLE` is `payer`, run the same query grouped by `LINKED_ACCOUNT` and fill the
@@ -204,7 +204,7 @@ Compare like with like or not at all:
 ## Step 2: Anomalies
 
 MCP path: call `cost-anomaly` for the last 60 days. Keep anomalies with total impact
-over $50 and note their root-cause dimension (service, account, region, usage type).
+over USD 50 and note their root-cause dimension (service, account, region, usage type).
 
 CLI path: Cost Anomaly Detection only reports when a monitor exists, so check first.
 
@@ -219,7 +219,7 @@ aws ce get-anomalies \
 
 If there are no monitors, say so (it is itself a finding, LOW: "no anomaly monitor
 configured") and fall back to the Step 1 data: any service whose month-over-month
-delta exceeds 25% and $100 is treated as an anomaly. For each one, re-run the Step 1
+delta exceeds 25% and USD 100 is treated as an anomaly. For each one, re-run the Step 1
 query with `--group-by Type=DIMENSION,Key=USAGE_TYPE` and a filter that keeps the
 credit and refund exclusion alongside the service, so the breakdown reconciles with
 the Step 1 table:
@@ -263,7 +263,7 @@ aws ce get-cost-and-usage \
 Without that drill-down, write the finding as a month-over-month change and give no
 date. A date that no query returned is the failure this whole step exists to avoid.
 
-Severity: **HIGH** when the impact is over $500 or the anomaly is still open; **MEDIUM**
+Severity: **HIGH** when the impact is over USD 500 or the anomaly is still open; **MEDIUM**
 otherwise. An anomaly that Cost Anomaly Detection already closed and that matches a
 known change (the user tells you, or a tag says so) is **INFO**.
 
@@ -337,7 +337,7 @@ enabled EC2 resource recommendations there. When it is absent, report the count 
 over-provisioned resources with no dollar figure and no severity above **LOW**; the
 severity below needs the dollars.
 
-**HIGH** when the summed rank-1 savings exceed $200/month.
+**HIGH** when the summed rank-1 savings exceed USD 200/month.
 
 **Idle resources.** MCP path: `cost-optimization` (Cost Optimization Hub) returns these
 directly with estimated savings. CLI path: run each command below once per region in
@@ -354,7 +354,7 @@ aws ec2 describe-nat-gateways --filter Name=state,Values=available \
 ```
 
 **Unattached EBS volumes** are billed on provisioned size whether or not anything reads
-them, so size times list price is a fair estimate (gp3 about $0.08/GB-month). Confidence:
+them, so size times list price is a fair estimate (gp3 about USD 0.08/GB-month). Confidence:
 `medium` — it is list price, not the account's negotiated rate.
 
 **Old snapshots** are a different case. EBS snapshots are incremental: a snapshot stores
@@ -404,7 +404,7 @@ metric is not reported" — so an empty datapoint list across the whole period, 
 that exited 0, is real evidence of no traffic. A call that failed is N-A.
 
 A load balancer with zero healthy targets *and* no traffic datapoints for the period is
-idle at roughly $16-22/month, confidence `medium`. With one of the two, it is a candidate
+idle at roughly USD 16-22/month, confidence `medium`. With one of the two, it is a candidate
 at **LOW** and no dollar figure.
 
 For NAT gateways, price them with their own usage-type query — NAT charges land under
@@ -494,7 +494,7 @@ an empty datapoint list, or a `list-metrics` call that returned no dimension set
 make the gateway N-A. A gateway that is quiet but not silent is a candidate at **LOW**,
 not a saving.
 
-**MEDIUM** when idle spend is over $50/month, **HIGH** over $300/month. Both thresholds
+**MEDIUM** when idle spend is over USD 50/month, **HIGH** over USD 300/month. Both thresholds
 apply to resources that cleared the evidence bar above — instantaneous state alone never
 reaches MEDIUM.
 
@@ -582,7 +582,7 @@ Note the cost basis: `GetSavingsPlansUtilization` reports `AmortizedCommitment` 
 the unblended credit-excluded basis in the header. Say "amortized" wherever these numbers
 appear.
 
-If there is no compute spend to speak of (under $100/month), say so and skip this step.
+If there is no compute spend to speak of (under USD 100/month), say so and skip this step.
 
 ---
 
@@ -615,7 +615,7 @@ instance ids, tag status and launch dates come from `describe-instances`, not fr
 Cost Explorer usage-type row — if the run did not make that call, the recommendation
 names the usage type and says the ids are still to be established.
 
-If fewer than three candidates clear $20/month, fill the remaining slots with the
+If fewer than three candidates clear USD 20/month, fill the remaining slots with the
 hygiene findings (no anomaly monitor, untagged spend, Compute Optimizer not enrolled)
 and say plainly that the bill is already lean.
 
@@ -645,43 +645,43 @@ AWS COST REVIEW
 Account:   <alias or last 4 digits of the account id> (profile: <name>)
 Org role:  payer (4 linked accounts)
 Period:    2026-07-01..2026-07-31 vs 2026-06-01..2026-06-30
-Total:     $12,418.37  (+$1,904.12, +18.1% month over month)
+Total:     USD 12,418.37  (+USD 1,904.12, +18.1% month over month)
 Data path: MCP | CLI
 Basis:     UnblendedCost, credits and refunds excluded (Cost Explorer queries;
            budgets and commitments carry their own basis, labelled inline)
 Regions:   3 enabled (us-east-1, eu-west-1, ap-southeast-2)
 
-BY SERVICE (top 10, UnblendedCost)
+BY SERVICE (top 10, UnblendedCost, USD)
 Service                    This month   Last month     Delta
 -------------------------  ----------  -----------  --------
-Amazon EC2                     $4,210       $3,180    +$1,030  +32%
-Amazon RDS                     $2,940       $2,910       +$30   +1%
-Amazon S3                      $1,120       $1,090       +$30   +3%
+Amazon EC2                      4,210        3,180     +1,030  +32%
+Amazon RDS                      2,940        2,910        +30   +1%
+Amazon S3                       1,120        1,090        +30   +3%
 ...
-Other (14 services)              $610         $590       +$20   +3%
+Other (14 services)               610          590        +20   +3%
 
-BY LINKED ACCOUNT (payer only; accounts that moved more than 15%)
+BY LINKED ACCOUNT (payer only, USD; accounts that moved more than 15%)
 Account                    This month   Last month     Delta
 -------------------------  ----------  -----------  --------
-prod (...4471)                 $7,980       $6,240    +$1,740  +28%
-sandbox (...9902)                $410         $250      +$160  +64%
+prod (...4471)                  7,980        6,240     +1,740  +28%
+sandbox (...9902)                 410          250       +160  +64%
 
 BUDGETS
-[MEDIUM] "monthly-total" (monthly, unfiltered, unblended) limit $12,000 — forecast
-         $12,900 for 2026-08-01..2026-08-31, actual so far $402 (1 day elapsed).
+[MEDIUM] "monthly-total" (monthly, unfiltered, unblended) limit USD 12,000 — forecast
+         USD 12,900 for 2026-08-01..2026-08-31, actual so far USD 402 (1 day elapsed).
          Its period is the month in progress, so it is not a verdict on July's
-         $12,418.37 header total.
+         USD 12,418.37 header total.
 
 ANOMALIES
-[HIGH]   EC2 BoxUsage:m5.4xlarge +$980 month over month — largest usage-type delta
+[HIGH]   EC2 BoxUsage:m5.4xlarge +USD 980 month over month — largest usage-type delta
          in EC2; no daily drill-down run, so no onset date; owning resources not
          yet identified
 [LOW]    No anomaly monitor configured — Cost Anomaly Detection is off for this account
 
 WASTE
 [HIGH]   Compute Optimizer (EC2 instances + EBS volumes, 3 regions):
-         7 over-provisioned EC2 instances, $310/month (rank-1 options)
-[MEDIUM] 12 unattached EBS volumes (1.4 TB) — $115/month at gp3 list price
+         7 over-provisioned EC2 instances, USD 310/month (rank-1 options)
+[MEDIUM] 12 unattached EBS volumes (1.4 TB) — USD 115/month at gp3 list price
 [LOW]    31 snapshots older than 1 year (oldest 2023-11-04) — candidates for review;
          stored bytes unknown, so no saving figure (see CUR EBS:SnapshotUsage)
 [LOW]    38% of spend carries no owner tag under key "team"
@@ -693,19 +693,19 @@ COMMITMENTS
 Savings Plans (EC2 only, amortized): coverage 41%, utilization 96%
 RI (EC2, us-east-1 only): coverage 0%, utilization N-A
 [LOW]    Coverage 41% is under 60%, but on-demand is not steady: BoxUsage:m5.4xlarge
-         rose +$980 in July (+60% on the on-demand line). No commitment size ranked
+         rose +USD 980 in July (+60% on the on-demand line). No commitment size ranked
          until that level holds for a full month.
 
 RECOMMENDATIONS (verified savings first, each ranked by monthly $)
-1. $310/month  confidence: high
+1. USD 310/month  confidence: high
    Apply the 7 Compute Optimizer downsizes (list in report body).
    Run:  aws compute-optimizer get-ec2-instance-recommendations --region us-east-1 --instance-arns <arns>
    Risk: CPU headroom during monthly batch; check the 14-day p99 before resizing.
-2. $115/month  confidence: medium
+2. USD 115/month  confidence: medium
    Delete the 12 unattached EBS volumes (1.4 TB, ids in report body) after confirming no owner claims them.
    Run:  aws ec2 describe-volumes --region us-east-1 --filters Name=status,Values=available
    Risk: gp3 list price, not the account's rate; a volume kept as a cold copy of data still holds it.
-3. $980/month at risk, not yet a saving  confidence: low
+3. USD 980/month at risk, not yet a saving  confidence: low
    Find out what scaled up behind EC2 BoxUsage:m5.4xlarge in July, then decide.
    Run:  aws ce get-cost-and-usage --time-period Start=2026-07-01,End=2026-08-01 \
            --granularity DAILY --metrics UnblendedCost \
@@ -726,8 +726,8 @@ For `unknown` keep the section heading and print `N-A — <error text>` under it
 
 Severity labels: `HIGH`, `MEDIUM`, `LOW`, `INFO`. A check that could not run is printed
 as `N-A` with the error text — it is not a severity, and it is never a pass. Every dollar
-figure names the period it covers, either in the header or inline ("$310/month",
-"+$980 in July"), and a figure that is exposure rather than saving says so.
+figure names the period it covers, either in the header or inline ("USD 310/month",
+"+USD 980 in July"), and a figure that is exposure rather than saving says so.
 
 ---
 
@@ -735,7 +735,7 @@ figure names the period it covers, either in the header or inline ("$310/month",
 
 1. **Read-only.** This skill describes, gets, and lists. It never calls purchase, create, modify, delete, terminate, or stop APIs, never applies a Compute Optimizer or Cost Optimization Hub recommendation, and never writes to the customer's AWS account. The commands in the recommendations are for the user to run after reading.
 2. **No account IDs in learnings.** Anything logged with `vibe-learnings-log` refers to the account by alias or by the project slug, never by the 12-digit id, an ARN, or a profile that contains one.
-3. **Dollars carry a period.** Never print a bare figure. "$4,210" means nothing; "$4,210 in July 2026" or "$310/month" does.
+3. **Dollars carry a period.** Never print a bare figure. "USD 4,210" means nothing; "USD 4,210 in July 2026" or "USD 310/month" does.
 4. **One data path, stated up front.** Do not mix MCP and CLI numbers in one table; the two round and filter slightly differently.
 5. **Credits and refunds are excluded from the Cost Explorer figures** — the service, usage-type and tag queries in Steps 1-3 — unless the user asks for the invoice view. Say so in the header. Two places do not follow that basis and must be labelled where they appear: a budget uses its own `CostTypes` and `Metrics`, which the account chose; the Savings Plans and Reserved Instance numbers in Step 4 are amortized.
 6. **Exactly three recommendations.** Ranked by dollars. If the account is lean, say so rather than inventing savings.

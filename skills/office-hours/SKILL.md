@@ -461,7 +461,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 270" would reach execve as one argument (exit 127).
 _cx() {
   if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
-  _cx_s=$1; shift
+  _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
     if [ "$_cx_s" -le 0 ]; then
@@ -1076,8 +1076,8 @@ PY
 ) || PROFILE="SESSION_COUNT: 1
 TIER: introduction"
 echo "$PROFILE"
-SESSION_TIER=$(echo "$PROFILE" | grep "^TIER:" | awk '{print $2}')
-SESSION_COUNT=$(echo "$PROFILE" | grep "^SESSION_COUNT:" | awk '{print $2}')
+SESSION_TIER=$(echo "$PROFILE" | grep "^TIER:" | awk '{print $(2)}')
+SESSION_COUNT=$(echo "$PROFILE" | grep "^SESSION_COUNT:" | awk '{print $(2)}')
 ```
 
 Read the full profile output. You will use these values throughout the closing.

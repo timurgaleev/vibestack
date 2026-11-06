@@ -137,7 +137,7 @@ grows), location, chunking configuration, parsing configuration and
 
 ```bash
 aws s3 ls s3://<bucket>/<prefix> --recursive --summarize | tail -2
-aws s3 ls s3://<bucket>/<prefix> --recursive | awk '{print $4}' | sed -E 's/.*\.([A-Za-z0-9]+)$/\1/' | sort | uniq -c | sort -rn
+aws s3 ls s3://<bucket>/<prefix> --recursive | awk '{print $(4)}' | sed -E 's/.*\.([A-Za-z0-9]+)$/\1/' | sort | uniq -c | sort -rn
 ```
 
 Record object count, total size, and the format mix (PDF, DOCX, HTML, Markdown, CSV,
@@ -618,18 +618,18 @@ de          19   0.79        0.68            0.52   -
 en           8   0.88        0.75            0.63   -
 Faithfulness (10 answers, <model id>): 7 faithful, 2 partly, 1 wrong
 
-COST (prices read 2026-08-14; store cost from Cost Explorer, tag kb=docs-prod)
+COST (USD; prices read 2026-08-14; store cost from Cost Explorer, tag kb=docs-prod)
 Item                            Monthly      Per 1,000 queries
 ------------------------------  ----------   -----------------
-Vector store (min 2 OCU + 6 GB) $351.00      $39.00
+Vector store (min 2 OCU + 6 GB) 351.00       39.00
 Semantic chunking               not configured
 Parsing                         default parser, no charge
-Full re-embed (one-off)         $18.40       -
-Query embeddings                $0.20        $0.02
+Full re-embed (one-off)         18.40        -
+Query embeddings                0.20         0.02
 Reranking                       not configured
 Store requests                  included in OCU capacity above
-Generation (<model id>)         $61.00       $6.80
-Total at 9,000 queries/month    $412.20      $45.82
+Generation (<model id>)         61.00        6.80
+Total at 9,000 queries/month    412.20       45.82
 
 Eval set:    ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/<slug>/kb-eval-2026-08-14.jsonl
 Results:     ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/<slug>/kb-eval-results-2026-08-14.jsonl

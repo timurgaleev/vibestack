@@ -351,7 +351,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
   if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
-  _cl_s=$1; shift
+  _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do
     if [ "$_cl_s" -le 0 ]; then
@@ -483,7 +483,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
   if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
-  _cl_s=$1; shift
+  _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do
     if [ "$_cl_s" -le 0 ]; then
@@ -616,7 +616,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
   if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
-  _cl_s=$1; shift
+  _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do
     if [ "$_cl_s" -le 0 ]; then
@@ -658,7 +658,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
   if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
-  _cl_s=$1; shift
+  _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do
     if [ "$_cl_s" -le 0 ]; then

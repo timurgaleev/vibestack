@@ -23,8 +23,8 @@ case "$PLATFORM" in
   gitlab) PR_STATE=$(glab mr view $PR_REF -F json 2>/dev/null | jq -r '(.state | ascii_upcase) + " " + (.merge_commit_sha // .squash_commit_sha // .sha // "")' 2>/dev/null) ;;
   *)      PR_STATE="" ;;
 esac
-STATE=$(printf '%s' "$PR_STATE" | awk '{print $1}')
-MERGE_SHA=$(printf '%s' "$PR_STATE" | awk '{print $2}')
+STATE=$(printf '%s' "$PR_STATE" | awk '{print $(1)}')
+MERGE_SHA=$(printf '%s' "$PR_STATE" | awk '{print $(2)}')
 [ -n "$STATE" ] || STATE="UNKNOWN"
 
 # Unknown first: without the PR state or the merge commit nothing is decided yet.
@@ -58,8 +58,8 @@ TAG_NAME="v$NEW_VERSION"
 # A published tag is never moved: an existing remote or local tag must already be the merge commit.
 _LS=$(git ls-remote --tags origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}") \
   || { echo "BLOCKED: cannot read tags on origin — no tag, no release."; exit 1; }
-_REMOTE_TAG=$(printf '%s\n' "$_LS" | awk -v r="refs/tags/$TAG_NAME^{}" '$2 == r {print $1}')
-[ -n "$_REMOTE_TAG" ] || _REMOTE_TAG=$(printf '%s\n' "$_LS" | awk -v r="refs/tags/$TAG_NAME" '$2 == r {print $1}')
+_REMOTE_TAG=$(printf '%s\n' "$_LS" | awk -v r="refs/tags/$TAG_NAME^{}" '$(2) == r {print $(1)}')
+[ -n "$_REMOTE_TAG" ] || _REMOTE_TAG=$(printf '%s\n' "$_LS" | awk -v r="refs/tags/$TAG_NAME" '$(2) == r {print $(1)}')
 if [ -n "$_REMOTE_TAG" ] && [ "$_REMOTE_TAG" != "$MERGE_SHA" ]; then
   echo "BLOCKED: tag $TAG_NAME already exists on origin at $_REMOTE_TAG, not at $MERGE_SHA."
   echo "A published tag is never moved. Pick a new version, or resolve the stray tag by hand."
@@ -81,7 +81,7 @@ echo "TAG: $TAG_NAME at $MERGE_SHA"
 TMPNOTES=$(mktemp "${TMPDIR:-/tmp}/release-notes-XXXXXX")
 git show "$MERGE_SHA:CHANGELOG.md" 2>/dev/null | awk -v v="$NEW_VERSION" '
   function is_head(l) { return l == "## " v || index(l, "## " v " ") == 1 || index(l, "## [" v "]") == 1 || l == "## v" v || index(l, "## v" v " ") == 1 }
-  /^## / { if (on) exit; if (is_head($0)) on = 1 }
+  /^## / { if (on) exit; if (is_head($(0))) on = 1 }
   on { print }
 ' > "$TMPNOTES"
 [ -s "$TMPNOTES" ] || printf '## %s\n\nRelease notes pending — see CHANGELOG.md.\n' "$NEW_VERSION" > "$TMPNOTES"
