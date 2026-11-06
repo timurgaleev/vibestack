@@ -63,7 +63,7 @@ configuration payload it is instruction-only there as well.
 
 | Tier | Decision | Applies to |
 |------|----------|------------|
-| HIGH | `deny` — blocked, not overridable while `/careful` is active | Recursive delete of `/` or the home directory, also behind `sudo`/`doas` (with options), `env`, `command`, `nice` or a leading `\`; force-push to the repo's default branch, also after git's global options (`git -C repo push -f origin main`). Only **simple** commands qualify — anything with `;`, `&&`, `||`, a pipe, or a newline falls through to the warn tier, because string matching cannot resolve what a compound command does. `--force-with-lease` never hard-denies. |
+| HIGH | `deny` — blocked, not overridable while `/careful` is active | Recursive delete of `/` or the home directory, also behind `sudo`/`doas` (with options), `env`, `command`, `nice` or a leading `\`, chained in any order; force-push to the repo's default branch, also after git's global options (`git -C repo push -f origin main`). Only **simple** commands qualify — anything with `;`, `&&`, `||`, a pipe, or a newline falls through to the warn tier, because string matching cannot resolve what a compound command does. `--force-with-lease` never hard-denies. |
 | MEDIUM | `ask` — warns, always overridable | Every pattern in the table below. |
 
 This is a best-effort advisory stop, not a policy boundary: it reads the command
@@ -111,9 +111,12 @@ The warn tier reads `git commit -m` / `-am` / `--message` text as prose, so a
 message that says "drop table" or "rm -rf build" does not ask. The masking
 (`bin/mask-commit-message.awk`) gives up and leaves the command as written —
 so it is checked in full — when it cannot tell message from command: `$(...)`,
-backticks, `$'...'`, any heredoc except the plain
-`-m "$(cat <<'EOF' ... EOF)"` form, an unterminated quote, or a commit piped
-into another command (`git commit -m 'rm -rf x' | sh` runs the message).
+backticks, `$'...'`, `${...}` and `$[...]` (re-evaluation and arithmetic can run
+an escaped `$(...)`), any heredoc except the plain
+`-m "$(cat <<'EOF' ... EOF)"` form, an unterminated quote, a commit piped
+into another command (`git commit -m 'rm -rf x' | sh` runs the message), or a
+command over 16 KiB. A word starting with `-` is never masked, so a flag such as
+`--no-verify` stays visible even after a value-taking option like `-F`.
 The heredoc form is masked only when its body has no quotes, `\`, `$` or `#`
 and its parens balance: bash 3.2 reads a stray `)` there as the end of the
 substitution.

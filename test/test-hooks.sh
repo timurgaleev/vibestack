@@ -190,6 +190,9 @@ ask	kubectl --context prod delete deploy web
 allow	kubectl -n prod get pods
 allow	git -C r push origin feat
 allow	git -C r status
+ask	git --no-pager checkout -- .
+allow	git -C . checkout README.md
+allow	git -C x/ restore f.txt
 CASES
 
 echo "careful — destructive git family"
@@ -260,6 +263,12 @@ allow	git commit -m "$(cat <<'EOF'\nfix(careful): drop table handling\nEOF\n)"
 ask	git commit -m "$(cat <<'EOF'\n)"; rm -rf src; echo "\nEOF\n)"
 ask	git commit -m "$(cat <<'EOF'\n"(" )\nrm -rf src\nEOF\n)"
 ask	git commit -m "$(cat <<'EOF'\nfix\nEOF\n)" && rm -rf src
+ask	git commit -m ${x=a[\$\(rm -rf src\)]}$[x]
+ask	git commit -m "${x=a[\$\(git reset --hard\)]}$[x]"
+ask	git commit -m ${(e):-\$\(rm -rf src\)}
+ask	git commit -F -m --no-verify
+ask	git commit --trailer -m --no-verify
+ask	git commit --author -m -n
 CASES
 # Known limit: the obfuscation tripwire reads the raw text, message included.
 careful_rows "$TMPHOME" <<'CASES'
@@ -277,6 +286,9 @@ ask	git config --local core.hooksPath .nohooks
 ask	git config --unset core.hooksPath
 ask	HUSKY=0 git commit -m x
 ask	export HUSKY=0; git commit -m x
+ask	env HUSKY=0 git commit -m x
+ask	env -i HUSKY=0 git commit -m x
+ask	CI=1 HUSKY=0 git commit -m x
 allow	echo HUSKY=0 > INSTALL.md
 allow	git config --get core.hooksPath
 allow	git config core.hooksPath
@@ -292,6 +304,8 @@ deny	command rm -rf /
 deny	nice -n 10 rm -rf /
 deny	\rm -rf /
 deny	sudo -u root rm -rf /
+deny	env sudo rm -rf /
+deny	sudo nice env rm -rf /
 ask	env rm -rf ./tmp
 ask	sudo -u root rm -rf /opt/x
 CASES

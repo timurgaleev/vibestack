@@ -6,12 +6,15 @@
 #
 # Masking hides text from the checks, so anything the scanner cannot read with
 # certainty comes back UNCHANGED: command substitution, backticks, $'...',
+# ${...} and $[...] (re-evaluation and arithmetic can run an escaped $(...)),
 # heredocs (other than the quoted `-m "$(cat <<'EOF' ... EOF)"` message form),
-# process substitution, unterminated quotes, and a commit whose output is piped
-# onward (`git commit -m 'rm -rf x' | sh` runs the message).
+# process substitution, unterminated quotes, a commit whose output is piped
+# onward (`git commit -m 'rm -rf x' | sh` runs the message), and a command
+# longer than 16 KiB. A word that starts with `-` is never masked: it may be a
+# flag (--no-verify) that a value-taking option in front made look like a message.
 
 { src = (NR == 1) ? $0 : src "\n" $0 }
-END { printf "%s", mask(src) }
+END { printf "%s", (length(src) > 16384) ? src : mask(src) }
 
 function start_word(pos) {
   if (inword) return
@@ -29,16 +32,6 @@ function end_word(pos) {
 function add_tok(k, text, pos) {
   nt++
   kind[nt] = k; tval[nt] = text; tstart[nt] = pos; tend[nt] = pos + length(text) - 1; heredoc[nt] = 0
-}
-
-# A ${...} expansion is copied as-is unless it nests quoting the scanner would
-# have to follow; returns its length, or 0 to give up.
-function brace_len(s, i,    j, inner) {
-  j = index(substr(s, i + 2), "}")
-  if (!j) return 0
-  inner = substr(s, i + 2, j - 1)
-  if (inner ~ /["'`]/ || index(inner, "$(")) return 0
-  return j + 2
 }
 
 # bash 3.2 (still /bin/bash and /bin/sh on macOS) finds the end of $( by
@@ -117,14 +110,7 @@ function mask(s,    L, i, c, c2, j, sep, op, a, b, k, p, pre, rest, out, prev, h
       i += j - 1; continue
     }
     if (c == "`") return s
-    if (c == "$") {
-      if (c2 == "'" || c2 == "(") return s
-      if (c2 == "{") {
-        j = brace_len(s, i)
-        if (!j) return s
-        start_word(i); tval[nt] = tval[nt] substr(s, i, j); i += j; continue
-      }
-    }
+    if (c == "$" && (c2 == "'" || c2 == "(" || c2 == "{" || c2 == "[")) return s
     if (c == "'") {
       start_word(i)
       j = index(substr(s, i + 1), "'")
@@ -146,12 +132,7 @@ function mask(s,    L, i, c, c2, j, sep, op, a, b, k, p, pre, rest, out, prev, h
           tval[nt] = tval[nt] c; i++; continue
         }
         if (c == "`") return s
-        if (c == "$" && c2 == "(") return s
-        if (c == "$" && c2 == "{") {
-          j = brace_len(s, i)
-          if (!j) return s
-          tval[nt] = tval[nt] substr(s, i, j); i += j; continue
-        }
+        if (c == "$" && (c2 == "(" || c2 == "{" || c2 == "[")) return s
         tval[nt] = tval[nt] c; i++
       }
       continue
@@ -180,7 +161,7 @@ function mask(s,    L, i, c, c2, j, sep, op, a, b, k, p, pre, rest, out, prev, h
           if (tval[j] == "--") break
           if (tval[j] ~ /^--message=/) { masked[j] = "--message=MSG"; hit = 1; continue }
           if (tval[j] == "--message") {
-            if (j + 1 < b && kind[j + 1] == "w") { masked[j + 1] = "MSG"; hit = 1 }
+            if (j + 1 < b && kind[j + 1] == "w" && tval[j + 1] !~ /^-/) { masked[j + 1] = "MSG"; hit = 1 }
             j++; continue
           }
           if (tval[j] ~ /^-[^-]/) {
@@ -191,7 +172,7 @@ function mask(s,    L, i, c, c2, j, sep, op, a, b, k, p, pre, rest, out, prev, h
             if (pre ~ /[cCFtSu]/) continue
             rest = substr(tval[j], p + 2)
             if (rest != "") { masked[j] = "-" pre "mMSG"; hit = 1; continue }
-            if (j + 1 < b && kind[j + 1] == "w") { masked[j + 1] = "MSG"; hit = 1 }
+            if (j + 1 < b && kind[j + 1] == "w" && tval[j + 1] !~ /^-/) { masked[j + 1] = "MSG"; hit = 1 }
             j++; continue
           }
         }

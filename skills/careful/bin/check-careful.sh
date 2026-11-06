@@ -195,13 +195,19 @@ if [ "$_IS_SIMPLE" -eq 1 ]; then
   # A wrapper in front runs the same rm, so sudo/doas (with their options),
   # env (with its assignments), command, nice and a leading backslash are
   # stripped first; their option values would otherwise count as targets.
-  _RM_CMD=$(printf '%s' "$CMD" | sed -E \
-    -e 's/^[[:space:]]+//' \
-    -e 's/^(sudo|doas)([[:space:]]+-[ugCpDrtTU][[:space:]]+[^-[:space:]][^[:space:]]*|[[:space:]]+-[^[:space:]]+)*[[:space:]]+//' \
-    -e 's/^env([[:space:]]+-u[[:space:]]+[^[:space:]]+|[[:space:]]+-[^[:space:]]+|[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*[[:space:]]+//' \
-    -e 's/^command([[:space:]]+-[pvV]+)*[[:space:]]+//' \
-    -e 's/^nice([[:space:]]+-n[[:space:]]+-?[0-9]+|[[:space:]]+-[^[:space:]]+)*[[:space:]]+//' \
-    -e 's/^\\//')
+  # Repeated until nothing changes: wrappers chain in any order (env sudo rm).
+  _RM_CMD="$CMD"
+  _RM_PREV=""
+  while [ "$_RM_CMD" != "$_RM_PREV" ]; do
+    _RM_PREV="$_RM_CMD"
+    _RM_CMD=$(printf '%s' "$_RM_CMD" | sed -E \
+      -e 's/^[[:space:]]+//' \
+      -e 's/^(sudo|doas)([[:space:]]+-[ugCpDrtTU][[:space:]]+[^-[:space:]][^[:space:]]*|[[:space:]]+-[^[:space:]]+)*[[:space:]]+//' \
+      -e 's/^env([[:space:]]+-u[[:space:]]+[^[:space:]]+|[[:space:]]+-[^[:space:]]+|[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*[[:space:]]+//' \
+      -e 's/^command([[:space:]]+-[pvV]+)*[[:space:]]+//' \
+      -e 's/^nice([[:space:]]+-n[[:space:]]+-?[0-9]+|[[:space:]]+-[^[:space:]]+)*[[:space:]]+//' \
+      -e 's/^\\//')
+  done
   if printf '%s' "$_RM_CMD" | grep -qE '^rm[[:space:]]' 2>/dev/null \
     && printf '%s' "$_RM_CMD" | grep -qE '(^|[[:space:]])(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)' 2>/dev/null; then
     _ROOT_TARGETS=0
@@ -536,7 +542,13 @@ else
   _COS=$(printf '%s' "$CMD_MEDIUM" | grep -oE "${_GIT}(checkout|restore)([[:space:]]+${_ARG})*" 2>/dev/null || true)
   while IFS= read -r _CO; do
     [ -n "$_CO" ] || continue
-    printf '%s ' "$_CO" | grep -qE "$_TREE" 2>/dev/null || continue
+    # The targets follow the subcommand: `git -C . checkout f` names one file.
+    printf '%s' "$_CO" | awk '{
+        i = 2
+        while (i <= NF && $i ~ /^-/) i += ($i ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix)$/) ? 2 : 1
+        out = ""; for (; i <= NF; i++) out = out " " $i
+        print out " "
+      }' | grep -qE "$_TREE" 2>/dev/null || continue
     case "$_CO" in
       *restore*)
         if printf '%s' "$_CO" | grep -qE '[[:space:]](--staged|-S)([[:space:]]|$)' 2>/dev/null \
@@ -638,7 +650,7 @@ if [ -z "$WARN" ] && { printf '%s' "$CMD_MEDIUM_LOWER" | grep -qE \
     -e "git${_OPTS}[[:space:]]+(-c[[:space:]]*|--config-env[=[:space:]])[\"']?core\\.hookspath=" \
     -e "${_GIT}config([[:space:]]+${_ARG})*[[:space:]]+[\"']?core\\.hookspath[\"']?[[:space:]]+[^;&|<>[:space:]0-9]" \
     -e "${_GIT}config([[:space:]]+${_ARG})*[[:space:]]+(--unset(-all)?|unset)([[:space:]]+${_ARG})*[[:space:]]+[\"']?core\\.hookspath" 2>/dev/null \
-  || printf '%s' "$CMD_MEDIUM" | grep -qE "(^|[;&|({])[[:space:]]*(export[[:space:]]+)?HUSKY=[\"']?0[\"']?${_END}" 2>/dev/null; }; then
+  || printf '%s' "$CMD_MEDIUM" | grep -qE "(^|[;&|({])[[:space:]]*(export[[:space:]]+|env([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^;&|[:space:]]*[[:space:]]+)*HUSKY=[\"']?0[\"']?${_END}" 2>/dev/null; }; then
   WARN="Destructive: disabling git hooks (core.hooksPath, HUSKY=0) skips the checks they run, the same as --no-verify."
 fi
 
