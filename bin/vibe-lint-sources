@@ -115,6 +115,55 @@ while IFS= read -r f; do
     }'  "$f"
 done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
 
+# --- positionals and python isolation --------------------------------------
+# The host replaces $N (digits with no word character after them) with the Nth
+# invocation argument before the model sees the skill, backslash or not.
+while IFS= read -r f; do
+  while IFS= read -r line; do
+    case "$line" in
+      ERR*) say "${line#ERR }" ;;
+      *) echo "$line" ;;
+    esac
+  done < <(awk -v file="$f" "$FENCE_AWK"'
+    function positional(s,   p, n) {
+      while (match(s, /[$][0-9]+/)) {
+        p = substr(s, RSTART, RLENGTH); n = substr(s, RSTART + RLENGTH, 1)
+        if (n !~ /[A-Za-z0-9_]/) return p
+        s = substr(s, RSTART + RLENGTH)
+      }
+      return ""
+    }
+    # Echo "-c" or "-" for a python3 that runs inline code without -I.
+    function unisolated(s,   rest, t, i, k, iso) {
+      while (match(s, /python3[ \t]/)) {
+        rest = substr(s, RSTART + RLENGTH)
+        if (RSTART > 1 && substr(s, RSTART - 1, 1) ~ /[A-Za-z0-9_]/) { s = rest; continue }
+        k = split(rest, t, /[ \t]+/); iso = 0
+        for (i = 1; i <= k; i++) {
+          if (t[i] == "") continue
+          if (t[i] !~ /^-/) break
+          if (t[i] == "-") { if (!iso) return "-"; break }
+          if (t[i] ~ /^-[A-Za-z]*I/) iso = 1
+          if (t[i] ~ /^-[A-Za-z]*c/) { if (!iso) return "-c"; break }
+        }
+        s = rest
+      }
+      return ""
+    }
+    {
+      fenced = fence_step($0)
+      p = positional($0)
+      if (p != "") {
+        if (fenced)
+          printf "ERR %s:%d: bare %s is replaced by an invocation argument when the skill loads — use ${N} in shell, $(N) in awk, USD for money\n", file, NR, p
+        else
+          printf "warn: %s:%d: bare %s is replaced by an invocation argument when the skill loads — use ${N} in shell, $(N) in awk, USD for money\n", file, NR, p
+      }
+      if (fenced && (m = unisolated($0)) != "")
+        printf "warn: %s:%d: python3 %s without -I imports from the working directory first — add -I\n", file, NR, m
+    }' "$f")
+done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
+
 if [ "$errors" -gt 0 ]; then
   echo "vibe-lint-sources: $errors finding(s)"
   exit 1
