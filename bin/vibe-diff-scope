@@ -6,65 +6,101 @@
 # Usage:
 #   source <(vibe-diff-scope main)   # sets SCOPE_FRONTEND=true SCOPE_BACKEND=false …
 #   vibe-diff-scope main             # prints SCOPE_*=… lines
+#   vibe-diff-scope <sha>            # a commit works as the base too
+#
+# The scope is the diff from `git merge-base origin/<base> HEAD` (or <base> itself
+# when there is no such remote ref) to the working tree, untracked files
+# included — what /review reads and /ship commits. When git cannot produce it, the only line printed is
+# SCOPE_UNAVAILABLE=true and the exit status is 2: an unknown scope must not
+# read as "nothing changed".
 set -euo pipefail
 
 BASE="${1:-main}"
 
-FILES=$(git diff "${BASE}...HEAD" --name-only 2>/dev/null \
-  || git diff "${BASE}" --name-only 2>/dev/null || echo "")
+unavailable() { echo "SCOPE_UNAVAILABLE=true"; exit 2; }
+
+BASE_REF=$(git rev-parse --verify --quiet "origin/${BASE}^{commit}" 2>/dev/null) \
+  || BASE_REF=$(git rev-parse --verify --quiet "${BASE}^{commit}" 2>/dev/null) \
+  || unavailable
+MERGE_BASE=$(git merge-base "$BASE_REF" HEAD 2>/dev/null) || unavailable
+# -z: plain output C-quotes unusual paths ("app/views/caf\303\251.html.erb"),
+# which no glob below matches. --no-renames keeps a moved file's old path in
+# scope, and --no-relative ignores a diff.relative setting when this runs from a
+# subdirectory. Untracked files ship with the branch, so they count too.
+FILES=$( { git diff -z --name-only --no-renames --no-relative "$MERGE_BASE" \
+  && git ls-files -z --others --exclude-standard --full-name -- ':/'; } 2>/dev/null \
+  | tr '\0' '\n') || unavailable
 
 FRONTEND=false BACKEND=false PROMPTS=false TESTS=false DOCS=false
 CONFIG=false MIGRATIONS=false API=false AUTH=false
 
-if [ -n "$FILES" ]; then
-  while IFS= read -r f; do
-    [ -z "$f" ] && continue
-    case "$f" in
-      # Frontend: styles, components, templates, markup
-      *.css|*.scss|*.less|*.sass|*.pcss|*.module.css|*.module.scss) FRONTEND=true ;;
-      *.tsx|*.jsx|*.vue|*.svelte|*.astro) FRONTEND=true ;;
-      *.erb|*.haml|*.slim|*.hbs|*.ejs) FRONTEND=true ;;
-      *.html) FRONTEND=true ;;
-      tailwind.config.*|postcss.config.*) FRONTEND=true ;;
-      app/views/*|*/components/*|styles/*|css/*|app/assets/stylesheets/*) FRONTEND=true ;;
+# One case per category: a path sets every flag it matches. Matching ignores
+# case so AuthController.php and UserSession.swift reach the auth and API globs.
+shopt -s nocasematch
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
 
-      # Prompts: prompt builders, generation/eval services, system prompts
-      *prompt_builder*|*generation_service*|*writer_service*|*designer_service*) PROMPTS=true ;;
-      *evaluator*|*scorer*|*classifier_service*|*analyzer*) PROMPTS=true ;;
-      *voice*.rb|*writing*.rb|*prompt*.rb|*token*.rb) PROMPTS=true ;;
-      config/system_prompts/*) PROMPTS=true ;;
+  # Frontend: styles, components, templates, markup
+  case "$f" in
+    *.css|*.scss|*.less|*.sass|*.pcss|*.module.css|*.module.scss| \
+    *.tsx|*.jsx|*.vue|*.svelte|*.astro| \
+    *.erb|*.haml|*.slim|*.hbs|*.ejs|*.html| \
+    tailwind.config.*|postcss.config.*| \
+    app/views/*|components/*|*/components/*|styles/*|css/*|app/assets/stylesheets/*) FRONTEND=true ;;
+  esac
 
-      # Tests
-      *.test.*|*.spec.*|*_test.*|*_spec.*) TESTS=true ;;
-      test/*|tests/*|spec/*|__tests__/*|cypress/*|e2e/*) TESTS=true ;;
+  # Prompts: prompt builders, generation/eval services, system prompts
+  case "$f" in
+    *prompt_builder*|*generation_service*|*writer_service*|*designer_service*| \
+    *evaluator*|*scorer*|*classifier_service*|*analyzer*| \
+    *voice*.rb|*writing*.rb|*prompt*.rb|*token*.rb| \
+    config/system_prompts/*) PROMPTS=true ;;
+  esac
 
-      # Docs
-      *.md) DOCS=true ;;
+  # Tests
+  case "$f" in
+    *.test.*|*.spec.*|*_test.*|*_spec.*|test_*.py|*/test_*.py|*Test.java|*Tests.swift| \
+    test/*|tests/*|spec/*|__tests__/*|cypress/*|e2e/*| \
+    */test/*|*/tests/*|*/__tests__/*) TESTS=true ;;
+  esac
 
-      # Config / lockfiles / CI
-      package.json|package-lock.json|yarn.lock|bun.lock|bun.lockb) CONFIG=true ;;
-      Gemfile|Gemfile.lock) CONFIG=true ;;
-      *.yml|*.yaml) CONFIG=true ;;
-      .github/*) CONFIG=true ;;
-      requirements.txt|pyproject.toml|go.mod|Cargo.toml|composer.json) CONFIG=true ;;
+  # Docs
+  case "$f" in
+    *.md) DOCS=true ;;
+  esac
 
-      # Migrations
-      db/migrate/*|*/migrations/*|alembic/*|prisma/migrations/*) MIGRATIONS=true ;;
+  # Config / lockfiles / CI
+  case "$f" in
+    package.json|package-lock.json|yarn.lock|bun.lock|bun.lockb| \
+    Gemfile|Gemfile.lock|*.yml|*.yaml|.github/*| \
+    requirements.txt|pyproject.toml|go.mod|Cargo.toml|composer.json) CONFIG=true ;;
+  esac
 
-      # API: routes, controllers, endpoints, schemas
-      *controller*|*route*|*endpoint*|*/api/*) API=true ;;
-      *.graphql|*.gql|openapi.*|swagger.*) API=true ;;
+  # Migrations
+  case "$f" in
+    db/migrate/*|*/migrations/*|alembic/*|prisma/migrations/*) MIGRATIONS=true ;;
+  esac
 
-      # Auth
-      *auth*|*session*|*jwt*|*oauth*|*permission*|*role*) AUTH=true ;;
+  # API: routes, controllers, endpoints, schemas
+  case "$f" in
+    *controller*|*route*|*endpoint*|*/api/*| \
+    *.graphql|*.gql|openapi.*|*/openapi.*|swagger.*|*/swagger.*) API=true ;;
+  esac
 
-      # Backend: remaining code. Include ESM/CJS + explicit-module TS so an
-      # ESM-only PR never skips the backend reviewer.
-      *.rb|*.py|*.go|*.rs|*.java|*.php|*.ex|*.exs) BACKEND=true ;;
-      *.ts|*.js|*.mjs|*.cjs|*.mts|*.cts) BACKEND=true ;;
-    esac
-  done <<< "$FILES"
-fi
+  # Auth
+  case "$f" in
+    *auth*|*session*|*jwt*|*oauth*|*permission*|*role*|*token*) AUTH=true ;;
+  esac
+
+  # Backend: any code. Include ESM/CJS + explicit-module TS so an ESM-only PR
+  # never skips the backend reviewer.
+  case "$f" in
+    *.rb|*.py|*.go|*.rs|*.java|*.php|*.ex|*.exs| \
+    *.ts|*.js|*.mjs|*.cjs|*.mts|*.cts| \
+    *.kt|*.kts|*.swift|*.cs|*.dart|*.scala|*.c|*.cc|*.cpp|*.h| \
+    *.sh|*.bash|*.zsh|bin/*|*/bin/*) BACKEND=true ;;
+  esac
+done <<< "$FILES"
 
 echo "SCOPE_FRONTEND=$FRONTEND"
 echo "SCOPE_BACKEND=$BACKEND"
