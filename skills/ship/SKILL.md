@@ -156,8 +156,8 @@ Never skip a verification step because a prior `/ship` run already performed it.
    ```bash
    _PR=$(gh pr view --json state,headRefOid -q '.state + " " + (.headRefOid // "")' 2>/dev/null) \
      || _PR=$(glab mr view -F json 2>/dev/null | jq -r '(.state | ascii_upcase) + " " + (.sha // "")' 2>/dev/null)
-   _STATE=$(printf '%s' "$_PR" | awk '{print $1}')
-   _HEAD=$(printf '%s' "$_PR" | awk '{print $2}')
+   _STATE=$(printf '%s' "$_PR" | awk '{print $(1)}')
+   _HEAD=$(printf '%s' "$_PR" | awk '{print $(2)}')
    if [ "$_STATE" = "MERGED" ]; then
      # Shipped only if HEAD adds nothing past the merged PR's head; later commits are new work.
      if [ -n "$_HEAD" ] && [ "$(git rev-list --count "$_HEAD..HEAD" 2>/dev/null)" = "0" ]; then
@@ -2705,7 +2705,7 @@ report a push that never happened.
 ```bash
 LOCAL=$(git rev-parse HEAD)
 if _LS=$(git ls-remote --heads origin "refs/heads/<branch-name>" 2>&1); then
-  REMOTE=$(printf '%s\n' "$_LS" | awk 'NF {print $1; exit}')
+  REMOTE=$(printf '%s\n' "$_LS" | awk 'NF {print $(1); exit}')
   echo "LOCAL: $LOCAL  REMOTE: ${REMOTE:-none}"
   if [ "$LOCAL" = "$REMOTE" ]; then echo "ALREADY_PUSHED"; else echo "PUSH_NEEDED"; fi
 else
@@ -2757,7 +2757,7 @@ must print `ALREADY_PUSHED`; anything else is a failed push — apply the protoc
 _PR=$(gh pr view --json url,number,state,headRefOid -q 'if .state == "OPEN" then "PR #\(.number): \(.url)" elif .state == "MERGED" then "PR_MERGED \(.headRefOid) #\(.number): \(.url)" else "NO_PR" end' 2>/dev/null) || _PR="NO_PR"
 case "$_PR" in
   PR_MERGED*)
-    _HEAD=$(printf '%s' "$_PR" | awk '{print $2}')
+    _HEAD=$(printf '%s' "$_PR" | awk '{print $(2)}')
     # A merged PR only counts when HEAD adds nothing past its head; later commits need a new PR.
     if [ -n "$_HEAD" ] && [ "$(git rev-list --count "$_HEAD..HEAD" 2>/dev/null)" = "0" ]; then
       echo "PR_MERGED ${_PR#PR_MERGED $_HEAD }"
@@ -2773,7 +2773,7 @@ esac
 _MR=$(glab mr view -F json 2>/dev/null | jq -r 'if .state == "opened" then "MR_EXISTS" elif .state == "merged" then "PR_MERGED \(.sha) !\(.iid): \(.web_url)" else "NO_MR" end' 2>/dev/null)
 case "$_MR" in
   PR_MERGED*)
-    _HEAD=$(printf '%s' "$_MR" | awk '{print $2}')
+    _HEAD=$(printf '%s' "$_MR" | awk '{print $(2)}')
     # A merged MR only counts when HEAD adds nothing past its head; later commits need a new MR.
     if [ -n "$_HEAD" ] && [ "$(git rev-list --count "$_HEAD..HEAD" 2>/dev/null)" = "0" ]; then
       echo "PR_MERGED ${_MR#PR_MERGED $_HEAD }"

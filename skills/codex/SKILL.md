@@ -573,7 +573,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 330" would reach execve as one argument (exit 127).
 _cx() {
   if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
-  _cx_s=$1; shift
+  _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
     if [ "$_cx_s" -le 0 ]; then
@@ -665,7 +665,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 330" would reach execve as one argument (exit 127).
 _cx() {
   if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
-  _cx_s=$1; shift
+  _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
     if [ "$_cx_s" -le 0 ]; then
@@ -734,7 +734,7 @@ CODEX SAYS (code review):
 ════════════════════════════════════════════════════════════
 <full codex output, verbatim — do not truncate or summarize>
 ════════════════════════════════════════════════════════════
-GATE: PASS                    Tokens: 14,331 | Est. cost: ~$0.12
+GATE: PASS                    Tokens: 14,331 | Est. cost: about USD 0.12
 ```
 
 or
@@ -854,7 +854,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cx() {
   if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
-  _cx_s=$1; shift
+  _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
     if [ "$_cx_s" -le 0 ]; then
@@ -1077,7 +1077,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cx() {
   if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
-  _cx_s=$1; shift
+  _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
     if [ "$_cx_s" -le 0 ]; then

@@ -230,7 +230,7 @@ case "$sse_url" in
     if curl -N -sS --max-time 10 -D "$hdr" -- "$sse_url" 2>/dev/null | head -c 65536 | grep -q -m1 -E '^(event|data):'; then
       echo "SSE_FIRST_EVENT: yes"
     else
-      status=$(awk 'toupper($1) ~ /^HTTP\// {s = $2} END {print s}' "$hdr")
+      status=$(awk 'toupper($(1)) ~ /^HTTP\// {s = $(2)} END {print s}' "$hdr")
       case "$status" in
         3[0-9][0-9]|401|403) echo "SSE_FIRST_EVENT: unknown (HTTP $status)" ;;
         *) echo "SSE_FIRST_EVENT: no" ;;

@@ -74,9 +74,9 @@ _SNOOZE_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/update-snoozed"
 _REMOTE_VER="{new}"
 _CUR_LEVEL=0
 if [ -f "$_SNOOZE_FILE" ]; then
-  _SNOOZED_VER=$(awk '{print $1}' "$_SNOOZE_FILE")
+  _SNOOZED_VER=$(awk '{print $(1)}' "$_SNOOZE_FILE")
   if [ "$_SNOOZED_VER" = "$_REMOTE_VER" ]; then
-    _CUR_LEVEL=$(awk '{print $2}' "$_SNOOZE_FILE")
+    _CUR_LEVEL=$(awk '{print $(2)}' "$_SNOOZE_FILE")
     case "$_CUR_LEVEL" in *[!0-9]*) _CUR_LEVEL=0 ;; esac
   fi
 fi
@@ -232,8 +232,8 @@ _RTK=" --no-rtk"; grep -q 'rtk' "$HOME/.claude/settings.json" 2>/dev/null && _RT
 mkdir -p "$_VH" || { echo "REPLAY_UNWRITABLE $_VH"; exit 1; }
 {
   echo '#!/usr/bin/env bash'
-  echo '# Re-runs the original ./install choices from the checkout given as $1.'
-  echo 'cd "$1" || exit 1'
+  echo '# Re-runs the original ./install choices from the checkout given as ${1}.'
+  echo 'cd "${1}" || exit 1'
   if [ -n "$_USER_T" ]; then echo "./install --only=skills --target=$_USER_T || exit 1"; fi
   if [ -n "$_PROJ_T" ]; then
     printf './install --only=skills --scope=project --project-root=%q --target=%s || exit 1\n' "$_ROOT" "$_PROJ_T"

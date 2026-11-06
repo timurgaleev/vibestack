@@ -418,7 +418,7 @@ Tool-call correctness   0.91      0.97     0.90    0.80          +0.01
 Hallucination rate      0.04      0.00     0.06    0.10          +0.01
 Refusal rate            0.03      0.00     0.02    0.20          0.00
 Latency p50 / p95 ms    1840/4200                                +5% / +12%
-Cost per task           $0.0042                                  +3%
+Cost per task           USD 0.0042                               +3%
 Golden pass^k (k=3)     0.90 observed (p^k 0.86, assumes independent runs)  -0.02
 Judge agreement         0.65 exact / 0.95 within-1 (20 items)
 

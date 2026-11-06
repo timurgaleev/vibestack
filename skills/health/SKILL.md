@@ -59,7 +59,7 @@ If no `## Health Stack` section exists, auto-detect available tools:
 
 ```bash
 # A Node tool installed as a devDependency is not on PATH; run it from node_modules/.bin.
-node_tool() { if [ -x "node_modules/.bin/$1" ]; then echo "./node_modules/.bin/$1"; else echo "$1"; fi; }
+node_tool() { if [ -x "node_modules/.bin/${1}" ]; then echo "./node_modules/.bin/${1}"; else echo "${1}"; fi; }
 
 # Type checker
 [ -f tsconfig.json ] && echo "TYPECHECK: $(node_tool tsc) --noEmit"
@@ -133,7 +133,7 @@ Run each detected tool. For each tool:
   health_tool=typecheck
   health_pattern='error TS'
   health_capture_error() {
-    printf 'TOOL:%s ERROR:capture-%s\n' "$health_tool" "$1"
+    printf 'TOOL:%s ERROR:capture-%s\n' "$health_tool" "${1}"
     exit 125
   }
   health_log=$(mktemp "${TMPDIR:-/tmp}/vibe-health.XXXXXX") || health_capture_error log
@@ -149,7 +149,7 @@ Run each detected tool. For each tool:
   exec 3>&-
   health_end=$(date +%s) || health_capture_error timing
   # awk prints 0 for no matches, so an empty log still yields a count.
-  health_count=$(awk -v p="$health_pattern" 'index($0, p) { n++ } END { print n+0 }' "$health_log") || health_capture_error parsing
+  health_count=$(awk -v p="$health_pattern" 'index($(0), p) { n++ } END { print n+0 }' "$health_log") || health_capture_error parsing
   tail -50 "$health_log" || health_capture_error display
   printf 'TOOL:%s EXIT:%s DURATION:%ss COUNT:%s\n' "$health_tool" "$health_status" "$((health_end-health_start))" "$health_count"
 )

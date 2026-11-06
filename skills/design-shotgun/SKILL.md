@@ -420,7 +420,7 @@ while :; do
   tries=$((tries + 1)); sleep 5
 done
 cp "$SAVED" "$FINAL" || { echo "VARIANT_{letter}_FAILED: cannot copy $SAVED to $FINAL"; exit 1; }
-echo "VARIANT_{letter}_DONE: $(ls -lh "$FINAL" | awk '{print $5}')"
+echo "VARIANT_{letter}_DONE: $(ls -lh "$FINAL" | awk '{print $(5)}')"
 )
 ```
 
