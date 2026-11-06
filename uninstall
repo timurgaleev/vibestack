@@ -418,7 +418,7 @@ remove_merged_keys() {
   # The redirection belongs to python3, not to the assignment: on an assignment
   # it is set up for the (null) command and the substitution keeps the shell's
   # own stderr, so the report would be printed instead of captured.
-  out="$(python3 - "$pre" "$post" "$file" 2>"$TMP_REPORT" <<'PYEOF'
+  out="$(python3 -I - "$pre" "$post" "$file" 2>"$TMP_REPORT" <<'PYEOF'
 import json, sys
 
 pre_path, post_path, cur_path = sys.argv[1], sys.argv[2], sys.argv[3]

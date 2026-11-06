@@ -76,6 +76,10 @@ Each rule has a suite that fails the build; the suite holds the detail.
 - **No bare positionals in skill text.** The host replaces `$N` with the Nth
   invocation argument before the model reads a skill. Write `${N}` in shell,
   `$(N)` in awk, and money as `USD 310`. (`test/test-positional-literals.sh`)
+- **Inline Python runs isolated.** Every `python3 -c` / `python3 -` in `bin/`,
+  `lib/*.sh` and `skills/*/bin/` carries `-I`, so a `json.py` in the user's
+  working directory is never imported, and values reach Python through argv,
+  never spliced into its source. (`test/test-python-isolation.sh`)
 
 ## Hook scripts
 

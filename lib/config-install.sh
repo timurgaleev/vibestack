@@ -596,7 +596,7 @@ if [[ -f "$CLAUDE_SETTINGS_SRC" ]]; then
     fi
     ADDED=$((ADDED + 1))
   elif command -v python3 >/dev/null 2>&1; then
-    merged=$(python3 - "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST" <<'PYEOF'
+    merged=$(python3 -I - "$CLAUDE_SETTINGS_SRC" "$CLAUDE_SETTINGS_DST" <<'PYEOF'
 import json, re, sys
 
 with open(sys.argv[1]) as f:
@@ -679,7 +679,7 @@ PYEOF
     # nothing on stdout. Writing that would replace the user's settings with a
     # blank line, so the result is validated before it is allowed anywhere near
     # the destination.
-    if [[ -z "$merged" ]] || ! printf '%s\n' "$merged" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+    if [[ -z "$merged" ]] || ! printf '%s\n' "$merged" | python3 -I -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
       msg_warn "claude/settings.json: merge failed — leaving the existing file untouched"
       FAILED=$((FAILED + 1))
     else
@@ -733,7 +733,7 @@ if [[ -f "$CURSOR_CLI_CONFIG_SRC" ]]; then
     ADDED=$((ADDED + 1))
   else
     if command -v python3 >/dev/null 2>&1; then
-      merged=$(python3 - "$CURSOR_CLI_CONFIG_SRC" "$CURSOR_CLI_CONFIG_DST" <<'PYEOF'
+      merged=$(python3 -I - "$CURSOR_CLI_CONFIG_SRC" "$CURSOR_CLI_CONFIG_DST" <<'PYEOF'
 import json, sys
 src = json.load(open(sys.argv[1]))
 dst = json.load(open(sys.argv[2]))
@@ -746,7 +746,7 @@ PYEOF
       # Same guard as the Claude settings merge: a failed program prints
       # nothing, and writing that would replace the file — which here holds the
       # user's Cursor credentials and model choice — with a blank line.
-      if [[ -z "$merged" ]] || ! printf '%s\n' "$merged" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+      if [[ -z "$merged" ]] || ! printf '%s\n' "$merged" | python3 -I -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
         msg_warn "cursor/cli-config.json: merge failed — leaving the existing file untouched"
         FAILED=$((FAILED + 1))
         merged_hash=""

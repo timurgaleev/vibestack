@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.55.5 — 2026-11-06
+
+### Fixed
+
+- **A cloned repository can no longer run code through the pack's helpers.**
+  Every inline `python3 -c` / `python3 -` in `bin/`, the configuration sync and
+  `uninstall` now runs isolated (`python3 -I`): the working directory is not on
+  `sys.path` and `PYTHON*` variables are ignored. Before, a `json.py` in the
+  repository you were standing in ran on `import json` whenever `vibe-config`,
+  a logging helper or a config sync ran there.
+- **`vibe-config` treats keys, values and paths as data.** They used to be
+  spliced into the Python source, so a quote in any of them broke the command
+  or changed what it ran. They now reach Python as arguments, and
+  `vibe-config set "it's" "O'Brien"` round-trips.
+
+### Added
+
+- **`test/test-python-isolation.sh`** fails CI on any unisolated inline Python
+  call under `bin/`, `lib/` or `skills/*/bin/`, runs the helpers from a
+  directory holding a planted `json.py`, and checks that a quoted key or value
+  is never executed.
+
 ## 1.55.4 — 2026-11-06
 
 ### Fixed

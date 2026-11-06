@@ -83,7 +83,7 @@ case "${1:-}" in
     stage="$(mktemp -d "${tmp_root%/}/vibe-design.XXXXXX" 2>/dev/null)" \
       || setup_failed "cannot create a staging dir under $tmp_root"
     trap 'rm -rf "$stage"' EXIT
-    python3 -c 'import json,sys; json.dump({"model":sys.argv[1],"prompt":sys.argv[2],"n":int(sys.argv[3]),"size":sys.argv[4]}, open(sys.argv[5],"w"))' \
+    python3 -I -c 'import json,sys; json.dump({"model":sys.argv[1],"prompt":sys.argv[2],"n":int(sys.argv[3]),"size":sys.argv[4]}, open(sys.argv[5],"w"))' \
       "$MODEL" "$brief" "$count" "$size" "$stage/request.json" 2>/dev/null \
       || setup_failed "cannot write the request under $stage"
     http_code=""; curl_rc=0
@@ -92,7 +92,7 @@ case "${1:-}" in
       https://api.openai.com/v1/images/generations \
       -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
       -d @"$stage/request.json" 2>"$stage/curl.err")" || curl_rc=$?
-    python3 - "$stage" "$outdir" "$count" "$curl_rc" "$http_code" "$TIMEOUT" <<'PY'
+    python3 -I - "$stage" "$outdir" "$count" "$curl_rc" "$http_code" "$TIMEOUT" <<'PY'
 import base64, binascii, json, os, sys, tempfile
 
 stage, outdir, count, curl_rc, http_code, timeout = sys.argv[1:7]
