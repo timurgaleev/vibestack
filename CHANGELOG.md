@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.55.4 — 2026-11-06
+
+### Fixed
+
+- **Skills no longer lose `$1`, `$2` and `$0` when they load.** Claude Code
+  replaces a bare `$N` in a skill's text with the Nth argument the skill was
+  invoked with, before the model reads it. Shell functions, awk programs and jq
+  filters in the skills were silently rewritten: `/land-and-deploy`'s CI gate
+  could read a failed check as `NO_CHECKS`, the `/codex` and `/claude` timeout
+  watchdogs lost their session argument, and the release step after a merge
+  could not parse the merge commit. Shell arguments are now written `${1}`, awk
+  fields `$(1)`, and money in prose as `USD 310`.
+
+### Added
+
+- **`vibe-lint-sources` catches a bare positional.** Inside any fence it is an
+  error; in prose it is a warning. It also warns on a fenced `python3 -c` or
+  `python3 -` without `-I`, which imports from the working directory first.
+- **`test/test-positional-literals.sh`** renders every skill, applies the
+  host's substitution with placeholder arguments and with empty ones, requires
+  the text to come through unchanged, and runs the `/land-and-deploy` CI gate
+  against a failing check. It runs in CI.
+
 ## 1.55.3 — 2026-11-06
 
 ### Fixed
