@@ -10,7 +10,6 @@ triggers:
   - unlock all directories
   - remove edit restrictions
   - allow all edits
-  - exit careful mode
 ---
 
 ## When to invoke

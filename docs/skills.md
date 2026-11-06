@@ -361,7 +361,7 @@ The same hook runs on Edit and Write: an edit to a gate file — lint, format an
 
 PowerShell (Claude Code's shell on Windows) and any `pwsh`/`powershell`/`cmd` launched from Bash get a trimmed Windows set: recursive or forced `Remove-Item` and its aliases, `Get-ChildItem -Recurse` piped into `Remove-Item`, cmd `rd /s` and `del /s`, `Format-Volume`/`Clear-Disk`, `[IO.Directory]::Delete`, `Start-Process` launching a shell, and `-EncodedCommand`/`Invoke-Expression`/the `&` call operator on an expression, which cannot be inspected. All of them prompt.
 
-Active for the session until you end it. The hook runs in Claude Code, and in Copilot CLI once the configuration payload has installed `~/.copilot/hooks/vibestack.json` — there it is always on, not per session, and it covers gate-file edits as well as commands. In Cursor, Kiro, Codex and a skills-only Copilot install `/careful` is instruction-only.
+Active for the session until you end it. There is no `/uncareful`, and `/unfreeze` does not turn it off: start a new session. The hook runs in Claude Code, and in Copilot CLI once the configuration payload has installed `~/.copilot/hooks/vibestack.json` — there it is always on, not per session, and it covers gate-file edits as well as commands. In Cursor, Kiro, Codex and a skills-only Copilot install `/careful` is instruction-only.
 
 **Your own patterns.** Add one POSIX ERE per line to
 `~/.vibestack/careful-patterns.txt` (or, for one project only,
@@ -387,6 +387,8 @@ Triggers: `careful mode`, `risky operation`, `be careful`, `extra caution`
 Restrict file edits to a specific directory.
 
 Records the directory in `~/.vibestack/freeze-dir.txt` through `freeze-state.sh`, which refuses a path that does not resolve and never stores `/`. A PreToolUse hook then blocks any Edit, Write or NotebookEdit targeting a file outside that path, and denies when the payload or the state file cannot be read. Prevents "fixing" unrelated code while debugging.
+
+A tool path of `~` or `~/...` is expanded to your home directory before the check. A path counts as inside only when both readings of it are: the physical one (`<dir-symlink>/..` is the parent of the link's target) and the textual one (`..` folded as text). A Windows drive-letter (`C:\...`, `C:/...`), UNC (`\\server\share`) or other backslash path, a path containing a newline or carriage return, and a path longer than 4096 characters are denied outright, because the hook cannot place them against the boundary.
 
 Read and Bash operations are unaffected.
 

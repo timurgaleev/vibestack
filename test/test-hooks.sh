@@ -748,6 +748,65 @@ printf '/\n' > "$VIBESTACK_HOME/freeze-dir.txt"
 assert_decision "root boundary contains all"    "$FREEZE" '{"tool_input":{"file_path":"/etc/hosts"}}' allow
 assert_decision "root boundary contains home"   "$FREEZE" "{\"tool_input\":{\"file_path\":\"$HOME/x.txt\"}}" allow
 
+echo "freeze — paths the hook must not read as relative"
+# The hook runs in the session directory, usually inside the boundary, so a
+# path it mistakes for relative is judged as <cwd>/<path> and allowed.
+FZB=$(cd "$FZ/in" && pwd -P)
+printf '%s\n' "$FZB" > "$VIBESTACK_HOME/freeze-dir.txt"
+mkdir -p "$FZP/home"
+_saved_pwd=$PWD
+_saved_home=$HOME
+cd "$FZB"
+export HOME="$FZP/home"
+assert_decision "tilde path outside denied"     "$FREEZE" '{"tool_input":{"file_path":"~/.zshrc"}}' deny
+assert_decision "bare tilde denied"             "$FREEZE" '{"tool_input":{"file_path":"~"}}' deny
+assert_decision "drive-letter path denied"      "$FREEZE" '{"tool_input":{"file_path":"C:\\proj\\other\\f"}}' deny
+assert_decision "drive-letter slash path denied" "$FREEZE" '{"tool_input":{"file_path":"c:/proj/other/f"}}' deny
+assert_decision "UNC path denied"               "$FREEZE" '{"tool_input":{"file_path":"\\\\server\\share\\f"}}' deny
+# Windows reads "\" as a separator, so ..\..\out walks out of the boundary.
+assert_decision "backslash relative path denied" "$FREEZE" '{"tool_input":{"file_path":"..\\..\\out\\x"}}' deny
+assert_decision "backslash rooted path denied"  "$FREEZE" '{"tool_input":{"file_path":"\\Windows\\x"}}' deny
+# Value: protects=a new file directly under / is judged against / not the cwd; fails_when=_split leaves the parent of "/x" empty instead of "/", so the walk falls back to "." and judges <cwd>/x inside; why_new=no other row edits a path whose parent is /; seam=none
+assert_decision "missing file under / denied"   "$FREEZE" '{"tool_input":{"file_path":"/vibestack-freeze-root-probe.txt"}}' deny
+# macOS dirname fails on a parent over 1024 bytes; the walk must not fall back
+# to judging the cwd, which is inside.
+_deep="$FZP/out"
+for _i in 1 2 3 4 5; do _deep="$_deep/$(printf 'b%.0s' $(seq 1 200))"; done
+assert_decision "long missing parent outside denied" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$_deep/x.txt\"}}" deny
+export HOME="$FZP"
+assert_decision "tilde path inside allowed"     "$FREEZE" '{"tool_input":{"file_path":"~/in/a.txt"}}' allow
+export HOME="$_saved_home"
+cd "$_saved_pwd"
+
+echo "freeze — a symlinked directory followed by .."
+# The kernel walks <link>/.. physically: the parent of the link's TARGET. A
+# logical cd folds it into the link's own directory, so the path looked inside.
+assert_decision "dir symlink then .. denied"    "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZP/in/dirlink/../f.txt\"}}" deny
+assert_decision "dir symlink then ../out denied" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZP/in/dirlink/../out/target.txt\"}}" deny
+# A tool may normalise the path textually before writing, so the lexical
+# reading must be inside too, not just the physical one.
+mkdir -p "$FZP/in/a/b"
+ln -sfn "$FZP/in/a/b" "$FZP/in/deep"
+assert_decision "lexically outside denied"      "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZP/in/deep/../../x.txt\"}}" deny
+assert_decision "plain .. inside allowed"       "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/a/../a/b/x.txt\"}}" allow
+
+echo "freeze — path edge bounds"
+# Command substitution strips trailing newlines, so without a sentinel the hook
+# would check a path other than the one the tool writes.
+assert_decision "trailing newline denied"       "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/a.txt\\n\"}}" deny
+assert_decision "notebook trailing newline denied" "$FREEZE" "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"notebook_path\":\"$FZ/in/x.ipynb\\n\"}}" deny
+assert_decision "Copilot path trailing newline denied" "$FREEZE" "{\"tool_input\":{\"path\":\"$FZ/in/a.txt\\n\"}}" deny
+assert_decision "embedded newline denied"       "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/a\\nb.txt\"}}" deny
+assert_decision "carriage return denied"        "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/a.txt\\r\"}}" deny
+_long=$(printf 'a%.0s' $(seq 1 4100))
+assert_decision "path over 4096 characters denied" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/$_long\"}}" deny
+assert_decision "repeated slashes inside allowed" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in//sub//x.txt\"}}" allow
+assert_decision "ordinary path inside allowed"  "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZ/in/a.txt\"}}" allow
+# Value: protects=a hand-written boundary with a trailing slash still admits edits inside it; fails_when=_resolve_path stops normalising slashes, so the boundary resolves to "<dir>/" and the pattern "<dir>//"* matches nothing; why_new=every other boundary row is written by pwd -P without a trailing slash; seam=none
+printf '%s/\n' "$FZB" > "$VIBESTACK_HOME/freeze-dir.txt"
+assert_decision "trailing-slash boundary inside allowed" "$FREEZE" "{\"tool_input\":{\"file_path\":\"$FZB/a.txt\"}}" allow
+printf '%s\n' "$FZB" > "$VIBESTACK_HOME/freeze-dir.txt"
+
 echo "freeze — missing shared helper fails closed"
 # Copy the skill tree into the sandbox and delete the helper THERE. Renaming the
 # tracked file in place races with a concurrent run, and an interrupt between

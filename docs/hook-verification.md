@@ -192,6 +192,11 @@ that they agree, and runs each command from the hook file against a scratch
 - `NotebookEdit` has no Copilot tool, so there is no matcher for it.
 - The entries carry only a `bash` command; native Windows PowerShell sessions
   run no command for them.
+- `/freeze` denies a Windows drive-letter (`C:\...`, `C:/...`), UNC
+  (`\\server\share`) or other backslash (`..\out`) path outright on every host:
+  bash does not read it as absolute or as separated, so the hook would
+  otherwise judge it as `<cwd>/C:\...` — inside the boundary whenever the
+  session is. `bash test/test-hooks.sh` executes these rows.
 
 ### Live verification
 

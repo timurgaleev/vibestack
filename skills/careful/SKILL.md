@@ -69,6 +69,7 @@ configuration payload it is instruction-only there as well.
 This is a best-effort advisory stop, not a policy boundary: it reads the command
 as text and cannot out-parse a shell. To lift a HIGH deny, end the `/careful`
 session.
+There is no `/uncareful`, and `/unfreeze` does not turn safety mode off: start a new session.
 
 ## What's protected
 

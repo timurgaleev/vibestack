@@ -154,19 +154,28 @@ esac
 # Extract the edited path with the shared real-JSON parser. Edit and Write
 # carry tool_input.file_path; NotebookEdit carries tool_input.notebook_path,
 # and reading file_path alone let every notebook edit through.
+#
+# Command substitution strips trailing newlines, which would check a path other
+# than the one the tool writes; the "x" sentinel keeps them.
+_extract_path() {
+  local _raw
+  _raw=$(vibe_hook_extract_field "$INPUT" "$1" && printf x) || return 1
+  FILE_PATH="${_raw%x}"
+}
 set +e
 PATH_FIELD=file_path
-FILE_PATH=$(vibe_hook_extract_field "$INPUT" file_path)
+FILE_PATH=""
+_extract_path file_path
 EXTRACT_RC=$?
 if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
   PATH_FIELD=notebook_path
-  FILE_PATH=$(vibe_hook_extract_field "$INPUT" notebook_path)
+  _extract_path notebook_path
   EXTRACT_RC=$?
 fi
 # Copilot CLI's edit and create tools name the file tool_input.path.
 if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
   PATH_FIELD=path
-  FILE_PATH=$(vibe_hook_extract_field "$INPUT" path)
+  _extract_path path
   EXTRACT_RC=$?
 fi
 set -e
@@ -192,6 +201,34 @@ if [ -z "$FILE_PATH" ]; then
   exit 0
 fi
 
+# _deny_path KEY REASON — deny a path whose shape cannot be checked.
+_deny_path() {
+  _vibestack_log freeze deny "$1" ""
+  _vibestack_analytics deny "$1"
+  vibe_hook_decision deny "[freeze] Blocked: $2 Freeze boundary: $FREEZE_DIR"
+  _FREEZE_DECIDED=1
+  exit 0
+}
+case "$FILE_PATH" in
+  *$'\n'*|*$'\r'*)
+    _deny_path control_char "the $PATH_FIELD contains a newline or carriage return, so it cannot be checked as one path." ;;
+esac
+if [ "${#FILE_PATH}" -gt 4096 ]; then
+  _deny_path path_too_long "the $PATH_FIELD is longer than 4096 characters."
+fi
+# A drive-letter, UNC or backslash path is not absolute to this shell, so it
+# would be judged as <cwd>/C:\... or <cwd>/..\x — inside the boundary whenever
+# the session is, while Windows reads "\" as a separator and writes elsewhere.
+case "$FILE_PATH" in
+  [A-Za-z]:*|*'\'*)
+    _deny_path windows_path "the $PATH_FIELD '$FILE_PATH' is a Windows drive, UNC or backslash path, which this hook cannot place against the boundary." ;;
+esac
+# Same trap for ~: left unexpanded, "~/.zshrc" would be judged as <cwd>/~/.zshrc.
+case "$FILE_PATH" in
+  "~") FILE_PATH="$HOME" ;;
+  "~/"*) FILE_PATH="$HOME/${FILE_PATH#\~/}" ;;
+esac
+
 # Resolve to absolute path
 case "$FILE_PATH" in
   /*) ;;
@@ -199,7 +236,7 @@ case "$FILE_PATH" in
 esac
 
 # Normalize: remove double slashes and trailing slash
-FILE_PATH=$(printf '%s' "$FILE_PATH" | sed 's|/\+|/|g;s|/$||')
+FILE_PATH=$(printf '%s' "$FILE_PATH" | sed -E 's|/+|/|g;s|/$||')
 
 # Resolve symlinks and .. sequences (POSIX-portable, works on macOS).
 # The FULL path is resolved, including the FINAL component: resolving only the
@@ -208,8 +245,19 @@ FILE_PATH=$(printf '%s' "$FILE_PATH" | sed 's|/\+|/|g;s|/$||')
 # boundary. A final component that is a symlink is followed (bounded,
 # cycle-safe) so the TARGET gets checked; a final component that does not exist
 # yet (new file) has nothing to follow and parent resolution is correct.
+#
+# _split sets _SD/_SB to the parent and last component without a dirname or
+# basename process: macOS dirname fails on a parent over 1024 bytes (the walk
+# then judged the cwd), and a fork per missing component let a long path outrun
+# the hook timeout, which Copilot treats as allow.
+_split() {
+  case "$1" in
+    */*) _SD="${1%/*}"; _SB="${1##*/}"; [ -n "$_SD" ] || _SD=/ ;;
+    *) _SD=.; _SB="$1" ;;
+  esac
+}
 _resolve_path() {
-  local _p="$1" _dir _base _tgt _i=0
+  local _p="$1" _dir _base _tgt _i=0 _SD _SB
   # The root directory is its own dirname and its own basename, so the generic
   # path below reassembles it as "//" — a boundary string nothing matches,
   # which turns a freeze on / into "deny every edit".
@@ -218,12 +266,17 @@ _resolve_path() {
     _tgt=$(readlink "$_p" 2>/dev/null) || break
     case "$_tgt" in
       /*) _p="$_tgt" ;;
-      *) _p="$(dirname "$_p")/$_tgt" ;;
+      *) _split "$_p"; _p="$_SD/$_tgt" ;;
     esac
     _i=$((_i + 1))
   done
-  _dir="$(dirname "$_p")"
-  _base="$(basename "$_p")"
+  # A link target or a hand-written boundary may carry repeated or trailing
+  # slashes, which the split below would read as empty components.
+  _p=$(printf '%s' "$_p" | sed -E 's|/+|/|g;s|(.)/$|\1|')
+  [ "$_p" = "/" ] && { printf '/'; return; }
+  _split "$_p"
+  _dir="$_SD"
+  _base="$_SB"
   # Write creates missing parent directories, so the parent may not exist yet.
   # Resolve the nearest existing ancestor and append the missing components
   # verbatim. A "." or ".." among them, or a dangling symlink, cannot be
@@ -233,21 +286,45 @@ _resolve_path() {
   case "$_base" in .|..) return 1 ;; esac
   while [ ! -d "$_dir" ]; do
     [ -L "$_dir" ] && return 1
-    _c="$(basename "$_dir")"
+    _split "$_dir"
+    _c="$_SB"
     case "$_c" in .|..) return 1 ;; esac
     _tail="$_c/$_tail"
-    _dir="$(dirname "$_dir")"
+    _dir="$_SD"
   done
-  _dir="$(cd "$_dir" 2>/dev/null && pwd -P)" || return 1
+  # -P: the kernel walks <symlink>/.. to the parent of the link's target; a
+  # logical cd folds it into the link's own directory instead.
+  _dir="$(cd -P -- "$_dir" 2>/dev/null && pwd -P)" || return 1
   if [ "$_dir" = "/" ]; then
     printf '/%s' "$_tail"
   else
     printf '%s/%s' "$_dir" "$_tail"
   fi
 }
+# _lexical_path ABS — drop "." and fold ".." textually, without touching the
+# filesystem.
+_lexical_path() {
+  local _rest="${1#/}" _c _out=""
+  while [ -n "$_rest" ]; do
+    case "$_rest" in
+      */*) _c="${_rest%%/*}"; _rest="${_rest#*/}" ;;
+      *) _c="$_rest"; _rest="" ;;
+    esac
+    case "$_c" in
+      ''|.) ;;
+      ..) _out="${_out%/*}" ;;
+      *) _out="$_out/$_c" ;;
+    esac
+  done
+  printf '%s' "${_out:-/}"
+}
+# Two readings of the same path: the physical one the kernel follows, and the
+# lexical one a tool gets when it normalises the path before writing. Both
+# must be inside, because the hook cannot know which one the write uses.
+_LEX_PATH=$(_resolve_path "$(_lexical_path "$FILE_PATH")") || _LEX_PATH=""
 FILE_PATH=$(_resolve_path "$FILE_PATH") || FILE_PATH=""
 FREEZE_DIR=$(_resolve_path "$FREEZE_DIR") || FREEZE_DIR=""
-if [ -z "$FILE_PATH" ] || [ -z "$FREEZE_DIR" ]; then
+if [ -z "$FILE_PATH" ] || [ -z "$_LEX_PATH" ] || [ -z "$FREEZE_DIR" ]; then
   _vibestack_log freeze deny unresolvable-path "$FILE_PATH"
   _vibestack_analytics deny unresolvable_path
   vibe_hook_decision deny "[freeze] Blocked: the $PATH_FIELD (or the freeze boundary) runs through a directory that does not exist yet via '.', '..' or a dangling symlink, so it cannot be checked against the boundary. Use a plain path. Freeze boundary: $(sed -n '1p' "$FREEZE_FILE")"
@@ -257,13 +334,20 @@ fi
 
 # A boundary of / contains every absolute path; matching "${FREEZE_DIR}/"*
 # there would build the pattern "//"* and deny everything.
-_INSIDE=0
-if [ "$FREEZE_DIR" = "/" ]; then
-  _INSIDE=1
-else
-  case "$FILE_PATH" in
-    "${FREEZE_DIR}/"*|"${FREEZE_DIR}") _INSIDE=1 ;;
+_inside() {
+  [ "$FREEZE_DIR" = "/" ] && return 0
+  case "$1" in
+    "${FREEZE_DIR}/"*|"${FREEZE_DIR}") return 0 ;;
   esac
+  return 1
+}
+_INSIDE=0
+if _inside "$FILE_PATH"; then
+  if _inside "$_LEX_PATH"; then
+    _INSIDE=1
+  else
+    FILE_PATH="$_LEX_PATH"
+  fi
 fi
 
 case "$_INSIDE" in
