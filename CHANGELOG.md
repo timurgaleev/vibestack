@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.55.7 — 2026-11-06
+
+### Fixed
+
+- **Review specialists are no longer skipped because a file matched only one
+  category.** `vibe-diff-scope` checks every category for every path, so
+  `app/controllers/sessions_controller.rb` sets API, AUTH and BACKEND, and
+  `components/Button.ts` sets FRONTEND and BACKEND. `.tsx`, `.jsx`, `.vue`,
+  `.svelte`, `.astro` and `.erb` stay FRONTEND-only.
+- **More code and test layouts are recognised.** Kotlin, Swift, C#, Dart, Scala,
+  C/C++, shell scripts and extensionless tools under `bin/` count as backend
+  code; colocated `test_*.py`, nested `test/`, `tests/` and `__tests__/`
+  directories, `*Test.java` and `*Tests.swift` count as tests. `openapi.yaml`
+  sets API, `*token*.rb` sets AUTH, and matching ignores case, so
+  `AuthController.php` reaches the auth and API checks.
+- **The scope is the branch's own change, as the reviewer reads it.** It is
+  measured from the merge-base with `origin/<base>` to the working tree,
+  including untracked files and the old path of a renamed file, so a stale
+  local base branch no longer pulls its own commits into the scope. Paths git
+  would quote (non-ASCII names) are classified, and a `diff.relative` setting no
+  longer narrows the scope to the current subdirectory.
+- **An unknown scope is reported, not read as "nothing changed".** When git
+  cannot produce the diff, `vibe-diff-scope` prints only
+  `SCOPE_UNAVAILABLE=true` and exits 2.
+
 ## 1.55.6 — 2026-11-06
 
 ### Fixed
