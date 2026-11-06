@@ -48,7 +48,10 @@ import sys
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
-SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$")
+# Components are bounded ASCII digits: a claim is external input, and an
+# unbounded one crashes int() past Python's 4300-digit limit ("\d" would also
+# read non-ASCII digits as a version).
+SEMVER = re.compile(r"^([0-9]{1,9})\.([0-9]{1,9})\.([0-9]{1,9})(?:\.([0-9]{1,9}))?$")
 LEVELS = {"major": 0, "minor": 1, "patch": 2, "micro": 3}
 VERSION_PATH = "VERSION"
 FETCH_WORKERS = 8
@@ -156,8 +159,15 @@ def gitlab_claims(base, exclude_pr, warnings):
     if not complete:
         warnings.append(f"glab mr list returned {GITLAB_PAGE} MRs, a full page; later MRs were not read")
     claims = []
+    forks = []
     for mr in mrs:
         if exclude_pr is not None and mr.get("iid") == exclude_pr:
+            continue
+        # The files API resolves the branch name in the TARGET project, so a
+        # fork MR would read our own branch of that name, not the fork's claim.
+        src, dst = mr.get("source_project_id"), mr.get("target_project_id")
+        if src is None or src != dst:
+            forks.append(mr)
             continue
         branch = mr.get("source_branch", "")
         raw = run(["glab", "api", "projects/:id/repository/files/"
@@ -174,16 +184,22 @@ def gitlab_claims(base, exclude_pr, warnings):
             continue
         claims.append({"pr": mr.get("iid"), "branch": branch, "version": ver,
                        "url": mr.get("web_url", "")})
+    if forks:
+        # Unread, yet each one still takes a slot when it merges.
+        complete = False
+        warnings.append("fork MRs not read: " + ", ".join(f"!{mr.get('iid')}" for mr in forks))
     return claims, True, complete
 
 
 def git_batch(specs, check):
     """One `git cat-file` over every spec, in order: the object type (check) or
     the raw bytes, None where missing. None overall when git itself failed."""
+    # A partial clone would otherwise download missing blobs from the remote.
+    env = dict(os.environ, GIT_NO_LAZY_FETCH="1", GIT_TERMINAL_PROMPT="0")
     try:
         r = subprocess.run(["git", "cat-file", "--batch-check" if check else "--batch"],
                            input="".join(f"{x}\n" for x in specs).encode(),
-                           capture_output=True, timeout=30)
+                           capture_output=True, timeout=30, env=env)
     except Exception:
         return None
     if r.returncode != 0:
@@ -228,12 +244,14 @@ def git_claims(base, exclude_branch, warnings):
     if kinds is None:
         warnings.append(f"could not read the local object store; no branch {VERSION_PATH} was read")
         return [], True
-    fetched = []
-    for (sha, name), kind in zip(heads, kinds):
-        if kind is None:
-            warnings.append(f"branch {name}: head {sha[:12]} is not fetched; its {VERSION_PATH} was not read")
-        else:
-            fetched.append((sha, name))
+    fetched = [h for h, kind in zip(heads, kinds) if kind is not None]
+    unfetched = [name for (_, name), kind in zip(heads, kinds) if kind is None]
+    if unfetched:
+        # One line, not one per head: a clone of a busy remote can have
+        # thousands, and every warning lands in the caller's output.
+        shown = ", ".join(unfetched[:5]) + (", ..." if len(unfetched) > 5 else "")
+        warnings.append(f"{len(unfetched)} remote branch head(s) not fetched, "
+                        f"their {VERSION_PATH} was not read: {shown}")
     blobs = git_batch([f"{sha}:{VERSION_PATH}" for sha, _ in fetched], check=False) if fetched else []
     if blobs is None:
         warnings.append(f"could not read {VERSION_PATH} at the fetched branch heads")
@@ -301,7 +319,11 @@ def main() -> int:
         p = parse(c["version"] or "")
         if p is None:
             who = f"#{c['pr']}" if c["pr"] is not None else f"branch {c['branch']}"
-            warnings.append(f"{who}: {VERSION_PATH} is malformed ({c['version']!r})")
+            # The bytes come from someone else's branch: quote a bounded,
+            # escaped prefix, never the whole file.
+            raw_v = c["version"] or ""
+            shown = ascii(raw_v[:40]) + ("..." if len(raw_v) > 40 else "")
+            warnings.append(f"{who}: {VERSION_PATH} is malformed ({shown})")
             complete = False
             continue
         # A PR still carrying the base version (or older) has not bumped; it

@@ -281,6 +281,12 @@ chk "and the unread PR is named in a warning" "$(jf 'any("#22" in w for w in d["
 printf 'not-a-version\n' > "$NQ/heads/feat%2Fb"
 OUT=$(nv --base main --bump patch --current-version 1.20.0)
 chk "a malformed head VERSION makes the queue incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+# A claim is outside input: a 5000-digit component must read as malformed, not
+# crash the bin, which callers read as "offline" and skip the queue check.
+python3 -c 'print("1.2." + "9" * 5000)' > "$NQ/heads/feat%2Fb"
+OUT=$(nv --base main --bump patch --current-version 1.20.0)
+chk "an oversized VERSION component is a malformed claim, not a crash" "$(jf 'd["offline"], d.get("complete")' <<<"$OUT")" "(False, False)"
+chk "and its warning quotes a bounded prefix" "$(jf 'max(len(w) for w in d["warnings"]) < 200' <<<"$OUT")" "True"
 
 # A fork PR's head is not readable through our repo, so its VERSION is never
 # seen -- but it still takes a slot when it merges.
@@ -304,7 +310,8 @@ if key == "number":
     rows = [{"number": i, "headRefName": "f/%d" % i,
              "headRepositoryOwner": {"login": "me"}, "url": ""} for i in range(1, n + 1)]
 else:
-    rows = [{"iid": i, "source_branch": "f/%d" % i, "web_url": ""} for i in range(1, n + 1)]
+    rows = [{"iid": i, "source_branch": "f/%d" % i, "source_project_id": 1,
+             "target_project_id": 1, "web_url": ""} for i in range(1, n + 1)]
 print(json.dumps(rows))' "$1" "$2"
 }
 nq_rows 200 number > "$NQ/prs.json"
@@ -324,6 +331,21 @@ nq_rows 100 iid > "$NQ/mrs.json"
 OUT=$(NQGL --base main --bump patch --current-version 1.20.0)
 chk "a full GitLab page is incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
 rm "$NQ/heads/default"
+# Value: protects=GitLab's per-MR read failure clearing complete, a path separate from GitHub's; fails_when=the gitlab loop warns but keeps complete=True; why_new=the GitLab rows above read every head; seam=none
+nq_rows 2 iid > "$NQ/mrs.json"
+printf '1.20.1\n' > "$NQ/heads/f%2F1"
+OUT=$(NQGL --base main --bump patch --current-version 1.20.0)
+chk "an unreadable MR head VERSION makes the GitLab queue incomplete" \
+  "$(jf 'd["host"], d.get("complete"), any("!2" in w for w in d["warnings"])' <<<"$OUT")" "('gitlab', False, True)"
+rm "$NQ/heads/f%2F1"
+# The files API resolves a branch name in the target project, so a fork MR on
+# "release" would report our own release branch's VERSION as its claim.
+printf '[{"iid":5,"source_branch":"release","source_project_id":2,"target_project_id":1,"web_url":""}]\n' > "$NQ/mrs.json"
+printf '1.20.9\n' > "$NQ/heads/release"
+OUT=$(NQGL --base main --bump patch --current-version 1.20.0)
+chk "a GitLab fork MR is not read through our branch of the same name" \
+  "$(jf 'd.get("complete"), [c["version"] for c in d["claimed"]], any("!5" in w for w in d["warnings"])' <<<"$OUT")" "(False, [], True)"
+rm "$NQ/heads/release"
 
 # Four-part versions: the bin used to call these offline and fall back to a
 # bump that ignored the queue entirely.
@@ -445,6 +467,31 @@ chk "land-and-deploy: another PR on the same micro slot is still drift" "$(cv "$
 printf '[]\n' > "$NQ/prs.json"
 chk "review: a micro release with an empty queue reads as a free slot" "$(cv "$CV/review.sh")" "1.2.3.5 1.2.3.5 false"
 rm "$NQ/heads/feat%2Fm" "$NQ/heads/feat%2Fn"
+
+# Value: protects=land-and-deploy querying at patch for a four-part release that moved PATCH; fails_when=micro is chosen for every four-part version, so a sibling on 1.2.4.0 is missed (query answers 1.2.3.5); why_new=the micro rows above keep PATCH unchanged; seam=none
+g -C "$CV/w" checkout -q -b feat/p "$CV_BASE"
+printf '1.2.4.0\n' > "$CV/w/VERSION"; g -C "$CV/w" commit -q -am patch
+nq_block land-and-deploy '## Step 3.4: VERSION drift' \
+  | sed -e "s/<PR_NUMBER>/7/; s/<PR_HEAD>/$(g -C "$CV/w" rev-parse HEAD)/; s/<BASE_BRANCH>/main/; s/<BASE_SHA>/$CV_BASE/" > "$CV/land-p.sh"
+echo 'echo "$BRANCH_VERSION $NEXT_SLOT $OFFLINE"' >> "$CV/land-p.sh"
+printf '1.2.4.0\n' > "$NQ/heads/feat%2Fq"
+printf '[%s,%s]\n' "$(nq_pr 7 feat/p me)" "$(nq_pr 8 feat/q me)" > "$NQ/prs.json"
+chk "land-and-deploy: a four-part PATCH release sees a sibling on its slot" "$(cv "$CV/land-p.sh")" "1.2.4.0 1.2.5.0 false"
+rm "$NQ/heads/feat%2Fq"
+
+# Value: protects=review deriving minor (it used to hard-code patch); fails_when=review's level derivation drops or mis-orders the minor arm, so a sibling on 1.34.0 reads "Slot free"; why_new=the review row above is micro-only and passes without the minor arm; seam=none
+g init -q --bare -b main "$CV/r.git"
+g clone -q "$CV/r.git" "$CV/r"
+g -C "$CV/r" config user.email t@example.com; g -C "$CV/r" config user.name t
+printf '1.33.2\n' > "$CV/r/VERSION"; g -C "$CV/r" add VERSION; g -C "$CV/r" commit -q -m base
+g -C "$CV/r" push -q origin main
+g -C "$CV/r" checkout -q -b feat/r
+printf '1.34.0\n' > "$CV/r/VERSION"; g -C "$CV/r" commit -q -am minor
+printf '1.34.0\n' > "$NQ/heads/feat%2Fs"
+printf '[%s]\n' "$(nq_pr 9 feat/s me)" > "$NQ/prs.json"
+chk "review: a minor release sees a sibling claiming the same minor slot" \
+  "$(cd "$CV/r" && PATH="$NQ/bin:$PATH" NQ_DIR="$NQ" VIBESTACK_HOME="$CV/home" bash "$CV/review.sh" 2>&1)" "1.34.0 1.35.0 false"
+rm "$NQ/heads/feat%2Fs"
 
 echo "vibe-detach"
 D="$BIN/vibe-detach"
