@@ -30,7 +30,7 @@ fi
 
   # Extract prompt + leading slash command in a single Python pass.
   # Returns just the skill name on stdout, or nothing if no match.
-  SKILL=$(printf '%s' "$INPUT" | python3 -c '
+  SKILL=$(printf '%s' "$INPUT" | python3 -I -c '
 import sys, json, re
 try:
     d = json.loads(sys.stdin.read())

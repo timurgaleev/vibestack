@@ -156,7 +156,7 @@ done < "$SOURCE"
 if [ -n "$SKILL_DIR_SUB" ]; then
   SUB_TMP="$(mktemp "$DEST_DIR/.SKILL.sub.XXXXXX")" || {
     echo "render: infra: cannot create temp file for substitution" >&2; exit 3; }
-  if ! VIBE_SKILL_DIR_SUB="$SKILL_DIR_SUB" python3 - "$TMP" > "$SUB_TMP" <<'PYEOF'
+  if ! VIBE_SKILL_DIR_SUB="$SKILL_DIR_SUB" python3 -I - "$TMP" > "$SUB_TMP" <<'PYEOF'
 import os, re, sys
 d = os.environ["VIBE_SKILL_DIR_SUB"]
 t = open(sys.argv[1], encoding="utf-8").read()

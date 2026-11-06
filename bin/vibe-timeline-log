@@ -11,7 +11,7 @@ SLUG="unknown"; eval "$("$HERE/vibe-slug" 2>/dev/null)" 2>/dev/null || true
 DIR="$HOME_DIR/projects/${SLUG:-unknown}"
 mkdir -p "$DIR"
 
-python3 - "${1:-}" "$DIR/timeline.jsonl" <<'PY' 2>/dev/null || true
+python3 -I - "${1:-}" "$DIR/timeline.jsonl" <<'PY' 2>/dev/null || true
 import json, sys, datetime
 raw, path = sys.argv[1], sys.argv[2]
 try:

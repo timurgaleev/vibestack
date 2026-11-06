@@ -319,7 +319,7 @@ json_fill_missing() {
   fi
 
   local filled py_rc=0
-  if ! filled=$(python3 - "$src" "$dst" <<'PYEOF'
+  if ! filled=$(python3 -I - "$src" "$dst" <<'PYEOF'
 import json, sys
 
 try:
@@ -413,7 +413,7 @@ toml_fill_missing() {
   fi
 
   local filled py_rc=0
-  if ! filled=$(python3 - "$src" "$dst" <<'PYEOF'
+  if ! filled=$(python3 -I - "$src" "$dst" <<'PYEOF'
 import re, sys
 
 # A table header can carry a trailing comment, and an array-of-tables header

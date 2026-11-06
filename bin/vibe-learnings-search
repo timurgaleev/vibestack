@@ -64,7 +64,7 @@ command -v python3 >/dev/null 2>&1 || {
 # quoted heredoc: nothing the caller passes can become code.
 VIBE_LS_FILE="$LEARN_FILE" VIBE_LS_PROJECTS="$PROJECTS_DIR" VIBE_LS_SLUG="$SLUG" \
 VIBE_LS_LIMIT="$LIMIT" VIBE_LS_QUERY="$QUERY" VIBE_LS_TYPE="$FILTER_TYPE" \
-VIBE_LS_CROSS="$CROSS_PROJECT" python3 - <<'PYEOF'
+VIBE_LS_CROSS="$CROSS_PROJECT" python3 -I - <<'PYEOF'
 import json, os, sys, time
 from datetime import datetime, timezone
 

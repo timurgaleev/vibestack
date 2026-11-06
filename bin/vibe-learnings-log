@@ -34,7 +34,7 @@ TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # correctly from stdin, so the tool checked one thing and then processed
 # another, and the failure surfaced only as a traceback.
 ENTRY=$(VIBE_TS="$TS" VIBE_BRANCH="$BRANCH" VIBE_COMMIT="$COMMIT" \
-  python3 - "$JSON" <<'PYEOF'
+  python3 -I - "$JSON" <<'PYEOF'
 import json, os, re, sys
 
 try:
@@ -122,4 +122,4 @@ PYEOF
 ) || exit 1
 
 echo "$ENTRY" >> "$LEARN_FILE"
-echo "Logged: $(echo "$ENTRY" | python3 -c "import sys,json; e=json.load(sys.stdin); print(f\"{e.get('type','?')} / {e.get('key','?')} (confidence {e.get('confidence','?')}/10)\")")"
+echo "Logged: $(echo "$ENTRY" | python3 -I -c "import sys,json; e=json.load(sys.stdin); print(f\"{e.get('type','?')} / {e.get('key','?')} (confidence {e.get('confidence','?')}/10)\")")"

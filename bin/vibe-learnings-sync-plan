@@ -59,7 +59,7 @@ if [ ! -s "$LEARN_FILE" ]; then
   exit 0
 fi
 
-LEARN_FILE="$LEARN_FILE" MARK_FILE="$MARK_FILE" python3 - <<'PYEOF'
+LEARN_FILE="$LEARN_FILE" MARK_FILE="$MARK_FILE" python3 -I - <<'PYEOF'
 import json, os, re, sys
 
 learn_file = os.environ["LEARN_FILE"]

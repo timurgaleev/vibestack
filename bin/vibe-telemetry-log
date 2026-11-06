@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
 done
 
 mkdir -p "$HOME_DIR/analytics"
-python3 - "$evt" "$skill" "$outcome" "$sid" "$HOME_DIR/analytics/telemetry.jsonl" <<'PY' 2>/dev/null || true
+python3 -I - "$evt" "$skill" "$outcome" "$sid" "$HOME_DIR/analytics/telemetry.jsonl" <<'PY' 2>/dev/null || true
 import json, sys, datetime
 evt, skill, outcome, sid, path = sys.argv[1:6]
 rec = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),

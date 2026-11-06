@@ -41,7 +41,7 @@ else
   CONTENT=$(cat)
 fi
 
-SOURCE="$SOURCE" CONTENT="$CONTENT" python3 - <<'PYEOF'
+SOURCE="$SOURCE" CONTENT="$CONTENT" python3 -I - <<'PYEOF'
 import os, re, sys
 
 source = os.environ["SOURCE"]

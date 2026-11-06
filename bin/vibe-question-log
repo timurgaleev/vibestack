@@ -41,7 +41,7 @@ TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # The payload arrives on argv, so it is passed to python as an argument rather
 # than interpolated into the program text — a question summary containing a
 # quote or a newline must not be able to rewrite the script.
-ENTRY=$(LOG_TS="$TS" python3 - "$JSON" <<'PYEOF'
+ENTRY=$(LOG_TS="$TS" python3 -I - "$JSON" <<'PYEOF'
 import json, os, sys
 
 try:
