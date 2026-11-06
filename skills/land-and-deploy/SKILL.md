@@ -584,13 +584,16 @@ fi
 # for a PR claiming v1.34.0 off base v1.33.2, a patch query answers "v1.33.3 is
 # free", and the later `BRANCH_VERSION >= NEXT_SLOT` comparison then passes —
 # even when another open PR is claiming v1.34.0 too. The level has to match the
-# release the PR is actually making.
+# release the PR is actually making. A four-part version with PATCH unchanged
+# is a micro release; a patch query would answer the next PATCH and STOP it.
 _BUMP=patch
 if [ -n "$BRANCH_VERSION" ] && [ -n "$BASE_VERSION" ]; then
   _B_MAJ=${BRANCH_VERSION%%.*}; _R_MAJ=${BASE_VERSION%%.*}
   _B_MIN=$(echo "$BRANCH_VERSION" | cut -d. -f2); _R_MIN=$(echo "$BASE_VERSION" | cut -d. -f2)
+  _B_PAT=$(echo "$BRANCH_VERSION" | cut -d. -f3); _R_PAT=$(echo "$BASE_VERSION" | cut -d. -f3)
   if [ "$_B_MAJ" != "$_R_MAJ" ]; then _BUMP=major
   elif [ "$_B_MIN" != "$_R_MIN" ]; then _BUMP=minor
+  elif [ "$_B_PAT" = "$_R_PAT" ]; then case "$BRANCH_VERSION" in *.*.*.*) _BUMP=micro ;; esac
   fi
 fi
 # --exclude-pr is not optional here: this PR is itself open and its title
@@ -606,6 +609,8 @@ QUEUE_JSON=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
 NEXT_SLOT=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
 OFFLINE=$(echo "$QUEUE_JSON" | jq -r '.offline // false')
+# `// true` would turn an explicit false into true, so compare instead.
+COMPLETE=$(echo "$QUEUE_JSON" | jq -r 'if .complete == false then "false" else "true" end')
 ```
 
 Behavior:
@@ -618,6 +623,8 @@ Behavior:
    Step 3.5 without reading anything into `NEXT_SLOT`.
 
 1. If `OFFLINE=true` or the util fails: print `⚠ VERSION drift check unavailable (util offline) — proceeding with PR version v<BRANCH_VERSION>`. Continue to Step 3.5. CI's version-gate job is the backstop.
+
+1b. If `COMPLETE=false`: the util could not read every claim (an unreadable or malformed VERSION, a fork PR, or a full page), so `NEXT_SLOT` may sit on a slot another PR already holds. Report `VERSION: unavailable (queue incomplete)` in the readiness report — not green — with each `.warnings[]` line, and continue to Step 3.5 without reading anything into `NEXT_SLOT`.
 
 2. If `BRANCH_VERSION` is already `>=` than `NEXT_SLOT`: no drift (or our PR is ahead of the queue). Continue.
 

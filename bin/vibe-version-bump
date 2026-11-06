@@ -34,7 +34,8 @@ import re
 import subprocess
 import sys
 
-SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+# The optional fourth component is MAJOR.MINOR.PATCH.MICRO, which /ship accepts.
+SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 LOCKS = ("package-lock.json", "npm-shrinkwrap.json")
 
 

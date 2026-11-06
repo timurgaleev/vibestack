@@ -424,17 +424,37 @@ Check whether this PR's claimed VERSION still points at a free slot in the queue
 BRANCH_VERSION=$(git show HEAD:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
 BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)
 BASE_VERSION=$(git show origin/$BASE_BRANCH:VERSION 2>/dev/null | tr -d '\r\n[:space:]' || echo "")
+# Query at the level this PR releases: a coarser one answers a later slot and
+# the comparison below calls a free PR stale.
+_BUMP=patch
+if [ -n "$BRANCH_VERSION" ] && [ -n "$BASE_VERSION" ]; then
+  _B_MAJ=${BRANCH_VERSION%%.*}; _R_MAJ=${BASE_VERSION%%.*}
+  _B_MIN=$(echo "$BRANCH_VERSION" | cut -d. -f2); _R_MIN=$(echo "$BASE_VERSION" | cut -d. -f2)
+  _B_PAT=$(echo "$BRANCH_VERSION" | cut -d. -f3); _R_PAT=$(echo "$BASE_VERSION" | cut -d. -f3)
+  if [ "$_B_MAJ" != "$_R_MAJ" ]; then _BUMP=major
+  elif [ "$_B_MIN" != "$_R_MIN" ]; then _BUMP=minor
+  elif [ "$_B_PAT" = "$_R_PAT" ]; then case "$BRANCH_VERSION" in *.*.*.*) _BUMP=micro ;; esac
+  fi
+fi
+# This PR is open too; counting its own claim would report the queue moved.
+# An array, so zsh passes the flag and its value as two arguments.
+_PRN=$(gh pr view --json number -q .number 2>/dev/null || echo "")
+case "$_PRN" in ''|*[!0-9]*) _PRN="" ;; esac
+_X=(); [ -n "$_PRN" ] && _X=(--exclude-pr "$_PRN")
 QUEUE_JSON=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
   --base "$BASE_BRANCH" \
-  --bump patch \
+  --bump "$_BUMP" \
+  "${_X[@]}" \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
 NEXT_SLOT=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
 CLAIMED_COUNT=$(echo "$QUEUE_JSON" | jq -r '.claimed | length // 0')
 OFFLINE=$(echo "$QUEUE_JSON" | jq -r '.offline // false')
+COMPLETE=$(echo "$QUEUE_JSON" | jq -r 'if .complete == false then "false" else "true" end')
 ```
 
 - If `OFFLINE=true`: skip this section (no signal to report).
 - Otherwise, include ONE line in the review output: `Version claimed: v<BRANCH_VERSION>. Queue: <CLAIMED_COUNT> PR(s) ahead. <VERDICT>` where VERDICT is either `Slot free` (if `BRANCH_VERSION >= NEXT_SLOT`) or `⚠ queue moved — rerun /ship to reconcile v<BRANCH_VERSION> → v<NEXT_SLOT>`.
+- If `COMPLETE=false`, end that line with `(queue incomplete — some claims could not be read)`: a `Slot free` verdict then rests on a partial queue.
 
 ---
 
