@@ -609,6 +609,8 @@ QUEUE_JSON=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
   --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
 NEXT_SLOT=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
 OFFLINE=$(echo "$QUEUE_JSON" | jq -r '.offline // false')
+# `// true` would turn an explicit false into true, so compare instead.
+COMPLETE=$(echo "$QUEUE_JSON" | jq -r 'if .complete == false then "false" else "true" end')
 ```
 
 Behavior:
@@ -621,6 +623,8 @@ Behavior:
    Step 3.5 without reading anything into `NEXT_SLOT`.
 
 1. If `OFFLINE=true` or the util fails: print `⚠ VERSION drift check unavailable (util offline) — proceeding with PR version v<BRANCH_VERSION>`. Continue to Step 3.5. CI's version-gate job is the backstop.
+
+1b. If `COMPLETE=false`: the util could not read every claim (an unreadable or malformed VERSION, a fork PR, or a full page), so `NEXT_SLOT` may sit on a slot another PR already holds. Report `VERSION: unavailable (queue incomplete)` in the readiness report — not green — with each `.warnings[]` line, and continue to Step 3.5 without reading anything into `NEXT_SLOT`.
 
 2. If `BRANCH_VERSION` is already `>=` than `NEXT_SLOT`: no drift (or our PR is ahead of the queue). Continue.
 

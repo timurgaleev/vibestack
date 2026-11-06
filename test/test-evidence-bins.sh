@@ -236,7 +236,7 @@ cat > "$NQ/bin/gh" <<'SH'
 [ "${NQ_GH_DOWN:-0}" = 1 ] && exit 1
 case "$1 $2" in
   "pr list") cat "$NQ_DIR/prs.json" ;;
-  "pr view") echo main ;;
+  "pr view") case "$*" in *number*) echo "${NQ_PRN:-}" ;; *) echo main ;; esac ;;
   "repo view") [ "${NQ_OWNER_DOWN:-0}" = 1 ] && exit 1; echo me ;;
   "api "*)
     ref="${2##*ref=}"; f="$NQ_DIR/heads/$ref"
@@ -464,8 +464,19 @@ printf '[%s]\n' "$(nq_pr 7 feat/m me)" > "$NQ/prs.json"
 chk "land-and-deploy: a micro release alone in the queue is its own next slot" "$(cv "$CV/land.sh")" "1.2.3.5 1.2.3.5 false"
 printf '[%s,%s]\n' "$(nq_pr 7 feat/m me)" "$(nq_pr 8 feat/n me)" > "$NQ/prs.json"
 chk "land-and-deploy: another PR on the same micro slot is still drift" "$(cv "$CV/land.sh")" "1.2.3.5 1.2.3.6 false"
+# A queue the bin could not fully read must not reach the drift comparison as
+# if it were whole: an unread fork PR may hold the very slot being landed.
+cp "$CV/land.sh" "$CV/land-c.sh"; echo 'echo "$COMPLETE"' >> "$CV/land-c.sh"
+printf '[%s,%s]\n' "$(nq_pr 7 feat/m me)" "$(nq_pr 8 feat/z someone)" > "$NQ/prs.json"
+chk "land-and-deploy: an unread fork PR marks the queue incomplete" "$(cv "$CV/land-c.sh" | tail -1)" "false"
 printf '[]\n' > "$NQ/prs.json"
 chk "review: a micro release with an empty queue reads as a free slot" "$(cv "$CV/review.sh")" "1.2.3.5 1.2.3.5 false"
+# /review runs on an open PR, which is in the queue it reads; its own claim is
+# not a sibling's.
+printf '[%s]\n' "$(nq_pr 7 feat/m me)" > "$NQ/prs.json"
+export NQ_PRN=7
+chk "review: the PR's own claim does not read as the queue moving" "$(cv "$CV/review.sh")" "1.2.3.5 1.2.3.5 false"
+unset NQ_PRN
 rm "$NQ/heads/feat%2Fm" "$NQ/heads/feat%2Fn"
 
 # Value: protects=land-and-deploy querying at patch for a four-part release that moved PATCH; fails_when=micro is chosen for every four-part version, so a sibling on 1.2.4.0 is missed (query answers 1.2.3.5); why_new=the micro rows above keep PATCH unchanged; seam=none
