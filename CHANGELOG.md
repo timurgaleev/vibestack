@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.55.8 — 2026-11-06
+
+### Fixed
+
+- **The version queue says when it could not see every claim.**
+  `vibe-next-version` reports `complete:false`, with the misses in `warnings`,
+  when a PR's VERSION was unreadable or malformed, a fork PR or MR could not be
+  read, or the PR list filled a page. A GitLab fork MR is no longer read through
+  our own branch of the same name, and an oversized or non-ASCII version claim
+  is reported as malformed instead of crashing the tool.
+- **`/land-and-deploy` no longer lands on a partial queue.** An incomplete
+  queue makes the VERSION drift check unavailable — not green — instead of
+  comparing against a pick that may sit on another PR's slot.
+- **Four-part versions are first-class.** `vibe-next-version` and
+  `vibe-version-bump` accept `MAJOR.MINOR.PATCH.MICRO`, and `/land-and-deploy`
+  and `/review` query the queue at the level the PR actually releases, so a
+  micro release is no longer reported as drift and stopped.
+- **`/review` no longer counts its own PR as the queue moving**, and marks its
+  slot verdict when the queue was incomplete.
+- **With no PR host, the queue falls back to branch heads.** When neither `gh`
+  nor `glab` answers, `vibe-next-version` reads the VERSION at the remote's
+  branch heads that are already fetched (`git ls-remote`, no prompts, bounded,
+  no lazy fetch), with `--exclude-branch` for your own branch, before falling
+  back to local arithmetic. That result is still reported offline.
+
 ## 1.55.7 — 2026-11-06
 
 ### Fixed
