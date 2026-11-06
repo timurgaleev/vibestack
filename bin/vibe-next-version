@@ -50,8 +50,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Components are bounded ASCII digits: a claim is external input, and an
 # unbounded one crashes int() past Python's 4300-digit limit ("\d" would also
-# read non-ASCII digits as a version).
-SEMVER = re.compile(r"^([0-9]{1,9})\.([0-9]{1,9})\.([0-9]{1,9})(?:\.([0-9]{1,9}))?$")
+# read non-ASCII digits as a version). Twenty digits still admits date-style
+# components such as 2026110601.
+SEMVER = re.compile(r"^([0-9]{1,20})\.([0-9]{1,20})\.([0-9]{1,20})(?:\.([0-9]{1,20}))?$")
 LEVELS = {"major": 0, "minor": 1, "patch": 2, "micro": 3}
 VERSION_PATH = "VERSION"
 FETCH_WORKERS = 8
