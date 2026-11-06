@@ -85,8 +85,10 @@ straight to `gh pr view`.
   write the PR itself; those parts are what a missing `gh` costs on a GitHub
   remote.
 - `/landing-report` reports `OFFLINE — queue-awareness unavailable`: without a
-  view of open PRs it cannot say which VERSION slots are claimed, and
-  `vibe-next-version` behind it falls back to local arithmetic.
+  view of open PRs it cannot say which VERSION slots are claimed.
+  `vibe-next-version` behind it then reads the VERSION at the remote's branch
+  heads already fetched locally (`git ls-remote`, still reported offline and
+  never complete), and falls back to local arithmetic when no remote answers.
 - `/spec` skips its duplicate-issue search, says so, and at the end prints the
   issue title and body for you to paste into the new-issue form rather than
   filing it.
