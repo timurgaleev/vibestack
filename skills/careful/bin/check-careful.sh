@@ -124,10 +124,27 @@ if [ -z "$CMD" ]; then
   # Copilot CLI's edit and create tools name the file tool_input.path.
   [ -n "$_FILE_PATH" ] || _FILE_PATH=$(vibe_hook_extract_field "$INPUT" path)
   set -e
-  if [ -n "$_FILE_PATH" ] && printf '%s' "$_FILE_PATH" | grep -qE \
-    -e '(^|/)(\.eslintrc(\.[a-z]+)?|eslint\.config\.[a-z]+|biome\.jsonc?|\.?ruff\.toml|\.pre-commit-config\.ya?ml|tsconfig(\.[a-z]+)?\.json|\.gitlab-ci\.ya?ml|Jenkinsfile|codecov\.ya?ml|\.golangci\.ya?ml|pytest\.ini|\.flake8|mypy\.ini)$' \
+  # The basename is compared lower-cased: on a case-insensitive filesystem
+  # ESLINT.CONFIG.JS is the same gate as eslint.config.js.
+  _GATE_PATH="$_FILE_PATH"
+  if [ -n "$_FILE_PATH" ]; then
+    _GATE_BASE=$(printf '%s' "${_FILE_PATH##*/}" | tr '[:upper:]' '[:lower:]')
+    case "$_FILE_PATH" in */*) _GATE_PATH="${_FILE_PATH%/*}/$_GATE_BASE" ;; *) _GATE_PATH="$_GATE_BASE" ;; esac
+  fi
+  _IS_GATE=0
+  # An ignore file only ever exempts files from a check, so creating one asks
+  # as well. Any other gate that does not exist yet is being added, not loosened.
+  if [ -n "$_FILE_PATH" ] && printf '%s' "$_GATE_PATH" | grep -qE \
+    '(^|/)(\.(eslint|stylelint|markdownlint|semgrep|gitleaks)ignore|\.gitleaks\.toml)$' 2>/dev/null; then
+    _IS_GATE=1
+  elif [ -n "$_FILE_PATH" ] && { [ -e "$_FILE_PATH" ] || [ -L "$_FILE_PATH" ]; } && printf '%s' "$_GATE_PATH" | grep -qE \
+    -e '(^|/)(\.(eslint|stylelint|markdownlint)rc(\.[a-z0-9_-]+)*|eslint\.config\.[a-z]+|(eslint|prettier|stylelint|commitlint|oxlint)\.config(\.[a-z0-9_-]+)*\.(c|m)?(j|t)s|biome\.jsonc?|\.?ruff\.toml|\.pre-commit-config\.ya?ml|tsconfig(\.[a-z]+)?\.json|\.gitlab-ci\.ya?ml|jenkinsfile|codecov\.ya?ml|\.golangci\.ya?ml|pytest\.ini|\.flake8|mypy\.ini|\.?lefthook\.ya?ml)$' \
     -e '(^|/)\.github/workflows/.+\.ya?ml$' \
-    -e '(^|/)(migrations|migrate|alembic/versions)/.+$' 2>/dev/null; then
+    -e '(^|/)(migrations|migrate|alembic/versions)/.+$' \
+    -e '(^|/)(\.husky|\.git/hooks)/.+$' 2>/dev/null; then
+    _IS_GATE=1
+  fi
+  if [ "$_IS_GATE" -eq 1 ]; then
     _vibestack_log careful ask gate-file "$_FILE_PATH"
     _vibestack_analytics ask gate_file
     vibe_hook_decision ask "[careful] Gate file: ${_FILE_PATH##*/}. Fix the code, not the gate — confirm this edit tightens or keeps the check rather than silencing a failure."
@@ -175,12 +192,28 @@ if [ "$_IS_SIMPLE" -eq 1 ]; then
   # trail the target) are skipped; EVERY non-option token must be a root-class
   # target (/, ~, $HOME, /*), and a recursive flag must be present. noglob is
   # forced around word-splitting so a literal /* token never expands.
-  if printf '%s' "$CMD" | grep -qE '^[[:space:]]*(sudo[[:space:]]+)?rm[[:space:]]' 2>/dev/null \
-    && printf '%s' "$CMD" | grep -qE '(^|[[:space:]])(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)' 2>/dev/null; then
+  # A wrapper in front runs the same rm, so sudo/doas (with their options),
+  # env (with its assignments), command, nice and a leading backslash are
+  # stripped first; their option values would otherwise count as targets.
+  # Repeated until nothing changes: wrappers chain in any order (env sudo rm).
+  _RM_CMD="$CMD"
+  _RM_PREV=""
+  while [ "$_RM_CMD" != "$_RM_PREV" ]; do
+    _RM_PREV="$_RM_CMD"
+    _RM_CMD=$(printf '%s' "$_RM_CMD" | sed -E \
+      -e 's/^[[:space:]]+//' \
+      -e 's/^(sudo|doas)([[:space:]]+-[ugCpDrtTU][[:space:]]+[^-[:space:]][^[:space:]]*|[[:space:]]+-[^[:space:]]+)*[[:space:]]+//' \
+      -e 's/^env([[:space:]]+-u[[:space:]]+[^[:space:]]+|[[:space:]]+-[^[:space:]]+|[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*[[:space:]]+//' \
+      -e 's/^command([[:space:]]+-[pvV]+)*[[:space:]]+//' \
+      -e 's/^nice([[:space:]]+-n[[:space:]]+-?[0-9]+|[[:space:]]+-[^[:space:]]+)*[[:space:]]+//' \
+      -e 's/^\\//')
+  done
+  if printf '%s' "$_RM_CMD" | grep -qE '^rm[[:space:]]' 2>/dev/null \
+    && printf '%s' "$_RM_CMD" | grep -qE '(^|[[:space:]])(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)' 2>/dev/null; then
     _ROOT_TARGETS=0
     _SAFE_TARGETS=0
     set -f
-    for _TOK in $CMD; do
+    for _TOK in $_RM_CMD; do
       # Strip one layer of surrounding quotes: rm -rf "/" is still rm -rf /.
       _TOK="${_TOK#\"}"; _TOK="${_TOK%\"}"; _TOK="${_TOK#\'}"; _TOK="${_TOK%\'}"
       case "$_TOK" in
@@ -212,32 +245,52 @@ if [ "$_IS_SIMPLE" -eq 1 ]; then
   # Force-push to the repo's default branch (the shared history everyone pulls).
   # Force is carried by -f/--force OR by git's plus-refspec syntax (+main,
   # +HEAD:main) which needs no flag at all. --force-with-lease never matches.
-  if printf '%s' "$CMD" | grep -qE '^[[:space:]]*git[[:space:]]+push([[:space:]]|$)' 2>/dev/null; then
+  # git's global options (-C dir, -c k=v, --git-dir=...) are dropped WITH their
+  # values first: `git -C r push` is still a push, and in `git -C main push`
+  # the `main` is a directory, not the ref being pushed.
+  _GIT_CMD=$(printf '%s' "$CMD" | sed -E 's/^([[:space:]]*git)([[:space:]]+(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix)[[:space:]]+[^[:space:]]+|[[:space:]]+-[^[:space:]]+)*/\1/')
+  if printf '%s' "$_GIT_CMD" | grep -qE '^[[:space:]]*git[[:space:]]+push([[:space:]]|$)' 2>/dev/null; then
     _HAS_FORCE=0
-    if printf '%s' "$CMD" | grep -qE '(^|[[:space:]])(-f|--force)($|[[:space:]])' 2>/dev/null; then
+    if printf '%s' "$_GIT_CMD" | grep -qE '(^|[[:space:]])(-f|--force)($|[[:space:]])' 2>/dev/null; then
       _HAS_FORCE=1
-    elif printf '%s' "$CMD" | grep -qE '(^|[[:space:]])\+[^[:space:]]' 2>/dev/null; then
+    elif printf '%s' "$_GIT_CMD" | grep -qE '(^|[[:space:]])\+[^[:space:]]' 2>/dev/null; then
       _HAS_FORCE=1
     fi
     if [ "$_HAS_FORCE" -eq 1 ]; then
       # Full branch path (slashed defaults like release/2.0 stay intact) and
       # FIXED-STRING token comparison — never interpolate a branch name into
       # an ERE (metacharacters would over/under-match).
-      _DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||' || true)
+      # Branch facts come from the repo the push runs in: `git -C <dir> push`
+      # reads <dir>, not the hook's cwd.
+      # ponytail: last unquoted -C wins; stacked relative -C values are not
+      # composed, and an unusable dir falls back to the cwd as before.
+      _C_DIR=""
+      _PREV=""
+      set -f
+      for _TOK in $CMD; do
+        [ "$_PREV" = "-C" ] && _C_DIR="$_TOK"
+        [ "$_TOK" = "push" ] && break
+        _PREV="$_TOK"
+      done
+      set +f
+      _git_repo() {
+        if [ -n "$_C_DIR" ] && [ -d "$_C_DIR" ]; then git -C "$_C_DIR" "$@"; else git "$@"; fi
+      }
+      _DEFAULT_BRANCH=$(_git_repo symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||' || true)
       # A fresh clone or a worktree often lacks the origin/HEAD symbolic ref —
       # without a fallback the HIGH tier would be silently inert there. Probe
       # the two conventional defaults.
       if [ -z "$_DEFAULT_BRANCH" ]; then
-        if git show-ref --verify -q refs/remotes/origin/main 2>/dev/null; then
+        if _git_repo show-ref --verify -q refs/remotes/origin/main 2>/dev/null; then
           _DEFAULT_BRANCH="main"
-        elif git show-ref --verify -q refs/remotes/origin/master 2>/dev/null; then
+        elif _git_repo show-ref --verify -q refs/remotes/origin/master 2>/dev/null; then
           _DEFAULT_BRANCH="master"
         fi
       fi
       if [ -n "$_DEFAULT_BRANCH" ]; then
         _TARGETS_DEFAULT=0
         set -f
-        for _TOK in $CMD; do
+        for _TOK in $_GIT_CMD; do
           # Strip one layer of surrounding quotes: `git push -f origin "main"`
           # must not dodge the deny just because the ref is quoted.
           _TOK="${_TOK#\"}"; _TOK="${_TOK%\"}"; _TOK="${_TOK#\'}"; _TOK="${_TOK%\'}"
@@ -252,13 +305,13 @@ if [ "$_IS_SIMPLE" -eq 1 ]; then
           fi
         done
         set +f
-        if [ "$_TARGETS_DEFAULT" -eq 0 ] && printf '%s' "$CMD" | grep -qE '^[[:space:]]*git[[:space:]]+push([[:space:]]+(-f|--force))*([[:space:]]+[A-Za-z0-9._-]+)?([[:space:]]+(-f|--force))*[[:space:]]*$' 2>/dev/null; then
+        if [ "$_TARGETS_DEFAULT" -eq 0 ] && printf '%s' "$_GIT_CMD" | grep -qE '^[[:space:]]*git[[:space:]]+push([[:space:]]+(-f|--force))*([[:space:]]+[A-Za-z0-9._-]+)?([[:space:]]+(-f|--force))*[[:space:]]*$' 2>/dev/null; then
           # `git push --force` with no refspec — with or without a remote name —
           # targets the current branch's upstream, which is the default branch
           # exactly when you are standing on it. A remote alone is not a target;
           # `git push --force origin main` names one and is caught by the token
           # loop above, so it never reaches here.
-          _CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || true)
+          _CURRENT_BRANCH=$(_git_repo branch --show-current 2>/dev/null || true)
           [ -n "$_CURRENT_BRANCH" ] && [ "$_CURRENT_BRANCH" = "$_DEFAULT_BRANCH" ] && _TARGETS_DEFAULT=1
         fi
         if [ "$_TARGETS_DEFAULT" -eq 1 ]; then
@@ -311,6 +364,20 @@ if [ "$_SKIP_SAFE_EXCEPTION" -eq 0 ] \
   fi
 fi
 
+# The warn tier reads the command with every commit message masked: a message
+# that says "drop table" describes a change, it does not run one. The masker
+# hands back the command unchanged whenever it cannot be sure what is message
+# and what is command. The deny tier and the obfuscation tripwire above keep
+# reading the raw text.
+CMD_MEDIUM="$CMD"
+case "$CMD" in
+  *commit*)
+    _MASKED=$(printf '%s' "$CMD" | awk -f "$_HOOK_DIR/mask-commit-message.awk" 2>/dev/null) \
+      && [ -n "$_MASKED" ] && CMD_MEDIUM="$_MASKED"
+    ;;
+esac
+CMD_MEDIUM_LOWER=$(printf '%s' "$CMD_MEDIUM" | tr '[:upper:]' '[:lower:]')
+
 WARN=""
 
 # --- PowerShell and cmd ---
@@ -325,7 +392,7 @@ _careful_tool_name() {
   # Only a payload that names the PowerShell tool pays for a second parse.
   case "$INPUT" in *'"PowerShell"'*) ;; *) return 0 ;; esac
   if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$INPUT" | python3 -c 'import sys,json
+    printf '%s' "$INPUT" | python3 -I -c 'import sys,json
 d = json.loads(sys.stdin.read())
 t = d.get("tool_name", "") if isinstance(d, dict) else ""
 sys.stdout.write(t.strip() if isinstance(t, str) else "")' 2>/dev/null && return 0
@@ -397,14 +464,17 @@ if [ -n "$_WIN_SCAN" ]; then
     "(^|[^a-z0-9_.\$-])(powershell|pwsh)(\\.exe)?[\"']?[[:space:]](${_STMT}[[:space:]])?-(e|ec|en|enc[a-z]*)([[:space:]:]|\$)"
     "PowerShell -EncodedCommand. ${_WHY_DYNAMIC}"
     ps_start_process_shell
-    "${_CP}${_MOD}(start-process|saps|start)[[:space:]]${_STMT}(cmd|powershell|pwsh)(\\.exe)?[\"']?([[:space:]]|$)"
-    "Start-Process launching cmd or PowerShell. /careful cannot see what its -ArgumentList will run. Read it before approving."
+    "${_CP}${_MOD}(start-process|saps|start)([[:space:]]${_STMT})?[[:space:]\"'\\\\/:=](cmd|powershell|pwsh|bash|sh|wsl)(\\.exe)?[\"']?([[:space:]]|$)"
+    "Start-Process launching a shell (cmd, PowerShell, bash, sh, wsl). /careful cannot see what its -ArgumentList will run. Read it before approving."
     ps_scriptblock_create
     '\[(system\.management\.automation\.)?scriptblock\]::create'
     "PowerShell [scriptblock]::Create. ${_WHY_DYNAMIC}"
     ps_invoke_expression
     "${_CP}(invoke-expression|iex)([[:space:](]|$)"
     "PowerShell Invoke-Expression (iex). ${_WHY_DYNAMIC}"
+    ps_call_operator
+    '(^|[^&])&[[:space:]]*[$(]'
+    "PowerShell call operator (&) on a variable or expression. ${_WHY_DYNAMIC}"
   )
   _WI=0
   while [ "$_WI" -lt "${#_WIN_RULES[@]}" ]; do
@@ -417,78 +487,137 @@ if [ -n "$_WIN_SCAN" ]; then
   done
 fi
 
+# Global options, each with an optional value in its own token (`--profile
+# prod`, `-n prod`, `git -C repo`), may sit between a CLI and its subcommand.
+# Prod commands usually carry them, so a rule that wants the subcommand right
+# after the CLI misses exactly the commands it exists for.
+_OPTS='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
+_GIT="git${_OPTS}[[:space:]]+"
+# One argument of the same command: it may be quoted (a message can hold a `;`)
+# but cannot cross a command separator.
+_ARG="([^;&|[:space:]\"']|\"[^\"]*\"|'[^']*')+"
+_END="([[:space:];&|]|\$)"
+
 # rm must start a word: `terraform -chdir=x` ends in "rm -" followed by an "r".
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(^|[^[:alnum:]_.-])rm[[:space:]]+(-[a-zA-Z]*[rR]|--recursive)' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE '(^|[^[:alnum:]_.-])rm[[:space:]]+(-[a-zA-Z]*[rR]|--recursive)' 2>/dev/null; then
   WARN="Destructive: recursive delete (rm -r). This permanently removes files."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD_LOWER" | grep -qE 'drop[[:space:]]+(table|database)' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM_LOWER" | grep -qE 'drop[[:space:]]+(table|database)' 2>/dev/null; then
   WARN="Destructive: SQL DROP detected. This permanently deletes database objects."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD_LOWER" | grep -qE '(^|[^[:alnum:]_])truncate([^[:alnum:]_]|$)' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM_LOWER" | grep -qE '(^|[^[:alnum:]_])truncate([^[:alnum:]_]|$)' 2>/dev/null; then
   WARN="Destructive: SQL TRUNCATE detected. This deletes all rows from a table."
 fi
 
 # git carries force either by flag or by a leading + on the refspec (+main,
 # +HEAD:refs/heads/main), which needs no flag at all. Matching only the flag
 # let the refspec form through with no warning whatsoever.
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+push[[:space:]]+.*(-f([[:space:]]|$)|--force)' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "${_GIT}push[[:space:]]+.*(-f([[:space:]]|\$)|--force)" 2>/dev/null; then
   WARN="Destructive: git force-push rewrites remote history. Other contributors may lose work."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+push[[:space:]]' 2>/dev/null \
-  && printf '%s' "$CMD" | grep -qE '(^|[[:space:]])\+[^[:space:]-][^[:space:]]*' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "${_GIT}push[[:space:]]" 2>/dev/null \
+  && printf '%s' "$CMD_MEDIUM" | grep -qE '(^|[[:space:]])\+[^[:space:]-][^[:space:]]*' 2>/dev/null; then
   WARN="Destructive: git force-push (+refspec) rewrites remote history. Other contributors may lose work."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+reset[[:space:]]+--hard' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "${_GIT}push([[:space:]]+${_ARG})*[[:space:]]+(--delete|-d|--mirror|:[^;&|[:space:]]+)${_END}" 2>/dev/null; then
+  WARN="Destructive: git push --delete / --mirror / :ref deletes branches on the remote."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "${_GIT}reset[[:space:]]+--hard" 2>/dev/null; then
   WARN="Destructive: git reset --hard discards all uncommitted changes."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'git[[:space:]]+(checkout|restore)[[:space:]]+\.' 2>/dev/null; then
+# A whole tree: `.`, `..`, `:/` (the repository root) or a directory written
+# with its trailing slash, after any options or `--`. One named file stays
+# quiet, and so does `restore --staged` alone, which only unstages.
+_TREE='[[:space:]](\.|\.\.|\./|\.\./|:/|[^-[:space:]][^[:space:]]*/)([[:space:]]|$)'
+_WIPES_TREE=0
+if printf '%s' "$CMD_MEDIUM" | grep -qE "${_GIT}(checkout|restore)[[:space:]]+\\." 2>/dev/null; then
+  _WIPES_TREE=1
+else
+  _COS=$(printf '%s' "$CMD_MEDIUM" | grep -oE "${_GIT}(checkout|restore)([[:space:]]+${_ARG})*" 2>/dev/null || true)
+  while IFS= read -r _CO; do
+    [ -n "$_CO" ] || continue
+    # The targets follow the subcommand: `git -C . checkout f` names one file.
+    printf '%s' "$_CO" | awk '{
+        i = 2
+        while (i <= NF && $i ~ /^-/) i += ($i ~ /^(-C|-c|--git-dir|--work-tree|--namespace|--config-env|--super-prefix)$/) ? 2 : 1
+        out = ""; for (; i <= NF; i++) out = out " " $i
+        print out " "
+      }' | grep -qE "$_TREE" 2>/dev/null || continue
+    case "$_CO" in
+      *restore*)
+        if printf '%s' "$_CO" | grep -qE '[[:space:]](--staged|-S)([[:space:]]|$)' 2>/dev/null \
+          && ! printf '%s' "$_CO" | grep -qE '[[:space:]](--worktree|-W)([[:space:]]|$)' 2>/dev/null; then
+          continue
+        fi
+        ;;
+    esac
+    _WIPES_TREE=1
+  done <<< "$_COS"
+fi
+if [ -z "$WARN" ] && [ "$_WIPES_TREE" -eq 1 ]; then
   WARN="Destructive: discards all uncommitted changes in the working tree."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'kubectl[[:space:]]+delete' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "${_GIT}clean([[:space:]]+${_ARG})*[[:space:]]+(-[a-zA-Z]*f[a-zA-Z]*|--force)${_END}" 2>/dev/null; then
+  WARN="Destructive: git clean -f deletes untracked files, which git cannot bring back."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE \
+  -e "${_GIT}branch([[:space:]]+${_ARG})*[[:space:]]+-[a-zA-Z]*(D|d[a-zA-Z]*f|f[a-zA-Z]*d)[a-zA-Z]*${_END}" \
+  -e "${_GIT}branch([[:space:]]+${_ARG})*[[:space:]]+(-d|--delete)([[:space:]]+${_ARG})*[[:space:]]+(-f|--force)${_END}" \
+  -e "${_GIT}branch([[:space:]]+${_ARG})*[[:space:]]+(-f|--force)([[:space:]]+${_ARG})*[[:space:]]+(-d|--delete)${_END}" 2>/dev/null; then
+  WARN="Destructive: git branch -D deletes a branch even when its commits are merged nowhere."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "${_GIT}stash[[:space:]]+(drop|clear)${_END}" 2>/dev/null; then
+  WARN="Destructive: git stash drop/clear discards stashed work."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE \
+  -e "${_GIT}reflog[[:space:]]+(expire|delete)${_END}" \
+  -e "${_GIT}update-ref([[:space:]]+${_ARG})*[[:space:]]+(-d|--delete)${_END}" 2>/dev/null; then
+  WARN="Destructive: rewrites git's ref history (reflog expire/delete, update-ref -d); lost commits may not be recoverable."
+fi
+
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "kubectl${_OPTS}[[:space:]]+delete" 2>/dev/null; then
   WARN="Destructive: kubectl delete removes Kubernetes resources. May impact production."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'docker[[:space:]]+(rm[[:space:]]+-f|system[[:space:]]+prune)' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE 'docker[[:space:]]+(rm[[:space:]]+-f|system[[:space:]]+prune)' 2>/dev/null; then
   WARN="Destructive: Docker force-remove or prune. May delete running containers or cached images."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(terraform|tofu)([[:space:]]+-[^[:space:]]+)*[[:space:]]+destroy' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE '(terraform|tofu)([[:space:]]+-[^[:space:]]+)*[[:space:]]+destroy' 2>/dev/null; then
   WARN="Destructive: terraform destroy tears down every resource in the state."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE '(terraform|tofu)([[:space:]]+-[^[:space:]]+)*[[:space:]]+apply([[:space:]]+[^[:space:]]+)*[[:space:]]+--?auto-approve' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE '(terraform|tofu)([[:space:]]+-[^[:space:]]+)*[[:space:]]+apply([[:space:]]+[^[:space:]]+)*[[:space:]]+--?auto-approve' 2>/dev/null; then
   WARN="Destructive: terraform apply -auto-approve changes infrastructure without showing the plan first."
 fi
 
-# Global options, each with an optional value in its own token (`--profile
-# prod`, `-n prod`), may sit between a CLI and its subcommand. Prod commands
-# usually carry them, so a rule that wants the subcommand right after the CLI
-# misses exactly the commands it exists for.
-_OPTS='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
-
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE "aws${_OPTS}[[:space:]]+[a-z0-9-]+[[:space:]]+(delete-[a-z-]+|terminate-instances|deregister-[a-z-]+)" 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "aws${_OPTS}[[:space:]]+[a-z0-9-]+[[:space:]]+(delete-[a-z-]+|terminate-instances|deregister-[a-z-]+)" 2>/dev/null; then
   WARN="Destructive: AWS delete/terminate/deregister removes cloud resources. May impact production."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE "helm${_OPTS}[[:space:]]+(uninstall|delete)([[:space:]]|\$)" 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE "helm${_OPTS}[[:space:]]+(uninstall|delete)([[:space:]]|\$)" 2>/dev/null; then
   WARN="Destructive: helm uninstall removes a release and its Kubernetes resources."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'argocd[[:space:]]+app[[:space:]]+delete' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE 'argocd[[:space:]]+app[[:space:]]+delete' 2>/dev/null; then
   WARN="Destructive: argocd app delete can cascade-delete the application's resources."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'sudo[[:space:]]+rm([[:space:]]|$)' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE 'sudo[[:space:]]+rm([[:space:]]|$)' 2>/dev/null; then
   WARN="Destructive: sudo rm deletes as root, past every file permission."
 fi
 
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE 'chmod[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*[0-7]?777' 2>/dev/null; then
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE 'chmod[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*[0-7]?777' 2>/dev/null; then
   WARN="Destructive: chmod 777 makes files world-writable."
 fi
 
@@ -500,25 +629,34 @@ fi
 _FETCH='(^|[^[:alnum:]_])(curl|wget)([[:space:]]|$)'
 _SHNAME='(/[^[:space:]|;&]*/)?(ba|z|da|k|fi)?sh'
 _WRAP='((sudo|doas)([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]|][^[:space:]|]*)?)*[[:space:]]+(--[[:space:]]+)?|env[[:space:]]+)?'
-if [ -z "$WARN" ] && printf '%s' "$CMD" | tr '\n' ' ' | grep -qE \
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | tr '\n' ' ' | grep -qE \
   -e "${_FETCH}.*\\|&?[[:space:]]*(\\([[:space:]]*)?${_WRAP}${_SHNAME}([^[:alnum:]_-]|\$)" \
   -e "(^|[^[:alnum:]_])${_SHNAME}[[:space:]]+(-c[[:space:]]+)?[\"']?(<\\(|\\\$\\()[[:space:]]*(curl|wget)([[:space:]]|\$)" 2>/dev/null; then
   WARN="Destructive: piping a download into a shell runs code nobody has read."
 fi
 
-# The bypass flag has to belong to the commit or push itself: tokens between
-# them may be quoted (a message can hold a `;`) but cannot cross a command
-# separator. `-n` is --no-verify on commit only; on push it is --dry-run.
-_TOK="([^;&|[:space:]\"']|\"[^\"]*\"|'[^']*')+"
-if [ -z "$WARN" ] && printf '%s' "$CMD" | grep -qE \
-  -e "git${_OPTS}[[:space:]]+(commit|push)([[:space:]]+${_TOK})*[[:space:]]+--no-verify([[:space:];&|]|\$)" \
-  -e "git${_OPTS}[[:space:]]+commit([[:space:]]+${_TOK})*[[:space:]]+-[aeiopqsvz]*n[a-zA-Z]*([[:space:];&|]|\$)" 2>/dev/null; then
+# The bypass flag has to belong to the commit or push itself, not to a command
+# chained after it. `-n` is --no-verify on commit only; on push it is --dry-run.
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE \
+  -e "${_GIT}(commit|push)([[:space:]]+${_ARG})*[[:space:]]+--no-verify${_END}" \
+  -e "${_GIT}commit([[:space:]]+${_ARG})*[[:space:]]+-[aeiopqsvz]*n[a-zA-Z]*${_END}" 2>/dev/null; then
   WARN="Destructive: --no-verify skips the git hooks. A bypassed hook hides the failure it exists to catch."
+fi
+
+# Pointing core.hooksPath elsewhere (or dropping it), or HUSKY=0, skips the
+# hooks as surely as --no-verify. Config keys are case-insensitive. Reading the
+# key (`git config --get core.hooksPath`) passes.
+if [ -z "$WARN" ] && { printf '%s' "$CMD_MEDIUM_LOWER" | grep -qE \
+    -e "git${_OPTS}[[:space:]]+(-c[[:space:]]*|--config-env[=[:space:]])[\"']?core\\.hookspath=" \
+    -e "${_GIT}config([[:space:]]+${_ARG})*[[:space:]]+[\"']?core\\.hookspath[\"']?[[:space:]]+[^;&|<>[:space:]0-9]" \
+    -e "${_GIT}config([[:space:]]+${_ARG})*[[:space:]]+(--unset(-all)?|unset)([[:space:]]+${_ARG})*[[:space:]]+[\"']?core\\.hookspath" 2>/dev/null \
+  || printf '%s' "$CMD_MEDIUM" | grep -qE "(^|[;&|({])[[:space:]]*(export[[:space:]]+|env([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^;&|[:space:]]*[[:space:]]+)*HUSKY=[\"']?0[\"']?${_END}" 2>/dev/null; }; then
+  WARN="Destructive: disabling git hooks (core.hooksPath, HUSKY=0) skips the checks they run, the same as --no-verify."
 fi
 
 # Judged per command: `npm publish --dry-run` uploads nothing, but a dry run
 # chained ahead of a real publish must not excuse it.
-if [ -z "$WARN" ] && printf '%s' "$CMD" | tr ';&|' '\n\n\n' \
+if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | tr ';&|' '\n\n\n' \
   | grep -E "(npm|pnpm)${_OPTS}([[:space:]]+recursive)?[[:space:]]+publish([[:space:]]|\$)|yarn[[:space:]]+(npm[[:space:]]+)?publish" 2>/dev/null \
   | grep -qvE -- '--dry-run' 2>/dev/null; then
   WARN="Destructive: package publish is public and cannot be cleanly taken back."
@@ -547,7 +685,7 @@ _match_pattern_file() {
     # `--` first: a project pattern may legitimately start with a dash (say
     # `--destroy`), and without the terminator grep reads it as an option,
     # exits 2, and the discarded stderr makes the guard silently skip it.
-    if printf '%s' "$CMD" | grep -qE -- "$_line" 2>/dev/null; then
+    if printf '%s' "$CMD_MEDIUM" | grep -qE -- "$_line" 2>/dev/null; then
       printf '%s' "$_line"
       return 0
     fi

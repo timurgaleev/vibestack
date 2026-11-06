@@ -129,6 +129,14 @@ echo '{"tool_input":{"command":"rm -rf /"}}' \
 echo '{"tool_input":{"command":"git commit -m \"wip\" && rm -rf /"}}' \
   | bash skills/careful/bin/check-careful.sh
 
+# A commit message is prose, not a command — should return {}
+echo '{"tool_input":{"command":"git commit -m \"drop table on rollback\""}}' \
+  | bash skills/careful/bin/check-careful.sh
+
+# git's global options before the subcommand — should return an "ask" decision
+echo '{"tool_input":{"command":"git -C repo reset --hard"}}' \
+  | bash skills/careful/bin/check-careful.sh
+
 # Unparseable payload — careful asks, freeze denies; neither returns {}
 echo 'not json' | bash skills/careful/bin/check-careful.sh
 

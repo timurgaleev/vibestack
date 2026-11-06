@@ -19,7 +19,7 @@ vibe_hook_extract_field() {
   _vhef_payload="$1"
   _vhef_field="$2"
   if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$_vhef_payload" | python3 -c 'import sys,json
+    printf '%s' "$_vhef_payload" | python3 -I -c 'import sys,json
 field = sys.argv[1]
 d = json.loads(sys.stdin.read())
 c = d.get("tool_input", {}).get(field, "")
@@ -40,7 +40,7 @@ sys.stdout.write(c if isinstance(c, str) else "")' "$_vhef_field" 2>/dev/null &&
 vibe_hook_json_string() {
   _vhjs_text="$1"
   if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$_vhjs_text" | python3 -c 'import sys,json; sys.stdout.write(json.dumps(sys.stdin.read()))' 2>/dev/null && return 0
+    printf '%s' "$_vhjs_text" | python3 -I -c 'import sys,json; sys.stdout.write(json.dumps(sys.stdin.read()))' 2>/dev/null && return 0
   fi
   if command -v node >/dev/null 2>&1; then
     printf '%s' "$_vhjs_text" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.stringify(s)))' 2>/dev/null && return 0
