@@ -166,7 +166,7 @@ fi
 # origin/<default>'s newest commit and today exceeds the window, the model's
 # "today" is almost certainly stale (or the worktree is wildly behind).
 if [ -z "$_RETRO_GUARD_VERDICT" ]; then
-  _RETRO_LATEST_ISO=$(git log -1 --format=%ci origin/<default> 2>/dev/null | awk '{print $1}')
+  _RETRO_LATEST_ISO=$(git log -1 --format=%ci origin/<default> 2>/dev/null | awk '{print $(1)}')
   if [ -n "$_RETRO_LATEST_ISO" ]; then
     # The model computes today from the session reminder (NEVER from `date` —
     # the system clock can be hours off in containerized harnesses).
@@ -273,7 +273,7 @@ git log origin/<default> --since="<window>" --format="" --name-only | grep -v '^
 #     headline number from counting whitespace and license headers as shipping.
 #     The awk drops hunks of generated/build files (same pattern as command 4).
 git log origin/<default> --since="<window>" --no-merges -p --unified=0 --no-color \
-  | awk -v gen='(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/' '/^\+\+\+ /{skip = (substr($0, 5) ~ gen); next} /^\+/ && !skip' \
+  | awk -v gen='(^|/)(build|dist|out|target|vendor|node_modules|DerivedData|[.]next|coverage)/' '/^\+\+\+ /{skip = (substr($(0), 5) ~ gen); next} /^\+/ && !skip' \
   | cut -c2- \
   | grep -vE '^[[:space:]]*$' \
   | grep -vE '^[[:space:]]*(#|//|/\*|\*|--|<!--)' | wc -l

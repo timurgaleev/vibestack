@@ -30,6 +30,7 @@ jobs:
           - test-hooks.sh
           - test-render-skill.sh
           - test-source-lint.sh
+          - test-positional-literals.sh
           - test-python-isolation.sh
           - test-vibe-bins.sh
           - test-certify.sh

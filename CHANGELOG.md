@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.55.4 — 2026-11-06
+
+### Fixed
+
+- **Skills no longer lose `$1`, `$2` and `$0` when they load.** Claude Code
+  replaces a bare `$N` in a skill's text with the Nth argument the skill was
+  invoked with, before the model reads it. Shell functions, awk programs and jq
+  filters in the skills were silently rewritten: `/land-and-deploy`'s CI gate
+  could read a failed check as `NO_CHECKS`, the `/codex` and `/claude` timeout
+  watchdogs lost their session argument, and the release step after a merge
+  could not parse the merge commit. Shell arguments are now written `${1}`, awk
+  fields `$(1)`, and money in prose as `USD 310`.
+
+### Added
+
+- **`vibe-lint-sources` catches a bare positional.** Inside any fence it is an
+  error; in prose it is a warning. It also warns on a fenced `python3 -c` or
+  `python3 -` without `-I`, which imports from the working directory first.
+- **`test/test-positional-literals.sh`** renders every skill, applies the
+  host's substitution with placeholder arguments and with empty ones, requires
+  the text to come through unchanged, and runs the `/land-and-deploy` CI gate
+  against a failing check. It runs in CI.
+
+## 1.55.3 — 2026-11-06
+
+### Fixed
+
+- **`/careful` now sees git's global options for real.** An earlier release
+  said options before the subcommand no longer slip past, but for git that only
+  held for `--no-verify`: `git -C repo reset --hard`, `git -c x=y push -f`,
+  `git -C repo checkout .` and `kubectl -n prod delete` ran without a prompt.
+  They ask now. The force-push-to-default deny also reads past
+  `git -C <dir>` and checks the default branch of that repository, not the one
+  you happen to be standing in.
+- **A root delete stays denied behind a wrapper.** `sudo -u root`, `doas`,
+  `env FOO=1`, `command`, `nice -n 10` and `\rm` — chained in any order — no
+  longer turn `rm -rf /` from a hard stop into an overridable prompt.
+- **Commit messages are prose, not commands.** `git commit -m "fix: drop table
+  on rollback"` no longer asks. Anything the hook cannot read with certainty —
+  `$(...)`, backticks, `${...}`, `$[...]`, unusual heredocs, a commit piped into
+  another command — is still checked as written, and flags such as
+  `--no-verify` are never hidden.
+- **Hook payload parsing runs Python isolated (`python3 -I`)**, so a `json.py`
+  in the repository you are working in can no longer run code on every hook
+  call.
+
+### Added
+
+- **`/careful` asks before more destructive git commands:** `git clean -f`,
+  `git branch -D`, `git stash drop` / `clear`, `git reflog expire`,
+  `git update-ref -d`, `git push --delete` / `--mirror` / `:branch`, and
+  `git checkout` / `git restore` of a whole directory. Single-file restores,
+  `git restore --staged`, `git clean -n` and `git branch -d` stay quiet.
+- **Disabling git hooks asks like `--no-verify` does:** setting or unsetting
+  `core.hooksPath` (`-c`, `--config-env`, `git config`) and `HUSKY=0`, also
+  behind `env` or other assignments.
+- **More gate files ask before an edit:** stylelint, markdownlint, prettier,
+  commitlint and oxlint configs, ignore files (`.eslintignore`,
+  `.gitleaksignore`, …), `.husky/*`, `lefthook.yml` and `.git/hooks/*`. Names
+  match in any case.
+- **PowerShell:** the call operator on a variable or expression (`& $cmd`) and
+  `Start-Process` launching `bash`, `sh` or `wsl` ask.
+
 ## 1.55.2 — 2026-10-15
 
 ### Fixed

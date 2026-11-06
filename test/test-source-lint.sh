@@ -97,6 +97,42 @@ d=$(mkfix hostother); printf '# demo\n```text\n$ARGUMENTS\n```\n' > "$d/skills/d
 out=$(bash "$LINT" "$d" 2>&1)
 grep -q '^warn:' <<<"$out" && no "non-shell fence warned: $out" || ok "non-shell fence does not warn"
 
+# 9. positionals: the host replaces $N (N digits, no word character after) with
+#    the Nth argument before the model reads the skill. Inside any fence that is
+#    an error; in prose it warns.
+d=$(mkfix posawk); printf '# demo\n```bash\nawk %s{print $1}%s f\n```\n' "'" "'" > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'SKILL.md:3: bare \$1 ' <<<"$out" && ok "bare \$1 in an awk fence fails with file:line" || no "fenced \$1 missed (rc=$rc): $out"
+
+d=$(mkfix posesc); printf '# demo\n```sh\nsh -c "echo \\$2"\n```\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'SKILL.md:3: bare \$2 ' <<<"$out" && ok "a backslash before \$2 does not protect it" || no "escaped \$2 missed (rc=$rc): $out"
+
+d=$(mkfix postext); printf '# demo\n```\nEst. cost: ~$0.12\n```\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'SKILL.md:3: bare \$0 ' <<<"$out" && ok "any fence is checked, not only shell fences" || no "\$0 in a plain fence missed (rc=$rc): $out"
+
+d=$(mkfix possnip); printf '# snip\n```bash\nSTATE=$(printf x | awk %s{print $1}%s)\n```\n' "'" "'" > "$d/lib/snippets/st.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'st.md:3: bare \$1 ' <<<"$out" && ok "snippets are checked for positionals" || no "snippet positional missed (rc=$rc): $out"
+
+d=$(mkfix posok); printf '# demo\n```bash\nf() { x=${1}; shift; }\nawk %s{print $(1); n = $NF}%s f\necho "$# $@ $$ $1x $10a"\n```\n' "'" "'" > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ! grep -q 'positional\|bare \$' <<<"$out" && ok "\${1}, \$(1), \$NF and \$1x pass" || no "safe forms flagged (rc=$rc): $out"
+
+d=$(mkfix posprose); printf '# demo\n\nA service up more than $500 is HIGH.\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && grep -q 'warn: .*SKILL.md:3: bare \$500 ' <<<"$out" && ok "a prose positional warns without failing" || no "prose positional (rc=$rc): $out"
+
+# 10. pyisolate (warning): a fenced python3 -c / python3 - without -I imports
+#     from the current directory first.
+d=$(mkfix pyc); printf '# demo\n```bash\npython3 -c "print(1)"\npython3 - <<EOF\nEOF\npython3 -I -c "print(1)"\npython3 -Ic "print(1)"\npython3 -I - x <<EOF\nEOF\npython3 script.py\n```\n\nRun python3 -c in prose.\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "python isolation warning does not fail the lint" || no "python warning failed the lint (rc=$rc)"
+grep -q 'warn: .*SKILL.md:3: python3 -c without -I' <<<"$out" && grep -q 'warn: .*SKILL.md:4: python3 - without -I' <<<"$out" \
+  && ok "python3 -c and python3 - without -I warn with file:line" || no "unisolated python not warned: $out"
+[ "$(grep -c 'without -I' <<<"$out")" -eq 2 ] && ok "-I, -Ic, a script path and prose do not warn" || no "isolated python warned: $out"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

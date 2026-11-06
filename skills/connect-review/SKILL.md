@@ -163,9 +163,9 @@ elif [ "$st" -eq 1 ]; then
 else
   printf '%s\n' "$raw" | awk '
     {
-      if (match($0, /BotLocales\/[^\/]+\/Intents\/[^\/]+\/Intent\.json:/) == 0) { skipped++; next }
-      path = substr($0, RSTART, RLENGTH - 1)
-      rest = substr($0, RSTART + RLENGTH)
+      if (match($(0), /BotLocales\/[^\/]+\/Intents\/[^\/]+\/Intent\.json:/) == 0) { skipped++; next }
+      path = substr($(0), RSTART, RLENGTH - 1)
+      rest = substr($(0), RSTART + RLENGTH)
       split(path, p, "/")
       if (match(rest, /"[^"]*"$/) == 0) next
       u = tolower(substr(rest, RSTART + 1, RLENGTH - 2))
@@ -239,18 +239,18 @@ if ! raw=$(aws logs filter-log-events --log-group-name "/aws/lambda/$FN" \
 else
   printf '%s\n' "$raw" \
     | sed -E 's/(Billed|Init|Restore) Duration: [0-9.]+ ms//g' \
-    | grep -oE 'Duration: [0-9.]+ ms' | awk '{print $2}' | sort -n \
+    | grep -oE 'Duration: [0-9.]+ ms' | awk '{print $(2)}' | sort -n \
     | awk 'function q(a, n, p,   i) { i = int(n * p); if (i < n * p) i++; if (i < 1) i = 1; if (i > n) i = n; return a[i] }
-           { a[NR] = $1 }
+           { a[NR] = $(1) }
            END { if (NR) printf "handler p50=%s p95=%s n=%d\n", q(a, NR, 0.5), q(a, NR, 0.95), NR;
                  else print "LATENCY: N-A (no REPORT lines in the window)" }'
   # Second pass for the cold-start row. The aws call already succeeded, so an
   # absence of Init Duration lines means no cold start was sampled, not no
   # access — which is a different answer from the N-A above.
   printf '%s\n' "$raw" \
-    | grep -oE 'Init Duration: [0-9.]+ ms' | awk '{print $3}' | sort -n \
+    | grep -oE 'Init Duration: [0-9.]+ ms' | awk '{print $(3)}' | sort -n \
     | awk 'function q(a, n, p,   i) { i = int(n * p); if (i < n * p) i++; if (i < 1) i = 1; if (i > n) i = n; return a[i] }
-           { a[NR] = $1 }
+           { a[NR] = $(1) }
            END { if (NR) printf "init p50=%s p95=%s n=%d\n", q(a, NR, 0.5), q(a, NR, 0.95), NR;
                  else print "INIT: no cold start in the sampled window — leave the init row out, or mark it estimated" }'
 fi

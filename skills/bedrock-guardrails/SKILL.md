@@ -78,7 +78,7 @@ Every live check below runs through one probe helper, so that a call which fails
 cat > "${TMPDIR:-/tmp}/bg-probe.sh" <<'PROBE'
 # bg_probe <control-label> <read-only aws command...>
 bg_probe() {
-  bg_label="$1"; shift
+  bg_label="${1}"; shift
   if bg_out=$("$@" 2>&1); then
     printf '%s: OK\n%s\n' "$bg_label" "$bg_out"
   else

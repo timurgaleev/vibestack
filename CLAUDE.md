@@ -73,6 +73,9 @@ Each rule has a suite that fails the build; the suite holds the detail.
   (`test/test-brand-audit.sh`, CI)
 - **Source lint.** Balanced fences, no nested includes — `bin/vibe-lint-sources`.
   (`test/test-source-lint.sh`)
+- **No bare positionals in skill text.** The host replaces `$N` with the Nth
+  invocation argument before the model reads a skill. Write `${N}` in shell,
+  `$(N)` in awk, and money as `USD 310`. (`test/test-positional-literals.sh`)
 
 ## Hook scripts
 
@@ -127,6 +130,14 @@ echo '{"tool_input":{"command":"rm -rf /"}}' \
 
 # Quoted argument ahead of a destructive tail — must NOT return {}
 echo '{"tool_input":{"command":"git commit -m \"wip\" && rm -rf /"}}' \
+  | bash skills/careful/bin/check-careful.sh
+
+# A commit message is prose, not a command — should return {}
+echo '{"tool_input":{"command":"git commit -m \"drop table on rollback\""}}' \
+  | bash skills/careful/bin/check-careful.sh
+
+# git's global options before the subcommand — should return an "ask" decision
+echo '{"tool_input":{"command":"git -C repo reset --hard"}}' \
   | bash skills/careful/bin/check-careful.sh
 
 # Unparseable payload — careful asks, freeze denies; neither returns {}
@@ -388,8 +399,8 @@ double-bump.
 - [ ] `skills/vibe/SKILL.md` router updated so the skill is reachable by name
 - [ ] `./install` runs without errors
 - [ ] `bash test/test-source-lint.sh`, `bash test/test-fresh-shell-vars.sh`,
-      `bash test/test-untrusted-shell-text.sh` and `bash test/test-dispatch-flags.sh`
-      pass after any skill text change
+      `bash test/test-untrusted-shell-text.sh`, `bash test/test-dispatch-flags.sh`
+      and `bash test/test-positional-literals.sh` pass after any skill text change
 - [ ] `bash test/test-render-skill.sh` passes if the renderer or any snippet was touched
 - [ ] `bash test/test-install-integration.sh` passes if install/uninstall was touched
 - [ ] `docs/agent-skills-compatibility-audit.md` updated if the new skill uses

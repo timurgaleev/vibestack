@@ -507,7 +507,7 @@ grep -qxF "$_MARK" "$_PLAN" || { echo "ERROR: the decision-log marker is missing
 PLAN_INPUT=$(mktemp "$_VT/autoplan-$_PHASE-input.XXXXXX") || { echo "Not run: mktemp failed in $_VT." >&2; exit 1; }
 # Everything above the first marker line, minus autoplan's own restore-point
 # comments (a re-run on an unrestored plan prepends another one).
-awk -v m="$_MARK" '$0 == m {exit} /^<!-- \/autoplan restore point: / {next} {print}' "$_PLAN" > "$PLAN_INPUT"
+awk -v m="$_MARK" '$(0) == m {exit} /^<!-- \/autoplan restore point: / {next} {print}' "$_PLAN" > "$PLAN_INPUT"
 PROMPT_FILE=$(mktemp "$_VT/codex-prompt.XXXXXX") || { echo "Not run: mktemp failed in $_VT." >&2; exit 1; }
 echo "PLAN_INPUT: $PLAN_INPUT"
 echo "PROMPT_FILE: $PROMPT_FILE"
