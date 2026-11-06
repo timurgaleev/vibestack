@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.55.6 — 2026-11-06
+
+### Fixed
+
+- **`/freeze` no longer lets a home-relative path out of the boundary.** A tool
+  path of `~` or `~/...` is expanded to `$HOME` before it is checked. Before,
+  the hook read `~/.zshrc` as `<session dir>/~/.zshrc` and allowed it whenever
+  the session ran inside the frozen directory.
+- **A symlinked directory followed by `..` is judged where the write lands.**
+  The hook resolves paths physically (`<link>/..` is the parent of the link's
+  target) and also folds `..` as text, and allows the edit only when both
+  readings are inside the boundary.
+- **Windows-shaped paths are denied instead of guessed at.** A drive-letter
+  (`C:\...`, `C:/...`), UNC (`\\server\share`) or any other backslash path
+  (`..\out`) cannot be placed against the boundary from bash, so `/freeze`
+  blocks it on every host.
+- **Odd path shapes fail closed.** A path ending in a newline is checked as
+  written rather than with the newline stripped, and a path containing a newline
+  or carriage return, or longer than 4096 characters, is denied. Deep paths
+  whose parent does not exist yet are resolved without a `dirname` process per
+  component, so a parent over 1024 bytes is no longer judged as the session
+  directory on macOS, and a long path cannot outrun the hook's timeout.
+- **`/unfreeze` no longer claims to exit careful mode.** Its "exit careful mode"
+  trigger is gone, and `/careful` says plainly that there is no `/uncareful`:
+  start a new session to turn safety mode off.
+
 ## 1.55.5 — 2026-11-06
 
 ### Fixed
