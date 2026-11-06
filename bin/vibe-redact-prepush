@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # vibe-redact-prepush — git pre-push hook that scans the diff being pushed for
-# high-confidence credentials and blocks the push on a hit.
+# high-confidence credentials and unresolved merge-conflict markers, and blocks
+# the push on a hit.
 #
 # THIS IS A GUARDRAIL, NOT ENFORCEMENT. `git push --no-verify` bypasses it, as
 # does `VIBESTACK_REDACT_PREPUSH=skip`. It catches accidental credential
@@ -57,8 +58,8 @@ default_remote_branch() {
   printf 'origin/main\n'
 }
 
-# Added lines of the range being pushed for one ref update.
-added_lines_for() {
+# The zero-context diff of the range being pushed for one ref update.
+pushed_diff_for() {
   local local_sha="$1" remote_sha="$2" range base
   if printf '%s' "$remote_sha" | grep -qE '^0+$' \
      || ! git cat-file -e "$remote_sha" 2>/dev/null; then
@@ -67,11 +68,68 @@ added_lines_for() {
   else
     range="$remote_sha..$local_sha"
   fi
-  local diff
-  if ! diff=$(git diff --unified=0 --no-color "$range" 2>/dev/null); then
-    return 1
-  fi
-  printf '%s\n' "$diff" | grep -E '^\+' | grep -vE '^\+\+\+' | sed 's/^+//' || true
+  # Fixed prefixes and raw paths, whatever diff.noprefix or core.quotePath say:
+  # conflict_markers_in reads the path back out of the "+++ b/" header.
+  git -c core.quotePath=false diff --unified=0 --no-color \
+    --src-prefix=a/ --dst-prefix=b/ "$range" 2>/dev/null
+}
+
+# Added lines of a pushed diff.
+added_lines_in() {
+  printf '%s\n' "$1" | grep -E '^\+' | grep -vE '^\+\+\+' | sed 's/^+//' || true
+}
+
+# Line numbers (1-based) of a markdown file that sit inside a ```text or
+# ```diff fence — where a document quotes a conflict to explain one.
+md_quoted_lines() {
+  awk '
+    {
+      t = $0; ind = match(t, /[^ ]/) - 1
+      if (ind < 0 || ind > 3) { if (fence && quoted) print NR; next }
+      t = substr(t, ind + 1)
+    }
+    !fence {
+      if (t ~ /^```/ || t ~ /^~~~/) {
+        fc = substr(t, 1, 1); fn = 0
+        while (substr(t, fn + 1, 1) == fc) fn++
+        info = substr(t, fn + 1); sub(/^[ \t]+/, "", info); sub(/[ \t].*$/, "", info)
+        fence = 1; quoted = (tolower(info) == "text" || tolower(info) == "diff")
+      }
+      next
+    }
+    {
+      u = t; sub(/[ \t]+$/, "", u); n = length(u); gsub(fc, "", u)
+      if (u == "" && n >= fn) { fence = 0; quoted = 0; next }
+      if (quoted) print NR
+    }
+  '
+}
+
+# Prints "<path>:<line>" for each unresolved merge-conflict marker the pushed
+# diff ($2, ending at commit $1) adds. Markers quoted in a text/diff fence of a
+# .md file are documentation.
+conflict_markers_in() {
+  local local_sha="$1" diff="$2" hits path n quoted
+  hits=$(printf '%s\n' "$diff" | awk '
+    /^diff --git / { header = 1; next }
+    header && /^\+\+\+ / { path = substr($0, 7); sub(/\t$/, "", path); next }
+    /^@@ / { header = 0; split($3, a, ","); n = substr(a[1], 2) + 0; next }
+    header { next }
+    /^\+/ {
+      line = substr($0, 2)
+      if (line ~ /^(<<<<<<<|>>>>>>>)( |$)/ || line ~ /^=======$/) print path "\t" n
+      n++
+    }
+  ')
+  [ -n "$hits" ] || return 0
+  while IFS=$'\t' read -r path n; do
+    case "$path" in
+      *.md|*.MD|*.markdown)
+        quoted=$(git show "$local_sha:$path" 2>/dev/null | md_quoted_lines)
+        printf '%s\n' "$quoted" | grep -qxF -- "$n" && continue ;;
+    esac
+    printf '%s:%s\n' "$path" "$n"
+  done <<< "$hits"
 }
 
 # High-confidence credential patterns (kept in sync with
@@ -79,6 +137,7 @@ added_lines_for() {
 # `vibe-redact scan` sources this file for the same list and matcher.
 PATTERNS=(
   'AWS access key|AKIA[0-9A-Z]{16}'
+  'AWS temporary key|ASIA[0-9A-Z]{16}'
   'GitHub token|gh(p|o|s|u|r)_[A-Za-z0-9]{36}'
   'GitHub fine-grained token|github_pat_[A-Za-z0-9_]{22,}'
   'Slack token|xox[abpr]-[A-Za-z0-9-]{10,}'
@@ -93,20 +152,37 @@ PATTERNS=(
   'DigitalOcean token|dop_v1_[a-f0-9]{64}'
   'Private key block|-----BEGIN[^-]*PRIVATE KEY-----'
   'AWS secret key|aws_secret_access_key[^A-Za-z0-9]+[A-Za-z0-9/+=]{40}'
-  'env-style secret|^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=..+'
+  'SecretAccessKey field|"?SecretAccessKey"?[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9/+=]{40}'
+  'env-style secret|^[[:space:]+-]{0,2}[[:space:]]*(export[[:space:]]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+'
+  'DSN credentials|://[^[:space:]:/@]{1,255}:[^[:space:]@/]{1,255}@'
 )
 
 # A matched span that is itself a documentation placeholder is not a finding:
 # the AWS docs keys (AKIAIOSFODNN7EXAMPLE), <your-token>, xxxxxx, ****,
-# your_api_key. Judged on the span alone, never on the rest of the line, so a
-# live key sitting next to the word "example" still blocks. For env-style
-# lines only the value is judged — EXAMPLE_API_KEY=<live value> is a finding.
+# your_api_key, ${DB_PASSWORD}, $(gh auth token), sk-... Judged on the span
+# alone, never on the rest of the line, so a live key sitting next to the word
+# "example" still blocks. For name=value shapes only the value is judged —
+# EXAMPLE_API_KEY=<live value> is a finding — and for a URL only its password,
+# where local dev and test strings (postgres:postgres, user:pass, a password
+# that repeats the user name) are the norm.
 redact_is_placeholder() {
-  local label="$1" span="$2" v
+  local label="$1" span="$2" v u
   v="$span"
-  [ "$label" = "env-style secret" ] && v="${span#*=}"
+  case "$label" in
+    "env-style secret") v="${span#*=}" ;;
+    "SecretAccessKey field") v="${span#*[:=]}"; v="${v#"${v%%[![:space:]]*}"}" ;;
+    "DSN credentials") v="${span#://}"; v="${v#*:}"; v="${v%@}" ;;
+  esac
   v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
   printf '%s' "$v" | grep -qiE '^(your[_-]|<[^>]*>$|[*]+$|x{6,}$|changeme$|redacted|placeholder|dummy|fake)' && return 0
+  printf '%s' "$v" | grep -qE '^[$][{]?[A-Za-z_][A-Za-z0-9_]*[}]?$' && return 0
+  case "$v" in '$('*|'${'*|*...) return 0 ;; esac
+  if [ "$label" = "DSN credentials" ]; then
+    case "$v" in *'$'*|*'{'*) return 0 ;; esac
+    [ "${#v}" -lt 8 ] && return 0
+    u="${span#://}"; [ "$v" = "${u%%:*}" ] && return 0
+    printf '%s' "$v" | grep -qiE '^(pass|password|postgres|root|test|secret|admin|change-?me|p)$' && return 0
+  fi
   case "$v" in *://*|*@*) return 1 ;; esac
   # Only a value that starts or ends with "example" (AKIA...EXAMPLE,
   # ...EXAMPLEKEY, example-token) — a word in the middle (MyExampleCorp2024!)
@@ -172,18 +248,23 @@ prepush_main() {
     skip)
       log_skip
       echo "vibe-redact-prepush: skipped via VIBESTACK_REDACT_PREPUSH=skip" >&2
+      # Read the ref list git hands over; leaving it unread can fail the
+      # caller's pipe with SIGPIPE and turn the bypass into a blocked push.
+      [ -t 0 ] || cat >/dev/null
       exit 0 ;;
   esac
 
   findings=""
+  conflicts=""
   # `|| [ -n ... ]` keeps the last line when stdin lacks a trailing newline
   # (the managed wrapper pipes refs via printf '%s').
   while read -r _local_ref local_sha _remote_ref remote_sha _rest || [ -n "${local_sha:-}" ]; do
     [ -n "${local_sha:-}" ] || continue
     printf '%s' "$local_sha" | grep -qE '^0+$' && continue   # branch delete
-    if ! added=$(added_lines_for "$local_sha" "${remote_sha:-0}"); then
+    if ! diff=$(pushed_diff_for "$local_sha" "${remote_sha:-0}"); then
       block_no_diff "git diff failed for $local_sha"
     fi
+    added=$(added_lines_in "$diff")
     [ -n "$(printf '%s' "$added" | tr -d '[:space:]')" ] || continue
     rc=0
     hit=$(scan_added "$added") || rc=$?
@@ -192,7 +273,21 @@ prepush_main() {
       1) ;;
       *) block_no_diff "credential matcher failed for $local_sha" ;;
     esac
+    hit=$(conflict_markers_in "$local_sha" "$diff")
+    [ -z "$hit" ] || conflicts="$conflicts$hit"$'\n'
   done
+
+  if [ -n "$conflicts" ]; then
+    {
+      echo ""
+      echo "BLOCKED: vibe-redact-prepush found unresolved merge-conflict marker(s) in the pushed diff:"
+      echo ""
+      printf '%s' "$conflicts" | sed 's/^/  /'
+      echo ""
+      echo "Resolve the conflict and commit the result before pushing."
+      echo "This is a guardrail: 'git push --no-verify' or 'VIBESTACK_REDACT_PREPUSH=skip git push' bypass it."
+    } >&2
+  fi
 
   if [ -n "$findings" ]; then
     {
@@ -206,6 +301,7 @@ prepush_main() {
     } >&2
     exit 1
   fi
+  [ -z "$conflicts" ] || exit 1
 
   exit 0
 }

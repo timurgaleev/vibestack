@@ -49,18 +49,92 @@ from datetime import datetime, timezone
 
 HOME = os.environ.get("VIBESTACK_HOME", os.path.expanduser("~/.vibestack"))
 
-SECRETS = [
-    re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"gh[posur]_[A-Za-z0-9]{36}"),
-    re.compile(r"github_pat_[A-Za-z0-9_]{22,}"),
-    re.compile(r"xox[abpr]-[A-Za-z0-9-]{10,}"),
-    re.compile(r"(sk|rk)_live_[A-Za-z0-9]{20,}"),
-    re.compile(r"AIza[0-9A-Za-z_\-]{35}"),
-    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
-    re.compile(r"sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}"),
-    re.compile(r"sk-[A-Za-z0-9]{48}"),
-    re.compile(r"-----BEGIN[^-]*PRIVATE KEY-----"),
+# --- secret patterns: begin (same labels and placeholder rules as bin/vibe-redact-prepush;
+# lib/snippets/secret-scan-patterns.md is the canonical list, test-redact-scan.sh keeps them equal)
+SECRET_PATTERNS = [
+    ("AWS access key", r"AKIA[0-9A-Z]{16}"),
+    ("AWS temporary key", r"ASIA[0-9A-Z]{16}"),
+    ("GitHub token", r"gh(p|o|s|u|r)_[A-Za-z0-9]{36}"),
+    ("GitHub fine-grained token", r"github_pat_[A-Za-z0-9_]{22,}"),
+    ("Slack token", r"xox[abpr]-[A-Za-z0-9-]{10,}"),
+    ("Stripe live key", r"(sk|rk)_live_[A-Za-z0-9]{20,}"),
+    ("Google API key", r"AIza[0-9A-Za-z_-]{35}"),
+    ("Anthropic key", r"sk-ant-[A-Za-z0-9_-]{20,}"),
+    ("OpenAI key (modern)", r"sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}"),
+    ("OpenAI key (classic)", r"sk-[A-Za-z0-9]{48}"),
+    ("GitLab token", r"gl(pat|ptt|dt)-[A-Za-z0-9_-]{20,}"),
+    ("HuggingFace token", r"hf_[A-Za-z0-9]{30,}"),
+    ("npm token", r"npm_[A-Za-z0-9]{36}"),
+    ("DigitalOcean token", r"dop_v1_[a-f0-9]{64}"),
+    ("Private key block", r"-----BEGIN[^-\n]*PRIVATE KEY-----"),
+    ("AWS secret key", r"aws_secret_access_key[^A-Za-z0-9\n]+[A-Za-z0-9/+=]{40}"),
+    ("SecretAccessKey field", r"\"?SecretAccessKey\"?[ \t]*[:=][ \t]*\"?[A-Za-z0-9/+=]{40}"),
+    ("env-style secret", r"^[ \t+-]{0,2}[ \t]*(export[ \t]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+"),
+    ("DSN credentials", r"://[^\s:/@]{1,255}:[^\s@/]{1,255}@"),
 ]
+_SECRET_RES = [(label, re.compile(pat, re.M)) for label, pat in SECRET_PATTERNS]
+_BEARER = re.compile(r"Bearer[ \t]+([A-Za-z0-9._~+/=-]{20,})")
+
+
+def _secret_placeholder(label, span):
+    v = span
+    if label == "env-style secret":
+        v = span.split("=", 1)[1]
+    elif label == "SecretAccessKey field":
+        v = re.split(r"[:=]", span, maxsplit=1)[1].lstrip()
+    elif label == "DSN credentials":
+        v = span[3:].split(":", 1)[1][:-1]
+    for q in ('"', "'"):
+        v = v[1:] if v.startswith(q) else v
+        v = v[:-1] if v.endswith(q) else v
+    if re.match(r"(your[_-]|<[^>]*>$|[*]+$|x{6,}$|changeme$|redacted|placeholder|dummy|fake)", v, re.I):
+        return True
+    if re.fullmatch(r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?", v):
+        return True
+    if re.match(r"[$][({]", v) or v.endswith("..."):
+        return True
+    if label == "DSN credentials" and ("$" in v or "{" in v or len(v) < 8 or re.fullmatch(
+            r"pass|password|postgres|root|test|secret|admin|change-?me|p", v, re.I)
+            or v == span[3:].split(":", 1)[0]):
+        return True
+    if "://" in v or "@" in v:
+        return False
+    return re.search(r"^example|example(key)?$", v, re.I) is not None
+
+
+def find_secret(text):
+    """Label of the first high-confidence secret in text, or None."""
+    for label, rx in _SECRET_RES:
+        for m in rx.finditer(text):
+            if not _secret_placeholder(label, m.group(0)):
+                return label
+    for m in _BEARER.finditer(text):
+        tok = m.group(1)
+        if (re.search(r"[0-9]", tok) and re.search(r"[a-z]", tok) and re.search(r"[A-Z]", tok)
+                and not _secret_placeholder("Bearer token", tok)):
+            return "Bearer token"
+    return None
+
+
+def secret_in_payload(raw, obj):
+    """Scan the raw JSON and every decoded key and string, one per line, so an
+    env-style line or a quoted field inside a value is seen as written."""
+    parts = [raw]
+
+    def walk(x):
+        if isinstance(x, str):
+            parts.append(x)
+        elif isinstance(x, dict):
+            for k, v in x.items():
+                parts.append(str(k))
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+
+    walk(obj)
+    return find_secret("\n".join(parts))
+# --- secret patterns: end ---
 
 
 def _run(cmd):
@@ -144,11 +218,11 @@ def main() -> int:
         print('error: JSON must include a non-empty "skill" field', file=sys.stderr)
         return 1
 
-    for pat in SECRETS:
-        if pat.search(args[0]):
-            print("error: review entry rejected — high-confidence secret present. "
-                  "Redact and rotate before logging.", file=sys.stderr)
-            return 1
+    found = secret_in_payload(args[0], body)
+    if found:
+        print(f"error: review entry rejected — high-confidence secret present ({found}). "
+              "Redact and rotate before logging.", file=sys.stderr)
+        return 1
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     if not body.get("timestamp") or body["timestamp"] == "TIMESTAMP":
