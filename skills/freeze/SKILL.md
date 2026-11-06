@@ -103,6 +103,16 @@ so the next session that loads the freeze hook (`/freeze`, `/guard`,
 - Applies to Edit, Write and NotebookEdit only — Read, Bash, Glob, Grep are unaffected
 - Bash commands like `sed -i` can still modify files outside the boundary
 - A symlink inside the boundary pointing outside it is resolved and blocked
+- A path is allowed only when both readings of it are inside: the physical one
+  (`<dir-symlink>/..` is the parent of the link's target) and the textual one
+  (`..` folded as text)
+- A tool path that is `~` or starts with `~/` is expanded to `$HOME`
+  (`~user/...` is not). A Windows drive-letter (`C:\...`, `C:/...`), UNC
+  (`\\server\share`) or any other path containing a backslash (`..\out`) is
+  denied outright: the hook runs under bash and cannot place it against the
+  boundary
+- A path containing a newline or carriage return, or longer than 4096
+  characters, is denied
 - A path with spaces in it works — only leading and trailing whitespace is
   trimmed from the saved boundary, and a leading `~` is expanded
 - To deactivate: run `/unfreeze` — ending the conversation does not remove the boundary
