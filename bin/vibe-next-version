@@ -17,50 +17,69 @@ Usage:
 Output (JSON on stdout):
   {"version":"1.21.0","host":"github","base":"main",
    "claimed":[{"pr":12,"branch":"feat/x","version":"1.21.0","url":"..."}],
-   "active_siblings":[],"warnings":[],"offline":false,"reason":"..."}
+   "active_siblings":[],"warnings":[],"offline":false,"complete":true,
+   "reason":"..."}
+
+`complete` is true only when every open PR's VERSION was read and parsed and
+the PR list did not hit its page limit. Anything else means a claim may have
+been missed and the pick could collide with it; the misses are in `warnings`.
 
 Degrades gracefully: if `gh`/`glab` are missing or unauthenticated, emits
-`{"offline":true,...}` with a local bump so callers fall back to plain arithmetic.
-Read-only — never writes VERSION or touches git state.
+`{"offline":true,...}`. It then reads `git ls-remote --heads origin` and treats
+the VERSION at every branch head already fetched locally as a claim
+(`"host":"git"`); a head that was never fetched is a warning. Branch heads are
+not the PR queue -- base and fork are unknown and a branch without a PR still
+counts -- so that result is never `complete`; `--exclude-branch` skips your own
+branch there, since it has no PR number to exclude. With no reachable remote either,
+the version is a plain local bump. Read-only — never writes VERSION, fetches or
+otherwise touches git state.
 
-Version format: MAJOR.MINOR.PATCH (this repo's scheme). Bump levels: major, minor,
-patch (micro is treated as patch for 3-part versions).
+Version format: MAJOR.MINOR.PATCH with an optional .MICRO; the pick keeps the
+shape of --current-version. Bump levels: major, minor, patch, micro (micro is
+treated as patch for 3-part versions).
 """
 import argparse
 import base64
 import json
+import os
 import re
 import subprocess
 import sys
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
-SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$")
+LEVELS = {"major": 0, "minor": 1, "patch": 2, "micro": 3}
 VERSION_PATH = "VERSION"
 FETCH_WORKERS = 8
+# Rows asked of each host. A full page may have more behind it, so it is never
+# read as the whole queue. GitLab caps a page at 100 whatever is requested.
+LIST_LIMIT = 200
+GITLAB_PAGE = 100
 
 
 def parse(v):
     m = SEMVER.match(v.strip())
-    return tuple(int(x) for x in m.groups()) if m else None
+    return tuple(int(x) for x in m.groups() if x is not None) if m else None
+
+
+def key(t):
+    # 1.2.3 and 1.2.3.0 are the same slot; pad before comparing.
+    return t + (0,) * (4 - len(t))
 
 
 def bump(v, level):
-    major, minor, patch = v
-    if level == "major":
-        return (major + 1, 0, 0)
-    if level == "minor":
-        return (major, minor + 1, 0)
-    return (major, minor, patch + 1)  # patch / micro
+    i = min(LEVELS.get(level, LEVELS["patch"]), len(v) - 1)
+    return v[:i] + (v[i] + 1,) + (0,) * (len(v) - i - 1)
 
 
 def fmt(t):
     return ".".join(str(x) for x in t)
 
 
-def run(cmd):
+def run(cmd, timeout=15, env=None):
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
         return r.stdout if r.returncode == 0 else None
     except Exception:
         return None
@@ -74,24 +93,34 @@ def decode_version(b64):
 
 
 def github_claims(base, exclude_pr, warnings):
-    """(claims, ok). ok=False means gh is unusable here — try another host."""
-    out = run(["gh", "pr", "list", "--state", "open", "--base", base, "--limit", "200",
+    """(claims, ok, complete). ok=False means gh is unusable here — try another host."""
+    out = run(["gh", "pr", "list", "--state", "open", "--base", base,
+               "--limit", str(LIST_LIMIT),
                "--json", "number,headRefName,headRepositoryOwner,url"])
     if out is None:
-        return [], False
+        return [], False, False
     try:
         prs = json.loads(out)
     except Exception:
         warnings.append("gh pr list returned invalid JSON")
-        return [], False
+        return [], False, False
+    complete = len(prs) < LIST_LIMIT
+    if not complete:
+        warnings.append(f"gh pr list returned {LIST_LIMIT} PRs, its limit; later PRs were not read")
     # The contents API resolves a ref against OUR repo, so a fork PR's branch
     # name would read our own branch (or base) and report a phantom claim.
     owner = (run(["gh", "repo", "view", "--json", "owner", "-q", ".owner.login"]) or "").strip()
     if not owner:
         warnings.append("could not resolve the repo owner; fork PRs were not filtered out")
-    prs = [p for p in prs
-           if (exclude_pr is None or p.get("number") != exclude_pr)
-           and (not owner or ((p.get("headRepositoryOwner") or {}).get("login") or "") == owner)]
+        complete = False
+    prs = [p for p in prs if exclude_pr is None or p.get("number") != exclude_pr]
+    forks = [p for p in prs
+             if owner and ((p.get("headRepositoryOwner") or {}).get("login") or "") != owner]
+    if forks:
+        # Unread, yet each one still takes a slot when it merges.
+        complete = False
+        warnings.append("fork PRs not read: " + ", ".join(f"#{p.get('number')}" for p in forks))
+    prs = [p for p in prs if p not in forks]
 
     def fetch(pr):
         ref = urllib.parse.quote(pr.get("headRefName", ""), safe="")
@@ -106,22 +135,26 @@ def github_claims(base, exclude_pr, warnings):
         for pr, ver, err in pool.map(fetch, prs):
             if err:
                 warnings.append(err)
+                complete = False
                 continue
             claims.append({"pr": pr.get("number"), "branch": pr.get("headRefName", ""),
                            "version": ver, "url": pr.get("url", "")})
-    return claims, True
+    return claims, True, complete
 
 
 def gitlab_claims(base, exclude_pr, warnings):
     out = run(["glab", "mr", "list", "--opened", "--target-branch", base,
-               "--output", "json", "--per-page", "200"])
+               "--output", "json", "--per-page", str(GITLAB_PAGE)])
     if out is None:
-        return [], False
+        return [], False, False
     try:
         mrs = json.loads(out)
     except Exception:
         warnings.append("glab mr list returned invalid JSON")
-        return [], False
+        return [], False, False
+    complete = len(mrs) < GITLAB_PAGE
+    if not complete:
+        warnings.append(f"glab mr list returned {GITLAB_PAGE} MRs, a full page; later MRs were not read")
     claims = []
     for mr in mrs:
         if exclude_pr is not None and mr.get("iid") == exclude_pr:
@@ -137,21 +170,96 @@ def gitlab_claims(base, exclude_pr, warnings):
                 ver = None
         if raw is None or ver is None:
             warnings.append(f"MR !{mr.get('iid')}: could not read {VERSION_PATH} at its head")
+            complete = False
             continue
         claims.append({"pr": mr.get("iid"), "branch": branch, "version": ver,
                        "url": mr.get("web_url", "")})
+    return claims, True, complete
+
+
+def git_batch(specs, check):
+    """One `git cat-file` over every spec, in order: the object type (check) or
+    the raw bytes, None where missing. None overall when git itself failed."""
+    try:
+        r = subprocess.run(["git", "cat-file", "--batch-check" if check else "--batch"],
+                           input="".join(f"{x}\n" for x in specs).encode(),
+                           capture_output=True, timeout=30)
+    except Exception:
+        return None
+    if r.returncode != 0:
+        return None
+    buf, pos, res = r.stdout, 0, []
+    for _ in specs:
+        nl = buf.find(b"\n", pos)
+        if nl < 0:
+            return None
+        head = buf[pos:nl].split(b" ")
+        pos = nl + 1
+        if len(head) != 3:  # "<spec> missing" / "<spec> ambiguous"
+            res.append(None)
+        elif check:
+            res.append(head[1].decode())
+        else:
+            size = int(head[2])
+            res.append(buf[pos:pos + size])
+            pos += size + 1
+    return res
+
+
+def git_claims(base, exclude_branch, warnings):
+    """(claims, ok) from the remote's branch heads. ok=False: no usable remote.
+
+    Only heads whose commit is already in the local object store are read --
+    fetching would mutate the repo this tool promises to leave alone.
+    """
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
+    out = run(["git", "ls-remote", "--heads", "origin"], timeout=10, env=env)
+    if out is None:
+        return [], False
+    heads = []
+    for line in out.splitlines():
+        sha, _, ref = line.partition("\t")
+        name = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ""
+        if sha and name and name not in (base, exclude_branch):
+            heads.append((sha, name))
+    if not heads:
+        return [], True
+    kinds = git_batch([f"{sha}^{{commit}}" for sha, _ in heads], check=True)
+    if kinds is None:
+        warnings.append(f"could not read the local object store; no branch {VERSION_PATH} was read")
+        return [], True
+    fetched = []
+    for (sha, name), kind in zip(heads, kinds):
+        if kind is None:
+            warnings.append(f"branch {name}: head {sha[:12]} is not fetched; its {VERSION_PATH} was not read")
+        else:
+            fetched.append((sha, name))
+    blobs = git_batch([f"{sha}:{VERSION_PATH}" for sha, _ in fetched], check=False) if fetched else []
+    if blobs is None:
+        warnings.append(f"could not read {VERSION_PATH} at the fetched branch heads")
+        return [], True
+    claims = []
+    for (_, name), raw in zip(fetched, blobs):
+        # A fetched head with no VERSION file claims nothing. Undecodable bytes
+        # stay in, so the parse below reports the head as malformed.
+        if raw is not None:
+            claims.append({"pr": None, "branch": name, "url": "",
+                           "version": raw.decode("utf-8", "replace").strip()})
     return claims, True
 
 
-def open_claims(base, exclude_pr, warnings):
-    """(host, claims) — host is None when no PR host is reachable."""
-    claims, ok = github_claims(base, exclude_pr, warnings)
+def open_claims(base, exclude_pr, exclude_branch, warnings):
+    """(host, claims, complete) — host is None when nothing is reachable."""
+    claims, ok, complete = github_claims(base, exclude_pr, warnings)
     if ok:
-        return "github", claims
-    claims, ok = gitlab_claims(base, exclude_pr, warnings)
+        return "github", claims, complete
+    claims, ok, complete = gitlab_claims(base, exclude_pr, warnings)
     if ok:
-        return "gitlab", claims
-    return None, []
+        return "gitlab", claims, complete
+    claims, ok = git_claims(base, exclude_branch, warnings)
+    if ok:
+        return "git", claims, False
+    return None, [], False
 
 
 def main() -> int:
@@ -162,11 +270,15 @@ def main() -> int:
     ap.add_argument("--exclude-pr", type=int, default=None,
                     help="PR/MR number to ignore when tallying claimed slots — "
                          "pass your own when checking whether your version is still free")
+    ap.add_argument("--exclude-branch", default=None,
+                    help="branch to ignore in the no-PR-host fallback, which reads "
+                         "branch heads and so has no PR number to exclude")
     args = ap.parse_args()
 
     def emit(**fields):
         out = {"host": "unknown", "base": args.base, "claimed": [],
-               "active_siblings": [], "warnings": [], "offline": False}
+               "active_siblings": [], "warnings": [], "offline": False,
+               "complete": False}
         out.update(fields)
         print(json.dumps(out))
         return 0
@@ -174,11 +286,11 @@ def main() -> int:
     cur = parse(args.current_version)
     if not cur:
         return emit(offline=True, version=args.current_version,
-                    reason="current-version not MAJOR.MINOR.PATCH")
+                    reason="current-version not MAJOR.MINOR.PATCH[.MICRO]")
 
     target = bump(cur, args.bump)
     warnings = []
-    host, raw_claims = open_claims(args.base, args.exclude_pr, warnings)
+    host, raw_claims, complete = open_claims(args.base, args.exclude_pr, args.exclude_branch, warnings)
 
     if host is None:
         return emit(offline=True, version=fmt(target), warnings=warnings,
@@ -188,19 +300,21 @@ def main() -> int:
     for c in raw_claims:
         p = parse(c["version"] or "")
         if p is None:
-            warnings.append(f"#{c['pr']}: {VERSION_PATH} is malformed ({c['version']!r})")
+            who = f"#{c['pr']}" if c["pr"] is not None else f"branch {c['branch']}"
+            warnings.append(f"{who}: {VERSION_PATH} is malformed ({c['version']!r})")
+            complete = False
             continue
         # A PR still carrying the base version (or older) has not bumped; it
         # holds no slot.
-        if p <= cur:
+        if key(p) <= key(cur):
             continue
         claimed.append(dict(c, version=fmt(p)))
 
-    claimed_set = {parse(c["version"]) for c in claimed}
+    claimed_set = {key(parse(c["version"])) for c in claimed}
     # Step forward at the requested level until the slot is free.
     picked = target
     guard = 0
-    while picked in claimed_set and guard < 1000:
+    while key(picked) in claimed_set and guard < 1000:
         picked = bump(picked, args.bump)
         guard += 1
 
@@ -210,9 +324,16 @@ def main() -> int:
         reason = "advanced past claimed slots"
     else:
         reason = "next free slot"
-    claimed.sort(key=lambda c: (parse(c["version"]), c["pr"] or 0))
+    claimed.sort(key=lambda c: (key(parse(c["version"])), c["pr"] or 0, c["branch"]))
+    if host == "git":
+        # Still offline: callers that compare against the PR queue (drift
+        # checks) must not read branch heads as that queue.
+        return emit(host=host, offline=True, version=fmt(picked), claimed=claimed,
+                    warnings=warnings,
+                    reason="no PR host reachable — picked past the VERSION at the "
+                           "remote's fetched branch heads")
     return emit(host=host, version=fmt(picked), claimed=claimed,
-                warnings=warnings, reason=reason)
+                warnings=warnings, complete=complete, reason=reason)
 
 
 if __name__ == "__main__":

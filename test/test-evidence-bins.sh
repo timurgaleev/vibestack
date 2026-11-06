@@ -139,6 +139,17 @@ printf '1.2.3\n' > "$PROJ/VERSION"
 printf '{\n  "name": "x",\n  "version": "1.2.3"\n}\n' > "$PROJ/package.json"
 
 "$V" not-a-version --root "$PROJ" >/dev/null 2>&1; chk "a non-semver argument is rejected" "$?" "2"
+# Some projects version MAJOR.MINOR.PATCH.MICRO, and /ship accepts that shape.
+# The bump refusing it leaves the caller hand-writing files again.
+FOUR="$TMP/four"; mkdir -p "$FOUR"
+printf '1.2.3.3\n' > "$FOUR/VERSION"
+printf '{\n  "name": "q",\n  "version": "1.2.3.3"\n}\n' > "$FOUR/package.json"
+"$V" 1.2.3.4 --root "$FOUR" >/dev/null 2>&1; chk "a four-part version is accepted" "$?" "0"
+chk "and lands in VERSION" "$(cat "$FOUR/VERSION")" "1.2.3.4"
+chk "and in package.json" "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$FOUR/package.json")" "1.2.3.4"
+"$V" 1.2.3.4.5 --root "$FOUR" >/dev/null 2>&1; chk "a five-part version is still rejected" "$?" "2"
+"$V" 1.2.3. --root "$FOUR" >/dev/null 2>&1; chk "a trailing dot is still rejected" "$?" "2"
+chk "and the rejected bumps left VERSION alone" "$(cat "$FOUR/VERSION")" "1.2.3.4"
 # The atomicity claim: a malformed lockfile must abort the whole set, leaving
 # VERSION where it was. Without this the bump half-lands and the build breaks
 # after the release commit is pushed.
@@ -213,6 +224,227 @@ printf '%s' "$CLEANOUT" | grep -q '^bumped VERSION -> 6.0.0$' && ok "and says ex
                                                               || no "report line not in the expected shape"
 
 "$V" 1.2.3 --root "$TMP/nope" >/dev/null 2>&1; chk "a missing root is an error" "$?" "2"
+
+echo "vibe-next-version"
+# The pick is only as good as the queue it saw. Every case asserts `complete`:
+# a claim the bin could not read is a slot it may hand out twice, and a caller
+# that cannot tell that from a clean read reports "no drift" on a collision.
+NV="$BIN/vibe-next-version"
+NQ="$TMP/nq"; mkdir -p "$NQ/bin" "$NQ/heads"
+cat > "$NQ/bin/gh" <<'SH'
+#!/usr/bin/env bash
+[ "${NQ_GH_DOWN:-0}" = 1 ] && exit 1
+case "$1 $2" in
+  "pr list") cat "$NQ_DIR/prs.json" ;;
+  "pr view") echo main ;;
+  "repo view") [ "${NQ_OWNER_DOWN:-0}" = 1 ] && exit 1; echo me ;;
+  "api "*)
+    ref="${2##*ref=}"; f="$NQ_DIR/heads/$ref"
+    [ -f "$f" ] || f="$NQ_DIR/heads/default"
+    [ -f "$f" ] || exit 1
+    base64 < "$f" | tr -d '\n' ;;
+  *) exit 1 ;;
+esac
+SH
+cat > "$NQ/bin/glab" <<'SH'
+#!/usr/bin/env bash
+[ "${NQ_GL:-0}" = 1 ] || exit 1
+case "$1 $2" in
+  "mr list") cat "$NQ_DIR/mrs.json" ;;
+  "api "*)
+    ref="${2##*ref=}"; f="$NQ_DIR/heads/$ref"
+    [ -f "$f" ] || f="$NQ_DIR/heads/default"
+    [ -f "$f" ] || exit 1
+    printf '{"content":"%s"}' "$(base64 < "$f" | tr -d '\n')" ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$NQ/bin/gh" "$NQ/bin/glab"
+nq_pr() { # nq_pr NUMBER BRANCH OWNER
+  printf '{"number":%s,"headRefName":"%s","headRepositoryOwner":{"login":"%s"},"url":"https://x/pr/%s"}' "$1" "$2" "$3" "$1"
+}
+nv() { PATH="$NQ/bin:$PATH" NQ_DIR="$NQ" "$NV" "$@"; }
+jf() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
+
+printf '[%s,%s]\n' "$(nq_pr 21 feat/a me)" "$(nq_pr 22 feat/b me)" > "$NQ/prs.json"
+printf '1.20.1\n' > "$NQ/heads/feat%2Fa"
+printf '1.20.2\n' > "$NQ/heads/feat%2Fb"
+OUT=$(nv --base main --bump patch --current-version 1.20.0)
+chk "a readable queue is complete" "$(jf 'd.get("complete")' <<<"$OUT")" "True"
+chk "and the pick steps past both claims" "$(jf 'd["version"]' <<<"$OUT")" "1.20.3"
+
+rm "$NQ/heads/feat%2Fb"
+OUT=$(nv --base main --bump patch --current-version 1.20.0)
+chk "an unreadable head VERSION makes the queue incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+chk "and the unread PR is named in a warning" "$(jf 'any("#22" in w for w in d["warnings"])' <<<"$OUT")" "True"
+
+printf 'not-a-version\n' > "$NQ/heads/feat%2Fb"
+OUT=$(nv --base main --bump patch --current-version 1.20.0)
+chk "a malformed head VERSION makes the queue incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+
+# A fork PR's head is not readable through our repo, so its VERSION is never
+# seen -- but it still takes a slot when it merges.
+printf '1.20.2\n' > "$NQ/heads/feat%2Fb"
+printf '[%s,%s]\n' "$(nq_pr 21 feat/a me)" "$(nq_pr 23 feat/c someone)" > "$NQ/prs.json"
+OUT=$(nv --base main --bump patch --current-version 1.20.0)
+chk "a fork PR left unread makes the queue incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+chk "and the fork PR is named in a warning" "$(jf 'any("#23" in w for w in d["warnings"])' <<<"$OUT")" "True"
+printf '[%s]\n' "$(nq_pr 21 feat/a me)" > "$NQ/prs.json"
+OUT=$(NQ_OWNER_DOWN=1 nv --base main --bump patch --current-version 1.20.0)
+chk "an unresolved repo owner makes the queue incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+
+# gh caps the list at --limit. A full page means there may be more PRs behind
+# it, so the queue is not known to be whole even when every row read cleanly.
+printf '1.20.0\n' > "$NQ/heads/default"
+nq_rows() { # nq_rows COUNT KEY -> same-repo rows whose heads carry the base VERSION
+  python3 -c '
+import json, sys
+n, key = int(sys.argv[1]), sys.argv[2]
+if key == "number":
+    rows = [{"number": i, "headRefName": "f/%d" % i,
+             "headRepositoryOwner": {"login": "me"}, "url": ""} for i in range(1, n + 1)]
+else:
+    rows = [{"iid": i, "source_branch": "f/%d" % i, "web_url": ""} for i in range(1, n + 1)]
+print(json.dumps(rows))' "$1" "$2"
+}
+nq_rows 200 number > "$NQ/prs.json"
+OUT=$(nv --base main --bump patch --current-version 1.20.0)
+chk "a list that hit the limit is incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+nq_rows 199 number > "$NQ/prs.json"
+OUT=$(nv --base main --bump patch --current-version 1.20.0)
+chk "one row short of the limit is complete" "$(jf 'd.get("complete")' <<<"$OUT")" "True"
+
+# GitLab serves at most 100 rows a page whatever is asked for, so a page of
+# 100 is the full-page signal there.
+NQGL() { NQ_GL=1 NQ_GH_DOWN=1 nv "$@"; }
+nq_rows 2 iid > "$NQ/mrs.json"
+OUT=$(NQGL --base main --bump patch --current-version 1.20.0)
+chk "a readable GitLab queue is complete" "$(jf 'd["host"], d.get("complete")' <<<"$OUT")" "('gitlab', True)"
+nq_rows 100 iid > "$NQ/mrs.json"
+OUT=$(NQGL --base main --bump patch --current-version 1.20.0)
+chk "a full GitLab page is incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+rm "$NQ/heads/default"
+
+# Four-part versions: the bin used to call these offline and fall back to a
+# bump that ignored the queue entirely.
+printf '[%s]\n' "$(nq_pr 31 feat/m me)" > "$NQ/prs.json"
+printf '1.2.3.5\n' > "$NQ/heads/feat%2Fm"
+OUT=$(nv --base main --bump micro --current-version 1.2.3.4)
+chk "a four-part base is not offline" "$(jf 'd["offline"]' <<<"$OUT")" "False"
+chk "a micro bump steps past a four-part claim" "$(jf 'd["version"]' <<<"$OUT")" "1.2.3.6"
+chk "and the four-part queue is complete" "$(jf 'd.get("complete")' <<<"$OUT")" "True"
+chk "a patch bump of a four-part version zeroes MICRO" \
+  "$(jf 'd["version"]' <<<"$(nv --base main --bump patch --current-version 1.2.3.4)")" "1.2.4.0"
+chk "a major bump keeps four parts" \
+  "$(jf 'd["version"]' <<<"$(nv --base main --bump major --current-version 1.2.3.4)")" "2.0.0.0"
+chk "micro on a three-part version is still a patch bump" \
+  "$(jf 'd["version"]' <<<"$(nv --base main --bump micro --current-version 1.2.3)")" "1.2.4"
+# A three-part claim against a four-part base compares by value: 1.2.4 is
+# ahead of 1.2.3.4 and is the slot a patch bump would take.
+printf '1.2.4\n' > "$NQ/heads/feat%2Fm"
+chk "a three-part claim collides with the four-part pick it equals" \
+  "$(jf 'd["version"]' <<<"$(nv --base main --bump patch --current-version 1.2.3.4)")" "1.2.5.0"
+
+# No PR host: the remote's branch heads are the next best queue. A head whose
+# commit was never fetched cannot be read, so the result says so.
+GO="$TMP/gitq"; mkdir -p "$GO"
+# Fixture git ignores the machine's global config: a global signing key or
+# hooks path would otherwise make these commits fail or prompt.
+g() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git "$@"; }
+g init -q --bare -b main "$GO/origin.git"
+g init -q -b main "$GO/seed"
+g -C "$GO/seed" config user.email t@example.com
+g -C "$GO/seed" config user.name t
+printf '1.20.0\n' > "$GO/seed/VERSION"
+g -C "$GO/seed" add VERSION && g -C "$GO/seed" commit -q -m base
+g -C "$GO/seed" remote add origin "$GO/origin.git"
+g -C "$GO/seed" push -q origin main
+g -C "$GO/seed" checkout -q -b feat/a
+printf '1.20.1\n' > "$GO/seed/VERSION"; g -C "$GO/seed" commit -q -am a
+g -C "$GO/seed" push -q origin feat/a
+g -C "$GO/seed" checkout -q -b docs/x main
+printf 'x\n' > "$GO/seed/x.txt"; g -C "$GO/seed" add x.txt; g -C "$GO/seed" commit -q -m x
+g -C "$GO/seed" push -q origin docs/x
+g clone -q "$GO/origin.git" "$GO/work"
+g -C "$GO/seed" checkout -q -b feat/b main
+printf '1.20.2\n' > "$GO/seed/VERSION"; g -C "$GO/seed" commit -q -am b
+g -C "$GO/seed" push -q origin feat/b
+OUT=$(cd "$GO/work" && NQ_GH_DOWN=1 nv --base main --bump patch --current-version 1.20.0)
+chk "with no PR host the remote branches are read" "$(jf 'd["host"]' <<<"$OUT")" "git"
+chk "a fetched branch's VERSION is a claim" "$(jf '[c["branch"] for c in d["claimed"]]' <<<"$OUT")" "['feat/a']"
+chk "and the pick steps past it" "$(jf 'd["version"]' <<<"$OUT")" "1.20.2"
+chk "an unfetched head leaves the git queue incomplete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+chk "and is named in a warning" "$(jf 'any("feat/b" in w for w in d["warnings"])' <<<"$OUT")" "True"
+chk "it is still reported offline -- branch heads are not the PR queue" "$(jf 'd["offline"]' <<<"$OUT")" "True"
+g -C "$GO/work" fetch -q origin
+OUT=$(cd "$GO/work" && NQ_GH_DOWN=1 nv --base main --bump patch --current-version 1.20.0)
+chk "once fetched, that head is a claim too" "$(jf 'd["version"]' <<<"$OUT")" "1.20.3"
+chk "a branch-head queue is never called complete" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+# Without a PR number there is nothing for --exclude-pr to match; a re-ship
+# names its own branch so its pushed head is not read as somebody's claim.
+OUT=$(cd "$GO/work" && NQ_GH_DOWN=1 nv --base main --bump patch --current-version 1.20.0 --exclude-branch feat/b)
+chk "--exclude-branch drops that branch's head" "$(jf '[c["branch"] for c in d["claimed"]]' <<<"$OUT")" "['feat/a']"
+chk "and the pick is the slot it held" "$(jf 'd["version"]' <<<"$OUT")" "1.20.2"
+# A head whose VERSION is not text is a malformed claim, not a missing one.
+g -C "$GO/seed" checkout -q -b feat/bin main
+printf '\377\376\n' > "$GO/seed/VERSION"; g -C "$GO/seed" commit -q -am bin
+g -C "$GO/seed" push -q origin feat/bin
+g -C "$GO/work" fetch -q origin
+OUT=$(cd "$GO/work" && NQ_GH_DOWN=1 nv --base main --bump patch --current-version 1.20.0)
+chk "a head VERSION that is not UTF-8 is named in a warning" "$(jf 'any("feat/bin" in w for w in d["warnings"])' <<<"$OUT")" "True"
+mkdir -p "$GO/lone"; g init -q "$GO/lone"
+OUT=$(cd "$GO/lone" && NQ_GH_DOWN=1 nv --base main --bump patch --current-version 1.20.0)
+chk "no remote at all falls back to the local bump" "$(jf 'd["version"]' <<<"$OUT")" "1.20.1"
+chk "and that is not a complete queue either" "$(jf 'd.get("complete")' <<<"$OUT")" "False"
+chk "nor a git queue" "$(jf 'd["host"]' <<<"$OUT")" "unknown"
+
+# The callers derive the bump level from base vs branch and compare the pick
+# with the branch's own VERSION. A level that is coarser than the release the
+# PR makes answers a later slot, and the comparison calls a free PR stale --
+# in /land-and-deploy that is a STOP on every micro release.
+nq_block() { # nq_block SKILL HEADING -> the first bash fence after HEADING
+  python3 -I - "$ROOT/skills/$1/SKILL.md" "$2" <<'BLK'
+import sys
+text = open(sys.argv[1]).read().splitlines()
+start = next(i for i, l in enumerate(text) if l.startswith(sys.argv[2]))
+out, on = [], False
+for l in text[start:]:
+    if not on and l.strip() == "```bash":
+        on = True
+    elif on and l.strip() == "```":
+        break
+    elif on:
+        out.append(l)
+print("\n".join(out))
+BLK
+}
+CV="$TMP/callers"; mkdir -p "$CV/home/bin"
+ln -s "$NV" "$CV/home/bin/vibe-next-version"
+g init -q --bare -b main "$CV/origin.git"
+g clone -q "$CV/origin.git" "$CV/w"
+g -C "$CV/w" config user.email t@example.com; g -C "$CV/w" config user.name t
+printf '1.2.3.4\n' > "$CV/w/VERSION"; g -C "$CV/w" add VERSION; g -C "$CV/w" commit -q -m base
+g -C "$CV/w" push -q origin main
+CV_BASE=$(g -C "$CV/w" rev-parse HEAD)
+g -C "$CV/w" checkout -q -b feat/m
+printf '1.2.3.5\n' > "$CV/w/VERSION"; g -C "$CV/w" commit -q -am micro
+CV_HEAD=$(g -C "$CV/w" rev-parse HEAD)
+printf '1.2.3.5\n' > "$NQ/heads/feat%2Fm"
+printf '1.2.3.5\n' > "$NQ/heads/feat%2Fn"
+nq_block land-and-deploy '## Step 3.4: VERSION drift' \
+  | sed -e "s/<PR_NUMBER>/7/; s/<PR_HEAD>/$CV_HEAD/; s/<BASE_BRANCH>/main/; s/<BASE_SHA>/$CV_BASE/" > "$CV/land.sh"
+echo 'echo "$BRANCH_VERSION $NEXT_SLOT $OFFLINE"' >> "$CV/land.sh"
+nq_block review '## Step 3.4: Workspace-aware queue status' > "$CV/review.sh"
+echo 'echo "$BRANCH_VERSION $NEXT_SLOT $OFFLINE"' >> "$CV/review.sh"
+cv() { (cd "$CV/w" && PATH="$NQ/bin:$PATH" NQ_DIR="$NQ" VIBESTACK_HOME="$CV/home" bash "$1" 2>&1); }
+
+printf '[%s]\n' "$(nq_pr 7 feat/m me)" > "$NQ/prs.json"
+chk "land-and-deploy: a micro release alone in the queue is its own next slot" "$(cv "$CV/land.sh")" "1.2.3.5 1.2.3.5 false"
+printf '[%s,%s]\n' "$(nq_pr 7 feat/m me)" "$(nq_pr 8 feat/n me)" > "$NQ/prs.json"
+chk "land-and-deploy: another PR on the same micro slot is still drift" "$(cv "$CV/land.sh")" "1.2.3.5 1.2.3.6 false"
+printf '[]\n' > "$NQ/prs.json"
+chk "review: a micro release with an empty queue reads as a free slot" "$(cv "$CV/review.sh")" "1.2.3.5 1.2.3.5 false"
+rm "$NQ/heads/feat%2Fm" "$NQ/heads/feat%2Fn"
 
 echo "vibe-detach"
 D="$BIN/vibe-detach"
