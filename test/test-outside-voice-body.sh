@@ -19,7 +19,8 @@
 #   - a failed log write prints REVIEW_LOG_NOT_PERSISTED with the exit code;
 #   - /plan-ceo-review, /plan-eng-review and /plan-devex-review render the body
 #     byte-identically with no Codex run of their own, eng and devex carry no
-#     stale Step 0D-POST pointer, and eng's fallback asks for a read-only subagent.
+#     stale Step 0D-POST pointer, eng's fallback asks for a read-only subagent,
+#     and each overrides the preflight's disabled skip so the record is written.
 #
 # Usage: test/test-outside-voice-body.sh [repo-root]
 set -uo pipefail
@@ -174,6 +175,15 @@ PY
   else no "$s does not render the outside-voice body verbatim"; fi
   grep -q 'TMPERR_PV' "$SRC/skills/$s/SKILL.md" \
     && no "$s still carries its own Codex run" || ok "$s has no inlined Codex run"
+  # The preflight says "skip this section entirely" on disabled; without an
+  # override before the body, the body's disabled record is never reached and a
+  # switched-off outside voice reads as a review that never ran.
+  awk '/^\{\{include lib\/snippets\/outside-voice-preflight\.md\}\}$/{on=1;next}
+       /^\{\{include lib\/snippets\/outside-voice-body\.md\}\}$/{on=0}
+       on' "$SRC/skills/$s/SKILL.md" | tr '\n' ' ' \
+    | grep -qF 'On `disabled`, still write the `disabled` record' \
+    && ok "$s writes the disabled record despite the preflight's skip" \
+    || no "$s lets the preflight skip the disabled record"
 done
 for s in plan-eng-review plan-devex-review; do
   grep -qF 'Step 0D-POST' "$SRC/skills/$s/SKILL.md" \

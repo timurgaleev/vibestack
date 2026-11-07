@@ -517,6 +517,10 @@ review.
 
 {{include lib/snippets/outside-voice-preflight.md}}
 
+On `disabled`, still write the `disabled` record from the body below before
+moving on, so a switched-off outside voice reads as an opt-out rather than a
+review that never ran.
+
 **Reviewer brief:**
 
 "You are a brutally honest technical reviewer examining a development plan that has
