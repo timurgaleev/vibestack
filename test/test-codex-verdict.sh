@@ -97,6 +97,21 @@ expect "[P1] review with a hedge -> findings" findings \
 expect "answer discussing a sandbox mid-text, no commands -> answered" answered \
   "$(verdict answer 0 'The attack is limited. Without root the sandbox could not start for the attacker.' '' '')"
 
+echo "validator: intent stubs"
+# A consult that ends after announcing what it will look at answered nothing.
+expect "short 'I'll start by exploring' reply -> unavailable" unavailable \
+  "$(verdict answer 0 "I'll start by exploring the repository structure to understand how the retry logic works." '' "$OK_CMD")"
+expect "'Let me first check' stub -> unavailable" unavailable \
+  "$(verdict answer 0 'Let me first check the configuration files and the client module.' '' "$OK_CMD")"
+expect "intent stub reports reason intent_stub" "REASON: intent_stub" \
+  "$(printf '%s' "I will inspect the tests before answering." > "$TMP/resp"; : > "$TMP/err"; printf '%s' "$OK_CMD" > "$TMP/ev"
+     python3 "$VALIDATOR" --mode answer --exit 0 --stderr "$TMP/err" --events "$TMP/ev" "$TMP/resp" | sed -n 's/^\(REASON: intent_stub\).*/\1/p' || true)"
+LONG_ANSWER="I'll look at this from the retry path first. $(printf 'The client in client.py retries on 429 and 503, backs off exponentially from 200 ms and gives up after five attempts, so a sustained outage surfaces after about six seconds. %.0s' 1 2 3)"
+expect "genuine answer of 400+ chars opening with 'I'll look' -> answered" answered \
+  "$(verdict answer 0 "$LONG_ANSWER" '' "$OK_CMD")"
+expect "short direct answer -> answered" answered \
+  "$(verdict answer 0 'Yes: the retry loop caps at five attempts.' '' "$OK_CMD")"
+
 echo "validator: review grading"
 expect "untagged prose is unverified, never clean" unverified \
   "$(verdict review 0 'I reviewed the change and it looks good. No issues.' '' "$OK_CMD")"
