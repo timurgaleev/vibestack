@@ -130,10 +130,16 @@ runs two voices side by side, give each its own output file and grade each.
 _OV_OUT='<output-file>'
 _ov_grade() {
   [ -s "${1}" ] || { echo unavailable; return; }
-  grep -q '^Recommendation: ' "${1}" || { echo unavailable; return; }
+  # The prompt asks the reply to END with the Recommendation line; text after it
+  # (a late "actually, wait") means the verdict is not the last word.
+  _ov_last=$(awk 'NF { l = $(0) } END { print l }' "${1}")
+  case "$_ov_last" in "Recommendation: "*) ;; *) echo unavailable; return ;; esac
   if grep -Eq '^[[:space:]]*([-*]|[0-9]+[.)])?[[:space:]]*(\*\*)?\[(Critical|High|Medium|Low)\]' "${1}"; then
     echo issues_found
-  elif grep -Eiq '^Recommendation: .*no findings because [^[:space:]]' "${1}"; then
+  # Clean only in the exact shape the prompt asked for, and never when the line
+  # says the reviewer could not do the review.
+  elif printf '%s\n' "$_ov_last" | grep -Eiq '^Recommendation: proceed[^[:alnum:]].*no findings because [^[:space:]]' \
+    && ! printf '%s\n' "$_ov_last" | grep -Eiq "cannot|can.t|could not|couldn.t|unable to|not able to|wasn.t able"; then
     echo clean
   else
     echo unavailable

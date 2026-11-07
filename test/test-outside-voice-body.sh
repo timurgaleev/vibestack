@@ -6,7 +6,9 @@
 #   - the grading block, cut from lib/snippets/outside-voice-body.md and run on
 #     fixture outputs under bash (and zsh when present): a missing or empty file,
 #     findings without the closing `Recommendation:` line, a refusal and a bare
-#     marker with no findings and no stated reason all grade `unavailable`;
+#     marker with no findings and no stated reason, a "no findings" phrase
+#     inside a refusal or a non-proceed recommendation, and text after the
+#     closing line all grade `unavailable`;
 #     severity-tagged findings grade `issues_found`; a marker with an explicit
 #     "no findings because" reason grades `clean`;
 #   - the persist and disabled blocks, rendered into scratch includers and run
@@ -64,6 +66,10 @@ printf '%s\n' '1. [Critical] Two writers race on the same state file.' \
 printf '%s\n' 'I checked sequencing, rollback and the test plan.' '' \
   'Recommendation: proceed as written — no findings because every step has a rollback and a test' > "$F/clean"
 printf '%s\n' '**Recommendation:** proceed — no findings because it is fine' > "$F/bold-marker"
+printf '%s\n' 'Recommendation: do not proceed; there are no findings because I was unable to read the repository' > "$F/refusal-reason"
+printf '%s\n' 'Recommendation: block — I cannot report no findings because the material was empty' > "$F/cannot-report"
+printf '%s\n' 'Recommendation: proceed — no findings because ok' '' \
+  'Actually, wait: the migration drops a column with no backfill.' > "$F/trailing-text"
 
 grade() {  # SHELL FIXTURE -> the OUTSIDE_GRADE value the block prints
   local block
@@ -84,6 +90,9 @@ for sh in $shells; do
   expect "$F/refusal"     unavailable  "a refusal"
   expect "$F/bare-marker" unavailable  "marker with no findings and no reason"
   expect "$F/bold-marker" unavailable  "a decorated marker"
+  expect "$F/refusal-reason" unavailable "a no-findings phrase inside a refusal"
+  expect "$F/cannot-report"  unavailable "a recommendation that is not proceed"
+  expect "$F/trailing-text"  unavailable "text after the Recommendation line"
   expect "$F/findings"    issues_found "severity-tagged findings"
   expect "$F/clean"       clean        "an explicit no-findings reason"
 done
