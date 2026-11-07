@@ -2615,8 +2615,9 @@ during Steps 4-6":
      (`vibe-evidence run --skill ship --label <lane> -- '<command>'`), paste fresh
      output, and check again. Stale output from Step 5 is NOT acceptable.
 
-   Only CHANGELOG.md, VERSION and TODOS.md may be allow-listed. Never add a path a
-   test, build or generator reads — a `package.json` edit, a fixture, a doc. If any
+   Only CHANGELOG.md, VERSION and TODOS.md may be allow-listed, plus the npm manifests when Step 16.0 printed no `MOVED <lane>:` line
+   for this lane (they then differ in nothing but their own version). Never add any
+   other path a test, build or generator reads — a dependency, a fixture, a doc. If any
    test reads one of those three files itself (a version check, a changelog lint),
    drop that file from the list and re-run.
 
