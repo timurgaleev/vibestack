@@ -161,7 +161,7 @@ Run full mode, then compare with the prior baseline resolved at setup — `prior
 
 1. Find browse binary (see Setup above)
 2. Create this run's report directory (see Setup above)
-3. Copy report template from `qa/templates/qa-report-template.md` to `$REPORT_DIR`
+3. Copy report template from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/templates/qa-report-template.md` to `$REPORT_DIR`
 4. Start timer for duration tracking
 
 ### Phase 2: Authenticate (if needed)
@@ -225,7 +225,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
 $B console --errors
 ```
 
-Then follow the **per-page exploration checklist** (see `qa/references/issue-taxonomy.md`):
+Then follow the **per-page exploration checklist** (see `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/references/issue-taxonomy.md`):
 
 1. **Visual scan** — Look at the annotated screenshot for layout issues
 2. **Interactive elements** — Click buttons, links, controls. Do they work? (NON-LOCAL: consent first; never the logout/delete link class)
@@ -310,7 +310,7 @@ REPORT_DIR='<REPORT_DIR>'
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 ```
 
-**Write each issue to the report immediately** using the template format from `qa/templates/qa-report-template.md`.
+**Write each issue to the report immediately** using the template format from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/templates/qa-report-template.md`.
 
 **Proposed regression test (functional and console issues only).** Under the issue, name the test `/qa` should write to lock the fix in, held to the bar below:
 
