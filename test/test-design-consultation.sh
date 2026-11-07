@@ -24,7 +24,14 @@
 #   - fonts go through a verification step and the overused list covers the
 #     faces the skill once recommended;
 #   - the Brutalist, Retro-Futuristic and light/dark lines no longer contradict
-#     the slop rules.
+#     the slop rules;
+#   - research confirms URLs before opening sites, treats pages as untrusted
+#     data and never passes remembered patterns off as observed; PRODUCT.md is
+#     read as prior context;
+#   - Path A failures and rejections are bounded, and the body-face rule matches
+#     /design-review;
+#   - the DESIGN.md template, and /design-html's, carry Components with states
+#     and Do's and Don'ts.
 #
 # Usage: test/test-design-consultation.sh [repo-root]
 set -uo pipefail
@@ -277,6 +284,47 @@ sys.exit(1 if "VARY light/dark" in t else 0)' "$TMP/p3" \
 grep -Fq 'the three looks' "$TMP/p3" && ok "three-looks calibration present" || no "three-looks calibration missing"
 grep -Fq 'balanced (primary + secondary' "$TMP/p3" && no "old color-approach scale still present" \
   || ok "color approaches updated"
+
+echo "research consent and honesty"
+section "$R" "## Phase 2: Research" > "$TMP/p2"
+before "$TMP/p2" "in one AskUserQuestion" '$B goto' \
+  && ok "the URLs are confirmed in one question before any site opens" || no "sites open before the user confirms the URLs"
+has "$TMP/p2" "Mode: cdp" && ok "CDP mode is named: a visit carries the user's cookies" || no "CDP mode not named"
+has "$TMP/p2" "untrusted data" && ok "search results and page text are untrusted data" || no "no untrusted-data rule"
+has "$TMP/p2" "sign-in" && ok "a sign-in wall is skipped, never signed into" || no "no sign-in-wall rule"
+has "$TMP/p2" "research unavailable or declined" \
+  && has "$TMP/p2" "never present remembered patterns as observed" \
+  && ok "remembered patterns are never presented as observed" || no "no research honesty rule"
+
+echo "PRODUCT.md is prior context"
+has "$TMP/p0" "cat PRODUCT.md 2>/dev/null | head -120" && ok "Phase 0 reads PRODUCT.md" || no "Phase 0 ignores PRODUCT.md"
+has "$TMP/p0" "never re-ask" && ok "PRODUCT.md answers are confirmed, not re-asked" || no "PRODUCT.md answers re-asked"
+
+echo "Path A failures are bounded"
+has "$TMP/p5" "never loop" && has "$TMP/p5" "offer Path B or skip the preview" \
+  && ok "no saved: line or two rejected rounds offer Path B or skip" || no "Path A can regenerate without bound"
+has "$TMP/p5" "how many of the requested images were saved" \
+  && ok "requested-vs-saved count is reported" || no "no requested-vs-saved count"
+grep -Fq 'Inter body text,' "$TMP/p5" \
+  && no "the self-gate rejects Inter as body text even where DESIGN.md chose it" \
+  || ok "the self-gate no longer rejects every Inter body"
+has "$TMP/p5" "on an Operate or Read surface" && ok "body-face rule matches /design-review" \
+  || no "body-face rule differs from /design-review"
+
+echo "DESIGN.md sections"
+for h in "## Components" "## Do's and Don'ts"; do
+  has "$TMP/p6" "$h" && ok "the DESIGN.md template has $h" || no "the DESIGN.md template lacks $h"
+done
+has "$TMP/p6" "hover, focus, active, disabled, loading, error" \
+  && ok "components carry their states" || no "components carry no states"
+HR="$TMP/r/design-html/SKILL.md"
+if VIBESTACK_REPO_ROOT="$SRC" "$HERE/bin/vibe-render-skill" "$SRC/skills/design-html/SKILL.md" "$HR" >/dev/null 2>&1; then
+  section "$HR" "## Step 5: Save & Next Steps" > "$TMP/h5"
+  has "$TMP/h5" "Do's and Don'ts" && has "$TMP/h5" "Components" \
+    && ok "/design-html writes the same DESIGN.md sections" || no "/design-html writes a different DESIGN.md"
+else
+  no "design-html renders"
+fi
 
 echo "design-consultation: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

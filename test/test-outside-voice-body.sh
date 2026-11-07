@@ -17,8 +17,9 @@
 #     voice `design-outside-voices`, each with `via` naming the includer — never
 #     the includer's own name, which the readiness dashboard reads as its gate;
 #   - a failed log write prints REVIEW_LOG_NOT_PERSISTED with the exit code;
-#   - /plan-ceo-review, /plan-eng-review and /plan-devex-review render the body
-#     byte-identically with no Codex run of their own, eng and devex carry no
+#   - /plan-ceo-review, /plan-eng-review, /plan-devex-review and the design voice
+#     of /plan-design-review render the body byte-identically with no Codex run
+#     of their own, eng and devex carry no
 #     stale Step 0D-POST pointer, eng's fallback asks for a read-only subagent,
 #     and each overrides the preflight's disabled skip so the record is written.
 #
@@ -161,7 +162,7 @@ printf '%s\n' "$out" | grep -q '^REVIEW_LOG_NOT_PERSISTED (exit 1)' \
 echo "plan-review includers"
 # Each plan review renders the shared body verbatim; a skill that re-inlines its
 # own Codex run is the drift this snippet exists to stop.
-for s in plan-ceo-review plan-eng-review plan-devex-review; do
+for s in plan-ceo-review plan-eng-review plan-devex-review plan-design-review; do
   mkdir -p "$TMP/real/$s"
   if ! VIBESTACK_REPO_ROOT="$SRC" "$SRC/bin/vibe-render-skill" "$SRC/skills/$s/SKILL.md" "$TMP/real/$s/SKILL.md" >/dev/null 2>&1; then
     no "$s renders"; continue
@@ -173,7 +174,7 @@ sys.exit(0 if body.strip() in open(sys.argv[2], encoding="utf-8").read() else 1)
 PY
   then ok "$s renders the outside-voice body byte-identically"
   else no "$s does not render the outside-voice body verbatim"; fi
-  grep -q 'TMPERR_PV' "$SRC/skills/$s/SKILL.md" \
+  grep -qE 'TMPERR_(PV|DESIGN)' "$SRC/skills/$s/SKILL.md" \
     && no "$s still carries its own Codex run" || ok "$s has no inlined Codex run"
   # The preflight says "skip this section entirely" on disabled; without an
   # override before the body, the body's disabled record is never reached and a

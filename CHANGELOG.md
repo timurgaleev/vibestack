@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.55.38 — 2026-11-08
+
+### Fixed
+
+- **`/plan-design-review` picks a mockup inline.** Each saved PNG is shown and one
+  question picks and confirms it; the served comparison board and its
+  feedback loop are gone. `approved.json` records `approved_path`, the real
+  path of the chosen image, which must resolve under the design directory and
+  exist. The rubric no longer asks for gradient backgrounds or a motion
+  minimum, excluded artifacts are not gaps, and the design outside voice runs
+  through the shared outside-voice body with a Claude subagent beside it.
+- **`/design-consultation` confirms research sites before opening any**, treats
+  pages as untrusted data, reads `PRODUCT.md`, and bounds Path A. Its
+  `DESIGN.md` template gains Components and Do's and Don'ts sections.
+- **`/design-shotgun` carries the page archetype to `/design-html`.** Persuade
+  screens vary the archetype and keep the primary action; `approved.json`
+  records the archetype and section outline (read from a file, never shell
+  source), and `/design-html` builds it as given.
+
 ## 1.55.37 — 2026-11-07
 
 ### Added

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # design-shotgun: approved.json is written from a file (never from shell-spliced
 # feedback), records the approved image's absolute path, and refuses a missing
-# image; the evolve path opens the confirmed URL before it screenshots; the
-# anti-convergence rule defers to DESIGN.md. Every Bash call is a fresh shell, so
+# image; it carries an approved archetype and section outline to /design-html and
+# refuses an unknown archetype; the evolve path opens the confirmed URL before it
+# screenshots; the anti-convergence rule defers to DESIGN.md; Step 1 reads
+# PRODUCT.md, Step 2 flags a conflict with a strong taste learning and prints the
+# approved.json files it found. Every Bash call is a fresh shell, so
 # each block runs with _DESIGN_DIR and B unset and gets them only from the
 # placeholders the model fills with what earlier blocks printed.
 set -euo pipefail
@@ -44,8 +47,11 @@ mkdir -p "$DDIR/round-2"
 FB='It'"'"'s "close" — $(touch pwned) `touch pwned2`'
 printf '%s\n' "$FB" > "$DDIR/approved-feedback.txt"
 
-run_save() {  # run_save ROUND_DIR LETTER -> rc; output in $TMP/out
-  sed -e "s|<ROUND_DIR>|$1|" -e "s|<V>|$2|" -e "s|<DESIGN_DIR>|$DDIR|" "$TMP/save.sh" > "$TMP/run.sh"
+run_save() {  # run_save ROUND_DIR LETTER [ARCHETYPE SECTIONS] -> rc; output in $TMP/out
+  # The section outline reaches the block through a file the Write tool wrote.
+  printf '%s\n' "${4:-}" > "$DDIR/approved-sections.txt"
+  sed -e "s|<ROUND_DIR>|$1|" -e "s|<V>|$2|" -e "s|<DESIGN_DIR>|$DDIR|" \
+      -e "s|<ARCHETYPE>|${3:-}|" -e "s|<SECTIONS>|${4:-}|" "$TMP/save.sh" > "$TMP/run.sh"
   (cd "$TMP" && env -u _DESIGN_DIR -u B bash "$TMP/run.sh") > "$TMP/out" 2>&1
 }
 
@@ -69,6 +75,62 @@ rc=0; run_save "$DDIR" C || rc=$?
 [ "$rc" -ne 0 ] && grep -q "is missing; reselect" "$TMP/out" && [ ! -f "$DDIR/approved.json" ] \
   && ok "a missing approved image fails without writing approved.json" \
   || no "missing image: rc=$rc $(cat "$TMP/out")"
+
+echo "archetype hand-off"
+grep -qF '<SECTIONS>' "$TMP/save.sh" \
+  && no "the section outline is substituted into shell source" || ok "the section outline never enters shell source"
+rm -f "$DDIR/approved.json"
+rc=0; run_save "$DDIR" B classic-hero 'hero,$(touch pwned3)' || rc=$?
+[ "$rc" -ne 0 ] && [ ! -f "$DDIR/approved.json" ] && ! ls "$TMP" | grep -q pwned3 \
+  && ok "a hostile section outline is refused without running" || no "hostile outline: rc=$rc $(cat "$TMP/out")"
+rm -f "$DDIR/approved.json"
+rc=0; run_save "$DDIR" B classic-hero "hero,proof,pricing,faq" || rc=$?
+if [ "$rc" -eq 0 ] && python3 -I - "$DDIR/approved.json" <<'PY'
+import json, sys
+rec = json.load(open(sys.argv[1], encoding="utf-8"))
+assert rec["archetype"] == "classic-hero", rec
+assert rec["sections"] == ["hero", "proof", "pricing", "faq"], rec
+PY
+then ok "approved.json records the approved archetype and section outline"
+else no "archetype not recorded: rc=$rc $(cat "$TMP/out")"; fi
+rm -f "$DDIR/approved.json"
+rc=0; run_save "$DDIR" B || rc=$?
+[ "$rc" -eq 0 ] && python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1])); sys.exit("archetype" in r or "sections" in r)' "$DDIR/approved.json" \
+  && ok "a screen without an archetype records neither key" || no "empty archetype: rc=$rc $(cat "$TMP/out")"
+rm -f "$DDIR/approved.json"
+rc=0; run_save "$DDIR" B bento "hero" || rc=$?
+[ "$rc" -ne 0 ] && [ ! -f "$DDIR/approved.json" ] \
+  && ok "an archetype outside the four is refused" || no "unknown archetype accepted: rc=$rc"
+rc=0; run_save "$DDIR" B comparison "" || rc=$?
+[ "$rc" -ne 0 ] && [ ! -f "$DDIR/approved.json" ] \
+  && ok "an archetype without its section outline is refused" || no "archetype without sections accepted: rc=$rc"
+grep -qF 'classic-hero, long-form-story, minimal-conversion, comparison' "$SHOT" \
+  && grep -qF 'same primary action' "$SHOT" \
+  && ok "Step 3a varies the archetype and keeps the primary action identical" \
+  || no "Step 3a does not vary the page archetype"
+HTML="$SRC/skills/design-html/SKILL.md"
+sed -n '/^## Step 1: Design Analysis/,/^## Step 2/p' "$HTML" | grep -qF '`archetype` and `sections`' \
+  && ok "/design-html Step 1 takes the approved archetype and sections" \
+  || no "/design-html ignores the approved archetype"
+
+echo "context and taste"
+grep -qF 'cat PRODUCT.md 2>/dev/null | head -120' "$SHOT" \
+  && ok "Step 1 reads PRODUCT.md" || no "Step 1 ignores PRODUCT.md"
+sed -n '/^## Step 2: Taste Memory/,/^## Step 3/p' "$SHOT" > "$TMP/step2"
+grep -qF 'confidence 7 or higher' "$TMP/step2" && grep -qF 'one-off' "$TMP/step2" \
+  && ok "a request against a strong taste learning is flagged" || no "no taste-conflict prompt"
+# The taste block must show the model what it found; a bare assignment prints nothing.
+if extract_block '**Per-session approved.json files' > "$TMP/taste.sh"; then
+  VH="$TMP/vh"; mkdir -p "$VH/projects/demo/designs/hero-20260101" "$VH/bin"
+  echo '{}' > "$VH/projects/demo/designs/hero-20260101/approved.json"
+  printf '#!/bin/sh\necho SLUG=demo\n' > "$VH/bin/vibe-slug"; chmod +x "$VH/bin/vibe-slug"
+  (cd "$TMP" && VIBESTACK_HOME="$VH" bash "$TMP/taste.sh") > "$TMP/taste.out" 2>&1 || true
+  grep -qF "$VH/projects/demo/designs/hero-20260101/approved.json" "$TMP/taste.out" \
+    && ok "the taste block prints the approved.json files it found" \
+    || no "the taste block finds approved.json files but prints none: '$(cat "$TMP/taste.out")'"
+else
+  no "Step 2 carries no taste block"
+fi
 
 echo "evolve screenshot"
 if extract_block 'take ONE screenshot' > "$TMP/shot.sh"; then
