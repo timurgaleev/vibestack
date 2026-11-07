@@ -253,8 +253,11 @@ else
   # Check if deploy config has changed since confirmation
   SAVED_HASH=$(cat "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed" 2>/dev/null)
   CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-  # Also hash workflow files that affect deploy behavior
-  WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+  # Every workflow that deploys, by name or by a deploy job / environment gate
+  # inside (release.yml, main.yml) — 1.5e computes the same hash.
+  WORKFLOW_HASH=$(for f in $(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort); do
+    case "${f##*/}" in *deploy*|*cd*) cat "$f" ;; *) grep -qiE '^[[:space:]]+(environment:|[A-Za-z0-9_-]*deploy[A-Za-z0-9_-]*:)' "$f" && cat "$f" ;; esac
+  done | shasum -a 256 | cut -d' ' -f1)
   COMBINED_HASH="${CURRENT_HASH}-${WORKFLOW_HASH}"
   if [ "$SAVED_HASH" != "$COMBINED_HASH" ] && [ -n "$SAVED_HASH" ]; then
     echo "CONFIG_CHANGED"
@@ -456,7 +459,9 @@ FIRST_RUN:
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+WORKFLOW_HASH=$(for f in $(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort); do
+  case "${f##*/}" in *deploy*|*cd*) cat "$f" ;; *) grep -qiE '^[[:space:]]+(environment:|[A-Za-z0-9_-]*deploy[A-Za-z0-9_-]*:)' "$f" && cat "$f" ;; esac
+done | shasum -a 256 | cut -d' ' -f1)
 echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed"
 ```
 Continue to Step 2.
@@ -848,6 +853,32 @@ likely not run. CHANGELOG and VERSION not updated despite new features.**
 
 If only docs changed (no code): skip this check.
 
+### 3.5d-bis: What the merge deploys
+
+Every run, CONFIRMED or not, read what merging into `BASE_BRANCH` sets off — the Deploy
+Configuration, and each workflow at `PR_HEAD` that deploys (by name, or by a deploy job or
+`environment:` inside) with its triggers, branch filters and environment gates:
+
+```bash
+PR_HEAD='<PR_HEAD>'   # from Step 1's TARGET line
+sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null \
+  | grep -iE '^[[:space:]]*-[[:space:]]*(platform|production url|deploy workflow|deploy trigger):' | sed 's/^/CONFIG /'
+for f in $(git ls-tree --name-only "$PR_HEAD" .github/workflows/ 2>/dev/null | grep -E '\.ya?ml$'); do
+  _wf=$(git show "$PR_HEAD:$f" 2>/dev/null) || continue
+  case "${f##*/}" in *deploy*|*cd*) ;; *) printf '%s\n' "$_wf" | grep -qiE '^[[:space:]]+(environment:|[A-Za-z0-9_-]*deploy[A-Za-z0-9_-]*:)' || continue ;; esac
+  printf '%s\n' "$_wf" | awk -v f="$f" '
+    /^[[:space:]]*"?(on|push|workflow_dispatch|workflow_run|release|branches|branches-ignore|tags|environment)"?[[:space:]]*:/ { print "WORKFLOW " f ":" NR ": " $(0); l = ($(0) ~ /:[[:space:]]*$/); next }
+    l && /^[[:space:]]*(-[[:space:]]|name:)/ { print "WORKFLOW " f ":" NR ": " $(0); next }
+    { l = 0 }'
+done
+```
+
+Reduce it to one row for the report: `MERGE WILL DEPLOY: <production via X / staging via
+Y / nothing until <trigger command> runs / unknown>`. A workflow counts for this merge only
+when its `push` branch filter admits `BASE_BRANCH` (or it has none); name an `environment:`
+gate as one that may hold for approval. No evidence either way is `unknown` — never
+"nothing deploys".
+
 ### 3.5e: Readiness report and confirmation
 
 Tell the user: "Here's the full readiness report. This is everything I checked before merging."
@@ -863,6 +894,7 @@ Build the full readiness report:
 ║  Branch: feature → main                                  ║
 ║  Head:   <sha7>                                          ║
 ║  CI:     PASS (N checks) / NO CI RAN / ALL SKIPPED       ║
+║  MERGE WILL DEPLOY: production via <X> / unknown         ║
 ║                                                          ║
 ║  REVIEWS                                                 ║
 ║  ├─ Eng Review:    CURRENT / STALE (N commits) / —       ║
@@ -912,8 +944,8 @@ If everything is green: recommend A.
 
 Use AskUserQuestion (only when there are no blockers):
 
-- **Re-ground:** "Ready to merge PR #NNN — '{title}' into {base}. Here's what I found."
-  Show the report above.
+- **Re-ground:** "Ready to merge PR #NNN — '{title}' into {base}. MERGE WILL DEPLOY: {the
+  3.5d-bis row}. Here's what I found." Show the report above.
 - If everything is green: "All checks passed. This PR is ready to merge."
 - If there are warnings: List each one in plain English. E.g., "The engineering review
   was done 6 commits ago — the code has changed since then" not "STALE (6 commits)."
