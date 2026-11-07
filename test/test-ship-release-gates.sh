@@ -328,6 +328,11 @@ printf '=========== 4 passed, 1 failed in 0.20s ===========\n' > "$TMP/logs/pyte
 printf '7 examples, 0 failures\n' > "$TMP/logs/rspec7"
 printf 'ok  \texample.com/x\t0.01s\n?   \texample.com/y\t[no test files]\n' > "$TMP/logs/gomixed"
 printf 'all good\n' > "$TMP/logs/custom"
+printf 'TAP version 13\n1..0\n# tests 0\n# pass 0\n# fail 0\n' > "$TMP/logs/nodetap0"
+printf '\342\204\271 tests 0\n\342\204\271 pass 0\n' > "$TMP/logs/nodespec0"
+printf '# tests 4\n# pass 4\n' > "$TMP/logs/nodetap4"
+printf 'running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n' > "$TMP/logs/cargo0"
+printf 'test result: ok. 2 passed; 0 failed; 0 ignored\ntest result: FAILED. 1 passed; 1 failed; 0 ignored\n' > "$TMP/logs/cargo4"
 # ran FIXTURE -> the tests_ran value the lane block reports for a lane whose
 # output is that fixture (the lane itself exits 0 every time).
 ran() {
@@ -340,11 +345,11 @@ open(sys.argv[2], "w").write(t)
 PY
   ( cd "$TMP" && VIBESTACK_HOME="$VH" bash "$TMP/lanes.$1.sh" 2>&1 ) | sed -n 's/^LANE: a exit=0 tests_ran=\([^ ]*\) .*/\1/p'
 }
-for f in jest0 pytest0 rspec0 go0 bun0; do
+for f in jest0 pytest0 rspec0 go0 bun0 nodetap0 nodespec0 cargo0; do
   got=$(ran "$f")
   [ "$got" = 0 ] && ok "$f: zero-test run reports tests_ran=0" || no "$f: zero-test run reports tests_ran='$got'"
 done
-for pair in bun12:12 jest3:3 pytest5:5 rspec7:7; do
+for pair in bun12:12 jest3:3 pytest5:5 rspec7:7 nodetap4:4 cargo4:4; do
   got=$(ran "${pair%%:*}")
   [ "$got" = "${pair#*:}" ] && ok "${pair%%:*}: counted ${pair#*:} tests" || no "${pair%%:*}: tests_ran='$got', want ${pair#*:}"
 done
