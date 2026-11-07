@@ -32,7 +32,7 @@ All fields needed for the Findings column are now present in the JSONL entries.
 For the review you just completed, you may use richer details from your own Completion
 Summary. For prior reviews, use the JSONL fields directly — they contain all required data.
 
-Produce this markdown table:
+Produce this markdown table (write the block's contents, not the fence):
 
 ```markdown
 ## VIBESTACK REVIEW REPORT

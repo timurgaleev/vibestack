@@ -42,6 +42,7 @@ REPORT="$ROOT/lib/snippets/plan-file-review-report.md"
 refute "snippet has no \\\` sequence" "$ESC" "$REPORT"
 check "report template is a real markdown fence" '^```markdown$' "$REPORT"
 check "report trigger column uses plain backticks" '^\| CEO Review \| `/plan-ceo-review` \|' "$REPORT"
+check "the model writes the table, not its fence" "write the block's contents, not the fence" "$REPORT"
 for name in plan-ceo-review plan-eng-review plan-design-review plan-devex-review; do
   R="$(render "$name")"
   section "$R" '^## Plan File Review Report' '^### Write to the plan file' > "$TMP/$name-report.md"
@@ -74,6 +75,13 @@ for name in qa qa-only; do
   check "$name: read-back names \$B attrs" '`\$B attrs` for attribute state' "$TMP/$name-wizard.md"
   check "$name: read-back happens before any Save/Submit" '[Bb]efore any Save or Submit' "$RULES"
   check "$name: stops on a read-back mismatch" 'mismatch.*(STOP|stop)' "$RULES"
+  check "$name: leaving a wizard step goes through rule 3" \
+    '\(Next, Back, Cancel, close\), are mutating actions under rule 3' "$RULES"
+  check "$name: the read-back only reads" \
+    'The read-back only reads: no assignment, click, focus, blur, submit or' "$RULES"
+  check "$name: a mismatch or unverified value stops the submit" 'STOP: do not submit' "$RULES"
+  refute "$name: no page-controlled or softened escape hatch" \
+    'until the page shows otherwise|need not|no need to|skips rule 3|submit anyway' "$RULES"
 done
 
 echo
