@@ -216,6 +216,12 @@ Plus the focused snippets: `capture-learnings`, `prior-learnings`,
 `plan-file-review-report`, `spec-review-loop`,
 `plan-binding` (how `/ship` and `/review` bind the plan a branch was built from),
 `release-after-merge` (the tag-and-release step `/ship` and `/land-and-deploy` share),
+`test-value-bar` (the four questions, the value card with its optional
+`no_claim`, and what never counts as coverage), `implementer-dispatch-rules`
+(five rules for an implementing subagent: never weaken a test to reach green,
+report test and gate edits first, and the parent re-runs the checks),
+`test-bootstrap` (test-framework detection: markers are evidence for the
+question, never a command to run blind),
 `outside-voice-preflight` — the `CODEX_MODE` resolution the three plan reviews
 share: config switch, running-under-Codex probe, install and auth checks, and
 the branch bullets they act on. `outside-voice-body` is what follows it: the read-only
@@ -300,6 +306,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-release-after-merge.sh` | The shared tag-and-release step `/ship` and `/land-and-deploy` run once a PR has merged |
 | `test-land-deploy-gates.sh` | `/land-and-deploy` merges only the approved head over green CI and reverts exactly what landed |
 | `test-test-value-bar.sh` | The test value bar reaches every skill that writes, proposes or reviews tests, without drifting copies |
+| `test-test-bootstrap.sh` | `lib/snippets/test-bootstrap.md` stays the one wording of test-framework detection that /ship and /qa render |
 | `test-shared-protocols.sh` | The claim, completeness, question and memory rules reach the skills that include them, within a byte budget |
 | `test-context-provenance.sh` | `/context-save` and `/context-restore` keep a resumed session off the wrong context or a guessed step |
 | `test-context-identity.sh` | Checkpoints are stamped with their project and restore never offers another project's |
