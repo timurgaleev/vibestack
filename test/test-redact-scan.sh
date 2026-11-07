@@ -143,6 +143,68 @@ for s in spec document-generate document-release ship; do
     && ok "$s passes only on exit 0" || no "$s lacks the exit-0-only rule"
 done
 
+# 12b. /office-hours runs the scanner itself: its repo copy of the design doc and
+#      its outside-voice prompt leave the machine only on exit 0.
+# Value: protects=a credential in the design doc never reaches docs/designs and one in the Phase 3.5 prompt never reaches Codex; fails_when=the copy or the codex call runs before or regardless of the scan, or a missing scanner reads as clean; why_new=section 12 only greps the four publishing skills; seam=none
+OH_R="$TMP/oh-render.md"
+if VIBESTACK_REPO_ROOT="$ROOT" "$BIN/vibe-render-skill" "$ROOT/skills/office-hours/SKILL.md" "$OH_R" >/dev/null 2>&1; then
+  oh_block() {
+    python3 -I - "$OH_R" "$1" <<'PY'
+import re, sys, textwrap
+text, needle = open(sys.argv[1], encoding="utf-8").read(), sys.argv[2]
+hits = [textwrap.dedent(m.group(2)) for m in re.finditer(r"^([ \t]*)```bash\n(.*?)\n\1```", text, re.S | re.M) if needle in m.group(2)]
+if len(hits) != 1:
+    sys.exit("expected one bash block containing %r, found %d" % (needle, len(hits)))
+sys.stdout.write(hits[0] + "\n")
+PY
+  }
+  fill_ph() { python3 -I - "$@" <<'PY'
+import sys
+p, pairs = sys.argv[1], sys.argv[2:]
+s = open(p).read()
+for old, new in zip(pairs[::2], pairs[1::2]):
+    assert old in s, "no placeholder " + old
+    s = s.replace(old, new)
+open(p, "w").write(s)
+PY
+  }
+  OHW="$TMP/oh-work"; mkdir -p "$OHW"; git -C "$OHW" init -q
+  OHV="$TMP/oh-vh"; mkdir -p "$OHV/bin"
+  ln -sf "$BIN/vibe-redact" "$OHV/bin/vibe-redact"; ln -sf "$BIN/vibe-redact-prepush" "$OHV/bin/vibe-redact-prepush"
+  # oh_copy <doc> <vibestack-home> -> runs the repo-copy block in $OHW
+  oh_copy() {
+    oh_block 'docs/designs/' > "$TMP/oh-copy.sh" || return 2
+    fill_ph "$TMP/oh-copy.sh" "<DESIGN_DOC>" "$1" "<TOPIC_SLUG>" "my-topic" || return 2
+    (cd "$OHW" && VIBESTACK_HOME="$2" bash "$TMP/oh-copy.sh") > "$TMP/oh-copy.out" 2>&1
+  }
+  printf '# Design\nkey = %s\n' "$AWS_KEY" > "$TMP/oh-secret.md"
+  printf '# Design\nUse Bearer YOUR_TOKEN_HERE in the docs.\n' > "$TMP/oh-clean.md"
+  oh_copy "$TMP/oh-secret.md" "$OHV"
+  [ ! -e "$OHW/docs/designs/my-topic.md" ] && grep -q '^REDACT_EXIT: 1' "$TMP/oh-copy.out" \
+    && ok "office-hours: a design doc with a credential gets no repo copy" || no "office-hours copied a secret-bearing doc: $(cat "$TMP/oh-copy.out")"
+  oh_copy "$TMP/oh-clean.md" "$TMP/oh-noscanner"
+  [ ! -e "$OHW/docs/designs/my-topic.md" ] \
+    && ok "office-hours: a scan that cannot run gets no repo copy" || no "office-hours copied with no scanner: $(cat "$TMP/oh-copy.out")"
+  oh_copy "$TMP/oh-clean.md" "$OHV"
+  cmp -s "$TMP/oh-clean.md" "$OHW/docs/designs/my-topic.md" \
+    && ok "office-hours: a clean design doc is copied to docs/designs" || no "office-hours did not copy a clean doc: $(cat "$TMP/oh-copy.out")"
+
+  mkdir -p "$TMP/oh-stub"
+  printf '#!/usr/bin/env bash\ncat > "%s"\necho fine\n' "$TMP/oh-codex.stdin" > "$TMP/oh-stub/codex"; chmod +x "$TMP/oh-stub/codex"
+  if oh_block '_CX_EFFORT=' > "$TMP/oh-cx.sh"; then
+    printf 'Premise: ship it\ntoken %s\n' "$AWS_KEY" > "$TMP/oh-prompt.txt"
+    fill_ph "$TMP/oh-cx.sh" "<PROMPT_FILE>" "$TMP/oh-prompt.txt" "<EFFORT>" "high"
+    (cd "$OHW" && VIBESTACK_HOME="$OHV" PATH="$TMP/oh-stub:$PATH" bash "$TMP/oh-cx.sh") > "$TMP/oh-cx.out" 2>&1
+    [ ! -e "$TMP/oh-codex.stdin" ] && grep -q '^CODEX_SKIPPED' "$TMP/oh-cx.out" && [ ! -e "$TMP/oh-prompt.txt" ] \
+      && ok "office-hours: a prompt with a credential never reaches codex and is removed" \
+      || no "office-hours sent a secret-bearing prompt to codex: $(tr '\n' '|' < "$TMP/oh-cx.out")"
+  else
+    no "office-hours codex block not found"
+  fi
+else
+  no "office-hours renders"
+fi
+
 # --- Every sink that persists or publishes free text refuses the same secrets ---
 #
 # A sink is called with one text and answers 0 when it refused it (nothing

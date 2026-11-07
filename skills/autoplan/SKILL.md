@@ -87,12 +87,7 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
+{{include lib/snippets/base-branch-detect.md}}
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -148,7 +143,7 @@ If they choose A:
 Say: "Running /office-hours inline. Once the design doc is ready, I'll pick up
 the review right where we left off."
 
-Read the `/office-hours` skill file at `~/.claude/skills/office-hours/SKILL.md` using the Read tool.
+Read the `/office-hours` skill file at `${CLAUDE_SKILL_DIR}/../office-hours/SKILL.md` using the Read tool.
 
 **If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
 
@@ -373,10 +368,10 @@ Phase 0.5), which is what keeps them independent of earlier phases.
 ### Step 3: Load skill files from disk
 
 Read each file using the Read tool:
-- `~/.claude/skills/plan-ceo-review/SKILL.md`
-- `~/.claude/skills/plan-design-review/SKILL.md` (only if UI scope detected)
-- `~/.claude/skills/plan-eng-review/SKILL.md`
-- `~/.claude/skills/plan-devex-review/SKILL.md` (only if DX scope detected)
+- `${CLAUDE_SKILL_DIR}/../plan-ceo-review/SKILL.md`
+- `${CLAUDE_SKILL_DIR}/../plan-design-review/SKILL.md` (only if UI scope detected)
+- `${CLAUDE_SKILL_DIR}/../plan-eng-review/SKILL.md`
+- `${CLAUDE_SKILL_DIR}/../plan-devex-review/SKILL.md` (only if DX scope detected)
 
 **Section skip list — when following a loaded skill file, SKIP these sections
 (they are already handled by /autoplan). Each entry matches a `## ` heading that
