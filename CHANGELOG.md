@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.55.29 — 2026-11-07
+
+### Changed
+
+- **`/unslop` checks that a rewrite kept code, headings and links.** Fenced
+  blocks must come back byte for byte — a nested or mixed fence included — and
+  inline code, the heading count and link targets are compared; any difference
+  is put back.
+- **It asks instead of inventing.** A claim with no number or mechanism in the
+  source keeps its wording and becomes a question for the author, and
+  experience or credentials the source never states are never asserted.
+- A draft with no high hits gets a light edit; READMEs, landing pages and
+  release notes get a reader test on their opening; text you lock is reported,
+  never rewritten; security warnings, legal wording and numbered destructive
+  steps are kept word for word. Six new catalogue entries cover rhetorical tics.
+- `/unslop` refuses secret files (`.env*`, keys, `~/.ssh`, `~/.aws`,
+  credentials) before reading them, warns on non-prose files and stops above
+  500 KB.
+
 ## 1.55.28 — 2026-11-07
 
 ### Changed
