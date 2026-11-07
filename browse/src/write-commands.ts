@@ -5,6 +5,7 @@
  * press, scroll, wait, viewport, cookie, header, useragent
  */
 
+import type { Page, Route } from 'playwright';
 import type { TabSession } from './tab-session';
 import type { BrowserManager } from './browser-manager';
 import { findInstalledBrowsers, importCookies, importCookiesViaCdp, hasV20Cookies, listSupportedBrowserNames } from './cookie-import-browser';
@@ -129,6 +130,25 @@ const CLEANUP_SELECTORS = {
   ],
 };
 
+// load-html --offline: the route sits on this tab alone, since every tab of the
+// daemon shares one browser context. A context recreation (viewport --scale)
+// drops it along with the page.
+const offlineTabs = new WeakSet<Page>();
+async function blockRemote(route: Route): Promise<void> {
+  if (/^(?:file|data|blob|about):/i.test(route.request().url())) await route.continue();
+  else await route.abort('aborted');
+}
+async function setTabOffline(page: Page, offline: boolean): Promise<void> {
+  if (offline === offlineTabs.has(page)) return;
+  if (offline) {
+    await page.route('**/*', blockRemote);
+    offlineTabs.add(page);
+  } else {
+    await page.unroute('**/*', blockRemote);
+    offlineTabs.delete(page);
+  }
+}
+
 export async function handleWriteCommand(
   command: string,
   args: string[],
@@ -186,8 +206,11 @@ export async function handleWriteCommand(
       let fromFilePayload: { html: string; waitUntil?: SetContentWaitUntil } | null = null;
       let filePath: string | undefined;
       let waitUntil: SetContentWaitUntil = 'domcontentloaded';
+      let offline = false;
       for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--from-file') {
+        if (args[i] === '--offline') {
+          offline = true;
+        } else if (args[i] === '--from-file') {
           const payloadPath = args[++i];
           if (!payloadPath) throw new Error('load-html: --from-file requires a path');
           // Parity with the sibling `load-html <file>` path below (line 249):
@@ -242,6 +265,7 @@ export async function handleWriteCommand(
           throw new Error('load-html: --from-file html does not start with a valid markup opener');
         }
         const finalWaitUntil = fromFilePayload.waitUntil ?? waitUntil;
+        await setTabOffline(page, offline);
         await session.setTabContent(fromFilePayload.html, { waitUntil: finalWaitUntil });
         return `Loaded HTML: (inline from --from-file, ${fromFilePayload.html.length} chars)`;
       }
@@ -318,6 +342,7 @@ export async function handleWriteCommand(
       }
 
       const html = buf.toString('utf8');
+      await setTabOffline(page, offline);
       await session.setTabContent(html, { waitUntil });
       return `Loaded HTML: ${absolutePath} (${stat.size} bytes)`;
     }

@@ -37,6 +37,7 @@ import {
   substituteSlots,
 } from "./diagram-prepass";
 import { applyImagePolicy } from "./image-policy";
+import { convertHtmlToDocx, dropIcnsImages } from "./docx-images";
 import { printWithTocPages } from "./toc-pages";
 
 class ProgressReporter {
@@ -119,6 +120,7 @@ export async function generate(opts: GenerateOptions): Promise<string> {
     marginLeft: opts.marginLeft,
     pageNumbers: opts.pageNumbers,
     footerTemplate: opts.footerTemplate,
+    allowNetwork: opts.allowNetwork === true,
   });
   progress.end("Rendering HTML", `${rendered.meta.wordCount} words`);
 
@@ -134,7 +136,7 @@ export async function generate(opts: GenerateOptions): Promise<string> {
   const getRenderTab = (): RenderTab | null => {
     if (renderTab) return renderTab;
     try {
-      renderTab = RenderTab.open();
+      renderTab = RenderTab.open({ allowNetwork: opts.allowNetwork === true });
     } catch (err: any) {
       warn(`diagram-render tab unavailable: ${String(err?.message ?? err).split("\n")[0]}`);
       return null;
@@ -199,7 +201,7 @@ export async function generate(opts: GenerateOptions): Promise<string> {
         }
         progress.end("Rasterizing diagrams for DOCX");
       }
-      finalHtml = convertDiagnosticsForDocx(finalHtml);
+      finalHtml = dropIcnsImages(convertDiagnosticsForDocx(finalHtml), warn);
     }
   } finally {
     renderTab?.close();
@@ -233,12 +235,11 @@ export async function generate(opts: GenerateOptions): Promise<string> {
       warn(`docx is content-fidelity: ${printOnly.join(", ")} do not apply to Word output`);
     }
     progress.begin("Converting to DOCX");
-    const { default: HTMLtoDOCX } = await import("html-to-docx");
-    const buf = await HTMLtoDOCX(finalHtml, null, {
-      title: rendered.meta.title,
-      creator: rendered.meta.author || undefined,
-    });
-    const bytes: Uint8Array = buf instanceof Uint8Array ? buf : new Uint8Array(await (buf as Blob).arrayBuffer());
+    const bytes = await convertHtmlToDocx(
+      finalHtml,
+      { title: rendered.meta.title, creator: rendered.meta.author || undefined },
+      { allowNetwork: opts.allowNetwork === true },
+    );
     fs.writeFileSync(outputPath, bytes);
     progress.end("Converting to DOCX");
     const kb = Math.round(fs.statSync(outputPath).size / 1024);
@@ -265,6 +266,7 @@ export async function generate(opts: GenerateOptions): Promise<string> {
         html,
         waitUntil: "domcontentloaded",
         tabId,
+        offline: opts.allowNetwork !== true,
       });
       browseClient.pdf({
         output: out,
@@ -353,6 +355,7 @@ export async function preview(opts: PreviewOptions): Promise<string> {
     noChapterBreaks: opts.noChapterBreaks,
     confidential: opts.confidential,
     pageNumbers: opts.pageNumbers,
+    allowNetwork: opts.allowNetwork === true,
   });
   progress.end("Rendering HTML", `${rendered.meta.wordCount} words`);
 

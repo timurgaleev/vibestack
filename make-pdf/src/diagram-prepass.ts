@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 import * as browseClient from "./browseClient";
 import { escapeHtml, sanitizeUntrustedHtml } from "./render";
 import { imageDims } from "./image-size";
+import { withOfflinePolicy, OFFLINE_SCRIPT_PAGE_POLICY } from "./offline-html";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -299,10 +300,20 @@ const READY_TIMEOUT_MS = 20_000;
 // round-trip costs microseconds — one spawn regardless of payload size.
 const MAX_ARGV_EXPR_BYTES = 8_000;
 
+/**
+ * The diagram-render bundle page as the render tab loads it. The tab renders
+ * untrusted diagram sources, so without --allow-network it carries the same
+ * no-network policy as the print page, widened only to run its own scripts.
+ */
+export function bundlePageHtml(html: string, allowNetwork: boolean): string {
+  return allowNetwork ? html : withOfflinePolicy(html, OFFLINE_SCRIPT_PAGE_POLICY);
+}
+
 export class RenderTab {
   private constructor(
     public readonly tabId: number,
     private readonly stagedBundlePath: string,
+    private readonly offline: boolean,
   ) {}
 
   /**
@@ -311,9 +322,9 @@ export class RenderTab {
    * inside its safe dirs) and loaded by PATH, not --from-file: a 9MB JSON
    * round-trip per run would be pure waste.
    */
-  static open(): RenderTab {
+  static open(opts: { allowNetwork: boolean }): RenderTab {
     const bundleSrc = resolveBundlePath();
-    const html = fs.readFileSync(bundleSrc);
+    const html = Buffer.from(bundlePageHtml(fs.readFileSync(bundleSrc, "utf8"), opts.allowNetwork), "utf8");
     const sha = crypto.createHash("sha256").update(html).digest("hex").slice(0, 16);
     const staged = path.join(PAYLOAD_TMP_DIR, `vibestack-diagram-render-${sha}.html`);
     // Never trust an existing file at the predictable shared-/tmp name: verify
@@ -350,14 +361,14 @@ export class RenderTab {
       }
     }
     const tabId = browseClient.newtab();
-    const tab = new RenderTab(tabId, staged);
+    const tab = new RenderTab(tabId, staged, !opts.allowNetwork);
     tab.loadBundle();
     return tab;
   }
 
   /** (Re)load the bundle page — also the reset path after a render error. */
   loadBundle(): void {
-    browseClient.loadHtmlFile({ file: this.stagedBundlePath, tabId: this.tabId });
+    browseClient.loadHtmlFile({ file: this.stagedBundlePath, tabId: this.tabId, offline: this.offline });
     const ready = browseClient.waitForExpression({
       expression: "document.getElementById('status') !== null && document.getElementById('status').textContent === 'ready'",
       tabId: this.tabId,
