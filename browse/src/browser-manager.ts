@@ -15,6 +15,7 @@
  *   restores state. Falls back to clean slate on any failure.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page, type Locator, type Cookie } from 'playwright';
 import { writeSecureFile, mkdirSecure } from './file-permissions';
 import { addConsoleEntry, addNetworkEntry, addDialogEntry, networkBuffer, type DialogEntry } from './buffers';
@@ -24,6 +25,21 @@ import { TabSession, type RefEntry } from './tab-session';
 import { resolveChromiumProfile, cleanSingletonLocks } from './config';
 import { withCdpSession } from './cdp-bridge';
 import type { MemorySnapshot, MemoryStructureStats, MemoryTabSnapshot, MemoryProcess } from './memory-snapshot';
+
+/**
+ * How long a status or state-capture read waits on one tab. A renderer stuck
+ * in a script never answers, and those reads must not hang the daemon with it.
+ */
+export const TAB_PROBE_TIMEOUT_MS = 1000;
+const TAB_TIMED_OUT = Symbol('tab-timed-out');
+
+function withTabTimeout<T>(work: Promise<T>): Promise<T | typeof TAB_TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TAB_TIMED_OUT>(resolve => {
+    timer = setTimeout(() => resolve(TAB_TIMED_OUT), TAB_PROBE_TIMEOUT_MS);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Detect whether VIBESTACK_CHROMIUM_PATH points at a custom Chromium build that
@@ -222,6 +238,9 @@ export class BrowserManager {
   private static readonly TAB_GUARDRAIL_HARD = 200;
   private tabGuardrailSoftHit = false;
   private tabGuardrailHardHit = false;
+
+  private tabPin = new AsyncLocalStorage<number>();
+  private tabRecovery: Promise<number> | null = null;
 
   /**
    * Called from context.on('page') after a new tab is tracked. Emits at
@@ -756,20 +775,61 @@ export class BrowserManager {
     }
   }
 
-  /** Health check — verifies Chromium is connected AND responsive */
+  /**
+   * Liveness only: is Chromium still connected. A tab stuck in a script is a
+   * fact about that tab, reported by probeActiveTab(), and must not make the
+   * whole daemon look dead to the CLI.
+   */
   async isHealthy(): Promise<boolean> {
-    if (!this.browser || !this.browser.isConnected()) return false;
+    return !!this.browser && this.browser.isConnected();
+  }
+
+  /** Does the active tab's renderer answer a trivial script within TAB_PROBE_TIMEOUT_MS. */
+  async probeActiveTab(): Promise<{ id: number; url: string; responsive: boolean } | null> {
+    const id = this.currentTabId;
+    const page = this.pages.get(id);
+    if (!page) return null;
+    let responsive = false;
     try {
-      const page = this.pages.get(this.activeTabId);
-      if (!page) return true; // connected but no pages — still healthy
-      await Promise.race([
-        page.evaluate('1'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
-      ]);
-      return true;
-    } catch {
-      return false;
+      responsive = (await withTabTimeout(page.evaluate('1'))) !== TAB_TIMED_OUT;
+    } catch {}
+    return { id, url: page.url(), responsive };
+  }
+
+  /**
+   * Reopen a blank tab when every tab was closed outside browse (the user
+   * closed the window, or a page closed itself). Concurrent callers share one
+   * recovery. Returns a warning line for the caller, or null when nothing was
+   * missing.
+   */
+  async ensureActiveTab(): Promise<string | null> {
+    if (this.pages.size > 0 || !this.context) return null;
+    if (!this.tabRecovery) {
+      this.tabRecovery = this.newTab().finally(() => { this.tabRecovery = null; });
     }
+    const id = await this.tabRecovery;
+    const warning = `Warning: every tab had been closed outside browse; opened a blank tab [${id}].`;
+    console.warn(`[browse] ${warning}`);
+    return warning;
+  }
+
+  /**
+   * Run `work` with every active-tab read inside it resolving to `tabId`,
+   * while the shared active tab stays where it is. Requests pinned to
+   * different tabs can overlap without moving each other, or unpinned
+   * callers, onto the wrong tab.
+   */
+  runPinned<T>(tabId: number | null | undefined, work: () => Promise<T>): Promise<T> {
+    if (tabId === undefined || tabId === null) return work();
+    if (!this.tabSessions.has(tabId)) {
+      console.warn('[browse] Failed to pin tab', tabId, ': not found');
+      return work();
+    }
+    return this.tabPin.run(tabId, work);
+  }
+
+  private get currentTabId(): number {
+    return this.tabPin.getStore() ?? this.activeTabId;
   }
 
   // ─── Tab Management ────────────────────────────────────────
@@ -806,7 +866,7 @@ export class BrowserManager {
   }
 
   async closeTab(id?: number): Promise<void> {
-    const tabId = id ?? this.activeTabId;
+    const tabId = id ?? this.currentTabId;
     const page = this.pages.get(tabId);
     if (!page) throw new Error(`Tab ${tabId} not found`);
 
@@ -883,7 +943,7 @@ export class BrowserManager {
   }
 
   getActiveTabId(): number {
-    return this.activeTabId;
+    return this.currentTabId;
   }
 
   getTabCount(): number {
@@ -949,24 +1009,26 @@ export class BrowserManager {
   }
 
   async getTabListWithTitles(): Promise<Array<{ id: number; url: string; title: string; active: boolean }>> {
-    const tabs: Array<{ id: number; url: string; title: string; active: boolean }> = [];
-    for (const [id, page] of this.pages) {
-      tabs.push({
-        id,
-        url: page.url(),
-        title: await page.title().catch(() => ''),
-        active: id === this.activeTabId,
-      });
-    }
-    return tabs;
+    return Promise.all([...this.pages].map(async ([id, page]) => {
+      let title = '';
+      try {
+        const read = await withTabTimeout(page.title());
+        if (read !== TAB_TIMED_OUT) title = read;
+      } catch {}
+      return { id, url: page.url(), title, active: id === this.activeTabId };
+    }));
   }
 
   // ─── Session Access ────────────────────────────────────────
   /** Get the TabSession for the active tab. */
   getActiveSession(): TabSession {
-    const session = this.tabSessions.get(this.activeTabId);
+    const session = this.findActiveSession();
     if (!session) throw new Error('No active page. Use "browse goto <url>" first.');
     return session;
+  }
+
+  findActiveSession(): TabSession | null {
+    return this.tabSessions.get(this.currentTabId) ?? null;
   }
 
   /** Get a TabSession by tab ID. Used by /batch for parallel tab execution. */
@@ -1297,10 +1359,12 @@ export class BrowserManager {
       const url = page.url();
       let storage = null;
       try {
-        storage = await page.evaluate(() => ({
+        const read = await withTabTimeout(page.evaluate(() => ({
           localStorage: { ...localStorage },
           sessionStorage: { ...sessionStorage },
-        }));
+        })));
+        if (read === TAB_TIMED_OUT) console.warn(`[browse] Tab ${id} did not answer; saving it without its storage.`);
+        else storage = read;
       } catch {}
 
       // Capture load-html content so a later context recreation (viewport --scale)
@@ -1575,7 +1639,6 @@ export class BrowserManager {
     let newContext: BrowserContext;
     try {
       const fs = require('fs');
-      const path = require('path');
       const extensionPath = this.findExtensionPath();
       const { STEALTH_LAUNCH_ARGS, buildvibestackLaunchArgs } = await import('./stealth');
       // Same blink-level stealth flags as launch()/launchHeaded(). Without
@@ -1583,8 +1646,12 @@ export class BrowserManager {
       // tell that the other two paths strip.
       const launchArgs: string[] = ['--hide-crash-restore-bubble', ...STEALTH_LAUNCH_ARGS, ...buildvibestackLaunchArgs()];
       if (extensionPath) {
-        launchArgs.push(`--disable-extensions-except=${extensionPath}`);
-        launchArgs.push(`--load-extension=${extensionPath}`);
+        // Same rule as launchHeaded(): a custom build already carries the
+        // extension, and loading it twice crashes the service worker.
+        if (!isCustomChromium()) {
+          launchArgs.push(`--disable-extensions-except=${extensionPath}`);
+          launchArgs.push(`--load-extension=${extensionPath}`);
+        }
         // Auth token is served via /health endpoint now (no file write needed).
         // Extension reads token from /health on connect.
         console.log(`[browse] Handoff: loading extension from ${extensionPath}`);
@@ -1592,8 +1659,12 @@ export class BrowserManager {
         console.log('[browse] Handoff: extension not found — headed mode without side panel');
       }
 
-      const userDataDir = path.join(process.env.HOME || '/tmp', '.vibestack', 'chromium-profile');
+      // The same profile and binary launchHeaded() uses, so a sign-in done
+      // here lands where the headed browser will look for it.
+      const userDataDir = resolveChromiumProfile();
       fs.mkdirSync(userDataDir, { recursive: true });
+      cleanSingletonLocks(userDataDir);
+      const executablePath = process.env.VIBESTACK_CHROMIUM_PATH || undefined;
 
       // T1: same automation-tell-stripping defaults as launchHeaded().
       // The handoff path (headless → headed re-launch) takes the same
@@ -1607,6 +1678,7 @@ export class BrowserManager {
         chromiumSandbox: shouldEnableChromiumSandbox(),
         args: launchArgs,
         viewport: null,
+        ...(executablePath ? { executablePath } : {}),
         ...(this.proxyConfig ? { proxy: this.proxyConfig } : {}),
         ignoreDefaultArgs: STEALTH_IGNORE_DEFAULT_ARGS,
         timeout: 15000,
