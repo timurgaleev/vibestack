@@ -153,7 +153,11 @@ PY
 OUT=$(cd "$REPO" && HOME="$FH" bash "$TMP/lanes.sh" 2>&1)
 case "$OUT" in *"LANE: unit exit=0 "*) ok "a passing lane reports exit=0 through the wrapper" ;; *) no "unit lane: $OUT" ;; esac
 case "$OUT" in *"LANE: e2e exit=3 "*) ok "a failing lane keeps its own exit through the wrapper" ;; *) no "e2e lane: $OUT" ;; esac
-printf '%s\n' "$S16" | awk '/^ *```bash$/{f=1;next} /^ *```$/{if(f)exit} f' | sed 's/^ *//' > "$TMP/gate.sh"
+# s16_block NEEDLE -> the Step 16 bash block containing NEEDLE, dedented
+s16_block() {
+  printf '%s\n' "$S16" | awk -v n="$1" '/^ *```bash$/{f=1;b="";next} f&&/^ *```$/{f=0; if(index(b,n)){printf "%s",b; exit} next} f{b=b $0 "\n"}' | sed 's/^ *//'
+}
+s16_block 'vibe-evidence" check' > "$TMP/gate.sh"
 grep -qF 'vibe-evidence" check' "$TMP/gate.sh" && ok "Step 16 checks the ledger" || no "Step 16 has no ledger check"
 gate() { # gate LANE CMD -> exit of Step 16's own check line
   python3 -I - "$TMP/gate.sh" "$TMP/gate.$1.sh" "$1" "$2" <<'PY'
@@ -170,6 +174,38 @@ gate unit 'printf green'; chk "release bookkeeping does not force a re-run" "$?"
 printf 'fix\n' >> "$REPO/a.txt"
 gate unit 'printf green'; chk "a fix after Step 5 forces a re-run" "$?" "1"
 (cd "$REPO" && git checkout -q -- a.txt CHANGELOG.md)
+
+echo "ship: Step 16 re-reviews edits made after the last review"
+s16_block 'vibe-review-read' | sed 's/<lane1> <lane2>/unit/' > "$TMP/bind.sh"
+grep -qF 'vibe-review-log" --snapshot' "$TMP/bind.sh" && ok "Step 16 snapshots the tree now" || no "Step 16 has no review binding block"
+BREPO="$TMP/brepo"
+mkdir -p "$BREPO" && (
+  cd "$BREPO" && git init -q -b feat2 && git config user.email t@example.com && git config user.name t &&
+  printf 'a\n' > a.txt && printf '1.0.0\n' > VERSION && printf '# log\n' > CHANGELOG.md &&
+  printf '{\n  "name": "x",\n  "version": "1.0.0",\n  "dependencies": {}\n}\n' > package.json &&
+  printf '{\n  "name": "x",\n  "version": "1.0.0",\n  "lockfileVersion": 3\n}\n' > package-lock.json &&
+  git add . && git commit -qm init
+)
+bind() { (cd "$BREPO" && HOME="$FH" bash "$TMP/bind.sh" 2>&1); }
+moved() { bind | sed -n "s/^MOVED $1: //p" | tr '\n' ' ' | sed 's/ $//'; }
+chk "no ship review on record -> unknown, never a match" "$(moved review)" "unknown"
+(cd "$BREPO" && "$BIN/vibe-review-log" '{"skill":"review","status":"clean","via":"ship"}' >/dev/null)
+(cd "$BREPO" && "$E" run --skill ship --label unit -- 'true' >/dev/null)
+chk "an unchanged tree needs no re-review" "$(moved review)" ""
+(cd "$BREPO" && printf '1.0.1\n' > VERSION && printf '## 1.0.1\n' >> CHANGELOG.md &&
+  sed -i.bak 's/"version": "1.0.0"/"version": "1.0.1"/' package.json package-lock.json && rm -f ./*.bak)
+chk "version, CHANGELOG and version-only manifest edits need no re-review" "$(moved review)" ""
+chk "nor make the lane stale" "$(moved unit)" ""
+(cd "$BREPO" && sed -i.bak 's/"dependencies": {}/"dependencies": {"left-pad": "1.0.0"}/' package.json && rm -f ./*.bak)
+chk "a dependency edit in package.json is a moved path" "$(moved review)" "package.json"
+chk "and makes the lane stale" "$(moved unit)" "package.json"
+(cd "$BREPO" && git checkout -q -- package.json && sed -i.bak 's/"version": "1.0.0"/"version": "1.0.1"/' package.json && rm -f ./*.bak && printf 'fix\n' >> a.txt)
+chk "a source edit after the review is a moved path" "$(moved review)" "a.txt"
+[ -n "$(bind | sed -n 's/^REVIEWED: \([0-9a-f]\{12\}\)$/\1/p')" ] && ok "the reviewed tree is printed" || no "no REVIEWED line"
+S16T=$(printf '%s' "$S16")
+printf '%s' "$S16T" | grep -q 'Steps 9-11' && ok "a moved path sends the ship back through Steps 9-11" || no "no re-review rule"
+printf '%s' "$S16T" | grep -q 'DOC_HELD_FILES' && ok "held doc files are not a moved path" || no "DOC_HELD_FILES not excluded"
+
 DASH=$(section '## Review Readiness Dashboard' '## Step 2:')
 printf '%s' "$DASH" | grep -qF 'compare it with \`TREE_NOW\`' && ok "ship staleness compares trees first" || no "ship staleness still commit-only"
 
