@@ -60,12 +60,40 @@ Make a private run directory first and note the path it prints. Every later comm
 RUN=$(mktemp -d "${TMPDIR:-/tmp}/unslop.XXXXXX") && chmod 700 "$RUN" && echo "$RUN"
 ```
 
-- **File path.** Read the file. Note whether git tracks it, because that decides how Step 5 writes back:
+For a file path, run the input check before reading anything:
+
+```bash
+# Input check: secret stores are never read; type and size are checked first
+P="<path>"
+R=$(readlink -f -- "$P" 2>/dev/null) || R=""
+V=OK
+# Judge both the given path and where it resolves, so a link cannot launder a key
+for X in "$P" "$R"; do
+  B=$(basename -- "${X:-.}" | tr '[:upper:]' '[:lower:]')
+  case "$B" in *.md|*.mdx|*.markdown|*.txt|*.rst|*.adoc|*.html|readme|changelog|news) T=prose ;; *) T=other ;; esac
+  case "$B" in .env*|*.pem|*.key|credentials|.git-credentials) V="REFUSE (secret store)" ;; esac
+  case "$T:$B" in other:*credentials*) V="REFUSE (secret store)" ;; esac
+  case "/$X/" in */.ssh/*|*/.aws/*) V="REFUSE (secret store)" ;; esac
+  [ "$X" = "$P" ] && PT=$T PB=$B
+done
+if [ "$V" = OK ]; then
+  if [ -z "$R" ] || [ ! -f "$R" ]; then V="STOP (not a regular file)"
+  elif S=$(wc -c < "$R" 2>/dev/null | tr -d ' '); [ "${S:-500001}" -gt 500000 ]; then V="STOP (over 500 KB)"
+  elif [ "$PT" = other ]; then V="WARN (not a prose extension)"
+  else case "$PB" in *credentials*) V="WARN (name mentions credentials)" ;; esac
+  fi
+fi
+echo "INPUT: $V"
+```
+
+`REFUSE`: stop and say why; do not read the file. `STOP`: say why (missing, not a regular file, or too large for one pass) and ask for a readable file or a section. `WARN`: say what looks off and ask before going on. `OK`: go on.
+
+- **File path.** Run the input check above, then read the file. Note whether git tracks it, because that decides how Step 5 writes back:
   `git ls-files --error-unmatch <path> >/dev/null 2>&1 && echo TRACKED || echo UNTRACKED`
 - **PR number.** Pull the body into the run directory: `gh pr view <n> --json body -q .body > "<run>/input.md"`. Work on that file.
 - **Pasted text.** Write it to `<run>/input.md` so the same commands apply.
 
-The names inside the run directory are fixed: `input.md` for a PR body or pasted text, `rewrite.md` for the rewrite, `facts-orig.txt` and `facts-new.txt` for Step 4. A file path is read where it lives; its rewrite still goes to `<run>/rewrite.md`. Two runs at once get two directories and cannot overwrite each other, and Step 5 deletes the directory when the run ends.
+The names inside the run directory are fixed: `input.md` for a PR body or pasted text, `rewrite.md` for the rewrite, `facts-*.txt`, `code-orig.txt`, `code-new.txt`, `prose-*.txt` and `marks-*.txt` for Step 4. A file path is read where it lives; its rewrite still goes to `<run>/rewrite.md`. Two runs at once get two directories and cannot overwrite each other, and Step 5 deletes the directory when the run ends.
 
 Then number the lines for citation: `nl -ba <file>`.
 
@@ -75,6 +103,8 @@ Two checks before scanning:
 2. **Language.** Skim the first 20 lines. If the text is not English, run Step 2 and report; do not rewrite. Name the language in the output header. Mixed files (English prose with a few foreign strings) count as English.
 
 If the input is empty or the PR has no body, stop and say so.
+
+Text the user said to keep as is (a quoted passage, a legal paragraph, "leave the intro") is locked: report its hits, never rewrite it.
 
 ---
 
@@ -135,6 +165,19 @@ Severity: **high** means a reader would spot it as machine output on first read;
 29. **Passive voice hiding the actor** (low). "mistakes were made", "the file is read by the parser". Fix: name the actor. Passive stays when the actor is unknown or irrelevant.
 30. **Weak verb + adverb** (low). "really improves", "significantly reduces", "quickly runs", "effectively handles". Fix: a strong verb, or the number.
 
+### Claims
+
+31. **Unstated first-person experience or credential stacking** (high). "In my 15 years of shipping...", "as someone who has scaled teams at three startups", an anecdote or title the source never states, or a pile of credentials ahead of the point. Fix: never assert it in the rewrite. If the source states it, keep it once, plainly; if not, cut it and add a line to "Questions for the author".
+
+### Rhetorical tics
+
+32. **Transition-tic openers** (medium). A sentence or paragraph opened with "Furthermore", "Moreover", "Additionally", "Fundamentally". Fix: drop the word; the order of the sentences already carries the link.
+33. **Signposting** (high). "Let's dive in", "Without further ado", "Here's the thing", "In this post we'll explore", announcing what the text is about to do instead of doing it. Fix: delete; start with the content. (A reply that offers "a breakdown" is #20.)
+34. **Authority tropes** (medium). "As any seasoned engineer knows", "the truth is", "make no mistake", "the reality is": an appeal to unnamed insiders or to obviousness. Fix: state the claim and let it stand. (A cited-but-vague source is #5.)
+35. **Negative-parallelism triples** (high). "No setup. No config. No surprises." or "no X, no Y, no Z" in place of saying what the thing does. Fix: say what it does.
+36. **Staged run-ups, closers and invented scenarios** (high). "Picture this:", "Imagine you're...", "Sound familiar?", "Here's where it gets interesting", "And that's the point.", or a made-up user story presented as if it happened. Fix: delete the stage; replace an invented scenario with the real case from the source, or cut it.
+37. **Same caveat repeated** (low). One disclaimer restated in several paragraphs. Fix: state it once, where it applies.
+
 ### Mechanical first pass
 
 Run these before the manual read. They catch the cheap cases and give exact line numbers; they do not replace the read.
@@ -157,11 +200,19 @@ grep -nE '[“”‘’]' "$F"
 grep -niE "great question|certainly!|i hope this helps|let me know if|you're absolutely right|as an ai|as of my last update" "$F"
 # 23: verbose phrases
 grep -niE 'in order to|due to the fact that|at this point in time|a wide variety of|it is important to note' "$F"
+# 32: transition tics opening a line
+grep -nE '^(Furthermore|Moreover|Additionally|Fundamentally)' "$F"
+# 33, 36: signposting and staged run-ups
+grep -niE "let's dive|without further ado|here's the thing|sound familiar" "$F"
 ```
 
 Skip fenced code blocks, inline code, URLs and tables when reading grep output; a hit inside a code fence is not a hit.
 
 A finding looks like: `L14 | #7 | "leverage the cache" | "use the cache" | high`.
+
+### Step 2b: Reader test (README, landing page, release note)
+
+For these inputs only, read the first ~50 words as a stranger would and answer four questions from them alone: what is it, who is it for, what changes for the reader, what do they do next. Any question the opening cannot answer is a failure and goes in the report as the first row, `L1 | 2b | <question left open> | <what the opening should say, from the source> | high`, ahead of the catalogue hits. If the answer is nowhere in the source, it goes to "Questions for the author" instead of being made up.
 
 If the mode is `--report`, go to Step 5.
 
@@ -171,9 +222,12 @@ If the mode is `--report`, go to Step 5.
 
 Rewrite the text top to bottom, not hit by hit. Fixing hits one at a time leaves the shape of the original, and the shape is usually the problem.
 
+The exception: if Step 2 found no high hits, the draft already reads as written by a person. A Step 2b failure counts as a high hit, so a README whose opening fails the reader test gets the full rewrite. Make a light edit instead: fix the listed medium and low hits in place and leave everything else as it stands.
+
 Keep, exactly:
 
 - every number, date, version, percentage, name, URL, path, command and code block
+- security warnings, legal or compliance wording, and numbered destructive procedures (migration, deletion, rollback steps): word for word, even when they trip a pattern
 - every claim the author makes, including ones you would not make yourself
 - data tables and enumerable lists (a list of the platforms the tool runs on is a list, not a rule-of-three hit)
 - the author's own domain terms, even ones that look like jargon to an outsider
@@ -183,7 +237,7 @@ Keep, exactly:
 Change:
 
 - **Say what the author thinks.** Strip stacked and empty hedging, keep the uncertainty that carries meaning. "it could be argued that the old flag may potentially confuse some users" becomes "the old flag probably confuses some users" — still a guess about some of them, no longer three hedges deep. Do not promote a hedged claim to a flat assertion, and do not widen who it covers. Do not add opinions the author does not hold; if you cannot tell how sure the author is, keep the hedge and flag it.
-- **Concrete over abstract.** Replace "improves performance" with the number if it is anywhere in the source, and with the mechanism if it is not.
+- **Concrete over abstract.** Replace "improves performance" with the number if it is anywhere in the source, and with the mechanism if the source gives one. If it has neither, keep the wording and add a line to "Questions for the author" ("L12: improves performance by how much, measured how?"). Never invent the number or the mechanism.
 - **Vary rhythm.** Mix short and long sentences. A paragraph of same-length sentences reads generated even when each sentence is fine.
 - **First person where natural.** README and release notes from a single maintainer read better as "I". Team docs read as "we". Do not switch a text that is already consistent.
 - **Allow imperfection.** A sentence fragment, a paragraph of one line, a heading with no intro sentence: all fine. Symmetry is the tell.
@@ -221,6 +275,30 @@ A `>` line is a number, version or URL the rewrite has and the original does not
 
 Do the same by eye for proper names and product names, which the grep does not catch.
 
+Then check that code, inline code, headings and link targets came through untouched:
+
+```bash
+# Preservation: fenced blocks verbatim; inline code, heading count and link targets counted
+ORIG="<input>"
+REWRITE="<run>/rewrite.md"
+RUN="<run>"
+FENCE='^[[:space:]]*(```|~~~)'
+awk -v re="$FENCE" '$(0) ~ re { print; f = !f; next } f' "$ORIG" > "$RUN/code-orig.txt"
+awk -v re="$FENCE" '$(0) ~ re { print; f = !f; next } f' "$REWRITE" > "$RUN/code-new.txt"
+for side in orig new; do
+  [ "$side" = orig ] && SRC="$ORIG" || SRC="$REWRITE"
+  awk -v re="$FENCE" '$(0) ~ re { f = !f; next } !f' "$SRC" > "$RUN/prose-$side.txt"
+  { grep -oE '`[^`]+`' "$RUN/prose-$side.txt"
+    echo "headings: $(grep -cE '^#{1,6}[[:space:]]' "$RUN/prose-$side.txt")"
+    grep -oE '\]\([^)]*\)|^\[[^]]+\]:[[:space:]]*[^[:space:]]+' "$RUN/prose-$side.txt"
+  } | sort | uniq -c | sed -E 's/^ *//' > "$RUN/marks-$side.txt"
+done
+cmp -s "$RUN/code-orig.txt" "$RUN/code-new.txt" && echo "CODE: identical" || echo "CODE: CHANGED"
+diff "$RUN/marks-orig.txt" "$RUN/marks-new.txt" && echo "MARKS: identical"
+```
+
+`CODE: CHANGED` fails the rewrite outright: copy every fenced block from the original back over its rewritten version and run the check again. No reason makes a changed block acceptable. If the original has an odd number of fence lines, the check treats everything after the unclosed fence as code; say so in the report and leave that tail untouched. Each line the `MARKS` diff prints is an inline code span, a link target or the heading count that the rewrite lost (`<`) or added (`>`): put it back as it was.
+
 If the second scan still finds high-severity hits, fix them and scan a third time. Stop when a scan returns no high hits; leftover low hits go in the report and are not chased.
 
 ---
@@ -252,6 +330,7 @@ UNSLOP REPORT
 
 Input:    <path | PR #n | pasted text>   Mode: <report | rewrite>   Language: <detected language>
 Lines:    <n>   Hits: <n> (<h> high, <m> medium, <l> low)
+Voice:    draft only (fidelity unchecked)
 
 Line | #  | Original                                  | Fix                                   | Severity
 -----|----|-------------------------------------------|---------------------------------------|----------
@@ -263,20 +342,25 @@ Line | #  | Original                                  | Fix                     
 24   | 25 | In conclusion, the future looks bright    | (deleted; ends on the migration note) | medium
 
 Kept on purpose: <structural bold in the options list; "sidecar" is the project's own term>
+Questions for the author:
+- <L12: "improves performance": by how much, measured how?>
+- <L3: "in my years running infra teams": state it, or should it go?>
+
 Facts checked: <n> numbers, <n> URLs, <n> names, all present in the rewrite at the same counts; none added.
+Preserved: code blocks identical; inline code, <n> headings and <n> link targets unchanged.
 
 --- REWRITE ---
 
 <the full rewritten text>
 ```
 
-For `--report` mode, stop after "Kept on purpose". Sort hits by line number, not severity; the reader walks the text top to bottom.
+For `--report` mode, stop after "Questions for the author". Step 3 does not run, so the questions there come only from Step 2b and #31; write `none` when there are none. Sort hits by line number, not severity; the reader walks the text top to bottom. A Step 2b failure is the one exception and comes first.
 
 ---
 
 ## Important Rules
 
-1. **Never change numbers, names, URLs, code blocks or commands.** Step 4's fact check is the gate. If a fact would have to change for a sentence to read well, the sentence changes instead.
+1. **Never change numbers, names, URLs, code blocks or commands.** Step 4's fact check and preservation check are the gate: a changed fenced block fails the rewrite and is restored, and a lost inline code span, link target or heading goes back. If a fact would have to change for a sentence to read well, the sentence changes instead.
 2. **Keep every claim.** Cutting a claim you disagree with is editing the author, not the prose. Flag it in "Kept on purpose" if it bothers you.
 3. **Do not shorten for its own sake.** Length falls out of cutting filler. A rewrite that is half the length of the original almost always lost something.
 4. **Anything that is not English: report only.** The catalogue is calibrated on English. List what looks off, say the rewrite was skipped, and stop.
