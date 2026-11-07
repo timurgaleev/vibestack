@@ -85,7 +85,9 @@ if [ -s "$TMP/spawn.sh" ]; then
   line=$(grep 'claude -p' "$TMP/spawn.sh")
   for needle in 'VIBE_SPAWNED=1 claude -p' '--allowedTools Edit,Write,Read,Bash,Grep,Glob' \
                 '--max-budget-usd "${VIBE_SPEC_EXECUTE_USD:-5}"' '--max-turns "${VIBE_SPEC_EXECUTE_TURNS:-200}"' \
-                'cat "$BRIEF_PATH" "$ARCHIVE_PATH" |' '> "$LOG_PATH" 2>&1'; do
+                'cat "$BRIEF_PATH" "$ARCHIVE_PATH" |' '> "$LOG_PATH" 2>&1' \
+                "--strict-mcp-config --mcp-config '{\"mcpServers\":{}}'" \
+                "--disallowedTools 'mcp__*' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(gh pr:*)'"; do
     printf '%s' "$line" | grep -Fq -- "$needle" && ok "spawn line: $needle" || no "spawn line lacks: $needle"
   done
   has 'SPAWN_LOG:' "$TMP/spawn.sh" && ok "spawn block prints the log path" || no "spawn block does not print SPAWN_LOG:"
@@ -112,9 +114,13 @@ echo "child ran"
 touch "$REC/done"
 EOF
   chmod +x "$TMP/fakebin/claude"
+  # The spawn block re-checks the session kind itself, so it needs the helper.
+  SK="$TMP/sk"; mkdir -p "$SK/bin"; ln -s "$ROOT/bin/vibe-session-kind" "$SK/bin/vibe-session-kind"
+  spawn_env() { env -u CI -u VIBESTACK_HEADLESS -u VIBE_SPAWNED -u OPENCLAW_SESSION \
+    -u VIBE_SPEC_EXECUTE_USD -u VIBE_SPEC_EXECUTE_TURNS VIBESTACK_HOME="$SK" REC="$TMP/rec" PATH="$TMP/fakebin:$PATH" "$@"; }
   sed -e "s|<ARCHIVE_PATH>|$TMP/arch/s.md|" -e "s|<SPAWN_PATH>|$TMP/link/wt|" \
       -e "s|<SPAWN_BRANCH>|spec/t-1|" "$TMP/spawn.sh" > "$TMP/spawn-run.sh"
-  out=$(cd "$REPO" && REC="$TMP/rec" PATH="$TMP/fakebin:$PATH" bash "$TMP/spawn-run.sh" 2>&1)
+  out=$(cd "$REPO" && spawn_env bash "$TMP/spawn-run.sh" 2>&1)
   for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$TMP/rec/done" ] && break; sleep 0.5; done
   if [ -f "$TMP/rec/done" ]; then
     ok "symlinked worktree path spawns (toplevel compared physically)"
@@ -137,9 +143,28 @@ EOF
     no "spawn through a symlinked worktree path did not start the child: $(printf '%s' "$out" | tail -1)"
   fi
 
+  # The spawn block refuses on its own when the session is not interactive or
+  # the helper is missing: the gate runs in another shell and binds nothing.
+  rm -f "$TMP/rec/done"
+  out=$(cd "$REPO" && spawn_env VIBE_SPAWNED=1 bash "$TMP/spawn-run.sh" 2>&1)
+  sleep 1
+  if [ ! -f "$TMP/rec/done" ] && printf '%s' "$out" | grep -q '^NOT_SPAWNED:.*interactive'; then
+    ok "spawned session → spawn block refuses"
+  else
+    no "spawn block started a child from a spawned session: $out"
+  fi
+  rm -f "$TMP/rec/done"
+  out=$(cd "$REPO" && spawn_env VIBESTACK_HOME="$TMP/no-helper" bash "$TMP/spawn-run.sh" 2>&1)
+  sleep 1
+  if [ ! -f "$TMP/rec/done" ] && printf '%s' "$out" | grep -q '^NOT_SPAWNED:'; then
+    ok "missing vibe-session-kind → spawn block refuses"
+  else
+    no "spawn block started a child without vibe-session-kind: $out"
+  fi
+
   # A missing brief never spawns: the child would get the bare spec and no rules.
   rm -f "$TMP/rec/done" "$TMP/arch/s.brief.txt"
-  out=$(cd "$REPO" && REC="$TMP/rec" PATH="$TMP/fakebin:$PATH" bash "$TMP/spawn-run.sh" 2>&1)
+  out=$(cd "$REPO" && spawn_env bash "$TMP/spawn-run.sh" 2>&1)
   sleep 1
   if [ ! -f "$TMP/rec/done" ] && printf '%s' "$out" | grep -q '^NOT_SPAWNED:.*brief'; then
     ok "no brief → NOT_SPAWNED"

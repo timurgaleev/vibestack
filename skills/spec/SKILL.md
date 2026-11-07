@@ -719,6 +719,9 @@ ARCHIVE_PATH='<ARCHIVE_PATH>'
 SPAWN_PATH='<SPAWN_PATH>'
 SPAWN_BRANCH='<SPAWN_BRANCH>'
 : "${ARCHIVE_PATH:?}" "${SPAWN_PATH:?}" "${SPAWN_BRANCH:?}"
+# Re-checked here: the spawn gate ran in another shell and binds nothing.
+[ "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-session-kind" 2>/dev/null)" = interactive ] \
+  || { echo "NOT_SPAWNED: session is not interactive, or vibe-session-kind is missing"; exit 1; }
 BRIEF_PATH="${ARCHIVE_PATH%.md}.brief.txt"
 LOG_PATH="${ARCHIVE_PATH%.md}.execute.log"
 [ -s "$BRIEF_PATH" ] || { echo "NOT_SPAWNED: no executor brief at $BRIEF_PATH — write it with the Write tool first"; exit 1; }
@@ -730,7 +733,7 @@ cd "$SPAWN_PATH"
 _EXCLUDE=$(git rev-parse --git-path info/exclude)
 mkdir -p "$(dirname "$_EXCLUDE")"
 grep -qxF '.vibestack-progress.md' "$_EXCLUDE" 2>/dev/null || printf '.vibestack-progress.md\n' >> "$_EXCLUDE"
-cat "$BRIEF_PATH" "$ARCHIVE_PATH" | VIBE_SPAWNED=1 claude -p --allowedTools Edit,Write,Read,Bash,Grep,Glob --max-budget-usd "${VIBE_SPEC_EXECUTE_USD:-5}" --max-turns "${VIBE_SPEC_EXECUTE_TURNS:-200}" > "$LOG_PATH" 2>&1 &
+cat "$BRIEF_PATH" "$ARCHIVE_PATH" | VIBE_SPAWNED=1 claude -p --allowedTools Edit,Write,Read,Bash,Grep,Glob --strict-mcp-config --mcp-config '{"mcpServers":{}}' --disallowedTools 'mcp__*' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(gh pr:*)' --max-budget-usd "${VIBE_SPEC_EXECUTE_USD:-5}" --max-turns "${VIBE_SPEC_EXECUTE_TURNS:-200}" > "$LOG_PATH" 2>&1 &
 SPAWN_PID=$!
 echo "Spawned: PID $SPAWN_PID in $SPAWN_PATH (branch $SPAWN_BRANCH)"
 echo "SPAWN_LOG: $LOG_PATH"
@@ -742,8 +745,10 @@ it reports the write as blocked and still exits 0, so the spawn would look
 successful and change nothing. `--allowedTools` grants exactly what the brief
 needs; no permission mode is needed on top. The child stops at USD 5 of spend or
 200 turns, whichever comes first — set `VIBE_SPEC_EXECUTE_USD` or
-`VIBE_SPEC_EXECUTE_TURNS` in the environment to change either. Bash is granted,
-so the no-commit rule rests on the brief: tell the user to review the worktree
+`VIBE_SPEC_EXECUTE_TURNS` in the environment to change either. The child starts
+no MCP server and may call no MCP tool, whatever the user's allowlist grants, and
+`git commit`, `git push` and `gh pr` are denied outright. The rest of Bash is
+granted, so the remaining no-commit rules rest on the brief: tell the user to review the worktree
 with `git status` and `git diff` before running `/ship` there. Print the
 `SPAWN_LOG` path in your reply.
 
