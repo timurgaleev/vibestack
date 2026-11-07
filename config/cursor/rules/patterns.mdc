@@ -1,52 +1,23 @@
 ---
-description: Common code patterns — API responses, custom hooks, and repository pattern.
+description: Common code patterns — API response envelope, data-access interface, reusable timers, and skeleton projects.
 globs:
 alwaysApply: true
 ---
 
 # Common Patterns
 
-## API Response Format
+## Shapes Worth Reusing
 
-```typescript
-interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  error?: string
-  meta?: {
-    total: number
-    page: number
-    limit: number
-  }
-}
-```
+Express these in the project's own language and idioms; the shape matters, not
+the syntax.
 
-## Custom Hooks Pattern
-
-```typescript
-export function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value)
-
-  useEffect(() => {
-    const handler = setTimeout(() => setDebouncedValue(value), delay)
-    return () => clearTimeout(handler)
-  }, [value, delay])
-
-  return debouncedValue
-}
-```
-
-## Repository Pattern
-
-```typescript
-interface Repository<T> {
-  findAll(filters?: Filters): Promise<T[]>
-  findById(id: string): Promise<T | null>
-  create(data: CreateDto): Promise<T>
-  update(id: string, data: UpdateDto): Promise<T>
-  delete(id: string): Promise<void>
-}
-```
+- **API responses** — one envelope across endpoints: a success flag, the data,
+  an error message, and paging metadata (total, page, limit) for lists.
+- **Data access** — storage sits behind a small interface (find with filters,
+  find by id, create, update, delete), so callers and tests never touch the
+  driver directly.
+- **Timers and subscriptions** — keep the logic in one reusable unit that cleans
+  up after itself instead of repeating it at every call site.
 
 ## Skeleton Projects
 

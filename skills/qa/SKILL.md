@@ -568,6 +568,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 10. **Use `snapshot -C` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
 11. **Show screenshots to the user.** After every `$B screenshot`, `$B snapshot -a -o`, or `$B responsive` command, use the Read tool on the output file(s) so the user can see them inline. For `responsive` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.
 12. **Never refuse to use the browser on a selected browser surface.** When the surface is browser or mixed, open the browser and test — never suggest evals, unit tests, or other alternatives as a substitute, even if the diff appears to have no UI changes. On a functional surface the contract-map probes are the test, and a unit-test run does not replace them either.
+13. **Run parallel with your own tab.** When another lane drives the same browse daemon, open a tab with `$B newtab --json` and pass `--tab-id <N>` on every `$B` command, so neither lane steers the other's page.
 
 Record baseline health score at end of Phase 6.
 

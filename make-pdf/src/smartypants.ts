@@ -26,6 +26,12 @@ const TAG_RE = /<[^>]+>/g;
 // standing in for `</a>`. Restore is a single pass, so that tag would be lost.
 const URL_RE = /\bhttps?:\/\/[^\s\u0000]+/g;
 
+// A quote right after one of these opens. The CJK ones matter because a
+// fullwidth colon or bracket is never followed by a space.
+const OPENER = "\\s\\(\\[\\{\\-：（【「『〈《";
+const DOUBLE_OPEN_RE = new RegExp(`(^|[${OPENER}])"`, "g");
+const SINGLE_OPEN_RE = new RegExp(`(^|[${OPENER}])'`, "g");
+
 /**
  * Apply smartypants to an HTML string. Zones that should not be touched:
  *   - <pre>, <code>, <script>, <style> blocks (content unchanged)
@@ -94,11 +100,11 @@ function transformText(text: string): string {
 
   // Double quotes: open if preceded by whitespace/bol, close if preceded
   // by word char or punctuation.
-  s = s.replace(/(^|[\s\(\[\{\-])"/g, "$1\u201c");     // opening "
+  s = s.replace(DOUBLE_OPEN_RE, "$1\u201c");              // opening "
   s = s.replace(/"/g, "\u201d");                         // remaining " are closing
 
   // Single quotes (after apostrophe pass):
-  s = s.replace(/(^|[\s\(\[\{\-])'/g, "$1\u2018");      // opening '
+  s = s.replace(SINGLE_OPEN_RE, "$1\u2018");              // opening '
   s = s.replace(/'/g, "\u2019");                         // remaining ' are closing
 
   return s;

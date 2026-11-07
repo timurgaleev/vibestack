@@ -548,6 +548,12 @@ $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero
 | `tab-each <command> [args...]` | Run one command against every open tab. Returns JSON with per-tab results |
 | `tabs` | List open tabs |
 
+**Parallel lanes on one daemon.** Every agent on a daemon shares its active tab,
+so one lane's `goto` would move another lane's page. A lane that runs alongside
+others opens its own tab with `$B newtab --json`, keeps the `tabId`, and passes
+`--tab-id <N>` on every command (or exports `BROWSE_TAB=<N>`). A pinned command
+runs on that tab and leaves the shared active tab where it was.
+
 ### Server
 | Command | Description |
 |---------|-------------|

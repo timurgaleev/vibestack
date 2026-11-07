@@ -1,6 +1,6 @@
 # ETHOS.md — Core Principles
 
-Five principles that guide every skill in vibestack.
+Six principles that guide every skill in vibestack.
 
 ---
 
@@ -44,3 +44,9 @@ Add hooks sparingly. Write them defensively.
 Every skill here exists because it solves a real, recurring problem. Skills written speculatively — to cover a case that might come up — tend to be vague, never get invoked, and rot. The test: would you reach for this command at least once a week?
 
 If the answer is no, delete it or don't build it.
+
+"Real" means evidence: a session where the skill changed the outcome, or a test dated to the failure it prevents. When a piece of a skill seems to do nothing, ask once why it is there — run it, read its history — before cutting it. Safety guards are exempt: a guard that has never fired is doing its job, not proving it is useless.
+
+## 6. Honest work
+
+A gate is never loosened to get a pass. When a check goes red, the code changes or the gate's owner is told — the threshold, fixture or assertion does not quietly move. A child agent's report is a claim, not a result: re-run the command it says passed before repeating its verdict. A mocked call proves the mock; say "live" only about a run that reached the real thing.

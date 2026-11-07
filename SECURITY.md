@@ -1,7 +1,9 @@
 # Security & Trust
 
-vibekit syncs configuration into `~/.claude/`, `~/.cursor/`, and `~/.kiro/` and
-can run optional helpers. This document explains what runs, what it can reach,
+The configuration phase of `./install` syncs configuration into five targets —
+`~/.claude/`, `~/.cursor/`, `~/.kiro/`, `~/.codex/` (skills in
+`~/.agents/skills/`) and `${COPILOT_HOME:-~/.copilot}/` — and can run optional
+helpers. This document explains what runs, what it can reach,
 and the trade-offs in the shipped defaults so you can make an informed choice
 before installing.
 
@@ -38,7 +40,7 @@ maintainer's own workflow: Claude can run shell commands and apply edits without
 prompting. The `deny` list blocks a set of obviously destructive commands, but a
 blocklist is **defense-in-depth, not a sandbox** — it can be bypassed.
 
-If you sync vibekit to your own machine and want tighter control, edit
+If you run the configuration phase on your own machine and want tighter control, edit
 `~/.claude/settings.json` after install:
 - Remove `"Bash(*)"` from `permissions.allow` to be prompted per command.
 - Change `defaultMode` from `acceptEdits` to a prompting mode.
@@ -94,13 +96,14 @@ before enabling it on sensitive machines.
 
 `./install -D` installs a third-party plugin
 ([antonbabenko/deliberation](https://github.com/antonbabenko/deliberation))
-through the `claude plugin` CLI. Like Ponytail it tracks the marketplace repo's
-default branch — there is no commit-SHA pin, so review upstream before enabling
-it on a sensitive machine.
+through the `claude plugin` CLI. The marketplace manifest pins the plugin to a
+release tag, but the marketplace itself tracks its default branch: there is no
+commit-SHA pin, because the CLI clones a marketplace ref as a branch and rejects
+a bare SHA. Review upstream before enabling it on a sensitive machine.
 
 - The flag installs the plugin and stops there. The plugin's `/deliberation:setup`
   is what writes `~/.claude/rules/deliberation/` (~12k tokens loaded in every
-  session) and `~/.config/deliberation/config.json`; vibekit runs neither, and
+  session) and `~/.config/deliberation/config.json`; `./install` runs neither, and
   never edits an existing config or turns on a paid provider.
 - **No key ever enters this repo.** The plugin's bridges read credentials from
   the environment (`XAI_API_KEY`, `OPENROUTER_API_KEY`) or from a provider CLI's
@@ -143,7 +146,7 @@ bounded on several sides:
   symlinked directory component would land the delete outside the deploy
   directory, it is refused and reported. A lexical path check alone does not
   catch this.
-- Files that vibekit merges rather than owns (`claude/CLAUDE.md`,
+- Files the configuration phase merges rather than owns (`claude/CLAUDE.md`,
   `codex/config.toml`, `codex/hooks.json`, `cursor/hooks.json`,
   `codex/rules/default.rules`, `kiro/agents/default.json`,
   `copilot/copilot-instructions.md`, `copilot/settings.json`)
@@ -158,7 +161,7 @@ One cleanup is hard-coded rather than manifest-driven: a short list of files
 earlier versions shipped and later dropped, removed once so machines that never
 had a manifest also lose them. Because there is no ownership record for those,
 each entry carries a content fingerprint — a file at the same path whose content
-differs from the version vibekit shipped is kept and reported, not deleted.
+differs from the version an earlier release shipped is kept and reported, not deleted.
 
 Merges are written through a temporary file in the destination directory and
 renamed into place, so an interrupted or failing write cannot leave a truncated

@@ -1025,18 +1025,6 @@ async function handleCommandInternalImpl(
     if (!opts?.skipRateCheck && tokenInfo.token) recordCommand(tokenInfo.token);
   }
 
-  // Pin to a specific tab if requested (set by BROWSE_TAB env var in sidebar agents).
-  // This prevents parallel agents from interfering with each other's tab context.
-  // Safe because Bun's event loop is single-threaded — no concurrent handleCommand.
-  let savedTabId: number | null = null;
-  if (tabId !== undefined && tabId !== null) {
-    savedTabId = browserManager.getActiveTabId();
-    // bringToFront: false — internal tab pinning must NOT steal window focus
-    try { browserManager.switchTab(tabId, { bringToFront: false }); } catch (err: any) {
-      console.warn('[browse] Failed to pin tab', tabId, ':', err.message);
-    }
-  }
-
   // ─── Tab ownership check (own-only tokens / pair-agent isolation) ──
   //
   // Only `own-only` tokens (pair-agent over tunnel) are bound to their own
@@ -1097,7 +1085,11 @@ async function handleCommandInternalImpl(
   try {
     let result: string;
 
-    const session = browserManager.getActiveSession();
+    // stop/restart/connect/disconnect/handoff and newtab work with no tab open;
+    // every other command gets one back if all tabs were closed outside browse.
+    const needsTab = !META_COMMANDS_WITHOUT_PAGE.has(command) && command !== 'newtab';
+    const tabRecoveryWarning = needsTab ? await browserManager.ensureActiveTab() : null;
+    const session = needsTab ? browserManager.getActiveSession() : browserManager.findActiveSession();
 
     // Per-request warnings collected during hidden-element detection,
     // surfaced into the envelope the LLM sees. Carries across the read
@@ -1166,7 +1158,7 @@ async function handleCommandInternalImpl(
       } else if (!META_COMMANDS_WITHOUT_PAGE.has(command)) {
         // diff, cdp, ux-audit, tab-each, newtab, state, ... read or navigate a
         // tab, so a navigation blocked while they ran is reported, never read.
-        result = await browserManager.failIfNavigationBlocked(session.getPage(), runMeta());
+        result = session ? await browserManager.failIfNavigationBlocked(session.getPage(), runMeta()) : await runMeta();
       } else {
         result = await runMeta();
       }
@@ -1185,6 +1177,12 @@ async function handleCommandInternalImpl(
           }
         }, 5000);
         browserManager.watchInterval = watchInterval;
+      }
+      if (command === 'status') {
+        const probe = await browserManager.probeActiveTab();
+        if (probe && !probe.responsive) {
+          result += `\nActive tab [${probe.id}] is not responding (${probe.url}); other tabs still work. Switch with 'tab <id>' or close it with 'closetab ${probe.id}'.`;
+        }
       }
     } else if (command === 'help') {
       const helpText = generateHelpText();
@@ -1265,21 +1263,9 @@ async function handleCommandInternalImpl(
     });
 
     browserManager.resetFailures();
-    // Restore original active tab if we pinned to a specific one
-    if (savedTabId !== null) {
-      try { browserManager.switchTab(savedTabId, { bringToFront: false }); } catch (restoreErr: any) {
-        console.warn('[browse] Failed to restore tab after command:', restoreErr.message);
-      }
-    }
+    if (tabRecoveryWarning) result = `${tabRecoveryWarning}\n${result}`;
     return { status: 200, result };
   } catch (err: any) {
-    // Restore original active tab even on error
-    if (savedTabId !== null) {
-      try { browserManager.switchTab(savedTabId, { bringToFront: false }); } catch (restoreErr: any) {
-        console.warn('[browse] Failed to restore tab after error:', restoreErr.message);
-      }
-    }
-
     // Activity: emit command_end (error) — skipped for chain subcommands
     const errorDuration = Date.now() - startTime;
     if (!opts?.skipActivity) {
@@ -1329,7 +1315,19 @@ async function handleCommandInternal(
   tokenInfo?: TokenInfo | null,
   opts?: { skipRateCheck?: boolean; skipActivity?: boolean; chainDepth?: number },
 ): Promise<CommandResult> {
-  const cr = await handleCommandInternalImpl(body, tokenInfo, opts);
+  // A tabId (--tab-id / BROWSE_TAB) pins this request, and any chain or
+  // tab-each subcommands it runs, to that tab without moving the shared
+  // active tab: requests overlap while handleCommandInternalImpl awaits.
+  let cr: CommandResult;
+  try {
+    // Commands that need no page (newtab, tabs, stop, ...) ignore a pin, so a
+    // stale BROWSE_TAB never blocks the recovery the not-found error suggests.
+    const pageless = META_COMMANDS_WITHOUT_PAGE.has(body.command) || body.command === 'newtab' || body.command === 'tabs';
+    cr = await browserManager.runPinned(pageless ? undefined : body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts));
+  } catch (err: any) {
+    if (!/^Tab \S+ not found/.test(err?.message ?? '')) throw err;
+    cr = { status: 404, json: true, result: JSON.stringify({ error: err.message }) };
+  }
   return { ...cr, result: sanitizeLoneSurrogates(cr.result) };
 }
 
@@ -1801,14 +1799,16 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
           mode: browserManager.getConnectionMode(),
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
-          // Auth token for extension bootstrap. Safe: /health is localhost-only.
-          // Previously served unconditionally, but that leaks the token if the
-          // server is tunneled to the internet (ngrok, SSH tunnel).
-          // In headed mode the server is always local, so return token unconditionally
-          // (fixes Playwright Chromium extensions that don't send Origin header).
-          ...(browserManager.getConnectionMode() === 'headed' ||
-              req.headers.get('origin')?.startsWith('chrome-extension://')
-              ? { token: authToken } : {}),
+          // Bounded by TAB_PROBE_TIMEOUT_MS, well inside the CLI's 2 s /health
+          // timeout. A stuck tab shows up here, not as an unhealthy daemon.
+          activeTab: healthy ? await browserManager.probeActiveTab() : null,
+          // Root token for the side panel's bootstrap, headed mode only.
+          // /health is not authenticated: it is off the tunnel listener
+          // (TUNNEL_PATHS), but any local process or extension that can reach
+          // 127.0.0.1 reads it, so this is exposure accepted for the headed
+          // side panel, not a safe channel. A headless daemon has no side
+          // panel and never hands the token out here.
+          ...(browserManager.getConnectionMode() === 'headed' ? { token: authToken } : {}),
           // The chat queue is gone — Terminal pane is the sole sidebar
           // surface. Keep `chatEnabled: false` so any older extension
           // build still treats the chat input as disabled.

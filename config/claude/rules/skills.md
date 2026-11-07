@@ -20,7 +20,7 @@ investigate before fixing. Then run the implementation and review skills.
 | Plan a feature, refactor, or architecture change | `/plan-eng-review`, `/autoplan` |
 | Weigh product scope, design, or developer experience of a plan | `/plan-ceo-review`, `/plan-design-review`, `/plan-devex-review` |
 | Tune which questions the skills ask you | `/plan-tune` |
-| Debug an error, test failure, or odd behavior | `/investigate` |
+| Debug an error, test failure, or odd behavior, unless one read-only check confirms the cause and a narrow fix | `/investigate` |
 | Check code-quality health or find refactors | `/health`, `/improve-arch` |
 | Review a diff before merge | `/review` |
 | Second opinion from a different model | `/codex` (in Claude Code), `/claude` (in Codex) |
@@ -64,6 +64,7 @@ These are not vibestack skills; each line names where it comes from.
 |-------------------|-----|
 | Review a diff for correctness bugs (Claude Code built-in) | `/code-review` |
 | Tidy code for reuse/simplicity, no bug hunt (Claude Code built-in) | `/simplify` |
+| Execute an approved multi-step plan (plugin, when one is installed) | its plan-execution skill; otherwise run the plan-eng-review cold-start briefs lane by lane, then `review` and `ship` |
 
 Use the built-ins when they are installed; the pack's own `review` stays the
 pre-merge gate.
@@ -79,11 +80,13 @@ a question to GPT, Gemini, Grok or an OpenRouter model. It is optional
 | Put one question to several models at once (plugin) | `/deliberation:ask-all` |
 | Settle a contested design decision (plugin) | `/deliberation:consensus` |
 | Ask one named model (plugin) | `/deliberation:ask-gpt`, `:ask-gemini`, `:ask-grok`, `:ask-openrouter` |
+| Second opinion on a prose rewrite, after unslop (plugin) | the deliberation Writing Editor |
 
 - Use the namespaced form. The plugin's short aliases (`/ask-all`) exist only
   if its setup installed them.
 - **Never delegate the same question twice.** Most vibestack review skills
   (review, ship, plan-eng-review, plan-ceo-review, spec, …) already run their
   own outside voice through Codex. When one of them is running, do not add a
-  deliberation call on top.
+  deliberation call on top. Likewise unslop is the prose pass: the
+  Writing Editor does not run on the same draft unless asked.
 - Only Gemini can edit files; GPT, Grok and OpenRouter advise only.

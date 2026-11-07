@@ -59,11 +59,13 @@ jobs:
           - test-config-phase.sh
           - test-config-uninstall-keys.sh
           - test-config-skills-routing.sh
+          - test-cursor-rules-consistency.sh
           - test-claude-gate.sh
           - test-document-release.sh
           - test-document-generate-pr-body.sh
           - test-cso-contract.sh
           - test-investigate-contract.sh
+          - test-improve-arch-contract.sh
           - test-review-checklist.sh
           - test-ship-doc-contract.sh
           - test-ship-release-gates.sh

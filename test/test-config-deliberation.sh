@@ -99,8 +99,27 @@ PYEOF
   fi
 }
 
+# D8: the marketplace source carries no commit-SHA ref, and the reason is
+# written next to it. `claude plugin marketplace add owner/repo@<ref>` hands the
+# ref to a branch clone, which rejects a bare commit SHA, so a SHA "pin" breaks
+# every -D install. The version is pinned one level down instead: the
+# marketplace manifest names a release tag for the plugin.
+test_no_sha_pin_and_reason() {
+  local default_line
+  default_line=$(grep -E '^DELIBERATION_REPO=' "$INSTALL" | head -1)
+  if grep -qE '@[0-9a-f]{40}' <<< "$default_line"; then
+    _fail "D8: DELIBERATION_REPO default carries a commit SHA, which the plugin CLI cannot clone"
+  elif grep -B8 -E '^DELIBERATION_REPO=' "$INSTALL" | grep -qiE 'commit SHA' \
+       && grep -B8 -E '^DELIBERATION_REPO=' "$INSTALL" | grep -qiE 'release tag'; then
+    _pass "D8: no SHA pin on the marketplace, and the reason sits next to the default"
+  else
+    _fail "D8: the deliberation source has no note on why it is not SHA-pinned"
+  fi
+}
+
 test_flag_parsed
 test_off_by_default
+test_no_sha_pin_and_reason
 test_install_commands
 test_missing_cli_skips
 test_preview_mode

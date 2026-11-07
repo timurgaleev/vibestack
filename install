@@ -945,6 +945,8 @@ if [ "$DRY_RUN" != "1" ]; then
   # --no-compile-autoload-dotenv/--no-compile-autoload-bunfig so a repo's .env
   # or bunfig.toml preload cannot reach them. Older Bun lacks those flags, so
   # below the floor the bun-backed tooling is skipped rather than set up unsafe.
+  # skills/make-pdf/bin/vibe-make-pdf repeats VIBE_BUN_FLOOR and refuses its
+  # bun fallback below it; make-pdf's launcher test keeps the two equal.
   bun_ok=0
   if [ -f "$REPO_DIR/package.json" ] && command -v bun >/dev/null 2>&1; then
     bun_found=$(bun --version 2>/dev/null | head -1)

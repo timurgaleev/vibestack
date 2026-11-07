@@ -18,8 +18,8 @@ skills/my-skill/
 ```yaml
 ---
 name: my-skill               # slash command name — no spaces, matches directory name
-description: |               # one clear sentence; drives auto-invoke matching
-  What this skill does and when to use it.
+description: |               # one sentence; drives auto-invoke matching
+  The situation or trigger it is for, plus what it yields.
 allowed-tools:               # list only what the skill actually uses
   - Bash
   - Read
@@ -45,6 +45,27 @@ hooks:                       # optional: PreToolUse interceptors
 - Use `##` sections for phases or major steps.
 - Embed an output template so Claude knows exactly how to format results.
 - Keep it tight — remove anything the model doesn't need to act on.
+- End each phase on a completion line the model can check (a file exists, a
+  command exits 0, a printed `NAME:` line), not on "when done".
+- State the behavior you want. Pair every hard prohibition with the positive
+  target it protects, so the model knows what to do instead.
+- Delete any sentence that would not change the model's behavior compared with
+  its default.
+
+### Editing a skill
+
+- Fix it below the skill first. A wrong result from a `bin/` helper, a vague
+  `--help` or an unclear error message is fixed there, not papered over with
+  prose.
+- A new rule earns its place with evidence: the session or test where its
+  absence went wrong.
+- Edit the step that is wrong; do not append a correction after it.
+- Write one rule, not the story of how it was found.
+- Any step that writes, sends data off the machine or spends money carries two
+  or three inline safety lines at that step.
+- For a skill over 120 KB rendered, measure before and after
+  (`bin/vibe-render-skill <src> /dev/stdout | wc -c`) and record
+  `Skill-Size: <before>→<after> bytes` in the PR body.
 
 ## Skill authoring conventions CI enforces
 
@@ -392,7 +413,8 @@ double-bump.
 
 - [ ] `skills/<name>/SKILL.md` exists with valid frontmatter
 - [ ] `name:` matches the directory name exactly
-- [ ] `description:` is one clear sentence (used for auto-invoke matching)
+- [ ] `description:` is one sentence naming the situation or trigger plus a short
+      noun phrase for what it yields — never an ordered step list
 - [ ] `allowed-tools:` lists only what the skill uses
 - [ ] If hooks: `bin/` scripts exist, are executable, use POSIX-safe patterns
 - [ ] Hook scripts tested manually with `echo '{...}' | bash skills/.../check-*.sh`
