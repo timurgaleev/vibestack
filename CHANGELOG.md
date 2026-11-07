@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.55.16 — 2026-11-07
+
+### Changed
+
+- **Spec reviews grade each round and stop at a cap.** The reviewer tags every
+  issue blocking or minor; only blocking issues are fixed and minor ones go to
+  Reviewer Concerns. From round 2 the reviewer marks the previous issues
+  resolved or persisting, and at the three-round cap each applied fix is
+  re-checked against the amended text ("issues confirmed resolved k/N").
+  Missing or truncated input is reported as `INPUT_INCOMPLETE` and re-sent, a
+  review that never produced a grade is reported as unavailable, and a reviewer
+  failure after round 1 keeps the concerns already gathered. Builder questions
+  are answered, decided and marked "(my call)", or asked in batches of four.
+- **Plan reviews hand their task lists over through a file.** Task text never
+  passes through a shell command: each run writes its rows to its own file and
+  one validator stamps them. A run with no tasks leaves an empty marker, so
+  `/autoplan` stops counting an earlier run's tasks for that phase.
+
+### Fixed
+
+- **`/autoplan`'s task list keeps quotes intact.** A title like `Quote "it"`
+  rendered as `Quote \"it\"`; the list is now raw text, with control characters
+  flattened so a newline in task text cannot forge a list item.
+- **Two runs of the same review in different worktrees no longer swap task
+  rows,** and a run whose rows file is missing fails instead of recording zero
+  tasks.
+
 ## 1.55.15 — 2026-11-07
 
 ### Added
