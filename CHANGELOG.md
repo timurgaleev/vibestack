@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.55.35 — 2026-11-07
+
+### Fixed
+
+- **`/qa` and `/qa-only` report only what the run recorded.** Each issue lists
+  Observed, Expected, Evidence, Confirmation (`replayed` or `observed once`)
+  and an optional Hypothesis kept out of Observed; summary lines quote the
+  Observed sentence verbatim, and a proposed regression test asserts on the
+  channel where the bug was seen. A claim of frequency, or of a check having
+  run, that no command backs is re-run, rewritten or marked `not run`.
+- **An issue is confirmed by replaying it.** Rule 2, and `/qa` step 8a before any
+  fix, replay the exact interaction from the same starting state; an issue
+  that does not reproduce stays `observed once` and is not fixed. A submit,
+  send, purchase or delete on a live target is never replayed.
+- **Quick mode runs on a soft 3-minute budget** instead of a 30-second smoke test,
+  and reports the coverage left unfinished at the cap.
+- **The test-outcome filename is sanitised**, UTC-stamped, suffixed on collision
+  and printed as `OUTCOME_FILE:`. When the report template or taxonomy cannot
+  be read, the skills fall back to an inline list of report fields.
+
 ## 1.55.34 — 2026-11-07
 
 ### Fixed
