@@ -299,14 +299,38 @@ After routing, output a brief context summary:
      purpose/audience, visual feel (dark/light, playful/serious, dense/spacious),
      content structure (hero, features, pricing, etc.), and any reference sites they like.
    In both cases, describe the intended visual layout, colors, typography, and
-   component structure as your implementation spec. Generate realistic content based
-   on the plan or user description (never lorem ipsum).
+   component structure as your implementation spec. Write real copy from the plan or
+   the user's description (never lorem ipsum); proof comes only from the user, under
+   the craft floor below.
 
 3. Read `DESIGN.md` tokens. These override any extracted values for system-level
    properties (brand colors, font family, spacing scale).
 
 4. Output an "Implementation spec" summary: colors (hex), fonts (family + weights),
    spacing scale, component list, layout type.
+
+{{include lib/snippets/design-craft-floor.md}}
+
+### Persuade pages
+
+When the page exists to make a visitor decide and act (landing, pricing, launch,
+waitlist), settle these before writing markup:
+
+- **Surface line.** Open the spec with `Surface: PERSUADE — <who visits> decides <what>`.
+- **Intake.** Ask at most three questions, in one AskUserQuestion, and only what the
+  plan or mockup leaves open: who the visitor is and what stops them, the one action
+  you want, and what proof the user can actually supply.
+- **Archetype.** Pick one archetype for the page's structure (show the product
+  working, problem then outcome, compare and price, or a short launch/waitlist page)
+  and say in one line why it fits this visitor. The hero still holds to one headline,
+  one supporting line, one action group.
+- **Primary action.** One named action, built with every state: default, hover and
+  focus, **invalid** (a message beside the field that names the fix), **pending**
+  (disabled, with a progress label), **failure** (what went wrong, the input kept,
+  a retry), and **success** (what happens next).
+- **Index decision.** `index` for a public page meant to be found, `noindex` for a
+  preview, campaign variant or unlaunched page, set with `<meta name="robots">` and
+  listed in the hand-off.
 
 ---
 
@@ -410,7 +434,8 @@ For framework output, save to `<DESIGN_DIR>/finalized.[tsx|svelte|vue]`.
 - `prefers-reduced-motion` for animation respect
 - Real content extracted from the mockup (never lorem ipsum)
 
-**Never include (AI slop blacklist):**
+**Never include by default** (AI slop blacklist):
+An approved mockup that shows one, a DESIGN.md that chose it, or an explicit user request overrides the list: build it and state the tradeoff once.
 - Purple/blue gradients as default
 - Generic 3-column feature grids
 - Center-everything layouts with no visual hierarchy
@@ -421,6 +446,12 @@ For framework output, save to `<DESIGN_DIR>/finalized.[tsx|svelte|vue]`.
 - Emoji as visual elements
 - Generic testimonial sections
 - Cookie-cutter hero sections with left-text right-image
+- Gradient buttons as the primary CTA pattern
+- A colored left border on cards; a card nested inside a card
+- Glowing edges, radial halos or spotlight glows on dark surfaces
+- Gradient text as emphasis; headings within a step of body size
+- A pill-shaped label or kicker floating above the hero headline
+- Frosted-glass panels as the default surface
 
 ### Pretext Wiring Patterns
 
@@ -663,7 +694,8 @@ LOOP:
       (text should reflow dynamically), click any text (it's editable, layout
       recomputes instantly). What needs to change? Say 'done' when satisfied."
 
-  4. If "done" / "ship it" / "looks good" / "perfect" → exit loop, go to Step 5
+  4. If "done" / "ship it" / "looks good" / "perfect" → print the craft floor's
+     "Before this can ship" list, exit loop, go to Step 5
 
   5. Apply feedback using targeted Edit tool changes on the HTML file
      (do NOT regenerate the entire file — surgical edits only)
@@ -792,6 +824,9 @@ Use AskUserQuestion:
 > B) Iterate more — keep refining
 > C) Done — I'll use this as a reference
 
+If A: print the "Before this can ship" list again before copying. Copying never
+clears a `[Needs proof: …]` marker; it travels into the codebase with the page.
+
 ---
 
 ## Important Rules
@@ -809,9 +844,11 @@ Use AskUserQuestion:
   not the Write tool to regenerate the entire file. The user may have made manual edits
   via contenteditable that should be preserved.
 
-- **Real content only.** When a mockup exists, extract text from it. In plan-driven mode,
-  use content from the plan. In freeform mode, generate realistic content based on the
-  user's description. Never use "Lorem ipsum", "Your text here", or placeholder content.
+- **Real content, never invented proof.** When a mockup exists, extract text from it. In
+  plan-driven mode, use content from the plan. In freeform mode, write copy from the
+  user's description. Never use "Lorem ipsum", "Your text here", or placeholder content,
+  and never invent proof: a missing quote, logo or number becomes a `[Needs proof: …]`
+  marker.
 
 - **One page per invocation.** For multi-page designs, run /design-html once per page.
   Each run produces one HTML file.

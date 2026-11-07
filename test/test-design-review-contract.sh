@@ -16,7 +16,17 @@
 #     is found and read before this run overwrites it;
 #   - the audit's "never read source" rule does not reach the fix loop;
 #   - the hard rules no longer demand gradients or a motion minimum, and know
-#     Read and Experience surfaces.
+#     Read and Experience surfaces;
+#   - test-framework detection runs only from Phase 8e.5, renders the shared
+#     snippet byte-for-byte, creates no CI workflow, and its commit block stops
+#     when a path it did not name is staged (run in a scratch repo);
+#   - the report has one location and one project-index block, the dead CDP
+#     probe is gone, and diff-aware mode renders the shared base detection;
+#   - easing, banned fonts and the happy-path tell agree with
+#     /design-consultation; code tokens and mockup briefs reuse the captured
+#     system; the opacity-0 probe counts only hidden in-viewport elements (node);
+#   - the litmus scorecard is inlined, and PERSUADE pages get the craft floor,
+#     five deferred-High persuade checks, a fix order and a stack rule.
 #
 # Usage: test/test-design-review-contract.sh [repo-root]
 set -uo pipefail
@@ -160,6 +170,153 @@ MSG="READ surfaces have rules";                                   check has "$R"
 MSG="EXPERIENCE surfaces have rules";                             check has "$R" '**Experience rules** (apply when classifier = EXPERIENCE):'
 MSG="fonts are judged by role";                                   check has "$R" 'Fonts are judged by role'
 MSG="judgment tells are listed";                                  check has "$R" 'Judgment tells (you are the detector):'
+
+# Byte offset of a needle in a file, or -1.
+pos() { python3 -I -c 'import sys; print(open(sys.argv[1], encoding="utf-8").read().find(sys.argv[2]))' "$1" "$2"; }
+# First ```bash fence in a file containing a needle.
+block_with() {
+  python3 -I - "$1" "$2" <<'PY'
+import re, sys
+t = open(sys.argv[1], encoding="utf-8").read()
+hits = [b for b in re.findall(r"```bash\n(.*?)```", t, re.S) if sys.argv[2] in b]
+sys.stdout.write(hits[0] if hits else "")
+PY
+}
+
+echo "lazy test bootstrap"
+P1="$(pos "$R" '## Phase 1: First Impression')"
+P8E5="$(pos "$R" '### 8e.5.')"
+PDECL="$(pos "$R" 'BOOTSTRAP_DECLINED')"
+[ "$PDECL" -gt "$P8E5" ] && [ "$P8E5" -gt "$P1" ] \
+  && ok "test-framework detection runs from Phase 8e.5, not Setup" || no "test-framework detection runs before Phase 8e.5 (decl=$PDECL 8e.5=$P8E5)"
+MSG="the bootstrap is gated on a JS-behavior fix with no known test command"
+check has "$R" 'only when the fix involved JavaScript behavior and no test command is known yet'
+SNIP_TB="$SRC/lib/snippets/test-bootstrap.md"
+block_with "$SNIP_TB" 'BOOTSTRAP_DECLINED' > "$TMP/tb-snip"
+block_with "$R" 'BOOTSTRAP_DECLINED' > "$TMP/tb-rend"
+[ -s "$TMP/tb-snip" ] && cmp -s "$TMP/tb-snip" "$TMP/tb-rend" \
+  && ok "detection block is byte-identical to lib/snippets/test-bootstrap.md" || no "detection block drifted from lib/snippets/test-bootstrap.md"
+miss=0
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  grep -Fxq -- "$line" "$R" || { miss=1; no "test-bootstrap line not rendered: ${line:0:60}"; break; }
+done < "$SNIP_TB"
+[ "$miss" -eq 0 ] && ok "every test-bootstrap snippet line is rendered"
+MSG="no CI workflow is created (rule 13 forbids CI changes)";     check hasnt "$R" '.github/workflows/test.yml'
+MSG="rule 13 still forbids CI changes";                           check has "$R" 'Never modify CI configuration.'
+MSG="bootstrap staging forbids git add -A";                       check has "$R" 'never `git add -A`'
+# The bootstrap commit stages its own files by name and stops when anything else is staged.
+block_with "$R" 'STAGED_OUTSIDE_BOOTSTRAP' > "$TMP/b8.sh"
+if [ -s "$TMP/b8.sh" ] && grep -q "^set -- '<file>'" "$TMP/b8.sh"; then
+  ok "the bootstrap commit block is extractable"
+  b8_repo() {
+    rm -rf "$TMP/b8"; mkdir -p "$TMP/b8"
+    git -C "$TMP/b8" init -q && git -C "$TMP/b8" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+    echo 'export default {}' > "$TMP/b8/vitest.config.ts"
+  }
+  sed "s|^set -- '<file>'.*|set -- 'vitest.config.ts'|" "$TMP/b8.sh" > "$TMP/b8-run.sh"
+  b8_repo; echo secret > "$TMP/b8/notes.txt"; git -C "$TMP/b8" add notes.txt
+  out=$(cd "$TMP/b8" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t bash "$TMP/b8-run.sh" 2>&1)
+  if grep -q 'STAGED_OUTSIDE_BOOTSTRAP' <<<"$out" && grep -qx 'notes.txt' <<<"$out" \
+     && [ "$(git -C "$TMP/b8" rev-list --count HEAD)" = 1 ]; then
+    ok "an unrelated staged path stops the bootstrap commit"
+  else
+    no "an unrelated staged path did not stop the bootstrap commit: $out"
+  fi
+  b8_repo
+  out=$(cd "$TMP/b8" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t bash "$TMP/b8-run.sh" 2>&1)
+  if [ "$(git -C "$TMP/b8" rev-list --count HEAD)" = 2 ] \
+     && [ "$(git -C "$TMP/b8" show --name-only --format= HEAD)" = vitest.config.ts ]; then
+    ok "a clean bootstrap commit holds exactly the named files"
+  else
+    no "a clean bootstrap commit failed: $out"
+  fi
+else
+  no "the bootstrap commit block is extractable"
+fi
+
+echo "report path and dead branches"
+MSG="no project-local report path";                               check hasnt "$R" '.vibestack/design-reports/'
+nproj="$(grep -c 'echo "PROJECT_DIR:' "$R")"
+[ "$nproj" = 1 ] && ok "one project-index block (Phase 10), not two" || no "project-index block appears $nproj times"
+MSG="Phase 6 points at REPORT_DIR and Phase 10";                  check has "$R" 'The report goes to `$REPORT_DIR/design-audit-{domain}.md`; Phase 10 writes the project-index pointer.'
+MSG="no dead Mode: cdp probe";                                    check hasnt "$R" 'Mode: cdp'
+MSG="no CDP_MODE branch";                                         check hasnt "$R" 'CDP_MODE'
+block_with "$SRC/lib/snippets/base-branch-detect.md" '_BD_BASE' > "$TMP/bd-snip"
+block_with "$R" '_BD_BASE' > "$TMP/bd-rend"
+[ -s "$TMP/bd-snip" ] && cmp -s "$TMP/bd-snip" "$TMP/bd-rend" \
+  && ok "diff-aware base detection renders lib/snippets/base-branch-detect.md" || no "diff-aware base detection does not render the shared snippet"
+
+echo "catalog sync"
+MSG="exits ease out; plain ease-in is flagged";                   check has "$R" 'Easing: ease-out to enter and exit, ease-in-out to move; flag plain ease-in'
+MSG="no ease-in-for-exiting rule";                                check hasnt "$R" 'ease-in for exiting'
+RC="$TMP/r/design-consultation/SKILL.md"
+VIBESTACK_REPO_ROOT="$SRC" "$HERE/bin/vibe-render-skill" "$SRC/skills/design-consultation/SKILL.md" "$RC" >/dev/null 2>&1
+MSG="the DESIGN.md template eases exits out too";                 check has "$RC" 'enter(ease-out) exit(ease-out) move(ease-in-out)'
+MSG="the DESIGN.md template no longer writes exit(ease-in)";      check hasnt "$RC" 'exit(ease-in)'
+# Every face design-consultation bans in any role is also a blacklisted font here.
+BANNED="$(awk '/^\*\*Banned in any role:\*\*$/ { getline; print; exit }' "$RC")"
+BLACK="$(grep -F 'No blacklisted fonts (' "$R")"
+fmiss=""
+IFS=',' read -r -a faces <<<"${BANNED%.}"
+for f in "${faces[@]}"; do
+  f="${f# }"; [ -n "$f" ] || continue
+  grep -Fq -- "$f" <<<"$BLACK" || fmiss="$fmiss $f;"
+done
+[ -n "$BANNED" ] && [ -z "$fmiss" ] && ok "the audit's font blacklist covers every face consultation bans" || no "faces banned by consultation pass the audit:$fmiss"
+MSG="the happy-path judgment tell is listed";                     check has "$R" '- Only the happy path is designed: empty, loading, error and long-content states are part of the component.'
+PTOK="$(pos "$R" 'tailwind.config.*')"
+[ "$PTOK" -ge 0 ] && [ "$PTOK" -lt "$P1" ] && grep -qF ':root' "$R" \
+  && ok "Setup reads code tokens when DESIGN.md is absent" || no "Setup does not read code tokens before the audit"
+MSG="mockup briefs reuse the captured system verbatim";           check has "$R" 'reuse the captured system verbatim'
+MSG="content is never hidden behind animation timing";            check has "$R" 'nothing starts at opacity 0 waiting for a scroll handler'
+# The probe counts in-viewport elements at opacity 0, and nothing else.
+python3 -I - "$R" > "$TMP/probe.js" <<'PY'
+import re, sys
+hits = [j for j in re.findall(r'\$B js "([^"]*)"', open(sys.argv[1], encoding="utf-8").read())
+        if "opacity" in j and "innerHeight" in j]
+sys.stdout.write(hits[0] if hits else "")
+PY
+if [ ! -s "$TMP/probe.js" ]; then
+  no "the opacity-0 probe is present"
+elif command -v node >/dev/null 2>&1; then
+  got="$(node -e '
+const fs = require("fs");
+const el = (top, op) => ({ op, getBoundingClientRect: () => ({ width: 40, height: 20, top, bottom: top + 20 }) });
+globalThis.innerHeight = 800;
+globalThis.getComputedStyle = e => ({ opacity: e.op });
+globalThis.document = { querySelectorAll: () => [el(100, "0"), el(2000, "0"), el(300, "1"), el(500, "0")] };
+console.log(String(eval(fs.readFileSync(process.argv[1], "utf8"))));
+' "$TMP/probe.js" 2>&1)"
+  [ "$got" = 2 ] && ok "the opacity-0 probe counts only in-viewport hidden elements" || no "the opacity-0 probe returned '$got', want 2"
+else
+  echo "  skip node not installed; opacity probe not run"
+fi
+MSG="no dangling scorecard reference";                            check hasnt "$R" 'same scorecard format as /plan-design-review (shown above)'
+SC="$(python3 -I - "$R" <<'PY'
+import re, sys
+t = open(sys.argv[1], encoding="utf-8").read()
+i = t.find("**Synthesis — Litmus scorecard:**")
+m = re.search(r"```\n(.*?)```", t[i:], re.S) if i >= 0 else None
+sys.stdout.write(m.group(1) if m else "")
+PY
+)"
+rows="$(grep -cE '^  [1-7]\. ' <<<"$SC")"
+if [ "$rows" = 7 ] && grep -q 'Codex' <<<"$SC" && grep -q 'Subagent' <<<"$SC" && grep -q 'Consensus' <<<"$SC"; then
+  ok "the litmus scorecard is inlined with 7 rows and both voices"
+else
+  no "the litmus scorecard is not inlined (rows=$rows)"
+fi
+
+echo "craft audit"
+MSG="the craft floor is rendered in";                             check has "$R" '[Needs proof:'
+MSG="the craft audit is gated on PERSUADE or a redesign";         check has "$R" '### Craft Audit (PERSUADE pages and redesigns)'
+for c in 'One named primary action' 'Objections answered' 'Proof beside each claim' 'A real risk reversal' 'An index decision'; do
+  MSG="persuade check: $c";                                       check has "$R" "**$c**"
+done
+MSG="persuade gaps are deferred High, never invented";            check has "$R" 'file it as High and deferred'
+MSG="the fix loop has a fix order";                               check has "$R" 'type, color, states, layout, motion, components, empty and error states, copy'
+MSG="fixes stay inside the installed Tailwind major";             check has "$R" 'the installed Tailwind major'
 
 echo
 echo "design-review-contract: $pass passed, $fail failed"
