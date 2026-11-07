@@ -4,6 +4,23 @@
 # compiled binary, falls back to running the CLI on bun.
 set -uo pipefail
 
+# Same floor as ./install: below it the install skips the make-pdf tooling,
+# so the launcher refuses too rather than run bun without its isolation flags.
+VIBE_BUN_FLOOR="1.3.3"
+
+_bun_at_least() {
+  local found="${1%%[-+]*}" i
+  [[ "$found" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  local -a f r
+  IFS=. read -r -a f <<<"$found"
+  IFS=. read -r -a r <<<"$VIBE_BUN_FLOOR"
+  for i in 0 1 2; do
+    [ "$((10#${f[$i]}))" -gt "$((10#${r[$i]}))" ] && return 0
+    [ "$((10#${f[$i]}))" -lt "$((10#${r[$i]}))" ] && return 1
+  done
+  return 0
+}
+
 _src="${BASH_SOURCE[0]}"
 while [ -L "$_src" ]; do _src="$(readlink "$_src")"; done
 _REAL_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
@@ -13,7 +30,14 @@ if [ -n "$_REPO" ] && [ -x "$_REPO/make-pdf/dist/pdf" ]; then
   exec "$_REPO/make-pdf/dist/pdf" "$@"
 fi
 if [ -n "$_REPO" ] && [ -f "$_REPO/make-pdf/src/cli.ts" ] && command -v bun >/dev/null 2>&1; then
-  exec bun "$_REPO/make-pdf/src/cli.ts" "$@"
+  _bun_v="$(bun --version 2>/dev/null | head -1)"
+  if _bun_at_least "$_bun_v"; then
+    # The working directory may hold a .env, or a bunfig.toml whose preload
+    # runs arbitrary code; neither may reach the renderer.
+    exec bun run --no-env-file --config=/dev/null "$_REPO/make-pdf/src/cli.ts" "$@"
+  fi
+  echo "MAKE_PDF_NOT_AVAILABLE: the renderer needs bun $VIBE_BUN_FLOOR or newer to ignore a project's .env and bunfig.toml; found ${_bun_v:-no readable version} (run: bun upgrade)" >&2
+  exit 4
 fi
 echo "MAKE_PDF_NOT_AVAILABLE: renderer not found (need $_REPO/make-pdf + bun, or a compiled make-pdf/dist/pdf)" >&2
 exit 4
