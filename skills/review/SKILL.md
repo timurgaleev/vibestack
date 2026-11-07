@@ -525,10 +525,12 @@ higher confidence.
 
 ```bash
 # Compute SCOPE_* signals from the diff (drives conditional specialist dispatch).
-# Falls back to all-false if the binary is missing, which just runs the always-on
-# specialists — never errors.
+# Cleared first: a flag left in the environment must never select. A failed or
+# missing scope reads SCOPE_UNAVAILABLE=true, never all-false.
+unset SCOPE_FRONTEND SCOPE_BACKEND SCOPE_PROMPTS SCOPE_TESTS SCOPE_DOCS SCOPE_CONFIG SCOPE_MIGRATIONS SCOPE_API SCOPE_AUTH SCOPE_UNAVAILABLE
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" <base> 2>/dev/null || true)"
-echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false}"
+[ -n "${SCOPE_FRONTEND:-}${SCOPE_UNAVAILABLE:-}" ] || SCOPE_UNAVAILABLE=true
+echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false} SCOPE_UNAVAILABLE=${SCOPE_UNAVAILABLE:-false}"
 # Detect stack for specialist context
 STACK=""
 [ -f Gemfile ] && STACK="${STACK}ruby "
@@ -568,19 +570,21 @@ so the full scope-selected set runs.
 
 Based on the scope signals above, select which specialists to dispatch.
 
+**If `SCOPE_UNAVAILABLE=true`:** the scope could not be computed, so dispatch every specialist below: neither the small-diff skip nor adaptive gating applies. An unknown scope is not an empty one.
+
 **Always-on (dispatch on every review with 50+ changed lines):**
-1. **Testing** — read `~/.claude/skills/review/specialists/testing.md`
-2. **Maintainability** — read `~/.claude/skills/review/specialists/maintainability.md`
+1. **Testing** — read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/testing.md`
+2. **Maintainability** — read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/maintainability.md`
 
 **If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to Step 4.8.
 
 **Conditional (dispatch if the matching scope signal is true):**
-3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `~/.claude/skills/review/specialists/security.md`
-4. **Performance** — if SCOPE_BACKEND=true OR SCOPE_FRONTEND=true. Read `~/.claude/skills/review/specialists/performance.md`
-5. **Data Migration** — if SCOPE_MIGRATIONS=true. Read `~/.claude/skills/review/specialists/data-migration.md`
-6. **API Contract** — if SCOPE_API=true. Read `~/.claude/skills/review/specialists/api-contract.md`
-7. **Design** — if SCOPE_FRONTEND=true. Use the existing design review checklist at `~/.claude/skills/review/design-checklist.md`
-8. **Simplification** — if DIFF_LINES > 100. Read `~/.claude/skills/review/specialists/simplification.md`. Advisory-only lens: it hunts structure nobody asked for (hand-rolled stdlib, one-implementation abstractions, dependencies duplicating platform features), never missing coverage.
+3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/security.md`
+4. **Performance** — if SCOPE_BACKEND=true OR SCOPE_FRONTEND=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/performance.md`
+5. **Data Migration** — if SCOPE_MIGRATIONS=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/data-migration.md`
+6. **API Contract** — if SCOPE_API=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/api-contract.md`
+7. **Design** — if SCOPE_FRONTEND=true. Use the existing design review checklist at `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/design-checklist.md`
+8. **Simplification** — if DIFF_LINES > 100. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/simplification.md`. Advisory-only lens: it hunts structure nobody asked for (hand-rolled stdlib, one-implementation abstractions, dependencies duplicating platform features), never missing coverage.
 
 ### Adaptive gating
 

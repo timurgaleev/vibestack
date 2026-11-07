@@ -1445,17 +1445,19 @@ higher confidence.
 Check if the diff touches frontend files:
 
 ```bash
+unset SCOPE_FRONTEND SCOPE_BACKEND SCOPE_PROMPTS SCOPE_TESTS SCOPE_DOCS SCOPE_CONFIG SCOPE_MIGRATIONS SCOPE_API SCOPE_AUTH SCOPE_UNAVAILABLE
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" <base> 2>/dev/null || true)"
-echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false}"
+[ -n "${SCOPE_FRONTEND:-}${SCOPE_UNAVAILABLE:-}" ] || SCOPE_UNAVAILABLE=true
+echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_UNAVAILABLE=${SCOPE_UNAVAILABLE:-false}"
 ```
 
-**If `SCOPE_FRONTEND=false`:** Skip design review silently. No output.
+**If `SCOPE_FRONTEND=false` and `SCOPE_UNAVAILABLE=false`:** Skip design review silently. No output.
 
-**If `SCOPE_FRONTEND=true`:**
+**If `SCOPE_FRONTEND=true` or `SCOPE_UNAVAILABLE=true`** (an unknown scope may hold frontend files):
 
 1. **Check for DESIGN.md.** If `DESIGN.md` or `design-system.md` exists in the repo root, read it. All design findings are calibrated against it — patterns blessed in DESIGN.md are not flagged. If not found, use universal design principles.
 
-2. **Read `.claude/skills/review/design-checklist.md`.** If the file cannot be read, skip design review with a note: "Design checklist not found — skipping design review."
+2. **Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/design-checklist.md`.** If the file cannot be read, **STOP** and report the error: a frontend diff reviewed without its checklist would read as clean.
 
 3. **Read each changed frontend file** (full file, not just diff hunks). Frontend files are identified by the patterns listed in the checklist.
 
@@ -1511,10 +1513,13 @@ Present Codex output under a `CODEX (design):` header, merged with the checklist
 ### Detect stack and scope
 
 ```bash
-# Compute SCOPE_* from the diff (conditional specialist dispatch). All-false
-# fallback if the binary is absent — runs the always-on specialists, never errors.
+# Compute SCOPE_* from the diff (conditional specialist dispatch). Cleared first:
+# a stale flag must never select. A failed or missing scope reads
+# SCOPE_UNAVAILABLE=true, never all-false.
+unset SCOPE_FRONTEND SCOPE_BACKEND SCOPE_PROMPTS SCOPE_TESTS SCOPE_DOCS SCOPE_CONFIG SCOPE_MIGRATIONS SCOPE_API SCOPE_AUTH SCOPE_UNAVAILABLE
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" <base> 2>/dev/null || true)"
-echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false}"
+[ -n "${SCOPE_FRONTEND:-}${SCOPE_UNAVAILABLE:-}" ] || SCOPE_UNAVAILABLE=true
+echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false} SCOPE_UNAVAILABLE=${SCOPE_UNAVAILABLE:-false}"
 # Detect stack for specialist context
 STACK=""
 [ -f Gemfile ] && STACK="${STACK}ruby "
@@ -1551,19 +1556,21 @@ always run), or `active`. Fresh project → everything `active`, full set runs.
 
 Based on the scope signals above, select which specialists to dispatch.
 
+**If `SCOPE_UNAVAILABLE=true`:** the scope could not be computed, so dispatch every specialist below: neither the small-diff skip nor adaptive gating applies. An unknown scope is not an empty one.
+
 **Always-on (dispatch on every review with 50+ changed lines):**
-1. **Testing** — read `~/.claude/skills/review/specialists/testing.md`
-2. **Maintainability** — read `~/.claude/skills/review/specialists/maintainability.md`
+1. **Testing** — read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/specialists/testing.md`
+2. **Maintainability** — read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/specialists/maintainability.md`
 
 **If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to the Fix-First flow (item 4).
 
 **Conditional (dispatch if the matching scope signal is true):**
-3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `~/.claude/skills/review/specialists/security.md`
-4. **Performance** — if SCOPE_BACKEND=true OR SCOPE_FRONTEND=true. Read `~/.claude/skills/review/specialists/performance.md`
-5. **Data Migration** — if SCOPE_MIGRATIONS=true. Read `~/.claude/skills/review/specialists/data-migration.md`
-6. **API Contract** — if SCOPE_API=true. Read `~/.claude/skills/review/specialists/api-contract.md`
-7. **Design** — if SCOPE_FRONTEND=true. Use the existing design review checklist at `~/.claude/skills/review/design-checklist.md`
-8. **Simplification** — if DIFF_LINES > 100. Read `~/.claude/skills/review/specialists/simplification.md`. Advisory-only lens: it hunts structure nobody asked for (hand-rolled standard library, one-implementation abstractions, redundant dependencies), which no other specialist looks for.
+3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/specialists/security.md`
+4. **Performance** — if SCOPE_BACKEND=true OR SCOPE_FRONTEND=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/specialists/performance.md`
+5. **Data Migration** — if SCOPE_MIGRATIONS=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/specialists/data-migration.md`
+6. **API Contract** — if SCOPE_API=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/specialists/api-contract.md`
+7. **Design** — if SCOPE_FRONTEND=true. Use the existing design review checklist at `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/design-checklist.md`
+8. **Simplification** — if DIFF_LINES > 100. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/ship}/../review/specialists/simplification.md`. Advisory-only lens: it hunts structure nobody asked for (hand-rolled standard library, one-implementation abstractions, redundant dependencies), which no other specialist looks for.
 
 **Advisory carve-out (simplification specialist).** Its findings are taste calls, not defects, so they must not move any number a defect moves: exclude them from the `quality_score` summation and from the findings-count header, and never auto-fix them in the Fix-First flow — present them as advisory and let the user decide. Over-engineering costs the next reader; a bug costs production. Scoring them the same way trains the user to ignore the score.
 
