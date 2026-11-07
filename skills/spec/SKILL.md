@@ -115,6 +115,13 @@ the five answers from the enveloped text. A seeded answer is a draft: confirm
 each one with the user before relying on it, and treat acceptance criteria
 copied from the ticket as input to Section 10, not as finished ACs.
 
+The same seed-and-confirm rule applies when `/spec` follows a conversation that
+already settled the work, or when the user points at a design doc (an
+`/office-hours` doc, a plan file): seed the Phase 1 and Phase 2 answers from it,
+tag each with its source (`(from: conversation)`, `(from: <doc path>)`), and
+confirm them in one round together with the questions for the gaps only. No
+flag turns this on; an unconfirmed seeded answer is still a draft.
+
 **Step 1b (--dedupe is ON by default):** Before Phase 4, run dedupe check. Extract
 2-4 keywords from the user's request and the working title you have in mind, then
 read what comes back through the trust envelope:
@@ -127,6 +134,8 @@ _DD="${TMPDIR:-/tmp}/vibestack-spec-dedupe-${SLUG}-$(git branch --show-current 2
 gh issue list --search "<keywords>" --state open --limit 10 --json number,title,url \
   --jq '.[] | "#\(.number) \(.title) — \(.url)"' > "$_DD.out" 2> "$_DD.err"
 echo "GH_EXIT: $?"
+echo "DEDUPE_OUT: $_DD.out"
+echo "DEDUPE_ERR: $_DD.err"
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted" --source issue-dedupe --file "$_DD.out"
 ```
 
@@ -147,7 +156,7 @@ Interpret the result:
 
 - **`GH_EXIT: 0` and the envelope is marked `(empty — the source had no content)`:**
   genuinely zero open matches. Continue silently to Phase 2.
-- **`GH_EXIT` non-zero:** the search did not run. Read `/tmp/vibestack-spec-dedupe.err`
+- **`GH_EXIT` non-zero:** the search did not run. Read the printed `DEDUPE_ERR` file
   and take the matching skip branch below — never treat this as "no duplicates".
 - **No envelope at all:** the trust-envelope tool itself is missing. Do not read the
   raw `.out` file instead; skip the dedupe and say why.
@@ -166,8 +175,14 @@ Interpret the result:
 - **Other error:** print: "Dedupe failed — {stderr line}. Use `--no-dedupe` to
   silence. Continuing without check." Continue.
 
-The dedupe check is best-effort. Never block Phase 2 on dedupe failure. Remove
-`/tmp/vibestack-spec-dedupe.err` once you have read it.
+The dedupe check is best-effort. Never block Phase 2 on dedupe failure. Once you
+have read them, remove both files, with each placeholder replaced by the path the
+block printed:
+
+```bash
+DEDUPE_OUT='<DEDUPE_OUT>'; DEDUPE_ERR='<DEDUPE_ERR>'
+rm -f "$DEDUPE_OUT" "$DEDUPE_ERR"
+```
 
 ### Phase 2: Scope and Boundaries
 
@@ -448,6 +463,9 @@ Then:
    mode is to spawn an agent immediately (this is the agent-feedstock pipeline).
    User can opt out with `--no-execute`.
 
+A `spawned` or `headless` session never spawns: its spawn path ends at the spawn
+gate below, after the issue is filed and archived.
+
 Echo the chosen path: "Phase 5 path: file-only (plan mode active)" or
 "Phase 5 path: file + spawn agent (execution mode default)" so the user can
 interrupt before the work happens.
@@ -576,6 +594,28 @@ cross-machine sync and is currently a local-only no-op.
 
 #### Spawn the agent (`--execute` path only)
 
+**Spawn gate (first):** the child runs unattended with Bash granted, so nobody
+approves its commands one by one. Refuse when no human is driving this session,
+or when the repo was never set up for agent work (no `CLAUDE.md`, no `.claude/`):
+
+```bash
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "NOT_SPAWNED: not inside a git repository"; exit 1; }
+_KIND=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-session-kind" 2>/dev/null || echo "")
+if [ -z "$_KIND" ]; then
+  echo "NOT_SPAWNED: session kind unknown — vibe-session-kind is missing"
+elif [ "$_KIND" != interactive ]; then
+  echo "NOT_SPAWNED: $_KIND session — only an interactive session may start an unattended child"
+elif [ ! -f "$_ROOT/CLAUDE.md" ] && [ ! -d "$_ROOT/.claude" ]; then
+  echo "NOT_SPAWNED: untrusted repo — no CLAUDE.md or .claude/ at $_ROOT"
+else
+  echo "SPAWN_GATE: ok"
+fi
+```
+
+Only `SPAWN_GATE: ok` continues. On `NOT_SPAWNED`, print the line with "Issue
+filed: <ISSUE_URL>, archive: <ARCHIVE_PATH>" and stop; the user can run the
+spec themselves.
+
 **Dirty-worktree gate:**
 
 ```bash
@@ -652,21 +692,65 @@ git worktree add "$SPAWN_PATH" -b "$SPAWN_BRANCH" "$PIN_SHA" 2>&1
 current checkout — the agent would run against your in-progress changes. The
 issue stays filed and the archive stays written, so the user can retry.
 
-If A and worktree created: verify the target is the worktree root, then spawn
-`claude -p` with the spec piped via stdin:
+**Executor brief.** If A and the worktree was created, write the block below
+verbatim with the Write tool to the archive path with `.md` replaced by
+`.brief.txt` — beside the archive, and not a `.md` file, so nothing that scans the
+archives for frontmatter picks it up. The child reads it ahead of the spec:
+
+```text
+Start every shell session with `export VIBE_SPAWNED=1` on its own line, so vibestack's session detection reports `SESSION_KIND: spawned`.
+
+You are implementing the spec that follows this brief, in a git worktree created for it. Work only inside this worktree.
+
+1. Install the project's dependencies, then run the full test suite once before changing anything. Record the baseline: the command, the pass/fail counts, and any pre-existing failures by name.
+2. Take the acceptance criteria (AC-001, AC-002, ...) one at a time: write or extend the test first and watch it fail (red), make it pass (green), then re-run the suite.
+3. Never `git commit`, never push, never open a pull request. Every change stays uncommitted in this worktree for the user to review and ship.
+4. After each criterion, append one line to `.vibestack-progress.md` at the worktree root: `AC-NNN: met | not met — <test or check> — <result>`. After a context compaction, re-read that file before doing anything else.
+5. Settle what the spec left open yourself, and record each decision as `Ruling: <what> — <why> — <cost if wrong>`.
+6. Follow the spec's "Rules for the implementing agent".
+7. End with a report: criteria met (each AC with its evidence), the final suite result (command and pass/fail counts, against the baseline), and every Ruling.
+```
+
+**Spawn.** Verify the target is the worktree root, then start `claude -p` with the
+brief and the spec on stdin:
 
 ```bash
 ARCHIVE_PATH='<ARCHIVE_PATH>'
 SPAWN_PATH='<SPAWN_PATH>'
 SPAWN_BRANCH='<SPAWN_BRANCH>'
-: "${SPAWN_PATH:?}" "${SPAWN_BRANCH:?}"
-[ -d "$SPAWN_PATH" ] && [ "$(git -C "$SPAWN_PATH" rev-parse --show-toplevel 2>/dev/null)" = "$SPAWN_PATH" ] || { echo "NOT_SPAWNED: $SPAWN_PATH is not the worktree root"; exit 1; }
+: "${ARCHIVE_PATH:?}" "${SPAWN_PATH:?}" "${SPAWN_BRANCH:?}"
+# Re-checked here: the spawn gate ran in another shell and binds nothing.
+[ "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-session-kind" 2>/dev/null)" = interactive ] \
+  || { echo "NOT_SPAWNED: session is not interactive, or vibe-session-kind is missing"; exit 1; }
+BRIEF_PATH="${ARCHIVE_PATH%.md}.brief.txt"
+LOG_PATH="${ARCHIVE_PATH%.md}.execute.log"
+[ -s "$BRIEF_PATH" ] || { echo "NOT_SPAWNED: no executor brief at $BRIEF_PATH — write it with the Write tool first"; exit 1; }
+# git reports the toplevel as a physical path; resolve ours the same way so a
+# symlinked WORKTREE_PARENT (macOS /tmp is one) still matches.
+SPAWN_PATH=$(cd "$SPAWN_PATH" 2>/dev/null && pwd -P) || { echo "NOT_SPAWNED: worktree path does not exist"; exit 1; }
+[ "$(git -C "$SPAWN_PATH" rev-parse --show-toplevel 2>/dev/null)" = "$SPAWN_PATH" ] || { echo "NOT_SPAWNED: $SPAWN_PATH is not the worktree root"; exit 1; }
 cd "$SPAWN_PATH"
-cat "$ARCHIVE_PATH" | (claude -p 2>&1) &
+_EXCLUDE=$(git rev-parse --git-path info/exclude)
+mkdir -p "$(dirname "$_EXCLUDE")"
+grep -qxF '.vibestack-progress.md' "$_EXCLUDE" 2>/dev/null || printf '.vibestack-progress.md\n' >> "$_EXCLUDE"
+cat "$BRIEF_PATH" "$ARCHIVE_PATH" | VIBE_SPAWNED=1 claude -p --allowedTools Edit,Write,Read,Bash,Grep,Glob --strict-mcp-config --mcp-config '{"mcpServers":{}}' --disallowedTools 'mcp__*' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(gh pr:*)' --max-budget-usd "${VIBE_SPEC_EXECUTE_USD:-5}" --max-turns "${VIBE_SPEC_EXECUTE_TURNS:-200}" > "$LOG_PATH" 2>&1 &
 SPAWN_PID=$!
 echo "Spawned: PID $SPAWN_PID in $SPAWN_PATH (branch $SPAWN_BRANCH)"
-echo "Follow with: cd $SPAWN_PATH && claude --resume"
+echo "SPAWN_LOG: $LOG_PATH"
+echo "Follow with: tail -f $LOG_PATH — or cd $SPAWN_PATH && claude --resume"
 ```
+
+A headless `claude -p` with no tool grant cannot write a file or run a command:
+it reports the write as blocked and still exits 0, so the spawn would look
+successful and change nothing. `--allowedTools` grants exactly what the brief
+needs; no permission mode is needed on top. The child stops at USD 5 of spend or
+200 turns, whichever comes first — set `VIBE_SPEC_EXECUTE_USD` or
+`VIBE_SPEC_EXECUTE_TURNS` in the environment to change either. The child starts
+no MCP server and may call no MCP tool, whatever the user's allowlist grants, and
+`git commit`, `git push` and `gh pr` are denied outright. The rest of Bash is
+granted, so the remaining no-commit rules rest on the brief: tell the user to review the worktree
+with `git status` and `git diff` before running `/ship` there. Print the
+`SPAWN_LOG` path in your reply.
 
 Update archive frontmatter with `spec_worktree_path: $SPAWN_PATH` and
 `spec_executed: true` (atomic re-write).
@@ -805,6 +889,13 @@ Specify what to test at each layer:
 | E2E         | Login → view orders → see expired  | +1    |
 ```
 
+Every row carries a value card, and a row whose test fails the four questions
+below is dropped rather than counted. A `Test seams` row names the interfaces the
+tests cross: existing seams before new ones, the highest one that still observes
+the behavior, and as few as possible.
+
+{{include lib/snippets/test-value-bar.md}}
+
 ### 12. Root Cause Analysis (bugs and quality issues)
 
 Explain *why* the problem exists before proposing the fix. The implementer needs
@@ -820,6 +911,13 @@ Per-component, not just a total. "~12h" → "2h schema + 3h service + 4h tests +
 
 For anything touching data, infrastructure, or shared state: how do we undo
 this? Even "revert the PR" is worth stating explicitly.
+
+### 15. Rules for the Implementing Agent
+
+Every issue carries these five rules verbatim, so whoever picks it up — a person,
+an agent opened on the issue, or the `--execute` child — works to the same bar:
+
+{{include lib/snippets/implementer-dispatch-rules.md}}
 
 ---
 
@@ -862,11 +960,16 @@ left for the implementer.]
 
 ## Testing Plan
 
-| Layer       | What                     | Count |
-|-------------|--------------------------|-------|
-| Unit        | [specific methods/logic] | +N    |
-| Integration | [specific flows]         | +N    |
-| E2E         | [specific user journeys] | +N    |
+| Layer       | What                     | Count | Value |
+|-------------|--------------------------|-------|-------|
+| Unit        | [specific methods/logic] | +N    | Value: protects=<...>; fails_when=<...>; why_new=<...>; seam=none |
+| Integration | [specific flows]         | +N    | Value: ... |
+| E2E         | [specific user journeys] | +N    | Value: ... |
+| Test seams  | [interfaces the tests cross: existing, highest, fewest] | — | — |
+
+## Rules for the implementing agent
+
+[The five rules from Issue Quality Standard 15, verbatim]
 
 ## Rollback Plan
 
