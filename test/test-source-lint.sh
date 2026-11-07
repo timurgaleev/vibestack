@@ -165,6 +165,30 @@ d=$(mkfix hostpathsnip); printf '# snip\n\nRead `~/.claude/skills/review/checkli
 out=$(bash "$LINT" "$d" 2>&1)
 grep -q '^warn: .*hp.md:3: hard-coded host path' <<<"$out" && ok "snippets are checked for host paths" || no "snippet host path missed: $out"
 
+# 12. --strict fails closed: a run that checked nothing is never "clean".
+out=$(bash "$LINT" --strict "$TMP/no-such-root" 2>&1); rc=$?
+[ "$rc" -eq 2 ] && grep -q 'no skills/ directory' <<<"$out" \
+  && ok "--strict on a missing root exits 2" || no "missing root passed (rc=$rc): $out"
+out=$(bash "$LINT" strict 2>&1); rc=$?
+[ "$rc" -eq 2 ] && ok "a mistyped --strict read as the root exits 2" || no "mistyped flag passed (rc=$rc): $out"
+d="$TMP/emptytree"; mkdir -p "$d/skills" "$d/lib/snippets"
+out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'no skill or snippet files to check' <<<"$out" \
+  && ok "--strict on a tree with no skill or snippet files fails" || no "empty tree passed --strict (rc=$rc): $out"
+d=$(mkfix unreadable); chmod 000 "$d/skills/demo/SKILL.md"
+if [ -r "$d/skills/demo/SKILL.md" ]; then
+  ok "unreadable-file case skipped (running as a user who can read mode 000)"
+else
+  out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'SKILL.md: unreadable' <<<"$out" \
+    && ok "--strict fails on an unreadable skill file" || no "unreadable file passed --strict (rc=$rc): $out"
+fi
+chmod 644 "$d/skills/demo/SKILL.md"
+d=$(mkfix awkfail); mkdir -p "$TMP/fakebin"; printf '#!/bin/sh\nexit 2\n' > "$TMP/fakebin/awk"; chmod +x "$TMP/fakebin/awk"
+out=$(PATH="$TMP/fakebin:$PATH" bash "$LINT" --strict "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'awk exited 2' <<<"$out" \
+  && ok "--strict fails when awk fails" || no "awk failure passed --strict (rc=$rc): $out"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"
