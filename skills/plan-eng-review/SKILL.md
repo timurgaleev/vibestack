@@ -692,7 +692,8 @@ After producing the Completion Summary above, persist the review result.
 depends on this data. Skipping this command breaks the review readiness dashboard in /ship.
 
 ```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-eng-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"MODE","commit":"COMMIT"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-eng-review","timestamp":"TIMESTAMP","status":"STATUS","unresolved":N,"critical_gaps":N,"issues_found":N,"mode":"MODE","commit":"COMMIT"}' \
+  || echo "REVIEW_LOG_NOT_PERSISTED (exit $?)"
 ```
 
 Substitute values from the Completion Summary:
@@ -703,6 +704,23 @@ Substitute values from the Completion Summary:
 - **issues_found**: total issues found across all review sections (Architecture + Code Quality + Performance + Test gaps)
 - **MODE**: FULL_REVIEW / SCOPE_REDUCED
 - **COMMIT**: output of `git rev-parse --short HEAD`
+
+If the review settled a durable architecture choice — a data model, a module
+boundary, a dependency taken or refused — record it so the next session builds on it
+instead of reopening it. Skip this when nothing architectural was decided:
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log" '{"decision":"Eng review: DECISION","rationale":"RATIONALE","scope":"branch","source":"skill"}' \
+  || echo "DECISION_LOG_NOT_PERSISTED (exit $?)"
+```
+
+- **DECISION**: one line naming the choice
+- **RATIONALE**: one line on why, as the user accepted it
+
+**Never claim an unconfirmed save.** If either command prints a `*_NOT_PERSISTED` line,
+tell the user which record was not saved, the cause from the command's output, and the
+fields it would have held — the dashboard and the next session will not see them. Do not
+describe the review as logged.
 
 {{include lib/snippets/review-readiness-dashboard.md}}
 
