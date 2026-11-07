@@ -131,6 +131,25 @@ describe.skipIf(!hasChromium)('daemon tabs (real daemon)', () => {
     expect((await run('url')).text).toContain('/c');
   }, 30_000);
 
+  test('tab-each leaves the shared active tab alone while it runs', async () => {
+    const a = await newTab('/ea');
+    const b = await newTab('/eb');
+    const c = await newTab('/ec');
+    try {
+      expect((await run('url')).text).toContain('/ec');
+      const each = run('tab-each', ['js', 'new Promise(r => setTimeout(() => r(location.pathname), 400))']);
+      await Bun.sleep(150);
+      // An unpinned request in the middle of the fan-out still sees the tab
+      // the user left active, not the one tab-each is visiting.
+      const mid = await run('url');
+      expect((await each).status).toBe(200);
+      expect(mid.text).toContain('/ec');
+      expect((await run('url')).text).toContain('/ec');
+    } finally {
+      for (const id of [a, b, c]) await run('closetab', [String(id)]);
+    }
+  }, 60_000);
+
   test('after every tab is closed outside browse, status and goto recover', async () => {
     const tabs = (await run('tabs')).text;
     const ids = [...tabs.matchAll(/\[(\d+)\]/g)].map(m => Number(m[1]));
