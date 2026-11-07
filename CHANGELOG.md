@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.55.26 — 2026-11-07
+
+### Added
+
+- **A craft floor for generated pages.** `/design-html` builds to it and
+  `/design-review` audits against it: proof (testimonials, logos, numbers,
+  ratings, prices) appears only when you supplied it, otherwise the page says
+  `[Needs proof: …]`; no placeholder people, round numbers or filler words; every
+  page has a title and description, favicon, skip link, landmarks, alt text,
+  real links and on-scale values, and motion never hides content. Each build
+  ends with a "Before this can ship" list of what is still open.
+- `/design-html` has a persuade-page path — a few intake questions, an
+  archetype, and every state of the primary action.
+
+### Changed
+
+- **`/design-review` bootstraps a test framework only when a fix needs one** — a
+  JS-behavior fix in a project with no known test command — and stages by name,
+  never with `git add -A`.
+- `/design-review` reads the project's tokens when there is no DESIGN.md, checks
+  that content renders without script or motion, and treats invented proof as a
+  finding to ask about, never something to fix. Exits ease out in both
+  `/design-review` and `/design-consultation`.
+
+## 1.55.25 — 2026-11-07
+
+### Changed
+
+- **`/cso` reads every runtime's skills and MCP configs.** Phase 8 scans the
+  skill roots of Claude Code, Codex, Copilot, Cursor and Kiro and every file
+  under them, not only `SKILL.md`, and asks who controls download
+  destinations, whether hooks interpolate tool input, and what environment
+  reaches network calls. `/cso` and `/mcp-review` read each runtime's MCP
+  client config through `npx`/`uvx`/`pipx`/`docker` wrappers, flag floating
+  and ranged pins, and list a launch spec they cannot parse instead of dropping
+  it.
+- **A daily `/cso` finding meets a supported bar.** Besides the 8/10 floor it
+  names the attacker-controlled entrypoint, the boundary crossed, the in-scope
+  impact and the controls checked; AWS posture findings fill those from the
+  account. Verifiers get the location and an invariant, are capped at three and
+  record dissent, and exclusions 3, 12 and 19 no longer contradict the
+  amplification and reachability rules.
+- **Scans stay on the host's side.** Dependency scanners read lockfiles only and
+  are run as their own binaries, optional scanners never update rules or
+  databases, environment variables are checked by name, webhooks get four
+  checks, `--paths` narrows the audit, and the saved report is private and kept
+  out of git.
+
 ## 1.55.24 — 2026-11-07
 
 ### Changed

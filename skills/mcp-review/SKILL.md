@@ -71,6 +71,8 @@ Record: entry file, transport (`stdio` or streamable HTTP; flag legacy SSE), the
 
 If no entry point is found, stop and ask the user where the server lives. Do not guess.
 
+**Launch specs.** Read every MCP client config in the repository that launches a server (a home-directory config only when the user asks): `.mcp.json`, `.claude/settings*.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`, the `[mcp_servers]` tables of `.codex/config.toml`, `.github/mcp.json` and any other MCP config under `.github/` (Copilot's). Read the package through its wrapper — `npx --package <pkg> <bin>` and `npx -p`, `uvx --from <pkg>`, `pipx run --spec <pkg>`, and for `docker run` skip the options before the image (`--rm -i -e X -v a:b`). A floating spec (`@latest`, no version, a dist-tag, an image tag without `@sha256:`, `uvx pkg` without `==<version>`): HIGH. A version range: MEDIUM. A launch spec you cannot parse is listed as REVIEW with its file and line, never executed and never dropped. A fix pins the version the team reviewed and already runs, never the registry's current latest looked up today.
+
 ---
 
 ## Step 2: Tool design
