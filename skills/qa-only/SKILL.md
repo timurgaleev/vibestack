@@ -146,7 +146,7 @@ This is the **primary mode** for developers verifying their work. When the user 
 Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced issues. Produce health score. Takes 5-15 minutes depending on app size.
 
 ### Quick (`--quick`)
-30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce a health score labelled partial coverage: the accessibility checks do not run, so Accessibility is `not run`. No detailed issue documentation.
+Smoke test on a soft 3-minute budget. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? At the cap, start nothing new and list the unfinished coverage (targets not visited, checks not run) in the report. Produce a health score labelled partial coverage: the accessibility checks do not run, so Accessibility is `not run`. No detailed issue documentation.
 
 ### Regression (`--regression <baseline>`)
 Run full mode, then compare with the prior baseline resolved at setup — `prior-baseline.json` in this run's directory, copied from the `--regression` path or the newest earlier run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
@@ -165,7 +165,7 @@ Run full mode, then compare with the prior baseline resolved at setup — `prior
 
 1. Find browse binary (see Setup above)
 2. Create this run's report directory (see Setup above)
-3. Copy report template from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/templates/qa-report-template.md` to `$REPORT_DIR`
+3. Copy report template from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/templates/qa-report-template.md` to `$REPORT_DIR`. If the template cannot be read (another host, a partial install), write the report without it: metadata, health score table, Top 3, console health, severity counts, then one entry per issue with severity, category, URL, repro steps and the fields in "Assemble the report from evidence".
 4. Start timer for duration tracking
 
 ### Phase 2: Authenticate (if needed)
@@ -229,7 +229,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
 $B console --errors
 ```
 
-Then follow the **per-page exploration checklist** (see `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/references/issue-taxonomy.md`):
+Then follow the **per-page exploration checklist** (see `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/references/issue-taxonomy.md`; the list below stands on its own when that file cannot be read):
 
 1. **Visual scan** — Look at the annotated screenshot for layout issues
 2. **Interactive elements** — Click buttons, links, controls. Do they work? (NON-LOCAL: consent first; never the logout/delete link class)
@@ -290,6 +290,20 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 {{include lib/snippets/test-value-bar.md}}
 
 From the browser alone you can answer `protects` (the user-visible behavior) and `fails_when` (the repro). This skill never reads source, so write `why_new=unchecked` and `seam=unchecked`; `/qa` answers those before writing the test. Propose nothing for a purely visual or content issue.
+
+### Assemble the report from evidence
+
+Before Phase 6, rebuild every issue entry from what this run recorded — screenshots, `snapshot -D` diffs, console lines, command output — not from memory of the session:
+
+- **Observed** — one sentence of what happened, in the evidence's own terms: the console message verbatim, the status code, the text on screen.
+- **Expected** — what should have happened, and where that expectation comes from (the PR description, the page's own label, the contract map).
+- **Evidence** — the screenshot paths and the exact output lines that show it.
+- **Confirmation** — `replayed` when rule 2's replay failed the same way; otherwise `observed once`.
+- **Hypothesis** — optional, a guess at the cause from what the browser showed, labelled as a guess and kept out of Observed.
+
+Top 3, the severity summary and any one-line summary quote each issue's Observed sentence verbatim, so no summary states more than its issue entry does. A proposed regression test asserts on the channel the bug was seen on — the console error, the response, the rendered element — because a test on another channel can pass while the bug is still there.
+
+Last, scrub the report: a claim of frequency ("always", "intermittent", "3 of 5") or of a check having run ("no console errors", "all links work") that no command in this run backs is backed now by running the command, rewritten to what did run, or marked `not run`.
 
 ### Phase 6: Wrap Up
 
@@ -352,7 +366,7 @@ From the browser alone you can answer `protects` (the user-visible behavior) and
 ## Important Rules
 
 1. **Repro is everything.** Every issue needs at least one screenshot. No exceptions.
-2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
+2. **Verify before documenting.** Replay the exact command or interaction from the same starting state (same URL, auth and inputs, after a reload) to confirm it is reproducible, not a fluke. It fails the same way → `replayed`; it does not → the issue stays `observed once`, never confirmed. Never replay a non-idempotent action (a submit, send, purchase or delete) on a non-local target: a reload restores the page, not the server state, so the replay repeats the action. Such an issue stays `observed once`.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
 5. **Test as a user, not a developer.** The one exception is diff-aware mode: read the branch diff and the route, controller and view files it names only to work out which pages to test. Never read source to explain, diagnose or fix a bug.
@@ -374,10 +388,19 @@ Write the report to both local and project-scoped locations:
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
-echo "PROJECT_DIR: ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+PROJECT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
+mkdir -p "$PROJECT_DIR"
+_user="$(printf '%s' "$(id -un 2>/dev/null)" | tr -c '[:alnum:]-' '-')"
+[ -n "$_user" ] || _user="unknown-user"
+_branch="$(printf '%s' "$(git symbolic-ref --short -q HEAD 2>/dev/null)" | tr -c '[:alnum:]-' '-')"
+[ -n "$_branch" ] || _branch="detached"
+_base="$PROJECT_DIR/${_user}-${_branch}-test-outcome-$(date -u +%Y%m%dT%H%M%SZ)"
+OUTCOME_FILE="$_base.md"; _n=2
+while [ -e "$OUTCOME_FILE" ]; do OUTCOME_FILE="$_base-$_n.md"; _n=$((_n + 1)); done
+echo "OUTCOME_FILE: $OUTCOME_FILE"
 ```
-Write to `<PROJECT_DIR>/{user}-{branch}-test-outcome-{datetime}.md`, where `<PROJECT_DIR>` is the path the block above printed on its `PROJECT_DIR:` line.
+Write the test outcome to the path printed on the `OUTCOME_FILE:` line.
 
 ### Output Structure
 

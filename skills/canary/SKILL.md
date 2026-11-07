@@ -72,12 +72,11 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
+{{include lib/snippets/base-branch-detect.md}}
 
-If all fail, fall back to `main`.
+/canary reads no diff, so a `BASE_CONTAINS_HEAD` line (a merged branch still checked
+out) is not a stop here: take the base from its `origin/<name>`, say so in one line,
+and carry on.
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -270,9 +269,11 @@ filtered set. Always include the homepage. Present the page list via AskUserQues
 - B) Add more pages (user specifies)
 - C) Monitor homepage only (quick check)
 
-### Phase 4: Pre-Deploy Snapshot (if no baseline exists)
+### Phase 4: Monitoring-Start Reference (if no baseline exists)
 
-If no `baseline.json` exists, take a quick snapshot now as a reference point.
+If no `baseline.json` exists, take a snapshot now as the monitoring-start reference. It
+is taken after the deploy, not before it: an error the deploy already introduced is in
+it and will never read as new. The report says so (see Phase 6).
 
 For each page to monitor:
 
@@ -295,7 +296,7 @@ Run the link check on the `links` output. Collect the same fields as the baselin
 
 ### Phase 5: Continuous Monitoring Loop
 
-Monitor for the specified duration. Every 60 seconds, check each page:
+Monitor for the specified duration in rounds; each round checks every page:
 
 ```bash
 B='<BROWSE_BIN>'
@@ -309,6 +310,15 @@ $B links
 
 Run the link check on the `links` output and the asset and stream probes. Keep only
 `[error]` console lines.
+
+**Cadence.** Before the first round, record the start time and the deadline (start plus
+the duration) with `date -u +%s`, and note each round's start and end the same way.
+After a round, wait `max(0, 60 − <round seconds>)` seconds in a bounded background wait —
+foreground `sleep` is blocked on some hosts, so run the `sleep` as a background command
+whose timeout is a few seconds longer, and start the next round when it exits.
+Rounds never overlap: a round that took 60 seconds or more is followed straight away by
+the next. Once the deadline has passed, finish the current round and stop; never start a
+round after it, except the one confirming round a pending CRITICAL or HIGH finding gets. The report gives the cadence actually achieved, not the nominal one.
 
 After each check, compare results against `baseline.json` (or `pre-monitor.json`):
 
@@ -324,14 +334,21 @@ After each check, compare results against `baseline.json` (or `pre-monitor.json`
 
 **Don't cry wolf.** Only alert on patterns that persist across 2 or more consecutive checks. A single transient network blip is not an alert.
 
-**If a CRITICAL or HIGH alert is detected**, immediately notify the user via AskUserQuestion:
+**Notify once confirmed.** A CRITICAL or HIGH finding reaches the user only when it is
+confirmed on two consecutive checks. A first occurrence is **pending**: record its time,
+page and evidence, say nothing, and run the next check; if that check clears it, it goes
+under `observations`. A finding still pending at the deadline gets one more confirming round,
+so a short run can still alert. Under `--quick` there is no second check:
+report each CRITICAL or HIGH finding of the single pass as a finding and set the status
+from it. On confirmation, notify via AskUserQuestion:
 
 ```
 CANARY ALERT
 ════════════
-Time:     [timestamp, e.g., check #3 at 180s]
+Time:     [timestamp, e.g., confirmed on check #4 at 240s]
+Seen:     [check #3 and check #4]
 Page:     [page URL]
-Type:     [CRITICAL / HIGH / MEDIUM]
+Type:     [CRITICAL / HIGH]
 Finding:  [what changed — be specific]
 Evidence: [screenshot path]
 Baseline: [baseline value]
@@ -339,9 +356,9 @@ Current:  [current value]
 ```
 
 - **Context:** Canary monitoring detected an issue on [page] after [duration].
-- **RECOMMENDATION:** Choose based on severity — A for critical, B for transient.
+- **RECOMMENDATION:** Choose based on severity — A for CRITICAL, B to keep watching a HIGH.
 - A) Investigate now — stop monitoring, focus on this issue
-- B) Continue monitoring — this might be transient (wait for next check)
+- B) Continue monitoring — watch whether it clears
 - C) Rollback — revert the deploy immediately
 - D) Dismiss — false positive, continue monitoring
 
@@ -356,7 +373,8 @@ status from confirmed alerts only:
 
 A confirmed alert that later clears stays in the report with `resolved: true`; it still
 counts toward the status. Findings seen on a single check never confirm — they go under
-`observations`.
+`observations`. Under `--quick` the single pass is the whole run: its findings count as
+confirmed for the status (a CRITICAL makes it BROKEN), and the report says they were seen once.
 
 After monitoring completes (or if the user stops early), produce a summary:
 
@@ -366,6 +384,8 @@ CANARY REPORT — [url]
 Duration:     [X minutes]
 Pages:        [N pages monitored]
 Checks:       [N total checks performed]
+Cadence:      [N rounds, mean interval between round starts Xs]
+Reference:    [baseline.json from <timestamp> / monitoring-start reference]
 Status:       [HEALTHY / DEGRADED / BROKEN]
 
 Per-Page Results:
@@ -380,6 +400,9 @@ Screenshots:   .vibestack/canary-reports/screenshots/
 
 VERDICT: [DEPLOY IS HEALTHY / DEPLOY HAS ISSUES — details above]
 ```
+
+With the monitoring-start reference, add one line under `Reference:`: "Errors already
+present when monitoring started cannot be detected without `--baseline`."
 
 Save report to `.vibestack/canary-reports/{date}-canary.md` and `.vibestack/canary-reports/{date}-canary.json`. The JSON report has this shape:
 
@@ -453,7 +476,7 @@ instead of a blank baseline.
 
 ## Important Rules
 
-- **Speed matters.** Start monitoring within 30 seconds of invocation. Don't over-analyze before monitoring.
+- **Speed matters.** Start monitoring as soon as the pages are chosen. Don't over-analyze before monitoring.
 - **Alert on changes, not absolutes.** Compare against baseline, not industry standards.
 - **Screenshots are evidence.** Every alert includes a screenshot path. No exceptions.
 - **Transient tolerance.** Only alert on patterns that persist across 2+ consecutive checks.

@@ -103,12 +103,14 @@ jobs:
           - test-skill-usage.sh
           - test-compact-snapshot.sh
           - test-jira-adapter.sh
+          - test-spec-execute.sh
           - test-snippet-text.sh
           - test-aws-context.sh
           - test-base-branch-detect.sh
           - test-unslop-gate.sh
           - test-qa-rubric.sh
           - test-office-hours-contract.sh
+          - test-setup-deploy-config.sh
     steps:
       - uses: actions/checkout@v4
 

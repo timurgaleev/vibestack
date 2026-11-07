@@ -1,5 +1,115 @@
 # Changelog
 
+## 1.55.35 — 2026-11-07
+
+### Fixed
+
+- **`/qa` and `/qa-only` report only what the run recorded.** Each issue lists
+  Observed, Expected, Evidence, Confirmation (`replayed` or `observed once`)
+  and an optional Hypothesis kept out of Observed; summary lines quote the
+  Observed sentence verbatim, and a proposed regression test asserts on the
+  channel where the bug was seen. A claim of frequency, or of a check having
+  run, that no command backs is re-run, rewritten or marked `not run`.
+- **An issue is confirmed by replaying it.** Rule 2, and `/qa` step 8a before any
+  fix, replay the exact interaction from the same starting state; an issue
+  that does not reproduce stays `observed once` and is not fixed. A submit,
+  send, purchase or delete on a live target is never replayed.
+- **Quick mode runs on a soft 3-minute budget** instead of a 30-second smoke test,
+  and reports the coverage left unfinished at the cap.
+- **The test-outcome filename is sanitised**, UTC-stamped, suffixed on collision
+  and printed as `OUTCOME_FILE:`. When the report template or taxonomy cannot
+  be read, the skills fall back to an inline list of report fields.
+
+## 1.55.34 — 2026-11-07
+
+### Fixed
+
+- **`/setup-deploy` asks instead of assuming.** With several platforms detected it
+  asks which one serves production and confirms the project type; Heroku and
+  Railway go through the manual flow with the platform prefilled. "Not deployed
+  yet" stops without writing anything, and "never deploys" records `none`.
+  Step 4 offers only the merge methods the repository allows, resolves the
+  default branch instead of hard-coding `main`, and shows the full block for
+  confirmation. Per platform: GitHub Actions reads one named workflow's runs,
+  Vercel counts as auto-deploy only when Git-connected, the Netlify URL is
+  confirmed, and Fly's `/health` is recorded only after a 2xx probe.
+- **`/land-and-deploy` understands `none`.** A project `/setup-deploy` recorded as
+  never deploying prints `NO_DEPLOY:` and finishes as MERGED — NO DEPLOY NEEDED
+  instead of probing the literal `none`.
+- **`/canary` alerts only on confirmed findings.** A CRITICAL or HIGH finding is
+  reported after it repeats on two consecutive checks; a finding still pending
+  at the deadline gets one more confirming round, and `--quick` counts its
+  single pass. Monitoring runs on a stated cadence with a bounded wait between
+  rounds and stops at the deadline; the report gives the cadence achieved and
+  says that errors present at monitoring start need `--baseline` to be seen.
+
+## 1.55.33 — 2026-11-07
+
+### Fixed
+
+- **A suite that ran nothing no longer passes `/ship`.** Each test lane reports
+  the runner's own count (`tests_ran=N|0|unknown`) from its summary line (jest,
+  pytest, rspec, bun, go, unittest, node --test, cargo). A count of 0 is an
+  in-branch failure, a re-run lane is counted again, and the PR Test plan shows
+  the count for each lane.
+- **Edits after the review go back through review.** A new Step 16.0 compares the
+  reviewed tree and each lane's tree with the tree about to ship. CHANGELOG,
+  VERSION, TODOS and a manifest whose only change is its own version don't
+  count; anything else, or an unknown comparison, sends the ship back through
+  Steps 9-11. No lane allow-lists a manifest.
+- **Every branch diff, log and worktree reads the fetched `origin/<base>`.**
+- **Version files move together.** `vibe-version-bump` writes VERSION,
+  package.json and npm lockfiles together or not at all, the queue pick excludes
+  the branch's own PR, and CHANGELOG entries copy the file's own heading format.
+- **A failure is pre-existing only when proven red on the base branch** in a
+  detached worktree; green at base or an unavailable proof means in-branch.
+- **Bootstrap no longer reverts manifests or deletes failing tests**, and stages
+  only named files. Lane and eval logs go to a private temp directory, and long
+  eval suites are polled until they exit.
+
+## 1.55.32 — 2026-11-07
+
+### Changed
+
+- **`/spec --execute` hands work to a bounded executor.** A spawn gate refuses
+  when the session is not interactive, when the session-kind helper is missing,
+  or when the repo has no `CLAUDE.md` or `.claude/`; the spawn block re-checks
+  the session kind itself. The child reads an executor brief (baseline suite
+  first, red then green per acceptance criterion, a progress file re-read after
+  compaction, no commits, pushes or PRs), runs `claude -p` with a fixed tool
+  grant, no MCP servers, `git commit`/`git push`/`gh pr` denied, and stops at
+  USD 5 or 200 turns (`VIBE_SPEC_EXECUTE_USD`, `VIBE_SPEC_EXECUTE_TURNS`). Its
+  output goes to a log beside the archive.
+- **`/spec` sets a full contract for the implementer.** Section 11 carries the
+  shared test value bar, every Testing Plan row has a `Value:` card and a
+  `Test seams` row, and the issue template gains `## Rules for the implementing
+  agent`.
+- **`/spec` seeds from context.** A prior conversation or design doc seeds Phase 1
+  and 2 answers, each tagged with its source and confirmed in one round. The
+  dedupe block prints its temp paths and cleans them up.
+
+## 1.55.31 — 2026-11-07
+
+### Changed
+
+- **The plan reviews check the plan against the real surface.** `/plan-ceo-review`
+  0B and `/plan-eng-review` Step 0 end in a `REALITY:` line: every CLI flag,
+  route and config key the plan relies on as already existing is checked
+  against `--help`, the route table or the schema. The completion summaries
+  report it and the `/autoplan` pre-gate checks it.
+- **`/plan-eng-review` and `/autoplan` read the CEO plan.** The Design Doc Check
+  prefers a repo `DESIGN.md` or `docs/designs/` doc on a tie, and finds this
+  branch's newest CEO plan even when another branch wrote a newer one. Eng
+  reads its scope decisions as data and asks before using another branch's
+  plan; `/autoplan` ignores another branch's plan and says so.
+- **Completeness means covering the requirement, not the bigger diff.** CEO TODO
+  option C keeps work only inside accepted scope, eng's build-it-now option
+  records scope without editing product code, and both preference lists gain a
+  data-model rule. A hot path with no budget or measurement step is a
+  performance finding.
+- **The `/autoplan` final gate opens with urgent findings outside the plan**, and
+  its CEO checklist follows the CEO skill's real step order.
+
 ## 1.55.30 — 2026-11-07
 
 ### Added

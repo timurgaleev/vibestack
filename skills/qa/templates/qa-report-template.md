@@ -30,9 +30,9 @@
 
 ## Top 3 Things to Fix
 
-1. **{ISSUE-NNN}: {title}** — {one-line description}
-2. **{ISSUE-NNN}: {title}** — {one-line description}
-3. **{ISSUE-NNN}: {title}** — {one-line description}
+1. **{ISSUE-NNN}: {title}** — {its Observed sentence, verbatim}
+2. **{ISSUE-NNN}: {title}** — {its Observed sentence, verbatim}
+3. **{ISSUE-NNN}: {title}** — {its Observed sentence, verbatim}
 
 ## Console Health
 
@@ -60,7 +60,11 @@
 | **Category** | visual / functional / ux / content / performance / console / accessibility |
 | **URL** | {page URL} |
 
-**Description:** {What is wrong, expected vs actual.}
+**Observed:** {one sentence, in the evidence's own terms}
+**Expected:** {what should happen, and where that expectation comes from}
+**Evidence:** {screenshot paths, console or command output lines}
+**Confirmation:** replayed / observed once
+**Hypothesis:** {optional guess at the cause, labelled as one}
 
 **Repro Steps:**
 

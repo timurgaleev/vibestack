@@ -199,7 +199,7 @@ Never skip a verification step because a prior `/ship` run already performed it.
 
 2. Run `git status` (never use `-uall`). Uncommitted changes are always included — no need to ask.
 
-3. Run `git diff <base>...HEAD --stat` and `git log <base>..HEAD --oneline` to understand what's being shipped.
+3. Run `git diff origin/<base>...HEAD --stat` and `git log origin/<base>..HEAD --oneline` to understand what's being shipped.
 
 4. Check review readiness:
 
@@ -263,7 +263,7 @@ If the Eng Review is NOT "CLEAR":
 
 Print: "No prior eng review found — ship will run its own pre-landing review in Step 9."
 
-Check diff size: `git diff <base>...HEAD --stat | tail -1`. If the diff is >200 lines, add: "Note: This is a large diff. Consider running `/plan-eng-review` or `/autoplan` for architecture-level review before shipping."
+Check diff size: `git diff origin/<base>...HEAD --stat | tail -1`. If the diff is >200 lines, add: "Note: This is a large diff. Consider running `/plan-eng-review` or `/autoplan` for architecture-level review before shipping."
 
 If CEO Review is missing, mention as informational ("CEO Review not run — recommended for product changes") but do NOT block.
 
@@ -430,12 +430,13 @@ If multiple runtimes detected (monorepo) → ask which runtime to set up first, 
 
 ### B4. Install and configure
 
+0. Before installing, record `git status --porcelain` and `git diff -- <manifests and lockfiles>`: the tree may already hold uncommitted branch work in those files.
 1. Install the chosen packages (npm/bun/gem/pip/etc.)
 2. Create minimal config file
 3. Create directory structure (test/, spec/, etc.)
 4. Create one example test matching the project's code to verify setup works
 
-If package installation fails → debug once. If still failing → revert with `git checkout -- package.json package-lock.json` (or equivalent for the runtime). Warn user and continue without tests.
+If package installation fails → debug once. If still failing → undo only what the bootstrap added, compared against that record: delete files it created, reverse its own hunks in the manifests. Never check out or restore a whole manifest — that also erases the branch's uncommitted edits. Warn user and continue without tests.
 
 ### B4.5. First real tests
 
@@ -444,7 +445,7 @@ Generate 3-5 real tests for existing code:
 1. **Find recently changed files:** `git log --since=30.days --name-only --format="" | sort | uniq -c | sort -rn | head -10`
 2. **Prioritize by risk:** Error handlers > business logic with conditionals > API endpoints > pure functions
 3. **For each file:** Write one test that tests real behavior with meaningful assertions. Never `expect(x).toBeDefined()` — test what the code DOES.
-4. Run each test. Passes → keep. Fails → fix once. Still fails → delete silently.
+4. Run each test. Passes → keep. Fails → fix once. Still fails → drop it and list it in the bootstrap report with its failing output (it may have found a real bug).
 5. Generate at least 1 test, cap at 5.
 
 Never import secrets, API keys, or credentials in test files. Use environment variables or test fixtures.
@@ -456,7 +457,7 @@ Never import secrets, API keys, or credentials in test files. Use environment va
 {detected test command}
 ```
 
-If tests fail → debug once. If still failing → revert all bootstrap changes and warn user.
+If tests fail → debug once. If still failing → undo the bootstrap's own changes as in B4 and warn user.
 
 ### B5.5. CI/CD pipeline
 
@@ -480,7 +481,7 @@ If non-GitHub CI detected → skip CI generation with note: "Detected {provider}
 First check: If TESTING.md already exists → read it and update/append rather than overwriting. Never destroy existing content.
 
 Write TESTING.md with:
-- Philosophy: "100% test coverage is the key to great vibe coding. Tests let you move fast, trust your instincts, and ship with confidence — without them, vibe coding is just yolo coding. With tests, it's a superpower."
+- Philosophy: tests are what let you move fast and ship with confidence
 - Framework name and version
 - How to run tests (the verified command from B5)
 - Test layers: Unit tests (what, where, when), Integration tests, Smoke tests, E2E tests
@@ -490,16 +491,10 @@ Write TESTING.md with:
 
 First check: If CLAUDE.md already has a `## Testing` section → skip. Don't duplicate.
 
-Append a `## Testing` section:
-- Run command and test directory
-- Reference to TESTING.md
-- Test expectations:
-  - 100% test coverage is the goal — tests make vibe coding safe
-  - When writing new functions, write a corresponding test
-  - When fixing a bug, write a regression test
-  - When adding error handling, write a test that triggers the error
-  - When adding a conditional (if/else, switch), write tests for BOTH paths
-  - Never commit code that makes existing tests fail
+Append a `## Testing` section: the run command, the test directory, a pointer to
+TESTING.md, and the expectations — a test for every new function, a regression test
+for every bug fix, a test that triggers each new error path, both sides of every
+conditional, and no commit that breaks an existing test.
 
 ### B8. Commit
 
@@ -507,10 +502,8 @@ Append a `## Testing` section:
 git status --porcelain
 ```
 
-Only commit if there are changes. Stage all bootstrap files (config, test directory, TESTING.md, CLAUDE.md, .github/workflows/test.yml if created):
+Only commit if there are changes. Stage the bootstrap files by name — `git add -- <config> <test dir> TESTING.md CLAUDE.md <workflow if created> <manifests>` — then check `git diff --cached --name-only`. If any other path is staged, STOP and show it. Otherwise:
 `git commit -m "chore: bootstrap test framework ({framework name})"`
-
----
 
 ---
 
@@ -549,26 +542,28 @@ Run independent suites in parallel, one lane per suite. Substitute each lane's
 label and exact command; a single-suite project has one lane:
 
 ```bash
-# Keyed to the branch, not a fixed name: two /ship runs in sibling worktrees
-# would otherwise write into the same file and each read the other's results.
-_SHIP_LOG="/tmp/vibestack-ship-$(git branch --show-current | tr '/' '-')"
+# A private directory per run: sibling worktrees and other users never share it.
+_SHIP_LOG=$(mktemp -d "${TMPDIR:-/tmp}/vibestack-ship-XXXXXXXX"); echo "SHIP_LOG: $_SHIP_LOG"
 # Each lane writes its log and its OWN exit status to separate files. Piping the
 # runner through `tee` would report tee's status, so a red suite reads as green.
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-rm -f "$_SHIP_LOG"-*.exit  # an earlier run's lane must not report for this one
-# vibe-evidence runs the lane unchanged and exits with its status, and records
-# the command, exit and tree fingerprint so Step 16 can reuse a run of this exact
-# content instead of re-judging whether anything changed.
+# vibe-evidence exits with the lane's status and records command, exit and tree for Step 16.
 _EV=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence
-{ ( "$_EV" run --skill ship --label <lane1> -- '<test command for lane 1>' ) > "$_SHIP_LOG-<lane1>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane1>.exit"; } &
-{ ( "$_EV" run --skill ship --label <lane2> -- '<test command for lane 2>' ) > "$_SHIP_LOG-<lane2>.txt" 2>&1; echo $? > "$_SHIP_LOG-<lane2>.exit"; } &
+{ ( "$_EV" run --skill ship --label <lane1> -- '<test command for lane 1>' ) > "$_SHIP_LOG/<lane1>.txt" 2>&1; echo $? > "$_SHIP_LOG/<lane1>.exit"; } &
+{ ( "$_EV" run --skill ship --label <lane2> -- '<test command for lane 2>' ) > "$_SHIP_LOG/<lane2>.txt" 2>&1; echo $? > "$_SHIP_LOG/<lane2>.exit"; } &
 wait
 # Walk the lanes that were LAUNCHED, not the exit files that happen to exist: a
 # lane killed before its status write leaves no file, and globbing would skip it.
+# tests_ran is the runner's own count: a suite that collected nothing exits 0 too.
 for _lane in <lane1> <lane2>; do
-  _f="$_SHIP_LOG-$_lane.exit"
+  _f="$_SHIP_LOG/$_lane.exit"
   if [ -s "$_f" ]; then _st=$(cat "$_f"); else _st=MISSING; fi
-  echo "LANE: $_lane exit=$_st log=$_SHIP_LOG-$_lane.txt"
+  _n=$(awk '/No tests found|no tests ran|\[no test files\]/ {z=1} /^ok / {g=1}
+    /^Tests:/ && match($(0), /[0-9]+ total/) {n=substr($(0),RSTART,RLENGTH)+0; c=1}
+    /^=+ .* in [0-9.]+s/ {s=$(0); p=0; while (match(s, /[0-9]+ (passed|failed)/)) {p+=substr(s,RSTART,RLENGTH)+0; s=substr(s,RSTART+RLENGTH)} n=p; c=1}
+    match($(0), /^[0-9]+ examples?,/) || match($(0), /^Ran [0-9]+ test/) || match($(0), /^[^[:alnum:]]*tests [0-9]+[[:space:]]*$/) {s=substr($(0),RSTART,RLENGTH); gsub(/[^0-9]/,"",s); n=s+0; c=1}
+    /^test result: / {s=$(0); while (match(s, /[0-9]+ (passed|failed)/)) {r+=substr(s,RSTART,RLENGTH)+0; s=substr(s,RSTART+RLENGTH)} n=r; c=1}
+    END {print c ? n : (z && !g ? 0 : "unknown")}' "$_SHIP_LOG/$_lane.txt" 2>/dev/null)
+  echo "LANE: $_lane exit=$_st tests_ran=${_n:-unknown} log=$_SHIP_LOG/$_lane.txt"
 done
 ```
 
@@ -582,14 +577,16 @@ braces, same exit files); Step 16 then re-runs them.
 
 After all lanes complete, read each `LANE:` line. **A lane passes only when its
 `exit=` is `0`.** A missing exit file, an empty one, or any non-zero value is a
-failure, whatever the log text says. Read the log files for failure detail. Use
-the same lane labels and exact commands again in Step 16.
+failure, whatever the log text says. **`tests_ran=0` is a failure too:** the runner
+collected nothing, so nothing was verified — treat it as in-branch (Step T2).
+`tests_ran=unknown` (a runner whose summary is not recognized) passes, and that
+lane's Test plan line says `count unavailable`. Read the log files for failure
+detail. Use the same lane labels and exact commands again in Step 16; keep the
+printed `SHIP_LOG:` path for Step 6.
 
-**If any test fails:** Do NOT immediately stop. Apply the Test Failure Ownership Triage:
+**If any test fails, do NOT immediately stop.** Determine ownership first:
 
 ## Test Failure Ownership Triage
-
-When tests fail, do NOT immediately stop. First, determine ownership:
 
 ### Step T1: Classify each failure
 
@@ -600,12 +597,28 @@ For each failing test:
    git diff origin/<base>...HEAD --name-only
    ```
 
-2. **Classify the failure:**
-   - **In-branch** if: the failing test file itself was modified on this branch, OR the test output references code that was changed on this branch, OR you can trace the failure to a change in the branch diff.
-   - **Likely pre-existing** if: neither the test file nor the code it tests was modified on this branch, AND the failure is unrelated to any branch change you can identify.
-   - **When ambiguous, default to in-branch.** It is safer to stop the developer than to let a broken test ship. Only classify as pre-existing when you are confident.
+2. **In-branch** if the failing test file or the code it exercises changed on this
+   branch, or the failure traces to a change in the diff → Step T2.
 
-   This classification is heuristic — use your judgment reading the diff and the test output. You do not have a programmatic dependency graph.
+3. **Anything else is pre-existing only by evidence.** Prove it at base: run the failing
+   test files (not the whole suite) in a detached worktree of the base branch:
+
+   ```bash
+   _BW=$(mktemp -d "${TMPDIR:-/tmp}/vibestack-ship-base-XXXXXXXX")
+   if git worktree add -q --detach "$_BW/wt" origin/<base> 2>/dev/null; then
+     ( cd "$_BW/wt" && bash -c '<failing test command>' ) > "$_BW/log" 2>&1; echo "BASE_EXIT: $?"
+     git worktree remove --force "$_BW/wt"
+   else
+     echo "BASE_EXIT: unavailable"
+   fi
+   echo "BASE_LOG: $_BW/log"
+   ```
+
+   - **Red at base** — non-zero, and `BASE_LOG` shows the same tests failing on their
+     own assertions → pre-existing, confirmed (Step T3). Optionally rerun that file 10×
+     at base with retries off and report the pass rate.
+   - **Green at base** (`BASE_EXIT: 0`) → this branch broke it: in-branch, Step T2.
+   - **Unavailable** — no base ref, the worktree failed, exit 127, or a failure from a missing untracked dependency (`node_modules`, `.venv`, build output) → print "base proof unavailable (<reason>)" and treat it as in-branch.
 
 ### Step T2: Handle in-branch failures
 
@@ -613,38 +626,24 @@ For each failing test:
 
 ### Step T3: Handle pre-existing failures
 
-Check `REPO_MODE` from the preamble output.
+Use AskUserQuestion. Check `REPO_MODE` from the preamble output: offer B only when it
+is `collaborative` or `unknown`, and recommend A for `solo` (you are the only one who
+will fix it), B otherwise (the right person fixes it).
 
-**If REPO_MODE is `solo`:**
-
-Use AskUserQuestion:
-
-> These test failures appear pre-existing (not caused by your branch changes):
+> These test failures fail on <base> too (proven in a base worktree), so this branch did not cause them:
 >
-> [list each failure with file:line and brief error description]
+> [list each failure with file:line, brief error description and BASE_EXIT]
 >
-> Since this is a solo repo, you're the only one who will fix these.
->
-> RECOMMENDATION: Choose A — fix now while the context is fresh. Completeness: 9/10.
+> RECOMMENDATION: Choose <A|B> — <reason>. Completeness: 9/10.
 > A) Investigate and fix now (human: ~2-4h / CC: ~15min) — Completeness: 10/10
-> B) Add as P0 TODO — fix after this branch lands — Completeness: 7/10
-> C) Skip — I know about this, ship anyway — Completeness: 3/10
-
-**If REPO_MODE is `collaborative` or `unknown`:**
-
-Use AskUserQuestion:
-
-> These test failures appear pre-existing (not caused by your branch changes):
->
-> [list each failure with file:line and brief error description]
->
-> This is a collaborative repo — these may be someone else's responsibility.
->
-> RECOMMENDATION: Choose B — assign it to whoever broke it so the right person fixes it. Completeness: 9/10.
-> A) Investigate and fix now anyway — Completeness: 10/10
 > B) Blame + assign GitHub issue to the author — Completeness: 9/10
 > C) Add as P0 TODO — Completeness: 7/10
 > D) Skip — ship anyway — Completeness: 3/10
+
+**Waivers.** A Skip or TODO answer from an earlier `/ship` run is reused only for the
+same failures proven pre-existing in this run; cite that approval and the failing
+counts. A waiver is never FRESH and never all-green: the lane stays unticked in the
+Test plan, with the waiver beside it.
 
 ### Step T4: Execute the chosen action
 
@@ -768,23 +767,22 @@ eval judges, fixtures and harness code.
 When selection is uncertain, include every plausibly affected suite —
 over-testing is better than missing a regression.
 
-**Example only — a Rails app with `bin/test-lane` and `test/evals/*_eval_runner.rb`:**
-its prompt paths are `app/services/*_prompt_builder.rb`, the generation / writer /
-designer / evaluator / scorer / classifier / analyzer services, prompt-ish
-concerns, `config/system_prompts/*.txt` and `test/evals/**/*`. Each runner
-declares `PROMPT_SOURCE_FILES`; `grep -l "<changed_file_basename>"
-test/evals/*_eval_runner.rb` finds the affected suites, and shared judge /
-support / fixture changes affect every suite that imports them. Its pre-merge
-tier is `EVAL_JUDGE_TIER=full`; do not substitute a cheaper development tier.
-None of these paths or commands apply to a repo that does not have them.
+**Example only — a Rails app whose `test/evals/*_eval_runner.rb` each declare
+`PROMPT_SOURCE_FILES`:** `grep -l "<changed_file_basename>" test/evals/*_eval_runner.rb`
+finds the affected suites, shared judge/fixture changes affect every suite, and the
+pre-merge tier is `EVAL_JUDGE_TIER=full`, never a cheaper one. None of these paths or
+commands apply to a repo that does not have them.
 
-**3. Run the selected command and keep its exit status:**
+**3. Run the selected command and keep its exit status** (`<SHIP_LOG>` is Step 5's printed path):
 
 ```bash
-_SHIP_LOG="/tmp/vibestack-ship-$(git branch --show-current | tr '/' '-')"
-set -o pipefail
-<project eval command> 2>&1 | tee "$_SHIP_LOG-evals.txt"
+( bash -c '<project eval command>' ) > '<SHIP_LOG>/evals.txt' 2>&1; echo "EVAL_EXIT: $?"
 ```
+
+A suite that can run past ~10 minutes outlives the turn and dies with it. Start it
+detached instead — `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-detach" start --label evals -- bash -c '<project eval command>'` —
+and poll `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-detach" status <id>` until it prints `exit:<n>`.
+Only `exit:0` passes; `died` fails, and `running` is not done — silence is not success.
 
 Respect the project's concurrency and retry policy. Suites that share a lane run
 sequentially; if one fails, stop before starting the next paid suite.
@@ -810,9 +808,9 @@ run the work inline instead unless the step's own failure fallback says so.
 
 **Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent runs the coverage audit in a fresh context window — the parent only sees the conclusion, not intermediate file reads. This is context-rot defense.
 
-**Subagent prompt:** Pass the following instructions to the subagent, with `<base>` substituted with the base branch:
+**Subagent prompt:** Pass the following instructions to the subagent, with `<base>` substituted with the base branch and `<test command>` with Step 4's command:
 
-> You are running a ship-workflow test coverage audit. Run `git diff <base>...HEAD` as needed. Do not commit or push. You may write or extend test files only where substep 5 below permits; leave them in the working tree and list them in your JSON — the parent commits them in Step 15.
+> You are running a ship-workflow test coverage audit. Run `git diff origin/<base>...HEAD` as needed. Do not commit or push. You may write or extend test files only where substep 5 below permits; leave them in the working tree and list them in your JSON — the parent commits them in Step 15.
 >
 > Every changed path needs a test that would catch its regression — every untested path is a path where bugs hide and vibe coding becomes yolo coding. More tests is not the goal. Evaluate what was ACTUALLY coded (from the diff), not what was planned. Coverage means a test that would catch a regression, not a test that merely runs the line.
 
@@ -820,36 +818,11 @@ run the work inline instead unless the step's own failure fallback says so.
 
 {{include lib/snippets/implementer-dispatch-rules.md}}
 
-### Test Framework Detection
+### Test Framework
 
-Before analyzing coverage, detect the project's test framework:
-
-1. **Read CLAUDE.md** — look for a `## Testing` section with test command and framework name. If found, use that as the authoritative source.
-2. **If CLAUDE.md has no testing section, auto-detect:**
-
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Detect project runtime
-[ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django"
-{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
-[ -f package.json ] && echo "RUNTIME:node"
-{ [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f tox.ini ] || [ -f setup.cfg ]; } && echo "RUNTIME:python"
-[ -f go.mod ] && echo "RUNTIME:go"
-[ -f Cargo.toml ] && echo "RUNTIME:rust"
-[ -f pom.xml ] && echo "RUNTIME:jvm BUILD:maven"
-{ [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "RUNTIME:jvm BUILD:gradle"
-# Existing test evidence — config files, declared runners, AND test FILES.
-# Ecosystems that keep tests beside the source (Django, Go, Rust) have neither
-# a config file nor a tests/ directory, and reading their absence as "no tests"
-# is what sends a tested project into bootstrap.
-ls jest.config.* vitest.config.* playwright.config.* cypress.config.* .rspec pytest.ini tox.ini phpunit.xml* 2>/dev/null
-[ -f package.json ] && grep -q '"test"[[:space:]]*:' package.json && echo "SCRIPT:package.json test"
-[ -f Makefile ] && grep -qE '^(test|check):' Makefile && echo "TARGET:make test"
-git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\.py$|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
-[ -f Cargo.toml ] && git grep -lF '#[test]' -- 'src' >/dev/null 2>&1 && echo "TESTS:rust in-source"
-```
-
-3. **If no framework detected:** falls through to the Test Framework Bootstrap step (Step 4) which handles full setup.
+Step 4 already settled the test command and the parent passes it here as `<test command>`
+(it is also in CLAUDE.md's `## Testing` section). Do not detect or bootstrap a framework.
+With no test command, audit coverage only and write no tests.
 
 **0. Before/after test count:**
 
@@ -952,7 +925,7 @@ it. If it passes at HEAD, nothing is broken on that path: drop the regression la
 (keep it only as an ordinary test that clears the value bar). An import, fixture or
 environment error is a test defect, not proof: correct it once or drop it. When the
 base commit is reachable, run the same test there as a control
-(`git worktree add --detach <tmp> <base>`, copy the test and its fixtures in, run it,
+(`git worktree add --detach <tmp> origin/<base>`, copy the test and its fixtures in, run it,
 `git worktree remove --force <tmp>`); it must pass. A regression test red at base is
 invalid — drop the regression label or drop the test. A failure there from a missing
 untracked dependency (`node_modules`, `.venv`) is the scratch worktree, not the test:
@@ -1133,7 +1106,7 @@ this step.
 **Subagent prompt:** Pass these instructions to the subagent, substituting `<base>` and
 the bound plan's absolute path:
 
-> You are running a ship-workflow plan completion audit. The base branch is `<base>`. Use `git diff <base>...HEAD` to see what shipped. Do not commit or push — report only.
+> You are running a ship-workflow plan completion audit. The base branch is `<base>`. Use `git diff origin/<base>...HEAD` to see what shipped. Do not commit or push — report only.
 >
 > ### Plan input
 >
@@ -2235,20 +2208,10 @@ PKG_VERSION=""
 PKG_EXISTS=0
 if [ -f package.json ]; then
   PKG_EXISTS=1
-  if command -v node >/dev/null 2>&1; then
-    PKG_VERSION=$(node -e 'const p=require("./package.json");process.stdout.write(p.version||"")' 2>/dev/null)
-    PARSE_EXIT=$?
-  elif command -v bun >/dev/null 2>&1; then
-    PKG_VERSION=$(bun -e 'const p=require("./package.json");process.stdout.write(p.version||"")' 2>/dev/null)
-    PARSE_EXIT=$?
-  else
-    echo "ERROR: package.json exists but neither node nor bun is available. Install one and re-run."
+  PKG_VERSION=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version") or "")' package.json 2>/dev/null) || {
+    echo "ERROR: package.json is not valid JSON (or python3 is missing). Fix it before re-running /ship."
     exit 1
-  fi
-  if [ "$PARSE_EXIT" != "0" ]; then
-    echo "ERROR: package.json is not valid JSON. Fix the file before re-running /ship."
-    exit 1
-  fi
+  }
 fi
 echo "BASE: $BASE_VERSION  VERSION: $CURRENT_VERSION  package.json: ${PKG_VERSION:-<none>}"
 
@@ -2281,7 +2244,7 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
   (Step 19.5), use an unprefixed PR title in Step 19, and log `"version":null` in
   Step 20. Set `NEW_VERSION` to empty and carry `NO_VERSION` forward.
 - **FRESH** → proceed with the bump action below (steps 1–4).
-- **ALREADY_BUMPED** → skip the bump by default. When `BASE_VERSION` is empty (VERSION was added on this branch) there is no base slot to compare against: skip the queue-drift check and reuse `CURRENT_VERSION`. Otherwise check for queue drift first: call `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version"` with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`), compare its `.version` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
+- **ALREADY_BUMPED** → skip the bump by default. When `BASE_VERSION` is empty (VERSION was added on this branch) there is no base slot to compare against: skip the queue-drift check and reuse `CURRENT_VERSION`. Otherwise check for queue drift first: run step 3's block with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`) — it excludes this branch's own PR, whose claim is `CURRENT_VERSION` itself — and compare its `NEW_VERSION` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
 - **DRIFT_STALE_PKG** → a prior `/ship` bumped `VERSION` but failed to update `package.json`. Run the sync-only repair block below (after step 4). Do NOT re-bump. Reuse `CURRENT_VERSION` for CHANGELOG and PR body. (Queue check still runs in ALREADY_BUMPED terms after repair.)
 - **DRIFT_UNEXPECTED** → `/ship` has halted (exit 1). Resolve manually; /ship cannot tell which file is authoritative.
 
@@ -2309,9 +2272,14 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
    ```bash
    BUMP_LEVEL='<BUMP_LEVEL>'
    BASE_VERSION='<BASE_VERSION>'
+   # This branch's open PR claims its own VERSION; counting it would push the pick
+   # past itself. An array: zsh does not word-split ${_PR:+--exclude-pr "$_PR"}.
+   _PR=$(gh pr view --json number -q .number 2>/dev/null || true)
+   _X=(); [ -n "$_PR" ] && _X=(--exclude-pr "$_PR")
    QUEUE_JSON=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
      --base <base> \
      --bump "$BUMP_LEVEL" \
+     "${_X[@]}" \
      --current-version "$BASE_VERSION" 2>/dev/null || echo '{"offline":true}')
    NEW_VERSION=$(echo "$QUEUE_JSON" | jq -r '.version // empty')
    CLAIMED_COUNT=$(echo "$QUEUE_JSON" | jq -r '.claimed | length')
@@ -2331,7 +2299,7 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
      Each row comes from one `.claimed[]` object (`pr`, `branch`, `version`). Print every `.warnings[]` line under the table — a PR whose VERSION could not be read is a claim the pick did not see.
    - Validate `NEW_VERSION` against the shape the `VERSION` file already uses. If util returns an empty or malformed version, fall back to local bump.
 
-4. **Validate** `NEW_VERSION` and write it to **both** `VERSION` and `package.json`. This block runs only when `STATE: FRESH`. Replace `<NEW_VERSION>` with the version step 3 settled on (the printed `NEW_VERSION:`, or the local bump when it fell back).
+4. **Validate** `NEW_VERSION` and write it with `vibe-version-bump`, which moves `VERSION`, `package.json` and the npm lockfiles together or not at all. This block runs only when `STATE: FRESH`. Replace `<NEW_VERSION>` with the version step 3 settled on (the printed `NEW_VERSION:`, or the local bump when it fell back).
 
 ```bash
 NEW_VERSION='<NEW_VERSION>'
@@ -2342,65 +2310,41 @@ if ! printf '%s' "$NEW_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'
   echo "ERROR: NEW_VERSION ($NEW_VERSION) is not MAJOR.MINOR.PATCH[.MICRO]. Aborting."
   exit 1
 fi
-echo "$NEW_VERSION" > VERSION
-if [ -f package.json ]; then
-  if command -v node >/dev/null 2>&1; then
-    node -e 'const fs=require("fs"),p=require("./package.json");p.version=process.argv[1];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' "$NEW_VERSION" || {
-      echo "ERROR: failed to update package.json. VERSION was written but package.json is now stale. Fix and re-run — the new idempotency check will detect the drift."
-      exit 1
-    }
-  elif command -v bun >/dev/null 2>&1; then
-    bun -e 'const fs=require("fs"),p=require("./package.json");p.version=process.argv[1];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' "$NEW_VERSION" || {
-      echo "ERROR: failed to update package.json. VERSION was written but package.json is now stale."
-      exit 1
-    }
-  else
-    echo "ERROR: package.json exists but neither node nor bun is available."
-    exit 1
-  fi
-fi
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-version-bump" "$NEW_VERSION" || {
+  echo "ERROR: vibe-version-bump failed; no version file was changed. STOP."
+  exit 1
+}
 ```
 
-**DRIFT_STALE_PKG repair path** — runs when idempotency reports `STATE: DRIFT_STALE_PKG`. No re-bump; sync `package.json.version` to the current `VERSION` and continue. Reuse `CURRENT_VERSION` for CHANGELOG and PR body.
+**DRIFT_STALE_PKG repair path** — runs when idempotency reports `STATE: DRIFT_STALE_PKG`. No re-bump: move `package.json` and the lockfiles to the current `VERSION`, then reuse `CURRENT_VERSION` for CHANGELOG and PR body.
 
 ```bash
-REPAIR_VERSION=$(cat VERSION | tr -d '\r\n[:space:]')
-if ! printf '%s' "$REPAIR_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
-  echo "ERROR: VERSION file contents ($REPAIR_VERSION) are not MAJOR.MINOR.PATCH[.MICRO]. Refusing to propagate garbage into package.json. Fix VERSION manually, then re-run /ship."
-  exit 1
-fi
-if command -v node >/dev/null 2>&1; then
-  node -e 'const fs=require("fs"),p=require("./package.json");p.version=process.argv[1];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' "$REPAIR_VERSION" || {
-    echo "ERROR: drift repair failed — could not update package.json."
-    exit 1
-  }
-else
-  bun -e 'const fs=require("fs"),p=require("./package.json");p.version=process.argv[1];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' "$REPAIR_VERSION" || {
-    echo "ERROR: drift repair failed."
-    exit 1
-  }
-fi
-echo "Drift repaired: package.json synced to $REPAIR_VERSION. No version bump performed."
+REPAIR_VERSION=$(tr -d '\r\n[:space:]' < VERSION)
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-version-bump" "$REPAIR_VERSION" || { echo "ERROR: drift repair failed; nothing was changed. STOP."; exit 1; }
 ```
 
 ---
 
 ## Step 13: CHANGELOG (auto-generate)
 
-**NO_VERSION (Step 12):** skip this step — write no CHANGELOG entry or version header,
-and never create `CHANGELOG.md`.
+**NO_VERSION (Step 12), or no `CHANGELOG.md` at HEAD:** skip this step and print
+`CHANGELOG: skipped` — never create the file.
 
-1. Read `CHANGELOG.md` header to know the format.
+1. Read the top of `CHANGELOG.md`: the file header, and the heading format of its
+   newest release entry (for example `## 1.55.2 — 2026-10-15`). The new entry copies
+   that format exactly.
 
 2. **First, enumerate every commit on the branch:**
    ```bash
-   git log <base>..HEAD --oneline
+   git log origin/<base>..HEAD --oneline
    ```
-   Copy the full list. Count the commits. You will use this as a checklist.
+   Copy the full list. Count the commits. You will use this as a checklist. Merge
+   commits, version bumps and fix-ups to work introduced earlier on this branch need
+   no bullet of their own.
 
 3. **Read the full diff** to understand what each commit actually changed:
    ```bash
-   git diff <base>...HEAD
+   git diff origin/<base>...HEAD
    ```
 
 4. **Group commits by theme** before writing anything. Common themes:
@@ -2419,12 +2363,11 @@ and never create `CHANGELOG.md`.
      - `### Fixed` — bug fixes
      - `### Removed` — removed features
    - Write concise, descriptive bullet points
-   - Insert after the file header (line 5), dated today
-   - Format: `## [X.Y.Z.W] - YYYY-MM-DD`
+   - Insert after the file header, before the first release entry, dated today, in the heading format read in step 1
    - **Voice:** Lead with what the user can now **do** that they couldn't before. Use plain language, not implementation details. Never mention TODOS.md, internal tracking, or contributor-facing details.
 
 6. **Cross-check:** Compare your CHANGELOG entry against the commit list from step 2.
-   Every commit must map to at least one bullet point. If any commit is unrepresented,
+   Every substantive commit must map to at least one bullet point. If any commit is unrepresented,
    add it now. If the branch has N commits spanning K themes, the CHANGELOG must
    reflect all K themes.
 
@@ -2464,8 +2407,8 @@ Read TODOS.md and verify it follows the recommended structure:
 This step is fully automatic — no user interaction.
 
 Use the diff and commit history already gathered in earlier steps:
-- `git diff <base>...HEAD` (full diff against the base branch)
-- `git log <base>..HEAD --oneline` (all commits being shipped)
+- `git diff origin/<base>...HEAD` (full diff against the base branch)
+- `git log origin/<base>..HEAD --oneline` (all commits being shipped)
 
 For each TODO item, check if the changes in this PR complete it by:
 - Matching commit messages against the TODO title and description
@@ -2625,6 +2568,37 @@ Before pushing, prove every test lane passed on the content about to ship. The
 evidence ledger answers that mechanically — no judging whether code "changed
 during Steps 4-6":
 
+0. **What moved since the review and since each lane ran.** Substitute the Step 5 lane labels:
+
+   ```bash
+   _VB="${VIBESTACK_HOME:-$HOME/.vibestack}/bin"
+   _NOW=$("$_VB/vibe-review-log" --snapshot 2>/dev/null)
+   # Paths that differ between tree ${1} and now, release bookkeeping aside. A
+   # manifest is bookkeeping only when it differs in nothing but its own version
+   # (root and packages[""]); a dependency's version is a real change.
+   _moved() {
+     if [ -z "${1}" ] || [ -z "$_NOW" ] || ! _D=$(git diff --name-only "${1}" "$_NOW" 2>/dev/null); then echo "MOVED ${2}: unknown"; return; fi
+     printf '%s\n' "$_D" | while IFS= read -r _p; do
+       case "$_p" in
+         ''|CHANGELOG.md|VERSION|TODOS.md) continue ;;
+         package.json|package-lock.json|npm-shrinkwrap.json)
+           python3 -I -c 'import json,subprocess,sys; b=[json.loads(subprocess.run(["git","show",t+":"+sys.argv[3]],capture_output=True,check=True).stdout) for t in sys.argv[1:3]]; [(d.pop("version",None),d.get("packages",{}).get("",{}).pop("version",None)) for d in b]; sys.exit(b[0]!=b[1])' "${1}" "$_NOW" "$_p" 2>/dev/null && continue ;;
+       esac
+       echo "MOVED ${2}: $_p"
+     done
+   }
+   _RT=$("$_VB/vibe-review-read" --skill review --json 2>/dev/null | jq -r '[.[] | select(.via == "ship")][0].tree // empty')
+   echo "REVIEWED: ${_RT:-none}"; _moved "$_RT" review
+   for _lane in <lane1> <lane2>; do
+     _LT=$("$_VB/vibe-evidence" read --skill ship --label "$_lane" --limit 1 | sed -n 's/.* tree=\([0-9a-f]*\) .*/\1/p')
+     _moved "$_LT" "$_lane"
+   done
+   ```
+
+   Any `MOVED review:` line other than a `DOC_HELD_FILES` path — `unknown` included —
+   means code nobody reviewed is about to ship: run Steps 9-11 again on the full diff
+   with a fresh `START_TREE`, then return here.
+
 1. **Test verification:** For each Step 5 lane, with its exact label and command:
 
    ```bash
@@ -2632,13 +2606,15 @@ during Steps 4-6":
    ```
 
    - **FRESH** (exit 0): the lane passed on this exact content (release bookkeeping
-     aside). Cite the printed line and the Step 5 log; do not re-run it.
+     aside). Cite the printed line and the Step 5 log; do not re-run it. A lane whose
+     last `tests_ran` was `0` is never FRESH: re-run it and read the count again.
    - **STALE** (exit 1), or the helper is missing: something a test can read changed
      since the run — fixes from review findings, Step 7's generated tests, Step 14.5's
      documentation edits (docs are inputs to doc tests, linters and generators) — or
      there is no proven run. Re-run the lane with the Step 5 wrapper
      (`vibe-evidence run --skill ship --label <lane> -- '<command>'`), paste fresh
-     output, and check again. Stale output from Step 5 is NOT acceptable.
+     output, and check again. Read the runner's count from that output as Step 5
+     does: zero tests ran is a failure here too. Stale output from Step 5 is NOT acceptable.
 
    Only CHANGELOG.md, VERSION and TODOS.md may be allow-listed. Never add a path a
    test, build or generator reads — a `package.json` edit, a fixture, a doc. If any
@@ -2647,15 +2623,9 @@ during Steps 4-6":
 
 2. **Build verification:** If the project has a build step, run it. Paste output.
 
-3. **Rationalization prevention:**
-   - "Should work now" → RUN IT.
-   - "I'm confident" → Confidence is not evidence.
-   - "I already tested earlier" → Code changed since then. Test again.
-   - "It's a trivial change" → Trivial changes break production.
+3. "Should work now", "I'm confident", "I tested earlier", "it's trivial" are not evidence — run it.
 
 **If tests fail here:** STOP. Do not push. Fix the issue and return to Step 5.
-
-Claiming work is complete without verification is dishonesty, not efficiency.
 
 ---
 
@@ -2820,7 +2790,7 @@ The PR/MR body should contain these sections:
 
 ```
 ## Summary
-<Summarize ALL changes being shipped. Run `git log <base>..HEAD --oneline` to enumerate
+<Summarize ALL changes being shipped. Run `git log origin/<base>..HEAD --oneline` to enumerate
 every commit. Exclude the VERSION/CHANGELOG metadata commit (that's this PR's bookkeeping,
 not a substantive change). Group the remaining commits into logical sections (e.g.,
 "**Performance**", "**Dead Code Removal**", "**Infrastructure**"). Every substantive commit
@@ -2900,8 +2870,8 @@ followed by its `decisions` and any blockers the user chose to continue past, on
 <If Step 14.5 got no valid result, omit this section entirely.>
 
 ## Test plan
-- [x] <lane label>: `<exact test command>` — exit 0 (N tests)
-<One line per Step 5 lane, as it ran. A lane that did not exit 0 is never ticked.
+- [x] <lane label>: `<exact test command>` — exit 0 (tests_ran=N, or "count unavailable")
+<One line per Step 5 lane, as it ran. A lane that did not exit 0, or ran 0 tests, is never ticked.
 If Step 5 recorded the no-test-suite gap (option B), write
 "- [ ] No test suite: <scope>" instead of a pass.>
 
