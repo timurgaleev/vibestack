@@ -284,6 +284,12 @@ has   "boundary field"                     '* **Boundary crossed:**'
 has   "in-scope impact field"              '* **In-scope impact:**'
 has   "controls field"                     '* **Controls checked:**'
 has   "missing element drops daily"        'A daily candidate missing any of the four is dropped'
+# A live-account finding has no request in repository code; the four-part bar
+# must not drop the Phase 5b findings that phase is required to report.
+has   "Phase 5b kept under the finding bar" 'never dropped for lacking a request in repository code'
+before5b() { awk -v a="$1" -v b="$2" 'index($0,a)&&!x{x=NR} index($0,b)&&!y{y=NR} END{exit !(x&&y&&x<=y)}' "$SKILL"; }
+before5b 'A daily candidate missing any of the four is dropped' 'never dropped for lacking a request in repository code' \
+  && ok "the 5b carve-out sits with the bar" || no "the 5b carve-out sits with the bar"
 has   "confidence calibration snippet"     'Force its confidence to exactly one of:'
 hasnt "inline calibration copy gone"       'Force its confidence to 4-5 (suppressed from the main report)'
 
@@ -340,7 +346,14 @@ has   "registry redirect is a lead"        'redirects a registry'
 has   "never hydrates node_modules"        'never hydrates `node_modules`'
 has   "gitleaks redacted to a 0600 file"   'gitleaks git --redact'
 has   "zizmor offline"                     'zizmor --offline'
-has   "trivy no db update"                 'trivy config --skip-db-update'
+# trivy config never reads the vulnerability DB; the rules bundle is what it
+# would fetch, so the check-update skip is the one that keeps it offline.
+has   "trivy no rules or db update"        'trivy config --skip-check-update --skip-db-update'
+# `cargo audit` and `bundle audit` dispatch through the audited repo's own
+# cargo aliases and Bundler plugins; the scanner binaries are run directly.
+has   "cargo-audit binary run directly"    '`cargo-audit audit`'
+hasnt "no cargo subcommand dispatch"       '`cargo audit`'
+hasnt "no bundle subcommand dispatch"      '`bundle audit`'
 has   "semgrep local rules"                'semgrep --metrics=off --config'
 has   "scanner output is a candidate"      'Scanner output is a candidate for Phase 12'
 has   "never install a scanner"            'Never install a scanner'
