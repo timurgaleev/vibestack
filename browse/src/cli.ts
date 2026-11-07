@@ -352,6 +352,16 @@ function reportDaemonBusyAndExit(pid: number): never {
 }
 
 /**
+ * The proxy URL already carries whatever creds the CLI resolved from argv or
+ * BROWSE_PROXY_USER/PASS. The daemon also inherits the caller's env, so those
+ * vars are blanked: left set, the daemon sees creds in both places and exits
+ * on the mixed-source check.
+ */
+function proxyEnv(proxyUrl: string): Record<string, string> {
+  return { BROWSE_PROXY_URL: proxyUrl, BROWSE_PROXY_USER: '', BROWSE_PROXY_PASS: '' };
+}
+
+/**
  * Build the env for an auto-restart after a crash. headed/proxy/configHash are
  * reapplied from THIS invocation OR the persisted server state, so a restart
  * triggered by a plain command (goto/status, no --headed flag) never silently
@@ -361,8 +371,7 @@ export function buildRestartEnv(
   globalFlags: GlobalFlags | null | undefined,
   oldState: ServerState | null,
 ): Record<string, string> {
-  const env: Record<string, string> = {};
-  if (globalFlags?.proxyUrl) env.BROWSE_PROXY_URL = globalFlags.proxyUrl;
+  const env: Record<string, string> = globalFlags?.proxyUrl ? proxyEnv(globalFlags.proxyUrl) : {};
   if (globalFlags?.headed || oldState?.mode === 'headed') env.BROWSE_HEADED = '1';
   const configHash = globalFlags?.configHash || oldState?.configHash;
   if (configHash) env.BROWSE_CONFIG_HASH = configHash;
@@ -498,8 +507,7 @@ function acquireServerLock(): (() => void) | null {
 async function ensureServer(flags?: GlobalFlags): Promise<ServerState> {
   const state = readState();
   const desiredHash = flags?.configHash;
-  const extraEnv: Record<string, string> = {};
-  if (flags?.proxyUrl) extraEnv.BROWSE_PROXY_URL = flags.proxyUrl;
+  const extraEnv: Record<string, string> = flags?.proxyUrl ? proxyEnv(flags.proxyUrl) : {};
   if (flags?.headed) extraEnv.BROWSE_HEADED = '1';
   if (desiredHash) extraEnv.BROWSE_CONFIG_HASH = desiredHash;
 
@@ -836,8 +844,8 @@ COMMAND REFERENCE:
 
 SCOPES: ${scopeDesc}.
 ${scopes.includes('control') ? '' : `To get browser control access (stop, restart, disconnect), ask the user to re-pair with --control.\n`}
-TOKEN: Expires ${expiresAt}. Revoke: ask the user to stop the browse daemon
-  ($B stop) — that invalidates every issued token immediately.
+TOKEN: Expires ${expiresAt}. Revoke: the user runs \`$B tunnel revoke <name>\`
+  for this agent, or stops the browse daemon ($B stop) to cut every token.
 
 ERRORS:
   401 → Token expired/revoked. Ask user to run /pair-agent again.
@@ -933,6 +941,85 @@ export function extractGlobalFlags(rawArgs: string[], env: NodeJS.ProcessEnv): G
     redactedProxyUrl: redactProxyUrl(canonicalProxyUrl),
     forceRestart,
   };
+}
+
+interface AgentListing {
+  agents: Array<{ clientId: string; scopes: string[]; domains?: string[]; expiresAt: string | null; commandCount: number }>;
+  pending: Array<{ clientId: string; scopes: string[]; domains?: string[]; expiresAt: string | null }>;
+}
+
+async function fetchAgentListing(state: ServerState): Promise<AgentListing> {
+  const resp = await fetch(`http://127.0.0.1:${state.port}/agents`, {
+    headers: { 'Authorization': `Bearer ${state.token}` },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!resp.ok) throw new Error(`listing agents failed (HTTP ${resp.status}): ${await resp.text()}`);
+  const body = await resp.json() as Partial<AgentListing>;
+  return { agents: body.agents ?? [], pending: body.pending ?? [] };
+}
+
+function formatAgentListing(listing: AgentListing): string {
+  const describe = (a: { scopes: string[]; domains?: string[]; expiresAt: string | null }) =>
+    `scopes=${a.scopes.join(',')}${a.domains?.length ? ` domains=${a.domains.join(',')}` : ''} expires=${a.expiresAt ?? 'never'}`;
+  const lines = [
+    ...listing.agents.map(a => `  ${a.clientId}  ${describe(a)} commands=${a.commandCount}`),
+    ...listing.pending.map(a => `  ${a.clientId} (pending)  ${describe(a)}`),
+  ];
+  return lines.length ? lines.join('\n') : '  (none)';
+}
+
+/**
+ * `browse tunnel agents` and `browse tunnel revoke <name>`. These talk to the
+ * running daemon with the root token from the state file and never start or
+ * restart one: a revoke against a daemon that is not there has nothing to cut.
+ */
+async function handleTunnel(args: string[]): Promise<void> {
+  const [sub, name] = args;
+  if (sub !== 'agents' && sub !== 'revoke') {
+    console.error('Usage: browse tunnel agents | browse tunnel revoke <name>');
+    process.exit(1);
+  }
+  if (sub === 'revoke' && !name) {
+    console.error('Usage: browse tunnel revoke <name>   (names: browse tunnel agents)');
+    process.exit(1);
+  }
+  const state = readState();
+  if (!state?.token || !state.port) {
+    console.error('[browse] No browse daemon is running, so no agent holds access.');
+    process.exit(sub === 'agents' ? 0 : 1);
+  }
+  try {
+    if (sub === 'agents') {
+      console.log(`Paired agents:\n${formatAgentListing(await fetchAgentListing(state))}`);
+      return;
+    }
+    const resp = await fetch(`http://127.0.0.1:${state.port}/token/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${state.token}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (resp.status === 404) {
+      console.error(`[browse] No agent named "${name}" holds a session or a pending key. Names: browse tunnel agents`);
+      process.exit(1);
+    }
+    if (!resp.ok) {
+      console.error(`[browse] Revoke failed (HTTP ${resp.status}): ${await resp.text()}`);
+      process.exit(1);
+    }
+    const { count } = await resp.json() as { count?: number };
+    // Re-list rather than trust the DELETE: the confirmation the user acts on
+    // must come from the daemon's current state.
+    const listing = await fetchAgentListing(state);
+    if ([...listing.agents, ...listing.pending].some(a => a.clientId === name)) {
+      console.error(`[browse] "${name}" is still listed after the revoke. Stop the daemon (browse stop) to cut every token.`);
+      process.exit(1);
+    }
+    console.log(`Revoked "${name}" (${count ?? 0} token(s)); it no longer appears in the agent list.`);
+    console.log(`Remaining agents:\n${formatAgentListing(listing)}`);
+  } catch (err: any) {
+    console.error(`[browse] Could not reach the browse daemon on port ${state.port}: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 async function handlePairAgent(state: ServerState, args: string[]): Promise<void> {
@@ -1132,6 +1219,7 @@ Tabs:           tabs | tab <id> | newtab [url] | closetab [id]
 Server:         status | cookie <n>=<v> | header <n>:<v>
                 useragent <str> | stop | restart
 Dialogs:        dialog-accept [text] | dialog-dismiss
+Pairing:        pair-agent | tunnel agents | tunnel revoke <name>
 
 Refs:           After 'snapshot', use @e1, @e2... as selectors:
                 click @e3 | fill @e4 "value" | hover @e1
@@ -1219,7 +1307,7 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
         // Apply --proxy from this invocation if present. Without this,
         // `browse --proxy <url> connect` would launch headed Chromium
         // bypassing the SOCKS bridge entirely.
-        ...(globalFlags.proxyUrl ? { BROWSE_PROXY_URL: globalFlags.proxyUrl } : {}),
+        ...(globalFlags.proxyUrl ? proxyEnv(globalFlags.proxyUrl) : {}),
         ...(globalFlags.configHash ? { BROWSE_CONFIG_HASH: globalFlags.configHash } : {}),
       };
       const newState = await startServer(serverEnv);
@@ -1436,6 +1524,11 @@ Refs:           After 'snapshot', use @e1, @e2... as selectors:
     }
     safeUnlinkQuiet(config.stateFile);
     console.log('Disconnected (server was unresponsive — force cleaned).');
+    process.exit(0);
+  }
+
+  if (command === 'tunnel') {
+    await handleTunnel(commandArgs);
     process.exit(0);
   }
 

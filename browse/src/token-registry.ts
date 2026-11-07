@@ -181,6 +181,17 @@ export function isRootToken(token: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
+const VALID_SCOPES: ScopeCategory[] = ['read', 'write', 'admin', 'meta', 'control'];
+
+/** Throws on any scope outside the known categories. */
+export function validateScopes(scopes: readonly string[]): void {
+  for (const s of scopes) {
+    if (!VALID_SCOPES.includes(s as ScopeCategory)) {
+      throw new Error(`Invalid scope: ${s}. Valid: ${VALID_SCOPES.join(', ')}`);
+    }
+  }
+}
+
 function generateToken(prefix: string): string {
   return `${prefix}${crypto.randomBytes(24).toString('hex')}`;
 }
@@ -199,13 +210,7 @@ export function createToken(opts: CreateTokenOptions): TokenInfo {
     expiresSeconds = 86400, // 24h default
   } = opts;
 
-  // Validate inputs
-  const validScopes: ScopeCategory[] = ['read', 'write', 'admin', 'meta', 'control'];
-  for (const s of scopes) {
-    if (!validScopes.includes(s as ScopeCategory)) {
-      throw new Error(`Invalid scope: ${s}. Valid: ${validScopes.join(', ')}`);
-    }
-  }
+  validateScopes(scopes);
   if (rateLimit < 0) throw new Error('rateLimit must be >= 0');
   if (expiresSeconds !== null && expiresSeconds !== undefined && expiresSeconds < 0) {
     throw new Error('expiresSeconds must be >= 0 or null');
@@ -248,6 +253,7 @@ export function createToken(opts: CreateTokenOptions): TokenInfo {
  * Setup keys expire in 5 minutes and can only be exchanged once.
  */
 export function createSetupKey(opts: Omit<CreateTokenOptions, 'clientId'> & { clientId?: string }): TokenInfo {
+  if (opts.scopes) validateScopes(opts.scopes);
   const token = generateToken('gsk_setup_');
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString(); // 5 min
@@ -417,17 +423,56 @@ export function recordCommand(token: string): void {
 }
 
 /**
- * Revoke a token by client ID. Returns true if found and revoked.
+ * Revoke everything issued to a client ID: its session token and every setup
+ * key, spent or pending. Returns how many entries were removed (0 = unknown).
  */
-export function revokeToken(clientId: string): boolean {
+export function revokeToken(clientId: string): number {
+  let count = 0;
   for (const [token, info] of tokens) {
     if (info.clientId === clientId) {
       tokens.delete(token);
-      rateBuckets.delete(clientId);
-      return true;
+      count++;
     }
   }
-  return false;
+  if (count > 0) rateBuckets.delete(clientId);
+  return count;
+}
+
+/** True when `next` takes away a scope or a reachable domain that `prev` had. */
+function isNarrowing(prev: TokenInfo, next: { scopes: readonly string[]; domains?: string[] }): boolean {
+  if (prev.scopes.some(s => !next.scopes.includes(s))) return true;
+  const nextDomains = next.domains ?? [];
+  if (nextDomains.length === 0) return false;
+  const prevDomains = prev.domains ?? [];
+  if (prevDomains.length === 0) return true;
+  return prevDomains.some(d => !nextDomains.includes(d));
+}
+
+/**
+ * Clear the way for a fresh setup key under an existing client ID. Pending
+ * setup keys are always revoked — an older, broader key must not stay
+ * redeemable next to the new one. The live session is revoked only when the
+ * new grant is narrower; a broadening keeps it until the new key is exchanged,
+ * at which point createToken replaces it.
+ */
+export function prepareRepair(
+  clientId: string,
+  next: { scopes: readonly string[]; domains?: string[] },
+): { pendingRevoked: number; sessionRevoked: boolean } {
+  let pendingRevoked = 0;
+  let sessionRevoked = false;
+  for (const [token, info] of tokens) {
+    if (info.clientId !== clientId) continue;
+    if (info.type === 'setup' && (info.usesRemaining ?? 0) > 0) {
+      tokens.delete(token);
+      pendingRevoked++;
+    } else if (info.type === 'session' && isNarrowing(info, next)) {
+      tokens.delete(token);
+      sessionRevoked = true;
+    }
+  }
+  if (sessionRevoked) rateBuckets.delete(clientId);
+  return { pendingRevoked, sessionRevoked };
 }
 
 /**
@@ -458,6 +503,18 @@ export function listTokens(): TokenInfo[] {
     }
   }
 
+  return result;
+}
+
+/** Setup keys issued but not yet exchanged (and not expired). */
+export function listPendingSetupKeys(): TokenInfo[] {
+  const now = new Date();
+  const result: TokenInfo[] = [];
+  for (const info of tokens.values()) {
+    if (info.type !== 'setup' || (info.usesRemaining ?? 0) <= 0) continue;
+    if (info.expiresAt && new Date(info.expiresAt) < now) continue;
+    result.push(info);
+  }
   return result;
 }
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.55.27 — 2026-11-07
+
+### Added
+
+- **`browse tunnel agents` and `browse tunnel revoke <name>`.** List the agents
+  paired with your browser, including setup keys nobody has redeemed yet, and
+  cut one of them; the revoke re-lists to confirm and exits non-zero when the
+  name is unknown or still listed. `/pair-agent` documents both.
+
+### Fixed
+
+- **A proxy with credentials from the environment no longer kills the daemon.**
+  `--proxy` plus `BROWSE_PROXY_USER`/`BROWSE_PROXY_PASS` handed the credentials
+  to the daemon twice and tripped its mixed-source check on start, crash restart
+  and connect.
+- **Revoking an agent revokes everything it holds.** The revoke removed only the
+  first entry with that name, so an exchanged session could survive it. It now
+  removes the session and every setup key, and hands the agent's tabs back to
+  you before it answers, even when a page has stopped responding.
+- **Re-pairing a name narrows it at once.** Pending setup keys for the name are
+  revoked, and a narrower grant revokes the live session immediately; an
+  unknown scope is refused before anything is revoked.
+
 ## 1.55.26 — 2026-11-07
 
 ### Added
