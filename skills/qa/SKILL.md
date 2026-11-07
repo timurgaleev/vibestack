@@ -363,7 +363,7 @@ This is the **primary mode** for developers verifying their work. When the user 
 Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced issues. Produce health score. Takes 5-15 minutes depending on app size.
 
 ### Quick (`--quick`)
-30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce health score. No detailed issue documentation.
+30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce a health score labelled partial coverage: the accessibility checks do not run, so Accessibility is `not run`. No detailed issue documentation.
 
 ### Regression (`--regression <baseline>`)
 Run full mode, then compare with the prior baseline resolved at setup — `prior-baseline.json` in this run's directory, copied from the `--regression` path or the newest earlier run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
@@ -460,6 +460,7 @@ Then follow the **per-page exploration checklist** (see `${CLAUDE_SKILL_DIR:-$HO
    $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
    $B viewport 1280x720
    ```
+8. **Accessibility (manual, mandatory)** — outside quick mode, run the "Accessibility checks" in the Health Score Rubric below on every page.
 
 **Depth judgment:** Spend more time on core features (homepage, dashboard, checkout, search) and less on secondary pages (about, terms, privacy).
 
@@ -518,49 +519,14 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
    ```
 
 **Regression mode:** After writing the report, load `$REPORT_DIR/prior-baseline.json` — never the `baseline.json` this run just wrote, so the run never compares with itself. With `PRIOR_BASELINE: none` or `BASELINE_MISSING`, skip the comparison and say why in the report. Compare:
-- Health score delta
+- Health score delta — only when both runs scored the same categories (see "Comparing scores" in the rubric)
 - Issues fixed (in baseline but not current)
 - New issues (in current but not baseline)
 - Append the regression section to the report
 
 ---
 
-## Health Score Rubric
-
-Compute each category score (0-100), then take the weighted average.
-
-### Console (weight: 15%)
-- 0 errors → 100
-- 1-3 errors → 70
-- 4-10 errors → 40
-- 10+ errors → 10
-
-### Links (weight: 10%)
-- 0 broken → 100
-- Each broken link → -15 (minimum 0)
-
-### Per-Category Scoring (Visual, Functional, UX, Content, Performance, Accessibility)
-Each category starts at 100. Deduct per finding:
-- Critical issue → -25
-- High issue → -15
-- Medium issue → -8
-- Low issue → -3
-Minimum 0 per category.
-
-### Weights
-| Category | Weight |
-|----------|--------|
-| Console | 15% |
-| Links | 10% |
-| Visual | 10% |
-| Functional | 20% |
-| UX | 15% |
-| Performance | 10% |
-| Content | 5% |
-| Accessibility | 15% |
-
-### Final Score
-`score = Σ (category_score × weight)`
+{{include lib/snippets/qa-health-rubric.md}}
 
 ---
 
@@ -817,7 +783,7 @@ After all fixes are applied:
 
 1. Re-run QA on all affected pages
 2. Compute final health score
-3. **If final score is WORSE than baseline:** WARN prominently — something regressed
+3. **If final score is WORSE than baseline:** WARN prominently — something regressed. Compare the two scores only when both runs scored the same categories; otherwise compare per category, as "Comparing scores" in the rubric says
 
 ---
 

@@ -4,10 +4,12 @@
 
 | Severity | Definition | Examples |
 |----------|------------|---------|
-| **critical** | Blocks a core workflow, causes data loss, or crashes the app | Form submit causes error page, checkout flow broken, data deleted without confirmation |
-| **high** | Major feature broken or unusable, no workaround | Search returns wrong results, file upload silently fails, auth redirect loop |
-| **medium** | Feature works but with noticeable problems, workaround exists | Slow page load (>5s), form validation missing but submit still works, layout broken on mobile only |
-| **low** | Minor cosmetic or polish issue | Typo in footer, 1px alignment issue, hover state inconsistent |
+| **critical** | Data loss: user data is lost, corrupted, or written where it should not be | Data deleted without confirmation, a saved edit silently discarded, one user's record written to another's |
+| **high** | A core task is blocked and there is no workaround | Checkout flow broken, form submit causes error page, file upload silently fails, auth redirect loop |
+| **medium** | A task is impaired, but a workaround exists | Slow page load (>5s), form validation missing but submit still works, layout broken on mobile only |
+| **low** | Cosmetic: nothing is blocked or impaired | Typo in footer, 1px alignment issue, hover state inconsistent |
+
+Accessibility findings use the grading in the measurable-criteria table below.
 
 ## Categories
 
