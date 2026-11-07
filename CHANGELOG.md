@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.55.10 — 2026-11-07
+
+### Added
+
+- **`/vibe-gc` trims oversized project logs.** `vibe-gc scan` reports a log over
+  1 MB under the current repository's `.vibestack/` as a `repo` candidate, and
+  `vibe-gc trim` keeps its last 256 KB of whole records while the original stays
+  in `gc-trash`. It refuses while that repository's browse daemon may be
+  writing, for a log with no whole record in its last 256 KB, and for a file
+  name outside `[A-Za-z0-9._-]`.
+- **`vibe-context-budget --skill <name>`** prints one skill's rendered
+  `SKILL.md` bytes and the bytes of the docs beside it.
+
+### Fixed
+
+- **Helpers no longer risk hanging on a mid-sized heredoc under bash 5.2+.**
+  Newer bash hands a heredoc under 64 KiB to its reader through a pipe, which
+  can stall on macOS; the helpers with a 512 B-64 KiB heredoc keep the temp-file
+  behaviour, and CI fails on a new one without that guard.
+
 ## 1.55.9 — 2026-11-07
 
 ### Fixed

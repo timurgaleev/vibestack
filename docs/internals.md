@@ -94,7 +94,7 @@ new.
 | `vibe-render-skill` | Render-at-install: expand `{{include}}` directives |
 | `vibe-skill-track` | Opt-in skill-usage analytics hook |
 | `vibe-skill-usage` | Read-only skill-usage counts from the analytics log and Claude transcripts; other runtimes are reported unmeasured |
-| `vibe-gc` | Audit-only configuration scan for `/vibe-gc` (unclaimed skills, orphan hooks, duplicate or shadowed permissions, configured MCP servers, old caches across all five runtime roots); `trash` soft-deletes into `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, `undo <date>` moves items back. Refuses settings, `~/.claude.json`, `.mcp.json`, transcripts, project state and manifest-claimed skills |
+| `vibe-gc` | Audit-only configuration scan for `/vibe-gc` (unclaimed skills, orphan hooks, duplicate or shadowed permissions, configured MCP servers, old caches across all five runtime roots); `trash` soft-deletes into `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, `undo <date>` moves items back; a `repo` row is a log over 1 MB under the current repository's `.vibestack/`, and `trim` keeps its last 256 KB with the original kept in the trash (refused while that repository's browse daemon may run). Refuses settings, `~/.claude.json`, `.mcp.json`, transcripts, project state and manifest-claimed skills |
 | `vibe-compact-snapshot` | Claude PreCompact hook: a git-state snapshot per project before compaction, never transcript content |
 | `vibe-session-kind` | Classify the session: spawned / headless / interactive. `spawned` needs `OPENCLAW_SESSION` or an affirmative `VIBE_SPAWNED` (`0`/`false`/`no`/`off` do not count); the dispatching agent sets `VIBE_SPAWNED=1`, since an agent-tool child inherits no environment |
 | `vibe-repo-mode` | Emit `REPO_MODE=solo\|collaborative` from git history |
@@ -120,7 +120,7 @@ new.
 | `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose. A single argument after `--` runs as a shell command line and is recorded verbatim. `check` narrows with `--expect-cmd C` (the recorded line must equal C), `--max-age H` (older passes are STALE) and `--allow-paths P` (a run at another tree still counts when only release bookkeeping such as `CHANGELOG.md,VERSION` differs); a recorded tree the object store no longer has never matches |
 | `vibe-version-bump` | Move VERSION, `package.json` and the lockfiles together or not at all; `--root` for a manifest in a subdirectory |
 | `vibe-detach` | Run a command past the turn boundary; `status` separates running (exit 2) from failed (exit 1) |
-| `vibe-context-budget` | Measure the always-loaded skill listing (rendered name + description per skill) against a runtime's budget — Codex 8,000 chars by default; `--runtime copilot` enforces Copilot's 1,024-char per-description cap and reports the total without gating it; exit 1 over budget, `--warn-only` reports without failing; CI reports it on every PR |
+| `vibe-context-budget` | Measure the always-loaded skill listing (rendered name + description per skill) against a runtime's budget — Codex 8,000 chars by default; `--runtime copilot` enforces Copilot's 1,024-char per-description cap and reports the total without gating it; exit 1 over budget, `--warn-only` reports without failing; CI reports it on every PR. `--skill <name>` reports one skill's rendered `SKILL.md` and sibling-doc bytes instead |
 | `vibe-codex-probe` | Whether Codex is *usable*, not merely installed — cheap negatives first, one cached round trip for the positive |
 
 `./install` copies every `bin/vibe-*` plus the `vibestack` CLI into the runtime
@@ -252,7 +252,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-update-check.sh` | `vibe-update-check` against a local fake remote: checkout discovery, `CHECK_FAILED`, the day stamp |
 | `test-vibe-upgrade-flow.sh` | `/vibe-upgrade` blocks against a fake remote: replaying the original install, stopping on a failed fetch |
 | `test-vibe-upgrade-guards.sh` | `/vibe-upgrade`'s mutating blocks refuse an empty or wrong install dir; migrations receive the install dir |
-| `test-vibe-gc.sh` | `vibe-gc`: scan flags only unclaimed skills, orphan hooks, redundant permissions, old caches and writes nothing; trash/undo round trip; refusals move nothing |
+| `test-vibe-gc.sh` | `vibe-gc`: scan flags only unclaimed skills, orphan hooks, redundant permissions, old caches and writes nothing; trash/undo round trip; refusals move nothing; repo-log scan and trim (whole records, original kept, unsafe names and empty tails refused) |
 | `test-skill-usage.sh` | `vibe-skill-usage` counts from the analytics log and transcripts, and reports other runtimes unmeasured |
 | `test-compact-snapshot.sh` | `vibe-compact-snapshot` records git state per project and never transcript content |
 | `test-jira-adapter.sh` | The Jira adapter in `/spec` and `/ship` stays opt-in |
@@ -297,7 +297,8 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-devex-boomerang.sh` | `/devex-review` reads the `/plan-devex-review` baseline and drives the browser under look-not-act rules |
 | `test-browser-skill-consent.sh` | The browser skills ask before they destroy or expose a signed-in session |
 | `test-health-scoring.sh` | `/health` scores the checkers' real exit codes and full logs |
-| `test-context-budget.sh` | `vibe-context-budget` counts what the runtime lists and fails over budget |
+| `test-context-budget.sh` | `vibe-context-budget` counts what the runtime lists and fails over budget; `--skill` sums rendered and sibling-doc bytes |
+| `test-heredoc-compat.sh` | No heredoc of 512 B-64 KiB under `bin/` or `skills/*/bin/` runs without the `BASH_COMPAT=50` guard that keeps it off a pipe on bash 5.2+ |
 | `test-host-routing.sh` | Host-dependent routing: the `/vibe` index, the second-opinion pick, the memrain code-graph rule |
 | `test-redact-scan.sh` | `vibe-redact scan`: deterministic, fail-closed, sharing the pre-push guard's matcher |
 | `test-compliance-runner.sh` | The rule/skill compliance runner's bun tests against a fake `claude` — no tokens spent |

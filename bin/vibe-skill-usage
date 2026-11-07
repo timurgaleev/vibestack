@@ -24,6 +24,9 @@
 #   --analytics FILE  default ${VIBESTACK_HOME:-$HOME/.vibestack}/analytics/skill-usage.jsonl
 # Exit: 0 report printed (also when there is nothing to read), 2 usage error.
 set -euo pipefail
+# bash 5.2+ writes a heredoc under 64 KiB into a pipe and can hang on a small macOS pipe;
+# compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 DAYS=30
 JSON=0

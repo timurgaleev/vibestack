@@ -32,6 +32,7 @@ jobs:
           - test-source-lint.sh
           - test-positional-literals.sh
           - test-python-isolation.sh
+          - test-heredoc-compat.sh
           - test-vibe-bins.sh
           - test-certify.sh
           - test-first-task-detect.sh

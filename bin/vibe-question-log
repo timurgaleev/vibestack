@@ -22,6 +22,9 @@
 #   followed_recommendation — bool; computed when user_choice and recommended are both present
 #   ts                      — ISO 8601, injected when missing
 set -euo pipefail
+# bash 5.2+ writes a heredoc under 64 KiB into a pipe and can hang on a small macOS pipe;
+# compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 if [ $# -eq 0 ]; then
   echo "Usage: vibe-question-log '<json>'" >&2

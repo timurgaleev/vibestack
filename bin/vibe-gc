@@ -7,6 +7,9 @@
 #   vibe-gc trash PATH...                       move each PATH to
 #                                               $VIBESTACK_HOME/gc-trash/<date>/<channel>/<name>
 #                                               and log an undo line; any refused path moves nothing
+#   vibe-gc trim PATH...                        cut each repo log to its last 256 KB at a line
+#                                               boundary; the untrimmed original moves to
+#                                               $VIBESTACK_HOME/gc-trash/<date>/repo/<name>
 #   vibe-gc undo [YYYY-MM-DD]                   move that date's trashed paths back, newest first
 #   vibe-gc log                                 print the log
 #
@@ -17,12 +20,18 @@
 # or Bash(*)-shadowed allow entries; reported, never edited), mcp (configured
 # servers; liveness needs session evidence) and caches (old file-history,
 # shell-snapshots, and the <root>.old / <root>.staging.* entries ./install
-# leaves beside a skills root).
+# leaves beside a skills root) and repo (*.log / *.jsonl over 1 MB directly in
+# the current repository's .vibestack, which the browse daemon appends to and
+# never truncates; cookies, the browser profile and report directories are not
+# logs). trim refuses while that repository's browse daemon may be running.
 #
 # Nothing is ever hard-deleted. Settings, ~/.claude.json, .mcp.json, transcripts
 # (~/.claude/projects), per-project state ($VIBESTACK_HOME/projects) and
 # pack-owned skills are refused. MCP, cron and launchd state are never touched.
 set -euo pipefail
+# bash 5.2+ writes a heredoc under 64 KiB into a pipe and can hang on a small macOS pipe;
+# compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 _SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 _USAGE_BIN=""
@@ -36,7 +45,7 @@ export VIBE_GC_USAGE_BIN="$_USAGE_BIN"
 command -v python3 >/dev/null 2>&1 || { echo "vibe-gc: python3 is required" >&2; exit 2; }
 
 _PY=$(cat <<'PY'
-import datetime, json, os, re, shutil, subprocess, sys
+import datetime, json, os, re, shutil, stat, subprocess, sys, tempfile
 
 HOME = os.path.expanduser("~")
 VH = os.environ.get("VIBESTACK_HOME") or os.path.join(HOME, ".vibestack")
@@ -48,6 +57,9 @@ DEFAULT_ROOTS = [os.path.join(HOME, d, "skills") for d in (".claude", ".agents",
     os.path.join(os.environ.get("COPILOT_HOME") or os.path.join(HOME, ".copilot"), "skills")]
 RANK = {"high": 0, "medium": 1, "low": 2}
 MAX_ROWS = 20
+REPO_LOG_MIN = 1 << 20
+REPO_LOG_KEEP = 256 << 10
+SAFE_LOG_NAME = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def die(msg, code=2):
@@ -57,7 +69,7 @@ def die(msg, code=2):
 
 def parse(argv):
     cmd, days, roots, rest = "scan", 30, None, []
-    if argv and argv[0] in ("scan", "trash", "undo", "log"):
+    if argv and argv[0] in ("scan", "trash", "trim", "undo", "log"):
         cmd, argv = argv[0], argv[1:]
     i = 0
     while i < len(argv):
@@ -73,7 +85,7 @@ def parse(argv):
             if not roots:
                 die("--roots needs at least one directory")
         elif a in ("-h", "--help"):
-            print("usage: vibe-gc [scan|trash PATH...|undo [YYYY-MM-DD]|log] [--days N] [--roots DIR...]")
+            print("usage: vibe-gc [scan|trash PATH...|trim PATH...|undo [YYYY-MM-DD]|log] [--days N] [--roots DIR...]")
             sys.exit(0)
         elif a.startswith("--"):
             die("unknown flag: %s" % a)
@@ -303,13 +315,16 @@ def scan_permissions():
     return rows
 
 
-def project_mcp_file():
+def git_toplevel():
     try:
-        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
-                             text=True, timeout=10).stdout.strip()
+        return subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
+                              text=True, timeout=10).stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        top = ""
-    return os.path.join(top or os.getcwd(), ".mcp.json")
+        return ""
+
+
+def project_mcp_file():
+    return os.path.join(git_toplevel() or os.getcwd(), ".mcp.json")
 
 
 def scan_mcp():
@@ -368,8 +383,58 @@ def scan_caches(days, roots):
     return rows
 
 
+def repo_state_dir():
+    """<toplevel>/.vibestack of the repository the cwd is in, or None."""
+    top = git_toplevel()
+    return os.path.join(top, ".vibestack") if top else None
+
+
+def is_repo_log(p):
+    n = os.path.basename(p)
+    return n.endswith((".log", ".jsonl")) and not n.startswith(".") and os.path.isfile(p) and not os.path.islink(p)
+
+
+def browse_daemon(state):
+    """Why a trim must wait, or None. A state file that names no pid counts
+    as a live daemon: records appended during a trim would be lost."""
+    path = os.path.join(state, "browse.json")
+    if not os.path.lexists(path):
+        return None
+    data = load_json(path)
+    pid = data.get("pid") if isinstance(data, dict) else None
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return "%s names no pid; cannot tell whether the browse daemon is running" % path
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except OSError:
+        pass
+    return "browse daemon running (pid %d)" % pid
+
+
+def scan_repo():
+    state = repo_state_dir()
+    if not state or os.path.islink(state) or not os.path.isdir(state):
+        return []
+    # A name outside SAFE_LOG_NAME is never offered: the row's path is pasted
+    # into a quoted shell command, and a repository chooses its own file names.
+    logs = [p for p in (os.path.join(state, n) for n in entries(state))
+            if SAFE_LOG_NAME.fullmatch(os.path.basename(p))
+            and is_repo_log(p) and os.lstat(p).st_size > REPO_LOG_MIN]
+    busy = browse_daemon(state) if logs else None
+    rows = []
+    for p in logs:
+        signal = "log over 1 MB; trim keeps the last 256 KB"
+        if busy:
+            signal += "; %s, trim refuses until it stops" % busy
+        rows.append(("repo", p, signal, size_kb(p), day(os.lstat(p).st_mtime), "medium"))
+    return rows
+
+
 def cmd_scan(days, roots):
-    rows = scan_skills(roots, days) + scan_hooks() + scan_permissions() + scan_mcp() + scan_caches(days, roots)
+    rows = (scan_skills(roots, days) + scan_hooks() + scan_permissions() + scan_mcp()
+            + scan_caches(days, roots) + scan_repo())
     rows.sort(key=lambda r: (RANK[r[5]], -r[3], r[0], r[1], r[2]))
     for i, r in enumerate(rows[:MAX_ROWS], 1):
         print("\t".join([str(i), r[0], clean(r[1]), clean(r[2]), str(r[3]), r[4], r[5]]))
@@ -471,6 +536,118 @@ def cmd_trash(paths, roots):
         print("moved\t%s\t%s" % (src, dest))
 
 
+def trim_refusal(raw, state):
+    if "'" in raw or "\n" in raw:
+        return "path holds a quote or newline"
+    if not state or not os.path.isdir(state):
+        return "the current directory is not in a repository with a .vibestack directory"
+    if os.path.islink(state):
+        return "%s is a symlink" % state
+    p = os.path.abspath(os.path.expanduser(raw))
+    if os.path.realpath(os.path.dirname(p)) != os.path.realpath(state):
+        return "not directly in %s" % state
+    if not SAFE_LOG_NAME.fullmatch(os.path.basename(p)):
+        return "file name holds characters outside [A-Za-z0-9._-]"
+    if not is_repo_log(p):
+        return "not a regular .log or .jsonl file"
+    size = os.lstat(p).st_size
+    if size <= REPO_LOG_MIN:
+        return "under 1 MB; nothing to trim"
+    with open(p, "rb") as f:
+        f.seek(size - REPO_LOG_KEEP - 1)
+        window = f.read()
+    # The kept tail starts after the first line break in the window; with no
+    # break, or only the final one, it would be empty.
+    nl = window.find(b"\n")
+    if nl < 0 or nl == len(window) - 1:
+        return "no whole record in its last 256 KB; trimming would empty it"
+    return None
+
+
+def keep_original(src, dest_dir):
+    """Claim a free trash name and keep src there, without moving src.
+
+    The name is claimed atomically (a hard link, or an exclusive create when
+    the trash is on another filesystem), so two trims never share a name.
+    """
+    base, k = os.path.basename(src), 0
+    while True:
+        dest = os.path.join(dest_dir, base if k == 0 else "%s.%d" % (base, k))
+        try:
+            os.link(src, dest)
+            return dest
+        except FileExistsError:
+            k += 1
+            continue
+        except OSError:
+            pass
+        try:
+            with open(dest, "xb") as out, open(src, "rb") as f:
+                shutil.copyfileobj(f, out)
+            shutil.copystat(src, dest)
+            return dest
+        except FileExistsError:
+            k += 1
+
+
+def trim_one(src, state, date):
+    st = os.lstat(src)
+    with open(src, "rb") as f:
+        f.seek(st.st_size - REPO_LOG_KEEP - 1)
+        chunk = f.read()
+    # Keep whole lines only: the byte before the window decides whether the
+    # first kept line is complete.
+    nl = chunk.find(b"\n")
+    tail = chunk[nl + 1:]
+    dest_dir = os.path.join(TRASH, date, "repo")
+    os.makedirs(dest_dir, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=state, prefix=".gc-trim.")
+    dest = None
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(tail)
+        os.chmod(tmp, stat.S_IMODE(st.st_mode))
+        dest = keep_original(src, dest_dir)
+        # The log never leaves its path: the original is linked (or copied)
+        # aside, and bytes a writer appended since the read join the tail
+        # before it replaces the log.
+        grown = os.stat(src).st_size
+        if grown > st.st_size:
+            with open(src, "rb") as f, open(tmp, "ab") as out:
+                f.seek(st.st_size)
+                extra = f.read()
+                out.write(extra)
+                tail += extra
+        os.replace(tmp, src)
+    except BaseException:
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
+        if dest and os.path.lexists(src) and os.path.lexists(dest):
+            os.unlink(dest)
+        raise
+    append_log("- %s trimmed '%s' to its last %d bytes; original kept at '%s'" % (now_iso(), src, len(tail), dest))
+    print("trimmed\t%s\t%d\t%s" % (src, len(tail), dest))
+
+
+def cmd_trim(paths):
+    if not paths:
+        die("trim needs at least one path")
+    state = repo_state_dir()
+    refused = ["REFUSED: %s: %s" % (raw, why) for raw, why in ((r, trim_refusal(r, state)) for r in paths) if why]
+    busy = browse_daemon(state) if state and not refused else None
+    if busy:
+        refused.append("REFUSED: %s; stop it, then trim" % busy)
+    if refused:
+        for r in refused:
+            sys.stderr.write(r + "\n")
+        sys.stderr.write("vibe-gc: nothing trimmed\n")
+        sys.exit(3)
+    date = datetime.date.today().isoformat()
+    # Two spellings of one file would trim it twice, the second time below the window.
+    for src in dict.fromkeys(os.path.realpath(os.path.expanduser(raw)) for raw in paths):
+        trim_one(src, state, date)
+
+
 LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2})T\S+ trash from '([^']*)' to '([^']*)' undo: ")
 
 
@@ -521,6 +698,10 @@ elif cmd == "trash":
     if "--roots" in sys.argv[1:]:
         die("trash judges paths against the default runtime roots; --roots is scan-only")
     cmd_trash(rest, roots)
+elif cmd == "trim":
+    if "--roots" in sys.argv[1:]:
+        die("trim works on the current repository's .vibestack; --roots is scan-only")
+    cmd_trim(rest)
 elif cmd == "undo":
     cmd_undo(rest)
 else:
