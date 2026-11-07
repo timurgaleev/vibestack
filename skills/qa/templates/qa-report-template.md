@@ -15,7 +15,7 @@
 | **Framework** | {DETECTED or "Unknown"} |
 | **Index** | [All QA runs](./index.md) |
 
-## Health Score: {SCORE}/100
+## Health Score: {SCORE}/100 {or "(partial coverage — not run: {CATEGORY})"}
 
 | Category | Score |
 |----------|-------|
@@ -25,7 +25,8 @@
 | Functional | {0-100} |
 | UX | {0-100} |
 | Performance | {0-100} |
-| Accessibility | {0-100} |
+| Content | {0-100} |
+| Accessibility | {0-100 or "not run"} |
 
 ## Top 3 Things to Fix
 

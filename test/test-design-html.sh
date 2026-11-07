@@ -21,7 +21,12 @@
 #     skill that writes approved.json records that field;
 #   - deck mode is explicit, its gate asserts scrollHeight <= clientHeight and
 #     splits a failing slide (never overflow: hidden), and its gate block sets
-#     each viewport before the fit check and screenshot with $B rebound.
+#     each viewport before the fit check and screenshot with $B rebound;
+#   - the shared craft floor renders whole in Step 1 and in /design-review, no
+#     step tells the model to generate realistic content, persuade pages get an
+#     intake, archetype, action states and an index decision, Step 4 and Copy to
+#     project print the hand-off, and the blacklist applies by default with an
+#     override rule and design-consultation's added items.
 #
 # Usage: test/test-design-html.sh [repo-root]
 set -uo pipefail
@@ -218,6 +223,71 @@ PY
 else
   no "deck mode section has content"
 fi
+
+echo "Craft floor"
+FLOOR="$SRC/lib/snippets/design-craft-floor.md"
+if [ -f "$FLOOR" ]; then
+  ok "lib/snippets/design-craft-floor.md exists"
+  grep -Eq '^\{\{include ' "$FLOOR" && no "floor snippet has a nested include" || ok "floor snippet has no nested include"
+  # Shared by design-html and design-review, so it names no one skill's steps.
+  grep -Eq '(Step|Phase) [0-9]' "$FLOOR" && no "floor snippet names a skill-specific step" || ok "floor snippet names no skill-specific step"
+  for needle in '[Needs proof:' 'href="#"' 'aria-current' 'skip link' 'meta description' 'text-wrap: balance' \
+                'text-wrap: pretty' 'IntersectionObserver' 'scale(0)' '100dvh' 'Before this can ship'; do
+    grep -Fq -- "$needle" "$FLOOR" && ok "floor: $needle" || no "floor missing: $needle"
+  done
+  for skill in design-html design-review; do
+    out="$TMP/r/$skill-floor.md"
+    VIBESTACK_REPO_ROOT="$SRC" "$HERE/bin/vibe-render-skill" "$SRC/skills/$skill/SKILL.md" "$out" >/dev/null 2>&1
+    miss=0
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      grep -Fxq -- "$line" "$out" || { miss=1; no "$skill lacks floor line: ${line:0:60}"; break; }
+    done < "$FLOOR"
+    [ "$miss" -eq 0 ] && ok "$skill renders the whole craft floor"
+  done
+else
+  no "lib/snippets/design-craft-floor.md exists"
+fi
+if grep -Eiq 'generate realistic content' "$R"; then no "no 'generate realistic content'"; else ok "no 'generate realistic content'"; fi
+present "real content, never invented proof" '**Real content, never invented proof.**'
+P_STEP1="$(grep -nF '## Step 1: Design Analysis' "$R" | head -1 | cut -d: -f1)"
+P_STEP2="$(grep -nF '## Step 2: Smart Pretext API Routing' "$R" | head -1 | cut -d: -f1)"
+P_FLOOR="$(grep -nF '[Needs proof:' "$R" | head -1 | cut -d: -f1)"
+[ -n "$P_FLOOR" ] && [ "$P_FLOOR" -gt "${P_STEP1:-0}" ] && [ "$P_FLOOR" -lt "${P_STEP2:-0}" ] \
+  && ok "Step 1 carries the craft floor" || no "the craft floor is not in Step 1"
+
+echo "Persuade pages"
+present "persuade subsection" '### Persuade pages'
+present "a Surface line comes first" 'Surface: PERSUADE'
+present "intake is capped at three questions" 'at most three questions'
+present "one archetype is picked" 'Pick one archetype'
+for st in invalid pending failure success; do
+  present "primary action has a $st state" "**$st**"
+done
+present "index decision is made" '`noindex`'
+
+echo "Hand-off"
+P_STEP4="$(grep -nF '## Step 4: Preview + Refinement Loop' "$R" | head -1 | cut -d: -f1)"
+P_DECK="$(grep -nF '## Deck mode' "$R" | head -1 | cut -d: -f1)"
+P_NEXT="$(grep -nF '### Next Steps' "$R" | head -1 | cut -d: -f1)"
+in_range() { awk -v a="$1" -v b="$2" 'NR > a && NR < b && index($0, "Before this can ship") { f = 1 } END { exit !f }' "$R"; }
+in_range "${P_STEP4:-0}" "${P_DECK:-0}" && ok "Step 4 prints the Before this can ship list" || no "Step 4 has no hand-off"
+in_range "${P_NEXT:-0}" 99999 && ok "Copy to project prints the Before this can ship list" || no "Copy to project has no hand-off"
+
+echo "Blacklist"
+present "blacklist applies by default" '**Never include by default** (AI slop blacklist):'
+present "blacklist has an override rule" 'An approved mockup that shows one, a DESIGN.md that chose it, or an explicit user request overrides the list'
+absent "old unconditional blacklist heading is gone" '^\*\*Never include \(AI slop blacklist\):\*\*'
+# The added items reuse design-consultation's wording.
+for item in '- Gradient buttons as the primary CTA pattern' '- A colored left border on cards; a card nested inside a card' \
+            '- Glowing edges, radial halos or spotlight glows on dark surfaces' '- Gradient text as emphasis; headings within a step of body size' \
+            '- A pill-shaped label or kicker floating above the hero headline' '- Frosted-glass panels as the default surface'; do
+  if grep -Fq -- "$item" "$SRC/skills/design-consultation/SKILL.md" && grep -Fq -- "$item" "$R"; then
+    ok "blacklist reuses consultation: ${item:2:40}"
+  else
+    no "blacklist lacks consultation item: ${item:2:40}"
+  fi
+done
 
 echo
 echo "design-html: $pass passed, $fail failed"

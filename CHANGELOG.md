@@ -1,5 +1,254 @@
 # Changelog
 
+## 1.55.27 — 2026-11-07
+
+### Added
+
+- **`browse tunnel agents` and `browse tunnel revoke <name>`.** List the agents
+  paired with your browser, including setup keys nobody has redeemed yet, and
+  cut one of them; the revoke re-lists to confirm and exits non-zero when the
+  name is unknown or still listed. `/pair-agent` documents both.
+
+### Fixed
+
+- **A proxy with credentials from the environment no longer kills the daemon.**
+  `--proxy` plus `BROWSE_PROXY_USER`/`BROWSE_PROXY_PASS` handed the credentials
+  to the daemon twice and tripped its mixed-source check on start, crash restart
+  and connect.
+- **Revoking an agent revokes everything it holds.** The revoke removed only the
+  first entry with that name, so an exchanged session could survive it. It now
+  removes the session and every setup key, and hands the agent's tabs back to
+  you before it answers, even when a page has stopped responding.
+- **Re-pairing a name narrows it at once.** Pending setup keys for the name are
+  revoked, and a narrower grant revokes the live session immediately; an
+  unknown scope is refused before anything is revoked.
+
+## 1.55.26 — 2026-11-07
+
+### Added
+
+- **A craft floor for generated pages.** `/design-html` builds to it and
+  `/design-review` audits against it: proof (testimonials, logos, numbers,
+  ratings, prices) appears only when you supplied it, otherwise the page says
+  `[Needs proof: …]`; no placeholder people, round numbers or filler words; every
+  page has a title and description, favicon, skip link, landmarks, alt text,
+  real links and on-scale values, and motion never hides content. Each build
+  ends with a "Before this can ship" list of what is still open.
+- `/design-html` has a persuade-page path — a few intake questions, an
+  archetype, and every state of the primary action.
+
+### Changed
+
+- **`/design-review` bootstraps a test framework only when a fix needs one** — a
+  JS-behavior fix in a project with no known test command — and stages by name,
+  never with `git add -A`.
+- `/design-review` reads the project's tokens when there is no DESIGN.md, checks
+  that content renders without script or motion, and treats invented proof as a
+  finding to ask about, never something to fix. Exits ease out in both
+  `/design-review` and `/design-consultation`.
+
+## 1.55.25 — 2026-11-07
+
+### Changed
+
+- **`/cso` reads every runtime's skills and MCP configs.** Phase 8 scans the
+  skill roots of Claude Code, Codex, Copilot, Cursor and Kiro and every file
+  under them, not only `SKILL.md`, and asks who controls download
+  destinations, whether hooks interpolate tool input, and what environment
+  reaches network calls. `/cso` and `/mcp-review` read each runtime's MCP
+  client config through `npx`/`uvx`/`pipx`/`docker` wrappers, flag floating
+  and ranged pins, and list a launch spec they cannot parse instead of dropping
+  it.
+- **A daily `/cso` finding meets a supported bar.** Besides the 8/10 floor it
+  names the attacker-controlled entrypoint, the boundary crossed, the in-scope
+  impact and the controls checked; AWS posture findings fill those from the
+  account. Verifiers get the location and an invariant, are capped at three and
+  record dissent, and exclusions 3, 12 and 19 no longer contradict the
+  amplification and reachability rules.
+- **Scans stay on the host's side.** Dependency scanners read lockfiles only and
+  are run as their own binaries, optional scanners never update rules or
+  databases, environment variables are checked by name, webhooks get four
+  checks, `--paths` narrows the audit, and the saved report is private and kept
+  out of git.
+
+## 1.55.24 — 2026-11-07
+
+### Changed
+
+- **`/investigate` builds a feedback loop before any hypothesis.** It needs a
+  command that shows the bug on demand — a failing test, a curl, a snapshot
+  diff, a replay, a harness, a fuzz loop — tightened until it is fast and
+  deterministic, and prints a `LOOP:` line before Phase 2. A flaky bug gets its
+  reproduction rate raised first; with no red run it stops and asks for what it
+  needs.
+- **Hypotheses come out ranked and falsifiable**, and each probe changes one
+  variable and is tagged, so Phase 5 can remove every temporary log.
+- **The regression test is written and run red before the fix**, at the seam
+  real callers use, under the shared test value bar. The debug report carries
+  the regression proof and a blast-radius block that names the evidence rung
+  reached.
+- Repro commands, pasted output and the logged learning are redacted, and
+  "test fails", "failing test", "build is broken" and "stack trace" start the
+  skill.
+
+### Fixed
+
+- `/investigate` releases its scope lock before removing the debug logs it
+  placed outside the locked directory, and bisects only from a clean tree,
+  ending with `git bisect reset`.
+
+## 1.55.23 — 2026-11-07
+
+### Added
+
+- **`/qa` and `/qa-only` test changes that have no page.** They choose the
+  surface first — browser, functional or mixed — so a CLI, library, API-only
+  endpoint, worker or migration is no longer dropped from diff-aware QA because
+  no route matched. A functional surface is probed against state the run owns,
+  with a contract map per behavior and its own report template.
+
+### Changed
+
+- **One health rubric for both skills.** Severity follows impact (data loss, a
+  blocked task, an impaired task, cosmetic), a Content category is added, the
+  manual accessibility checks run outside quick mode, and only the categories
+  that ran are scored: a quick run is labelled partial coverage, and two runs are
+  compared only when they scored the same categories.
+- `/qa` and `/qa-only` use the shared base-branch and test-bootstrap blocks and
+  read their report template and issue taxonomy through the installed skill
+  directory.
+
+## 1.55.22 — 2026-11-07
+
+### Changed
+
+- **`/land-and-deploy` runs only when you type it.** A merge to production is a
+  one-way door, so "merge", "land" or "deploy" in passing conversation no longer
+  starts it. Codex and Kiro ignore the typed-only setting.
+- **The approval question says what the merge will deploy.** Before you approve,
+  `/land-and-deploy` reads the Deploy Configuration and every workflow at the PR
+  head that deploys — with its branch filters and environment gates — and shows
+  one `MERGE WILL DEPLOY` line; without evidence it says `unknown`, never
+  "nothing deploys".
+- **A recorded deploy command is surfaced after the merge.** When the project
+  deploys by running a command, `/land-and-deploy` says production has not moved
+  yet and offers to let you run it, run it after a separate confirmation, or
+  finish as merged but unverified.
+- **Eval evidence comes from the project's own suite.** The readiness report reads
+  the `evals/<unit>/` directories the repo commits at the PR head instead of
+  warning every run that no E2E tests ran today; no suite is N/A, and a run that
+  does not name the head is a warning.
+
+### Fixed
+
+- **The production URL keeps its scheme.** The Deploy Configuration parse cut at
+  the last colon and turned `https://example.com` into `//example.com`.
+- **The inline review fails closed.** An unreadable review checklist or an
+  unfixed critical finding stops the run with a pointer to `/review` instead of
+  reading as a pass, and fixes made during it end the run before merge.
+- **An unknown diff scope runs every check.** A scope helper that could not
+  classify the diff, failed silently or was missing — or `SCOPE_*` values left
+  in your shell — could make the run skip checks.
+- **The deploy log goes through `vibe-review-log`**, names the PR's branch and
+  merge commit, and a failed write says "not logged". The setup warnings no
+  longer promise a deploy can be verified from HTTP checks alone.
+- `/land-and-deploy` detects the base branch with the shared block and reads the
+  review checklist through the installed skill directory.
+
+## 1.55.21 — 2026-11-07
+
+### Changed
+
+- **`/review` and `/ship` check that Codex can answer before relying on it.**
+  An installed `codex` or a saved login says nothing about an exhausted or
+  signed-out workspace; the mode now comes from `vibe-codex-probe`, so such a
+  workspace is reported up front instead of failing late. The Codex adversarial
+  reply counts as coverage only when it ends on its `Recommendation:` line and
+  any verdict other than SHIP comes with severity-tagged findings — written as
+  plain lines, a numbered list or a table — otherwise it is reported as missing
+  coverage, never as a clean review.
+- **`/review` and `/ship` use the shared base-branch detection and confidence
+  calibration.** Under the shared calibration, an unverified finding that would
+  be P0 or P1 now shows in the main report at confidence 5 with a "verify this"
+  caveat, instead of being kept in the appendix. The ship coverage subagent
+  gets the implementer dispatch rules, and `/review`'s fix step applies the test
+  value bar.
+
+### Fixed
+
+- **A diff whose scope cannot be computed gets every specialist.** When
+  `vibe-diff-scope` fails, `/review` and `/ship` used to read the missing flags
+  as "nothing changed" and skip specialists and the design review; they now run
+  all of them. `/ship` stops when the design checklist cannot be read instead
+  of skipping the design review.
+- **`/review` and `/ship` find their checklists on every runtime.** Checklist,
+  specialist, greptile-triage, TODOS-format and design-checklist reads resolve
+  through the installed skill directory instead of `~/.claude/skills`.
+- **Secrets are caught by the shared matcher everywhere.** `vibe-evidence`
+  refuses a command line that carries a credential, using the same patterns as
+  the other loggers, and greptile replies are scanned with `vibe-redact` before
+  they are posted; a scan that cannot run stops the reply.
+- **`/ship`'s GitLab helper runs its Python isolated.**
+
+## 1.55.20 — 2026-11-07
+
+### Changed
+
+- **`/office-hours` second opinions follow the outside-voice switch.** The Phase
+  3.5 cold read and the design-sketch voices now go through the shared preflight,
+  so `codex_reviews disabled` turns them off and a session already running under
+  Codex gets Claude Code instead of Codex reviewing itself. The prompt is checked
+  for credentials before it leaves the machine; a finding falls back to the Claude
+  subagent.
+- **Builder mode asks fewer, better questions.** It asks why first when you have
+  not said, asks a listed question only when the answer changes what gets built,
+  says what a capability unlocks beyond the task, and tags each design-doc
+  decision as yours or its own call with the reason.
+- **The next-review handoff respects proactive mode.** `/office-hours` picks
+  `/plan-ceo-review`, `/plan-eng-review` or `/plan-design-review` from what the
+  session produced, and offers to launch it only in an interactive session with
+  proactive suggestions on; otherwise it prints a one-line recommendation.
+
+### Fixed
+
+- **The wireframe sketch is kept.** It was written to a shared `/tmp` path that
+  the next session overwrote; it now lives in a private temp directory, is saved
+  next to the design doc, and both design-doc templates carry a `Wireframe:` line.
+  The dead comparison-board steps are gone.
+- **The `docs/designs` copy of a design doc is scanned for credentials first.**
+  The scanner runs on the saved doc and the copy happens only when it finds
+  nothing.
+- **Builder-profile entries survive quotes in your words.** Entries are written
+  to a file and appended through a validator instead of being spliced into shell
+  source.
+- **The recent-context diff uses the repo's real base branch** instead of
+  assuming `origin/main`.
+
+## 1.55.19 — 2026-11-07
+
+### Changed
+
+- **The plan reviews share one outside-voice run.** `/plan-ceo-review`,
+  `/plan-eng-review` and `/plan-devex-review` had drifted copies of the Codex
+  pass; they now use the same prompt frame, grading and review-log record as
+  the other outside voices, and the Claude fallback asks for a read-only
+  subagent. A switched-off outside voice writes a `disabled` record instead of
+  nothing, so the dashboard can tell an opt-out from a review that never ran.
+  `/plan-eng-review` uses the shared confidence calibration, and `/plan-ceo-review`,
+  `/plan-devex-review` and `/autoplan` the shared base-branch detection.
+
+### Fixed
+
+- **The plan reviews and `/autoplan` find sibling skills on every runtime.**
+  They read `/office-hours`, the other plan reviews and the DX hall of fame from
+  `~/.claude/skills`, which only exists under Claude Code; they resolve through
+  the installed skill directory now.
+- **`/plan-eng-review` says when its review log was not saved.** A failed write
+  prints `REVIEW_LOG_NOT_PERSISTED` and the skill no longer reports the review
+  as logged. A durable architecture choice can be recorded in the decision log.
+- **`/plan-tune` runs its inline Python isolated**, so a `json.py` in the
+  working directory is never imported.
+
 ## 1.55.18 — 2026-11-07
 
 ### Changed

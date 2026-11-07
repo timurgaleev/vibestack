@@ -58,7 +58,7 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Description ≤ 1024 chars (spec limit) | 61/61 PASS | — |
 | YAML frontmatter parseable | 61/61 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 27 skills | address-pr-review, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, qa, qa-only, scrape, setup-browser-cookies, ship, telegram, vibe. Fifteen carry the token in their own SKILL.md (`vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 32 skills | address-pr-review, autoplan, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, plan-ceo-review, plan-devex-review, plan-eng-review, qa, qa-only, review, scrape, setup-browser-cookies, ship, telegram, vibe. Twenty carry the token in their own SKILL.md (the plan reviews and `autoplan` read sibling skills through it, `review` its checklists and specialists, `vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
 | Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
@@ -90,7 +90,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | address-pr-review | — | yes | — | full / full / full |
 | agent-eval | — | — | — | full / full / full |
 | ai-cost-guard | — | — | — | full / full / full |
-| autoplan | — | — | yes | full / instr-only / instr-only |
+| autoplan | — | yes | yes | full / instr-only / instr-only |
 | aws-cost | — | — | — | full / full / full |
 | bedrock-guardrails | — | — | — | full / full / full |
 | benchmark | — | yes | — | full / full / full |
@@ -118,7 +118,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | improve-arch | — | — | — | full / full / full |
 | investigate | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | kb-review | — | — | — | full / full / full |
-| land-and-deploy | — | yes | — | full / full / full |
+| land-and-deploy | — | yes | — | full / full / full (typed-only through `disable-model-invocation: true`; Codex and Kiro ignore the key, so there the skill can still be invoked by the model) |
 | landing-report | — | — | — | full / full / full |
 | learn | — | — | — | full / full / full (`sync` needs memrain MCP; degrades to "not connected" without it) |
 | make-pdf | — | yes | — | full / full / full |
@@ -126,16 +126,16 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | office-hours | — | yes | yes | full / instr-only / instr-only |
 | open-browser | — | yes | — | full / full / full |
 | pair-agent | — | yes | — | full / full / full |
-| plan-ceo-review | — | — | — | full / full / full |
+| plan-ceo-review | — | yes | — | full / full / full |
 | plan-design-review | — | — | — | full / full / full |
-| plan-devex-review | — | — | — | full / degraded / degraded (reads `dx-hall-of-fame.md` and `/office-hours` from `~/.claude/skills/`, present only when Claude Code is also installed) |
-| plan-eng-review | — | — | — | full / full / full |
+| plan-devex-review | — | yes | — | full / full / full |
+| plan-eng-review | — | yes | — | full / full / full |
 | plan-tune | — | — | — | full / full / full |
 | pr-summary | — | — | — | full / full / full |
 | qa | — | yes | — | full / full / full |
 | qa-only | — | yes | — | full / full / full |
 | retro | — | — | — | full / full / full |
-| review | — | — | — | full / full / full |
+| review | — | yes | — | full / full / full |
 | scrape | — | yes | — | full / full / full |
 | setup-browser-cookies | — | yes | — | full / full / full |
 | setup-deploy | — | — | — | full / full / full |

@@ -263,8 +263,8 @@ B='<BROWSE_BIN>'
 $B pair-agent --control --client TARGET_HOST
 ```
 
-**CRITICAL: You MUST output the full instruction block to the user.** The command
-prints everything between ═══ lines. Copy the ENTIRE block verbatim into your
+**CRITICAL: You MUST output the full instruction block to the user.** The block
+runs from its first `====` divider line to its last, both included. Copy the ENTIRE block verbatim into your
 response so the user can copy-paste it into their other agent. Do NOT summarize it,
 do NOT skip it, do NOT just say "here's the output." The user needs to SEE the block
 to copy it. Output it inside a markdown code block so it's easy to select and copy.
@@ -362,12 +362,14 @@ it didn't create. Tell it to run `newtab` first to get its own tab.
 **"Domain not allowed"** — The token has domain restrictions. Re-pair with broader
 domain access or no domain restrictions.
 
-**Re-pairing replaces, but only under the same name.** Minting a session token
-for a client name revokes that name's previous session token. So tightening an
-agent that is already live means re-pairing it with the **same `--client` name**
-and the narrower `--restrict`. Give it a new name and you have not tightened
-anything — you have two live agents, the over-scoped one still holding its
-token until it expires.
+**Re-pairing replaces, but only under the same name.** Re-pairing a client name
+revokes that name's unexchanged setup keys at once. If the new grant is narrower
+(a scope dropped, or a domain restriction added or tightened) the daemon also
+revokes the live session immediately; a broader grant keeps the session until
+the new key is exchanged. So tightening a live agent means re-pairing it with the
+**same `--client` name** and the narrower `--restrict`. A new name tightens
+nothing — the over-scoped agent keeps its token until it expires or you run
+`$B tunnel revoke <old-name>`.
 
 **"Rate limit exceeded"** — The agent is sending > 10 requests/second. It should
 wait for the Retry-After header and slow down.
@@ -400,17 +402,28 @@ When using `--local cursor`, credentials are written to
 
 ## Revoking access
 
-**See who holds access first.** The daemon serves a root-only listing of live
-agents — client name, scopes, domain restrictions, expiry, command count:
+**See who holds access first.** This lists every live agent (name, scopes,
+domain restrictions, expiry, command count) and every setup key nobody has
+redeemed yet, marked `(pending)`:
 
 ```bash
-curl -H "Authorization: Bearer $ROOT_TOKEN" "http://127.0.0.1:<port>/agents"
+B='<BROWSE_BIN>'
+$B tunnel agents
 ```
 
-It lists exchanged session tokens only. A setup key nobody has redeemed yet does
-not appear, so an empty list is not proof that no pairing is in flight — a key
-minted in the last five minutes may still be exchangeable. There is no CLI
-wrapper for this listing; `$B tunnel agents` does not exist.
+**Revoke one agent.** This cuts that name's session token and its setup keys,
+spent or pending, and hands its tabs back. It then re-lists to confirm the name
+is gone and exits non-zero if it is not:
+
+```bash
+B='<BROWSE_BIN>'
+$B tunnel revoke <agent-name>
+```
+
+Both read the root token from the daemon's state file and never start a daemon.
+Report the revoke only after its `Revoked "<agent-name>"` line. On a non-zero
+exit, show the output: an unknown name means check `$B tunnel agents`; any other
+failure means access was NOT confirmed cut — say so and fall back to `$B stop`.
 
 **Stopping the daemon revokes everything.** Scoped tokens live in daemon memory
 and are never written to the state file, so the next command boots a fresh daemon
@@ -427,19 +440,7 @@ it goes down with the daemon and the public URL stops resolving. Do NOT reach
 for `pkill -f ngrok` — it would kill every unrelated ngrok the user is running
 and still not be the thing serving this tunnel.
 
-**Per-agent revoke exists, but only over HTTP.** The daemon serves a root-only
-`DELETE /token/<clientId>`, which invalidates that agent's tokens and leaves the
-others alone:
-
-```bash
-curl -X DELETE -H "Authorization: Bearer $ROOT_TOKEN" \
-  "http://127.0.0.1:<port>/token/<agent-name>"
-```
-
-There is no CLI wrapper for it — `$B tunnel revoke` and `$B tunnel rotate` do
-NOT exist, so never tell a user to run those; they would believe a shared
-browser session had been cut off when it had not. If the root token is not to
-hand, stopping the daemon is the blunt equivalent.
+`$B tunnel rotate` does NOT exist — never tell a user to run it.
 
 Tokens expire on their own (24h by default), and a setup key expires in 5
 minutes if never exchanged.
