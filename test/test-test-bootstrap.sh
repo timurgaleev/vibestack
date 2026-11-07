@@ -68,9 +68,11 @@ for skill in ship qa; do
   missing=0
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    # /ship's inline copy names its own Step 5 in this rule; the include drops that.
+    # /ship's inline copy names its own Step 5 in this rule; the include drops
+    # that. Only that clause may differ — the rest of the line is checked whole.
     if [ "$skill" = ship ] && [ "${line#"$RULE_PREFIX"}" != "$line" ]; then
-      grep -Fq -- "$RULE_PREFIX" "$out" || { no "$skill: existing-tests rule missing"; missing=1; }
+      want="$(printf '%s' "$line" | python3 -I -c 'import sys; sys.stdout.write(sys.stdin.read().replace("Then get the command from", "Then settle the command Step 5 will run —", 1).replace("otherwise via AskUserQuestion", "otherwise AskUserQuestion", 1))')"
+      grep -Fxq -- "$want" "$out" || { no "$skill: existing-tests rule drifted beyond its Step 5 clause"; missing=1; }
       continue
     fi
     grep -Fxq -- "$line" "$out" || { no "$skill: lacks snippet line: ${line:0:60}"; missing=1; }

@@ -45,6 +45,8 @@ has 'recomputed the way the code computes it' "$SNIPPET" \
   && ok "tautological tests are named as weak" || no "tautological-test rule missing"
 has 'independent literal, worked example or spec' "$SNIPPET" \
   && ok "expected values come from an independent source" || no "independent expected-value source missing"
+has 'whose `no_claim` names the behavior its `protects=` claims' "$SNIPPET" \
+  && ok "a no_claim covering the protected behavior is not coverage" || no "self-disclosed hollow test still counts as coverage"
 if grep -Eq '^\{\{include ' "$SNIPPET"; then
   no "snippet contains a nested include"
 else
@@ -64,6 +66,8 @@ if [ -f "$DISPATCH" ]; then
   fi
   has 'reported first, on its own line' "$DISPATCH" \
     && ok "dispatch rules surface test and gate edits first" || no "test/gate edit reporting rule missing"
+  has 'Never delete, skip or loosen an existing test, threshold or gate to reach green' "$DISPATCH" \
+    && ok "dispatch rules forbid weakening a test to reach green" || no "test-weakening ban missing"
   has 'the parent re-runs' "$DISPATCH" \
     && ok "dispatch rules leave the verdict to the parent" || no "parent re-execution rule missing"
   if grep -Eq '^\{\{include ' "$DISPATCH"; then
