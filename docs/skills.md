@@ -197,7 +197,7 @@ Merges only when every check on the approved head is green (optional ones includ
 
 Right after the merge it tags the merge commit with the VERSION it carries and publishes the release with that version's CHANGELOG section (the same step `/ship` defers). An existing tag elsewhere is refused, never moved; a repo with no VERSION file is skipped.
 
-Triggers: `land and deploy`, `merge and deploy`, `deploy this PR`
+Typed only: it runs when you type `/land-and-deploy`, never from "merge" or "deploy" in conversation.
 
 ---
 

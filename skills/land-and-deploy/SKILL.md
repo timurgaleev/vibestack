@@ -8,15 +8,14 @@ allowed-tools:
   - Write
   - Glob
   - AskUserQuestion
-triggers:
-  - merge and deploy
-  - land the pr
-  - ship to production
+disable-model-invocation: true
 ---
 
 ## When to invoke
 
-Use when: "merge", "land", "deploy", "merge and verify", "land it", "ship it to production".
+Only when the user types `/land-and-deploy`. A merge to production is a one-way door: a
+passing "merge", "land" or "deploy" in conversation is not a request to run it — point to
+the command instead.
 
 ## Preamble
 
@@ -89,12 +88,7 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
+{{include lib/snippets/base-branch-detect.md}}
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -216,12 +210,20 @@ echo "TARGET REPO=$REPO PR_NUMBER=$PR_NUMBER PR_HEAD=$PR_HEAD BASE_BRANCH=$BASE_
 # Classify the diff now, against the fetched base: after the merge the checkout moves
 # and the comparison is no longer this PR's.
 CHANGED=$(git diff --name-only "$BASE_SHA...$PR_HEAD" 2>/dev/null) || CHANGED=""
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" "$BASE_SHA" 2>/dev/null)"
+# Values exported by the caller's shell must not stand in for a classification
+# the helper could not make.
+unset SCOPE_UNAVAILABLE SCOPE_FRONTEND SCOPE_BACKEND SCOPE_PROMPTS SCOPE_TESTS SCOPE_DOCS SCOPE_CONFIG SCOPE_MIGRATIONS SCOPE_API SCOPE_AUTH
+# A helper that is missing or fails silently prints nothing: that is an unknown
+# scope, not "nothing touched".
+_SC=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" "$BASE_SHA" 2>/dev/null)
+[ -n "$_SC" ] || _SC='SCOPE_UNAVAILABLE=true'
+eval "$_SC"
 SCOPE_KNOWN=false; DOCS_ONLY=false
-if [ -n "$CHANGED" ]; then
+if [ -n "$CHANGED" ] && [ "${SCOPE_UNAVAILABLE:-false}" != true ]; then
   SCOPE_KNOWN=true
   printf '%s\n' "$CHANGED" | grep -qvE '\.(md|mdx|rst)$|^docs/' || DOCS_ONLY=true
 fi
+[ "${SCOPE_UNAVAILABLE:-false}" = true ] && echo "SCOPE_UNAVAILABLE: the diff could not be classified — every check runs"
 echo "SCOPE KNOWN=$SCOPE_KNOWN DOCS_ONLY=$DOCS_ONLY FRONTEND=${SCOPE_FRONTEND:-false} BACKEND=${SCOPE_BACKEND:-false} CONFIG=${SCOPE_CONFIG:-false} DOCS=${SCOPE_DOCS:-false}"
 ```
 
@@ -255,8 +257,11 @@ else
   # Check if deploy config has changed since confirmation
   SAVED_HASH=$(cat "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed" 2>/dev/null)
   CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-  # Also hash workflow files that affect deploy behavior
-  WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+  # Every workflow that deploys, by name or by a deploy job / environment gate
+  # inside (release.yml, main.yml) — 1.5e computes the same hash.
+  WORKFLOW_HASH=$(for f in $(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort); do
+    case "${f##*/}" in *deploy*|*cd*) cat "$f" ;; *) grep -qiE '^[[:space:]]+(environment:|[A-Za-z0-9_-]*deploy[A-Za-z0-9_-]*:)' "$f" && cat "$f" ;; esac
+  done | shasum -a 256 | cut -d' ' -f1)
   COMBINED_HASH="${CURRENT_HASH}-${WORKFLOW_HASH}"
   if [ "$SAVED_HASH" != "$COMBINED_HASH" ] && [ -n "$SAVED_HASH" ]; then
     echo "CONFIG_CHANGED"
@@ -298,8 +303,9 @@ echo "$DEPLOY_CONFIG"
 
 # If config exists, parse it
 if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
-  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/.*: *//')
-  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/.*: *//')
+  # Cut at the first colon only: a greedy match eats the URL's own "https:".
+  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
+  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
   echo "PERSISTED_PLATFORM:$PLATFORM"
   echo "PERSISTED_URL:$PROD_URL"
 fi
@@ -382,11 +388,11 @@ Run whichever commands are relevant based on the detected platform. Build the re
 
 **Validation failures are WARNINGs, not BLOCKERs** (except `gh auth status` which already
 failed at Step 1). If `curl` fails, note "I couldn't reach that URL — might be a network
-issue, VPN requirement, or incorrect address. I'll still be able to deploy, but I won't
-be able to verify the site is healthy afterward."
+issue, VPN requirement, or incorrect address. Health checks are unavailable for it, so I
+can merge but not check the site afterward."
 If platform CLI is not installed, note "The {platform} CLI isn't installed on this machine.
-I can still deploy through GitHub, but I'll use HTTP health checks instead of the platform
-CLI to verify the deploy worked."
+HTTP checks show the site answers, not which revision it serves — without a deploy record
+for the merge commit, the deploy status stays UNKNOWN."
 
 ### 1.5c: Staging detection
 
@@ -457,7 +463,9 @@ FIRST_RUN:
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
 CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+WORKFLOW_HASH=$(for f in $(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort); do
+  case "${f##*/}" in *deploy*|*cd*) cat "$f" ;; *) grep -qiE '^[[:space:]]+(environment:|[A-Za-z0-9_-]*deploy[A-Za-z0-9_-]*:)' "$f" && cat "$f" ;; esac
+done | shasum -a 256 | cut -d' ' -f1)
 echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/land-deploy-confirmed"
 ```
 Continue to Step 2.
@@ -708,16 +716,25 @@ Use AskUserQuestion:
 
 **If A (quick checklist):** Tell the user: "Running the review checklist against your diff now..."
 
-Read the review checklist:
+Read the review checklist from the installed review skill beside this one:
 ```bash
-cat ~/.claude/skills/review/checklist.md 2>/dev/null || echo "Checklist not found"
+_CL="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/land-and-deploy}/../review/checklist.md"
+[ -s "$_CL" ] && cat "$_CL" || { echo "CHECKLIST_UNREADABLE: $_CL"; exit 1; }
 ```
+`CHECKLIST_UNREADABLE`: **STOP** — "I couldn't read the review checklist, so no quick
+review happened. Run `/review`, then `/land-and-deploy` again." Never report a review
+that did not run as passed.
+
 Apply each checklist item to the current diff. This is the same quick review that `/ship`
-runs in its Step 3.5. Auto-fix trivial issues (whitespace, imports). For critical findings
-(SQL safety, race conditions, security), ask the user.
+runs in its Step 3.5. Auto-fix trivial issues (whitespace, imports). A critical finding
+(SQL safety, race conditions, security) that is not fixed here is a **STOP**: recommend
+`/review` — it never becomes a warning the merge carries.
 
 **If any code changes are made during the quick review:** Commit the fixes, then **STOP**
-and tell the user: "I found and fixed a few issues during the review. The fixes are committed — run `/land-and-deploy` again to pick them up and continue where we left off."
+and tell the user: "I found and fixed a few issues during the review and committed them.
+Push them, wait for CI on the new head, then run `/land-and-deploy` again." The new
+commit is a new head: this run stopped before merge, and only a fresh run's readiness
+gate covers it.
 
 **If no issues found:** Tell the user: "Review checklist passed — no issues found in the diff."
 
@@ -760,30 +777,29 @@ echo "TEST_EXIT=$_TEXIT (full log: $_TLOG)"
 If `TEST_EXIT` is not 0: **BLOCKER.** Cannot merge with failing tests. If the user said
 there is no test suite, record Free tests as `NONE (user confirmed)` — a warning, not a pass.
 
-**E2E tests — check recent results:**
+**Project evals — the repo's own suite, tied to this head:** a unit is an
+`evals/<unit>/` with a committed `config.json` (the layout `/agent-eval` writes); its
+latest run is the newest `runs/summary-*.md`.
 
 ```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/evals/"*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
+PR_HEAD='<PR_HEAD>'   # from Step 1's TARGET line
+_n=0
+for _cfg in $(git ls-tree -r --name-only "$PR_HEAD" -- evals 2>/dev/null | grep -E '^evals/[^/]+/config\.json$'); do
+  _u=${_cfg%/config.json}; _n=$((_n + 1))
+  _sum=$(find "$_u/runs" -maxdepth 1 -type f -name 'summary-*.md' -exec ls -t {} + 2>/dev/null | head -1)
+  if [ -z "$_sum" ]; then echo "EVAL $_u NOT_RUN"
+  elif head -1 "$_sum" | grep -q '^INCOMPLETE'; then echo "EVAL $_u INCOMPLETE $_sum"
+  elif grep -qF "$(printf '%s' "$PR_HEAD" | cut -c1-7)" "$_sum"; then echo "EVAL $_u TIED $_sum"
+  else echo "EVAL $_u UNTIED $_sum"
+  fi
+done
+[ "$_n" = 0 ] && echo "PROJECT_EVALS: N/A (no evals/<unit>/config.json at this head)"
 ```
 
-For each eval file from today, parse pass/fail counts. Show:
-- Total tests, pass count, fail count
-- How long ago the run finished (from file timestamp)
-- Total cost
-- Names of any failing tests
-
-If no E2E results from today: **WARNING — no E2E tests run today.**
-If E2E results exist but have failures: **WARNING — N tests failed.** List them.
-
-**LLM judge evals — check recent results:**
-
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/evals/"*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
-```
-
-If found, parse and show pass/fail. If not found, note "No LLM evals run today."
+- `PROJECT_EVALS: N/A` — no suite is configured. Report N/A; it is not a warning.
+- `TIED` — the run names this head: show its pass rates; failures are a **WARNING** listing them.
+- `UNTIED`, `NOT_RUN`, `INCOMPLETE` — **WARNING**: eval evidence is unavailable for `<sha7>`.
+  A run that does not name the head may be another commit's, and an incomplete run is never a pass.
 
 ### 3.5c: PR body accuracy check
 
@@ -840,6 +856,32 @@ likely not run. CHANGELOG and VERSION not updated despite new features.**
 
 If only docs changed (no code): skip this check.
 
+### 3.5d-bis: What the merge deploys
+
+Every run, CONFIRMED or not, read what merging into `BASE_BRANCH` sets off — the Deploy
+Configuration, and each workflow at `PR_HEAD` that deploys (by name, or by a deploy job or
+`environment:` inside) with its triggers, branch filters and environment gates:
+
+```bash
+PR_HEAD='<PR_HEAD>'   # from Step 1's TARGET line
+sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null \
+  | grep -iE '^[[:space:]]*-[[:space:]]*(platform|production url|deploy workflow|deploy trigger):' | sed 's/^/CONFIG /'
+for f in $(git ls-tree --name-only "$PR_HEAD" .github/workflows/ 2>/dev/null | grep -E '\.ya?ml$'); do
+  _wf=$(git show "$PR_HEAD:$f" 2>/dev/null) || continue
+  case "${f##*/}" in *deploy*|*cd*) ;; *) printf '%s\n' "$_wf" | grep -qiE '^[[:space:]]+(environment:|[A-Za-z0-9_-]*deploy[A-Za-z0-9_-]*:)' || continue ;; esac
+  printf '%s\n' "$_wf" | awk -v f="$f" '
+    /^[[:space:]]*"?(on|push|workflow_dispatch|workflow_run|release|branches|branches-ignore|tags|environment)"?[[:space:]]*:/ { print "WORKFLOW " f ":" NR ": " $(0); l = ($(0) ~ /:[[:space:]]*$/); next }
+    l && /^[[:space:]]*(-[[:space:]]|name:)/ { print "WORKFLOW " f ":" NR ": " $(0); next }
+    { l = 0 }'
+done
+```
+
+Reduce it to one row for the report: `MERGE WILL DEPLOY: <production via X / staging via
+Y / nothing until <trigger command> runs / unknown>`. A workflow counts for this merge only
+when its `push` branch filter admits `BASE_BRANCH` (or it has none); name an `environment:`
+gate as one that may hold for approval. No evidence either way is `unknown` — never
+"nothing deploys".
+
 ### 3.5e: Readiness report and confirmation
 
 Tell the user: "Here's the full readiness report. This is everything I checked before merging."
@@ -855,6 +897,7 @@ Build the full readiness report:
 ║  Branch: feature → main                                  ║
 ║  Head:   <sha7>                                          ║
 ║  CI:     PASS (N checks) / NO CI RAN / ALL SKIPPED       ║
+║  MERGE WILL DEPLOY: production via <X> / unknown         ║
 ║                                                          ║
 ║  REVIEWS                                                 ║
 ║  ├─ Eng Review:    CURRENT / STALE (N commits) / —       ║
@@ -864,8 +907,7 @@ Build the full readiness report:
 ║                                                          ║
 ║  TESTS                                                   ║
 ║  ├─ Free tests:    PASS / FAIL (blocker)                 ║
-║  ├─ E2E tests:     52/52 pass (25 min ago) / NOT RUN     ║
-║  └─ LLM evals:     PASS / NOT RUN                        ║
+║  └─ Project evals: N/A / 52/52 on <sha7> / UNAVAILABLE   ║
 ║                                                          ║
 ║  DOCUMENTATION                                           ║
 ║  ├─ CHANGELOG:     Updated / NOT UPDATED (warning)       ║
@@ -904,8 +946,8 @@ If everything is green: recommend A.
 
 Use AskUserQuestion (only when there are no blockers):
 
-- **Re-ground:** "Ready to merge PR #NNN — '{title}' into {base}. Here's what I found."
-  Show the report above.
+- **Re-ground:** "Ready to merge PR #NNN — '{title}' into {base}. MERGE WILL DEPLOY: {the
+  3.5d-bis row}. Here's what I found." Show the report above.
 - If everything is green: "All checks passed. This PR is ready to merge."
 - If there are warnings: List each one in plain English. E.g., "The engineering review
   was done 6 commits ago — the code has changed since then" not "STALE (6 commits)."
@@ -917,7 +959,7 @@ Use AskUserQuestion (only when there are no blockers):
 
 If the user chooses B: **STOP.** Give specific next steps:
 - If reviews are stale: "Run `/review` or `/autoplan` to review the current code, then `/land-and-deploy` again."
-- If E2E not run: "Run your E2E tests to make sure nothing is broken, then come back."
+- If project evals are unavailable: "Run the project's evals on this head, then come back."
 - If docs not updated: "Run `/document-release` to update CHANGELOG and docs."
 - If PR body stale: "The PR description doesn't match what's actually in the diff — update it on GitHub."
 
@@ -1320,10 +1362,14 @@ echo "$DEPLOY_CONFIG"
 
 # If config exists, parse it
 if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
-  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/.*: *//')
-  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/.*: *//')
+  # Cut at the first colon only: a greedy match eats the URL's own "https:".
+  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
+  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
   echo "PERSISTED_PLATFORM:$PLATFORM"
   echo "PERSISTED_URL:$PROD_URL"
+  # /setup-deploy records either "automatic on push to <branch>" or the command that deploys.
+  TRIGGER=$(echo "$DEPLOY_CONFIG" | grep -i '^[[:space:]]*-[[:space:]]*deploy trigger:' | head -1 | sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//')
+  case "$TRIGGER" in ''|[Aa]uto*|[Nn]one*|*"on push"*|*"on merge"*) ;; *) echo "DEPLOY_TRIGGER_COMMAND: $TRIGGER" ;; esac
 fi
 
 # Auto-detect platform from config files
@@ -1366,16 +1412,28 @@ A run with `headSha` = `MERGE_SHA` whose workflow deploys ("deploy", "release",
 docs-only change. A configured deploy whose run has not appeared yet is still pending:
 Step 6 keeps looking for it within its deadline.
 
-2. If the user gave a URL (`VERIFY_URL`): run Step 7 against it — even for a docs-only
+2. `DEPLOY_TRIGGER_COMMAND:` printed (the Deploy Configuration records a command as the
+   deploy trigger) and no run from rule 1: nothing deploys until that command runs. Tell
+   the user "PR #NNN is merged, but production has not moved yet — this project deploys
+   when `<command>` runs," show the command, and use AskUserQuestion:
+   - A) I'll run it myself — tell me when it's done
+   - B) Run it now — a separate one-way confirmation naming the exact command; run it only
+     from a checkout of `BASE_BRANCH` that contains `MERGE_SHA`
+     (`git merge-base --is-ancestor "$MERGE_SHA" HEAD`)
+   - C) Finish as MERGED (UNVERIFIED) → Step 9
+   After A or B, go to Step 6 with `DEPLOY_SHA=MERGE_SHA`. The command's exit 0 is not
+   proof of the revision — Step 6 still needs a record for `DEPLOY_SHA`.
+
+3. If the user gave a URL (`VERIFY_URL`): run Step 7 against it — even for a docs-only
    change. Without deployment evidence for `MERGE_SHA`, report the site's health
    separately from whether this change is live.
 
-3. `DOCS_ONLY=true` (and `KNOWN=true`), no URL argument, and no deploy triggered or
+4. `DOCS_ONLY=true` (and `KNOWN=true`), no URL argument, and no deploy triggered or
    expected: skip verification. Tell the user: "This was a docs-only change — nothing to
    deploy or verify." Record verification SKIPPED (docs-only) and go to Step 9 with
    MERGED — NO DEPLOY NEEDED.
 
-4. Otherwise use the configured production URL and deploy status checks in Steps 6-7.
+5. Otherwise use the configured production URL and deploy status checks in Steps 6-7.
    If there is neither a usable URL nor a deploy status, use AskUserQuestion once (also
    when Step 6 finishes without a URL for the canary):
    - **Re-ground:** "PR #NNN is merged. {What I know about the deploy}. I need a URL to check health — a merge alone doesn't prove this revision is live. If it's a library or CLI tool, there's nothing to verify."
@@ -1717,7 +1775,7 @@ deploy, and an HTTP 200 is not this revision being live:
 | Revert on the base, its deploy confirmed and production healthy — or nothing deploys | REVERTED |
 | The user accepted observed health failures (Step 7 A) | DEGRADED |
 | Staging-only chosen (Step 5a C) and staging healthy | STAGING VERIFIED — PRODUCTION UNVERIFIED |
-| Docs-only skip (Step 5 rule 3) or the user confirmed nothing deploys | MERGED — NO DEPLOY NEEDED |
+| Docs-only skip (Step 5 rule 4) or the user confirmed nothing deploys | MERGED — NO DEPLOY NEEDED |
 | Deploy of `MERGE_SHA` PASSED and production HEALTHY | DEPLOYED AND VERIFIED |
 | Deploy of `MERGE_SHA` PASSED but the canary was skipped or unavailable | DEPLOYED (UNVERIFIED) |
 | Everything else — deploy FAILED, PENDING or UNKNOWN, even when the site looks healthy | MERGED (UNVERIFIED) |
@@ -1756,7 +1814,7 @@ Timing:
 
 Reviews:
   Eng review: <CURRENT / STALE / NOT RUN>
-  Inline fix: <yes (N fixes) / no / skipped>
+  Inline review: <passed / skipped by user / not needed> (fixes mean the run stopped before merge)
 
 CI:           <PASSED (N checks on <sha7>) / NO CI RAN (approved for <sha7>)>
 Deploy:       <PASSED / FAILED / PENDING / UNKNOWN / NOT NEEDED> — <evidence: run, deployment record or "none for <sha7>">
@@ -1773,19 +1831,27 @@ VERDICT: <the first matching row of the table above>
 
 Save report to `<REPORT_DIR>/{date}-pr{number}-deploy.md`, using the `REPORT_DIR:` path the block above printed — the state root, never the work tree.
 
-Log to the review dashboard:
-
-```bash
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
-mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
-```
-
-Write a JSONL entry with timing data. `status` is SUCCESS only for DEPLOYED AND VERIFIED
-or MERGED — NO DEPLOY NEEDED, REVERTED for a confirmed rollback, and INCOMPLETE for every
-other verdict; the full verdict and each evidence state are kept alongside it:
+Log to the review dashboard. Fill one entry with timing data. `status` is SUCCESS only
+for DEPLOYED AND VERIFIED or MERGED — NO DEPLOY NEEDED, REVERTED for a confirmed rollback,
+and INCOMPLETE for every other verdict; the full verdict and each evidence state are kept
+alongside it:
 ```json
-{"skill":"land-and-deploy","timestamp":"<ISO>","status":"<SUCCESS/REVERTED/INCOMPLETE>","verdict":"<verdict>","pr":<number>,"head_sha":"<PR_HEAD>","merge_sha":"<sha>","merge_path":"<auto/direct/queue/external>","first_run":<true/false>,"deploy_status":"<PASSED/FAILED/PENDING/UNKNOWN/NOT_NEEDED>","verification":"<HEALTHY/DEGRADED/SKIPPED>","staging_status":"<VERIFIED/DEGRADED/SKIPPED/N/A>","review_status":"<CURRENT/STALE/NOT_RUN/INLINE_FIX>","ci_wait_s":<N>,"queue_s":<N>,"deploy_s":<N>,"staging_s":<N>,"canary_s":<N>,"total_s":<N>}
+{"skill":"land-and-deploy","timestamp":"<ISO>","status":"<SUCCESS/REVERTED/INCOMPLETE>","verdict":"<verdict>","pr":<number>,"head_sha":"<PR_HEAD>","merge_sha":"<sha>","merge_path":"<auto/direct/queue/external>","first_run":<true/false>,"deploy_status":"<PASSED/FAILED/PENDING/UNKNOWN/NOT_NEEDED>","verification":"<HEALTHY/DEGRADED/SKIPPED>","staging_status":"<VERIFIED/DEGRADED/SKIPPED/N/A>","review_status":"<CURRENT/STALE/NOT_RUN/INLINE_PASSED>","dry_run_s":<N>,"ci_wait_s":<N>,"queue_s":<N>,"deploy_s":<N>,"staging_s":<N>,"canary_s":<N>,"total_s":<N>}
 ```
+
+`vibe-review-log` writes it. After `--delete-branch` the checkout is on the base, so the
+block names the PR's branch and the merge commit in the entry itself rather than letting
+the writer take them from the checkout:
+```bash
+REPO='<REPO>'; PR_NUMBER='<PR_NUMBER>'; MERGE_SHA='<MERGE_SHA>'   # Step 1; readback
+ENTRY='<ENTRY>'   # the JSON line above, every <…> filled in
+_BR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName -q .headRefName 2>/dev/null) || _BR=unknown
+ENTRY=$(printf '%s' "$ENTRY" | jq -ce --arg b "$_BR" --arg c "$(printf '%s' "$MERGE_SHA" | cut -c1-7)" '. + {branch: $b, commit: $c}' 2>/dev/null) \
+  || { echo "DEPLOY_LOG: not logged (the entry is not valid JSON)"; exit 1; }
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" "$ENTRY" || { echo "DEPLOY_LOG: not logged (vibe-review-log failed)"; exit 1; }
+echo "DEPLOY_LOG: logged"
+```
+`DEPLOY_LOG: not logged` goes into the report as is; never say the run was logged.
 
 ---
 
