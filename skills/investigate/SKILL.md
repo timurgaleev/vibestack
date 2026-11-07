@@ -107,7 +107,7 @@ Gather context before forming any hypothesis.
 
    Tighten it until it is fast, sharp and deterministic: seconds, not minutes; red on the reported symptom, not a nearby failure; the same result every run. For a flaky bug, raise the reproduction rate first — loop the command, pin seeds, clocks and ordering, add load or narrow the timing window — and record the rate (`red 7/50`). A failure that is red only in CI, or too rare to catch locally, is not a stop: its `LOOP:` line is the rate loop in `flake.md` section 1 (path in Phase 2; CI-only: the environment diff there), and its symptom is the CI log. If no way gives a red run, stop and say exactly what you need (a log, a payload, access, a recording, an environment) and ask for it; a `headless` or `spawned` session reports `BLOCKED` with that list. Never work on a bug you cannot see.
 
-   When the loop runs red, print one line: `LOOP: <command> — ran: yes — red on: <symptom>`. No Phase 2 until the `LOOP:` line is printed for a command you actually ran.
+   When the loop runs red, print one line: `LOOP: <command> — ran: yes — red on: <symptom>`. For a CI-only failure whose local rate loop stays `0/N`, the line names the loop you ran and the CI run that went red: `LOOP: <rate command> — ran: yes — red on: <symptom> in CI run <run id>`. No Phase 2 until the `LOOP:` line is printed for a command you actually ran.
 
 5. **Minimise:** Cut input, config and steps until removing anything more turns the loop green. Phase 4's regression test is built from this minimised repro.
 

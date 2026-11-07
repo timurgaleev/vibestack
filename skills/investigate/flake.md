@@ -22,7 +22,7 @@ rate() {
 }
 WT="$(mktemp -d)/base"
 git worktree add --detach "$WT" "$BASE" >/dev/null
-(cd "$WT" && sh -c "$SETUP") >/dev/null 2>&1 || echo "SETUP failed in the base worktree"
+(cd "$WT" && sh -c "$SETUP") >/dev/null 2>&1 || { echo "SETUP failed in the base worktree — no base rate"; git worktree remove --force "$WT"; exit 1; }
 echo "branch failed/N: $(rate .)"
 echo "base   failed/N: $(rate "$WT")"
 git worktree remove --force "$WT"

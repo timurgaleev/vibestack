@@ -207,6 +207,12 @@ if [ -f "$FLAKE" ]; then
   else
     no "Phase 1 stops a CI-only failure before flake.md can be read"
   fi
+  if grep -qF 'red on: <symptom> in CI run <run id>' "$SRC/skills/investigate/SKILL.md"; then
+    ok "a CI-only failure has its own LOOP: line form"
+  else
+    no "the LOOP: gate still requires a local red run for a CI-only failure"
+  fi
+  fl "a failed base SETUP stops before any rate" 'no base rate"; git worktree remove'
 else
   no "flake.md exists"
 fi
