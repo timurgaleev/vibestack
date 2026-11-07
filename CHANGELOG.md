@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.55.24 — 2026-11-07
+
+### Changed
+
+- **`/investigate` builds a feedback loop before any hypothesis.** It needs a
+  command that shows the bug on demand — a failing test, a curl, a snapshot
+  diff, a replay, a harness, a fuzz loop — tightened until it is fast and
+  deterministic, and prints a `LOOP:` line before Phase 2. A flaky bug gets its
+  reproduction rate raised first; with no red run it stops and asks for what it
+  needs.
+- **Hypotheses come out ranked and falsifiable**, and each probe changes one
+  variable and is tagged, so Phase 5 can remove every temporary log.
+- **The regression test is written and run red before the fix**, at the seam
+  real callers use, under the shared test value bar. The debug report carries
+  the regression proof and a blast-radius block that names the evidence rung
+  reached.
+- Repro commands, pasted output and the logged learning are redacted, and
+  "test fails", "failing test", "build is broken" and "stack trace" start the
+  skill.
+
+### Fixed
+
+- `/investigate` releases its scope lock before removing the debug logs it
+  placed outside the locked directory, and bisects only from a clean tree,
+  ending with `git bisect reset`.
+
 ## 1.55.23 — 2026-11-07
 
 ### Added
