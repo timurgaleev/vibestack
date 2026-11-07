@@ -37,6 +37,7 @@ import {
   substituteSlots,
 } from "./diagram-prepass";
 import { applyImagePolicy } from "./image-policy";
+import { dropIcnsImages } from "./docx-images";
 import { printWithTocPages } from "./toc-pages";
 
 class ProgressReporter {
@@ -119,6 +120,7 @@ export async function generate(opts: GenerateOptions): Promise<string> {
     marginLeft: opts.marginLeft,
     pageNumbers: opts.pageNumbers,
     footerTemplate: opts.footerTemplate,
+    allowNetwork: opts.allowNetwork === true,
   });
   progress.end("Rendering HTML", `${rendered.meta.wordCount} words`);
 
@@ -199,7 +201,7 @@ export async function generate(opts: GenerateOptions): Promise<string> {
         }
         progress.end("Rasterizing diagrams for DOCX");
       }
-      finalHtml = convertDiagnosticsForDocx(finalHtml);
+      finalHtml = dropIcnsImages(convertDiagnosticsForDocx(finalHtml), warn);
     }
   } finally {
     renderTab?.close();
@@ -353,6 +355,7 @@ export async function preview(opts: PreviewOptions): Promise<string> {
     noChapterBreaks: opts.noChapterBreaks,
     confidential: opts.confidential,
     pageNumbers: opts.pageNumbers,
+    allowNetwork: opts.allowNetwork === true,
   });
   progress.end("Rendering HTML", `${rendered.meta.wordCount} words`);
 
