@@ -30,6 +30,7 @@ jobs:
           - test-hooks.sh
           - test-render-skill.sh
           - test-source-lint.sh
+          - test-skill-size.sh
           - test-positional-literals.sh
           - test-python-isolation.sh
           - test-heredoc-compat.sh
@@ -68,10 +69,13 @@ jobs:
           - test-release-after-merge.sh
           - test-review-log.sh
           - test-test-value-bar.sh
+          - test-test-bootstrap.sh
+          - test-shared-protocols.sh
           - test-codex-verdict.sh
           - test-context-provenance.sh
           - test-learn-honest-read.sh
           - test-plan-ceo-review.sh
+          - test-outside-voice-body.sh
           - test-plan-eng-review-rubric.sh
           - test-autoplan-ledger.sh
           - test-plan-design-review.sh

@@ -104,7 +104,7 @@ new.
 | `vibe-first-task-detect` | Classify the repo into one first-task bucket for the first-run scaffold (local git + FS only, emits one enum token) |
 | `vibe-decision-log` / `vibe-decision-search` | Event-sourced local decision store (`--supersede` / `--redact`, secret rejection) |
 | `vibestack` | Umbrella CLI — `status` / `doctor` / `skills` / `version`, and dispatch to any `vibe-<tool>` |
-| `vibe-lint-sources` | Static lint over skill sources + snippets (fence balance, duplicate headings, nested includes, size); runs inside `./install` before rendering |
+| `vibe-lint-sources` | Static lint over skill sources + snippets (fence balance, duplicate headings, nested includes, size, hard-coded host paths); runs inside `./install` before rendering. `--strict` turns host-path warnings into findings and fails a run that read no files |
 | `vibe-certify` | Cross-runtime conformance: fixture-install per target + per-skill verification matrix |
 | `vibe-brand-audit` | Fail if tracked files, commit messages, or PR/release text name a source other than this project; run by CI on every PR |
 | `vibe-question-log` | Append an AskUserQuestion event to the project log — the only writer of the log `/plan-tune` reads; an event carrying a secret is refused |
@@ -173,10 +173,18 @@ are worth knowing as rules of the pack rather than of any one skill.
   concrete pros and one honest con per option, bullets that say something
   measurable, the non-recommended option written in the same register as the
   recommended one, and a self-check the model runs before sending. An option
-  with no stated downside reads as a decision already made.
-- **Claimed limitations need evidence** (`working-protocols.md`): never assert
-  that something cannot be done without having tried it and being able to name
-  the command and its output.
+  with no stated downside reads as a decision already made. Before asking, a
+  local, read-only, free check that would settle the question is run instead;
+  one-way steps, facts only the user holds and inconclusive checks are still
+  asked.
+- **Claims need evidence** (`working-protocols.md`): never assert that something
+  cannot be done, passes, builds or is fixed without the command and output that
+  show it on this revision. A mock is not the live system, agreeing agents are
+  one datum, and anything not independently verified is `DONE_WITH_CONCERNS`,
+  not `DONE`.
+- **Memory pre-fills, the user confirms** (`brain-preflight.md`): product and
+  persona answers found in memory become the recommendation, never a skipped
+  question.
 - **Three session kinds** (`session-host.md`): `interactive` asks;
   `headless` stops on anything blocking, since nobody can answer; `spawned` —
   driven by another agent — takes the recommended option on a two-way choice and
@@ -208,9 +216,19 @@ Plus the focused snippets: `capture-learnings`, `prior-learnings`,
 `plan-file-review-report`, `spec-review-loop`,
 `plan-binding` (how `/ship` and `/review` bind the plan a branch was built from),
 `release-after-merge` (the tag-and-release step `/ship` and `/land-and-deploy` share),
+`test-value-bar` (the four questions, the value card with its optional
+`no_claim`, and what never counts as coverage), `implementer-dispatch-rules`
+(five rules for an implementing subagent: never weaken a test to reach green,
+report test and gate edits first, and the parent re-runs the checks),
+`test-bootstrap` (test-framework detection: markers are evidence for the
+question, never a command to run blind),
 `outside-voice-preflight` — the `CODEX_MODE` resolution the three plan reviews
 share: config switch, running-under-Codex probe, install and auth checks, and
-the branch bullets they act on.
+the branch bullets they act on. `outside-voice-body` is what follows it: the read-only
+prompt frame, the Codex run under a watchdog, the subagent fallback, the grade
+(`clean` only on a closing `Recommendation: proceed — no findings because ...`
+line) and the review-log record, where a disabled or unavailable reviewer is
+logged as such, never as clean.
 
 ## Preamble flags
 
@@ -240,6 +258,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-render-skill.sh` | `vibe-render-skill`: include expansion, nested-include rejection, infra-error handling |
 | `test-install-integration.sh` | `./install` / `./uninstall` across targets: byte-identical renders, atomic swap, recovery, PTY-driven prompts (`PTY_TIMEOUT` raises the 60s default for slow machines) |
 | `test-source-lint.sh` | `vibe-lint-sources` static checks over skill sources |
+| `test-skill-size.sh` | every skill's rendered `SKILL.md` stays at or under 240,000 bytes |
 | `test-vibe-bins.sh` | Smoke tests for the `vibe-*` binaries |
 | `test-evidence-bins.sh` | The evidence/version/detach/probe helpers, asserted in both directions — each must also FAIL when it should |
 | `test-certify.sh` | Cross-runtime conformance fixtures |
@@ -259,6 +278,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-plan-tune-profile.sh` | `/plan-tune` profile writes land under `VIBESTACK_HOME` as numbers and nothing lands in the working directory |
 | `test-plan-review-contract.sh` | Contracts between `/autoplan` and the plan-review and `/office-hours` skills it loads from disk |
 | `test-plan-ceo-review.sh` | `/plan-ceo-review` keeps the user in control of scope and reports failed metric writes |
+| `test-outside-voice-body.sh` | The shared outside-voice body grades reviewer output fail-closed and logs it under the right review name |
 | `test-plan-eng-review-rubric.sh` | `/plan-eng-review` rules and the shared Implementation Tasks snippet |
 | `test-plan-design-review.sh` | `/plan-design-review` keeps plan text out of the shell, every fix behind approval, and the review log honest |
 | `test-autoplan-ledger.sh` | `/autoplan` audit records: well-formed tables and one voice record per review |
@@ -286,6 +306,8 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-release-after-merge.sh` | The shared tag-and-release step `/ship` and `/land-and-deploy` run once a PR has merged |
 | `test-land-deploy-gates.sh` | `/land-and-deploy` merges only the approved head over green CI and reverts exactly what landed |
 | `test-test-value-bar.sh` | The test value bar reaches every skill that writes, proposes or reviews tests, without drifting copies |
+| `test-test-bootstrap.sh` | `lib/snippets/test-bootstrap.md` stays the one wording of test-framework detection that /ship and /qa render |
+| `test-shared-protocols.sh` | The claim, completeness, question and memory rules reach the skills that include them, within a byte budget |
 | `test-context-provenance.sh` | `/context-save` and `/context-restore` keep a resumed session off the wrong context or a guessed step |
 | `test-context-identity.sh` | Checkpoints are stamped with their project and restore never offers another project's |
 | `test-learn-honest-read.sh` | A failed learnings read surfaces as unavailable; `--cross-project` carries only user-stated entries |

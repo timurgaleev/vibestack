@@ -10,6 +10,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SNIPPET="$ROOT/lib/snippets/test-value-bar.md"
+DISPATCH="$ROOT/lib/snippets/implementer-dispatch-rules.md"
 SPECIALIST="$ROOT/skills/review/specialists/testing.md"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -33,10 +34,49 @@ has 'must fail, on its own assertion, against the code before the repair' "$SNIP
   && ok "regression proof requires red before the fix" || no "red-before-fix rule missing"
 has 'pass at the base commit as a control' "$SNIPPET" \
   && ok "regression proof uses base as the control" || no "base control missing"
+has 'no_claim=<what green does not prove' "$SNIPPET" \
+  && ok "value card defines the optional no_claim field" || no "no_claim field missing from the value card"
+# The template plus two worked examples.
+[ "$(grep -o '`no_claim=' "$SNIPPET" | wc -l | tr -d ' ')" -ge 3 ] \
+  && ok "no_claim comes with two examples" || no "no_claim needs two examples"
+has 'never waives a required live check' "$SNIPPET" \
+  && ok "no_claim never waives a live check" || no "no_claim waiver limit missing"
+has 'recomputed the way the code computes it' "$SNIPPET" \
+  && ok "tautological tests are named as weak" || no "tautological-test rule missing"
+has 'independent literal, worked example or spec' "$SNIPPET" \
+  && ok "expected values come from an independent source" || no "independent expected-value source missing"
+has 'whose `no_claim` names the behavior its `protects=` claims' "$SNIPPET" \
+  && ok "a no_claim covering the protected behavior is not coverage" || no "self-disclosed hollow test still counts as coverage"
 if grep -Eq '^\{\{include ' "$SNIPPET"; then
   no "snippet contains a nested include"
 else
   ok "snippet has no nested include"
+fi
+
+echo "implementer dispatch rules"
+if [ -f "$DISPATCH" ]; then
+  [ "$(grep -cE '^[1-9]\. ' "$DISPATCH")" = 5 ] \
+    && ok "dispatch rules list five rules" || no "dispatch rules do not list exactly five rules"
+  # The rules point at the value card's no_claim field; renaming it in one
+  # snippet and not the other leaves the dispatch brief pointing at nothing.
+  if has '`no_claim`' "$DISPATCH" && has '`no_claim=' "$SNIPPET"; then
+    ok "dispatch rules and value card agree on no_claim"
+  else
+    no "dispatch rules and value card disagree on no_claim"
+  fi
+  has 'reported first, on its own line' "$DISPATCH" \
+    && ok "dispatch rules surface test and gate edits first" || no "test/gate edit reporting rule missing"
+  has 'Never delete, skip or loosen an existing test, threshold or gate to reach green' "$DISPATCH" \
+    && ok "dispatch rules forbid weakening a test to reach green" || no "test-weakening ban missing"
+  has 'the parent re-runs' "$DISPATCH" \
+    && ok "dispatch rules leave the verdict to the parent" || no "parent re-execution rule missing"
+  if grep -Eq '^\{\{include ' "$DISPATCH"; then
+    no "dispatch rules contain a nested include"
+  else
+    ok "dispatch rules have no nested include"
+  fi
+else
+  no "missing $DISPATCH"
 fi
 
 echo "rendered skills"
@@ -52,6 +92,21 @@ for skill in ship plan-eng-review qa qa-only; do
     no "$skill: include directive left unexpanded"
   fi
 done
+
+# Any later includer is held to the same card without editing the list above.
+echo "discovered includers"
+while IFS= read -r src; do
+  rel="${src#"$ROOT"/}"
+  out="$TMP/discovered-$(printf '%s' "$rel" | tr '/' '_')"
+  if ! "$ROOT/bin/vibe-render-skill" "$src" "$out" >/dev/null 2>&1; then
+    no "$rel: render failed"; continue
+  fi
+  if has '**Value card.**' "$out" && has 'no_claim=<what green does not prove' "$out"; then
+    ok "$rel: renders the value card"
+  else
+    no "$rel: value card not rendered"
+  fi
+done < <(grep -rlxF --include='*.md' '{{include lib/snippets/test-value-bar.md}}' "$ROOT/skills" | sort)
 
 PLAN="$TMP/plan-eng-review.md"
 if [ -s "$PLAN" ]; then
