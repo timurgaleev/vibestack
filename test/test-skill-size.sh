@@ -24,7 +24,7 @@ trap 'rm -rf "$TMP"' EXIT
 # the five largest and every skill over the ceiling. Fails on any skill over
 # the ceiling, any render error, or a tree with no skills at all.
 measure_tree() {
-  local root="$1" out="$2" src name rc=0 sizes="$2/sizes.txt"
+  local root="$1" out="$2" src name bytes rc=0 sizes="$2/sizes.txt"
   mkdir -p "$out"; : > "$sizes"
   for src in "$root"/skills/*/SKILL.md; do
     [ -f "$src" ] || continue
@@ -33,7 +33,13 @@ measure_tree() {
       echo "render failed: $name: $(head -1 "$out/$name.err")"
       rc=1; continue
     fi
-    printf '%s %s\n' "$(wc -c < "$out/$name/SKILL.md" | tr -d ' ')" "$name" >> "$sizes"
+    # A renderer that exits 0 without writing leaves wc nothing to count; an
+    # empty or non-numeric size would read as "within the ceiling" below.
+    bytes="$(wc -c < "$out/$name/SKILL.md" 2>/dev/null | tr -d ' ')"
+    case "$bytes" in
+      ''|*[!0-9]*) echo "no size for $name: rendered output missing or unreadable"; rc=1; continue ;;
+    esac
+    printf '%s %s\n' "$bytes" "$name" >> "$sizes"
   done
   if [ ! -s "$sizes" ]; then
     echo "no rendered skills under $root/skills"
@@ -83,6 +89,12 @@ printf '{{include lib/snippets/missing.md}}\n' >> "$t/skills/demo/SKILL.md"
 out=$(measure_tree "$t" "$TMP/out-broken"); rc=$?
 [ "$rc" -eq 1 ] && grep -q "render failed: demo" <<<"$out" \
   && ok "a skill that fails to render fails the guard" || no "render error passed (rc=$rc): $out"
+
+t="$TMP/nosize"; mkskill "$t" demo 2000
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/render-noop"; chmod +x "$TMP/render-noop"
+out=$(RENDER="$TMP/render-noop" measure_tree "$t" "$TMP/out-nosize"); rc=$?
+[ "$rc" -eq 1 ] && grep -q "no size for demo" <<<"$out" \
+  && ok "a render that writes nothing fails the guard" || no "missing rendered output passed (rc=$rc): $out"
 
 mkdir -p "$TMP/empty/skills"
 out=$(measure_tree "$TMP/empty" "$TMP/out-empty"); rc=$?
