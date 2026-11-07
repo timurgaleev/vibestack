@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.55.14 — 2026-11-07
+
+### Added
+
+- **Tests can say what green does not prove.** The value card takes an
+  optional `no_claim=` field naming what a passing test leaves unproven — a
+  recorded fixture standing in for a live gateway, SQLite standing in for
+  Postgres. It never waives a required live check, and a test whose `no_claim`
+  names the very behavior it claims to protect does not count as coverage.
+- **Implementer dispatch rules.** `lib/snippets/implementer-dispatch-rules.md`
+  gives an implementing subagent five rules: a value card on every test, real
+  code with its real tests, never deleting, skipping or loosening a test or gate
+  to reach green, cited commands with their observed results, and the parent
+  re-running the checks before anything counts. Skills adopt it later.
+- **Shared test-framework detection.** `lib/snippets/test-bootstrap.md` holds
+  the detection `/ship` and `/qa` carry inline today, and a new suite keeps the
+  rendered wording in step until they include it.
+
+### Changed
+
+- **Tautological tests are not coverage.** A test whose expected value is
+  recomputed the way the code computes it is weak; expected values come from an
+  independent literal, worked example or spec.
+
 ## 1.55.13 — 2026-11-07
 
 ### Changed
