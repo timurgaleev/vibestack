@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.55.15 — 2026-11-07
+
+### Added
+
+- **Shared base-branch detection.** `lib/snippets/base-branch-detect.md` is the
+  git-native fallback skills use when `gh`/`glab` cannot answer. A cached
+  `origin/HEAD` that names the branch you are on, points at your own commit, or
+  names a ref that no longer exists is ignored and the remote is asked — over
+  ssh in batch mode with a bounded connect, so it never waits on a prompt.
+  Offline, the order is unchanged: cached `origin/HEAD`, `origin/main`,
+  `origin/master`, then `main`. When the base already contains every commit on
+  the branch, it stops with `BASE_CONTAINS_HEAD` instead of reporting an empty
+  diff.
+- **Shared confidence calibration.** `lib/snippets/confidence-calibration.md`
+  pairs the P0-P3 severity scale with the 1-10 confidence table: a finding
+  without a quoted motivating line is forced to 4 (appendix) or 5 (main report,
+  with the medium-confidence caveat), and 1-2 admits only a release-blocking
+  catastrophe labelled speculative.
+
+Skills adopt both snippets in a later release.
+
 ## 1.55.14 — 2026-11-07
 
 ### Added

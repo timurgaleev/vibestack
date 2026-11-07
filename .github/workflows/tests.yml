@@ -102,6 +102,7 @@ jobs:
           - test-skill-usage.sh
           - test-compact-snapshot.sh
           - test-jira-adapter.sh
+          - test-base-branch-detect.sh
     steps:
       - uses: actions/checkout@v4
 
