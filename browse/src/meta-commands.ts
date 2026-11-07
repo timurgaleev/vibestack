@@ -259,8 +259,9 @@ export async function handleMetaCommand(
   tokenInfo?: TokenInfo | null,
   opts?: MetaCommandOpts,
 ): Promise<string> {
-  // Per-tab operations use the active session; global operations use bm directly
-  const session = bm.getActiveSession();
+  // Per-tab operations use the active session, resolved only when a case needs
+  // it: newtab, stop and the other page-less commands must work with no tab open.
+  const activeSession = () => bm.getActiveSession();
 
   switch (command) {
     // ─── Tabs ──────────────────────────────────────────
@@ -331,7 +332,6 @@ export async function handleMetaCommand(
       }
 
       const tabs = await bm.getTabListWithTitles();
-      const originalActive = tabs.find(t => t.active)?.id ?? bm.getActiveTabId();
 
       const executeCmd = opts?.executeCommand;
       const results: Array<{
@@ -342,56 +342,49 @@ export async function handleMetaCommand(
         output: string;
       }> = [];
 
-      try {
-        for (const tab of tabs) {
-          // Skip chrome:// internal pages — they aren't useful targets and
-          // many commands fail outright on them.
-          if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-            results.push({
-              tabId: tab.id,
-              url: tab.url,
-              title: tab.title || '',
-              status: 0,
-              output: 'skipped: internal page',
-            });
-            continue;
-          }
-          // Switch to the tab. Don't pull focus away — we're a background
-          // operation; the user shouldn't see the OS window jump.
-          bm.switchTab(tab.id, { bringToFront: false });
-
-          let status = 0;
-          let output = '';
-          if (executeCmd) {
-            const r = await executeCmd(
-              { command: innerName, args: innerArgs, tabId: tab.id },
-              tokenInfo,
-            );
-            status = r.status;
-            output = r.result;
-            if (status !== 200) {
-              try { output = JSON.parse(output).error || output; } catch (err: any) { if (!(err instanceof SyntaxError)) throw err; }
-            }
-          } else {
-            // Fallback path (CLI / test harness without a server context).
-            // We don't recurse through read/write/meta directly here because
-            // tab-each is only meaningful with the live server; surface a
-            // clear error.
-            status = 500;
-            output = 'tab-each requires the browse server (no executeCommand context)';
-          }
-
+      for (const tab of tabs) {
+        // Skip chrome:// internal pages — they aren't useful targets and
+        // many commands fail outright on them.
+        if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
           results.push({
             tabId: tab.id,
             url: tab.url,
             title: tab.title || '',
-            status,
-            output,
+            status: 0,
+            output: 'skipped: internal page',
           });
+          continue;
         }
-      } finally {
-        // Restore the original active tab so the user's view is unchanged.
-        try { bm.switchTab(originalActive, { bringToFront: false }); } catch {}
+        // The subcommand is pinned to this tab per request (tabId below), so
+        // the shared active tab never moves and concurrent requests keep it.
+        let status = 0;
+        let output = '';
+        if (executeCmd) {
+          const r = await executeCmd(
+            { command: innerName, args: innerArgs, tabId: tab.id },
+            tokenInfo,
+          );
+          status = r.status;
+          output = r.result;
+          if (status !== 200) {
+            try { output = JSON.parse(output).error || output; } catch (err: any) { if (!(err instanceof SyntaxError)) throw err; }
+          }
+        } else {
+          // Fallback path (CLI / test harness without a server context).
+          // We don't recurse through read/write/meta directly here because
+          // tab-each is only meaningful with the live server; surface a
+          // clear error.
+          status = 500;
+          output = 'tab-each requires the browse server (no executeCommand context)';
+        }
+
+        results.push({
+          tabId: tab.id,
+          url: tab.url,
+          title: tab.title || '',
+          status,
+          output,
+        });
       }
 
       return JSON.stringify({
@@ -681,11 +674,11 @@ export async function handleMetaCommand(
               if (bm.isWatching()) {
                 result = 'BLOCKED: write commands disabled in watch mode';
               } else {
-                result = await handleWriteCommand(name, cmdArgs, session, bm);
+                result = await handleWriteCommand(name, cmdArgs, activeSession(), bm);
               }
               lastWasWrite = true;
             } else if (READ_COMMANDS.has(name)) {
-              result = await handleReadCommand(name, cmdArgs, session);
+              result = await handleReadCommand(name, cmdArgs, activeSession());
               if (PAGE_CONTENT_COMMANDS.has(name)) {
                 result = wrapUntrustedContent(result, bm.getCurrentUrl());
               }
@@ -745,7 +738,7 @@ export async function handleMetaCommand(
     // ─── Snapshot ─────────────────────────────────────
     case 'snapshot': {
       const isScoped = tokenInfo && tokenInfo.clientId !== 'root';
-      const snapshotResult = await handleSnapshot(args, session, {
+      const snapshotResult = await handleSnapshot(args, activeSession(), {
         splitForScoped: !!isScoped,
       });
       // Scoped tokens get split format (refs outside envelope); root gets basic wrapping
@@ -765,7 +758,7 @@ export async function handleMetaCommand(
       bm.resume();
       // Re-snapshot to capture current page state after human interaction
       const isScoped2 = tokenInfo && tokenInfo.clientId !== 'root';
-      const snapshot = await handleSnapshot(['-i'], session, { splitForScoped: !!isScoped2 });
+      const snapshot = await handleSnapshot(['-i'], activeSession(), { splitForScoped: !!isScoped2 });
       if (isScoped2) {
         return `RESUMED\n${snapshot}`;
       }
