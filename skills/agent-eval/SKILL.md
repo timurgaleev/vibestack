@@ -94,11 +94,13 @@ Store cases as JSONL under `evals/<unit>/cases.jsonl`, one object per line:
 
 Fields: `id` (stable, never reused), `input` (whatever the unit takes), `expected` (what a correct run produces — a string, a JSON object, a tool-call list, or a rubric note for judged cases), `tags` (a list; every case has at least one).
 
-Three sources, in this order:
+Three sources, in this order, plus two control sets:
 
 1. **Golden cases, written by hand.** 10-30. Cover the main paths the unit exists for. Write the expected output before running the unit, not after — copying a live output into `expected` turns the eval into a snapshot test of whatever the model did today.
 2. **Mined cases.** Pull real inputs from logs or transcripts found in Step 1. Strip PII before saving (names, emails, account ids). Tag them `mined`. Only fill `expected` for cases where the correct output is knowable; leave the rest for judge scoring.
 3. **Adversarial cases.** Tag `adversarial`. Include at least one of each: ambiguous input with two valid readings, a prompt-injection attempt inside a tool result or pasted document, empty input, input near the context limit, input in a language the prompt does not mention, a request the unit should refuse.
+4. **Holdout cases.** Before the first prompt change, move a share of the golden and mined cases (one in five is a good default) to the tag `holdout` instead. Development runs never read them; only a run started with `--holdout` does, and it appends its stamp and the holdout ids to `evals/<unit>/holdout-runs.jsonl`, which is committed. A prompt tuned against the cases it is judged on reports its own fit, not the quality the next input sees; the log is how a reviewer tells a holdout read once at release from one read after every edit.
+5. **Decoy cases.** At least three, tagged `decoy`. Each carries a real `input` and `expected` plus a `decoy_output`: a plausible wrong answer — the right shape with a wrong value, a confident answer to a question the unit should refuse, an empty string. The runner scores `decoy_output` without calling the unit, so a working scorer fails every decoy; one that passes any of them would pass the same mistake from the unit.
 
 Check the set before moving on:
 
@@ -118,6 +120,7 @@ Findings:
 
 - **HIGH** — duplicate ids. Fix before running; results keyed by id will silently overwrite.
 - **MEDIUM** — fewer than 10 golden cases, or no adversarial cases. The success rate will be too noisy to gate on. Say what is missing and add cases before Step 6.
+- **MEDIUM** — fewer than three decoys, or a `holdout-runs.jsonl` showing the holdout read more than once since the last baseline. The scorer is unproven, or the holdout has become a development set.
 - **LOW** — a tag used by only one case. Per-tag metrics for it are meaningless; merge or add cases.
 
 ---
@@ -163,6 +166,7 @@ Compute every metric overall and per tag. Per-tag is where regressions hide: an 
 | Latency p50 / p95 | wall-clock per case, from call to final output | runner |
 | Cost per task | generator plus judge for that case: (input tokens x input price + output tokens x output price) / 1,000,000 at each model's own price, averaged | API usage fields |
 | Judge agreement | exact and within-one agreement from the Step 3 human sample | calibration file |
+| Decoy pass rate | share of `decoy` cases the scorers passed; must be 0. Every other rate leaves `decoy` lines out | scorers |
 | pass@k | share of cases where at least one of k runs passes — capability: the agent can do it | k runs per case |
 | pass^k | share of cases where all k runs pass — reliability: the agent does it every time. Equals p^k only if runs are independent, which agent runs usually are not (same prompt, same cache, same tool state), so compute it from the observed runs, never from p | k runs per case |
 
@@ -171,6 +175,7 @@ Record both price tables used in `evals/<unit>/config.json` so cost numbers are 
 Findings:
 
 - **HIGH** — a refusal rate above zero on `golden` cases, or below 100% on `should-refuse` cases. Either is a correctness bug, not a tuning detail.
+- **HIGH** — any decoy passes. The scorer accepts a known-wrong answer, so no other rate it produced is evidence; fix the scorer before reading them.
 - **MEDIUM** — p95 latency more than 3x p50. Usually a retry loop or a tool timeout; worth a look before gating.
 
 ---
@@ -199,13 +204,13 @@ Write `evals/<unit>/.gitignore` containing the single line `runs/` while scaffol
 
 The runner, in order:
 
-1. Load `config.json`; refuse to start if `cost_cap_usd`, `max_tokens_in`, `max_tokens_out`, `price`, or `judge_price` is missing. The token ceilings are what makes a worst-case call cost knowable in advance.
-2. Read `cases.jsonl`; fail on duplicate ids. Schedule every `golden` case `golden_runs` times (config, default 3, at least 3) and every other case once; each run carries its index, and run `i` uses seed `seed + i`, so the k runs are separate draws rather than one draw repeated.
+1. Load `config.json`; refuse to start if `cost_cap_usd`, `max_tokens_in`, `max_tokens_out`, `price`, or `judge_price` is missing. The token ceilings are what makes a worst-case call cost knowable in advance. When the generator or the judge is a reasoning model, set `"reasoning": true`: such a model spends output tokens on thinking before it answers, so the runner refuses `max_tokens_out` under 8192 rather than scoring answers cut off mid-thought. If one still comes back empty or cut at the ceiling, the single permitted retry sends the text of `evals/<unit>/prompts/retry-v1.md` — a versioned file like the judge prompt, never an inline string — and reserves on the ledger like any other call.
+2. Read `cases.jsonl`; fail on duplicate ids. Leave out `holdout` cases unless the run was started with `--holdout`, and on such a run append `{"run_stamp", "ids"}` to `holdout-runs.jsonl` before the first call. Schedule every `golden` case `golden_runs` times (config, default 3, at least 3) and every other case once; each run carries its index, and run `i` uses seed `seed + i`, so the k runs are separate draws rather than one draw repeated. A `decoy` case is not sent to the unit: its `decoy_output` goes straight to the scorers.
 3. For each case, call the unit with a fixed seed and temperature from config, and pass `max_tokens_out` as the call's output limit so the API enforces the same ceiling the ledger reserves against. Count the input first and fail the case if it is over `max_tokens_in` rather than dispatching it — the reservation covers both halves of a call, so both halves need a ceiling that holds. Cap concurrency with a semaphore (default 4).
 4. Reserve before every paid call — generator and judge alike — and settle after it. The reservation is the worst-case cost of that call: the configured token ceilings at that model's price. Reserving and settling both happen under one lock over a single ledger, so concurrent cases can never each pass a check against the same remaining budget, and no call can start unless its whole worst case fits under the cap. Settling replaces the reservation with the usage the response actually reported, and checks it against the reservation: a call that reports more than its worst case means a ceiling did not reach the API, and the run stops there instead of continuing past the cap.
 5. Apply deterministic scorers, then the judge for cases whose `expected` carries a `rubric` key. A case with neither a deterministic check nor a rubric is an error, not a pass — stop and name the case. A judged case passes only when its judge score reaches the case's threshold (`judge_threshold`, default 4).
 6. Append one line per run to `runs/results-<timestamp>.jsonl`: `id`, `run`, `tags`, `output`, `passed`, `checks`, `judge_score`, `judge_version`, `latency_ms`, `tokens_in`, `tokens_out`, `judge_tokens_in`, `judge_tokens_out`, `cost_usd`. `cost_usd` is the generator and judge cost for that case combined. A case that did not run gets no line — a record without `passed` and `tags` is worse than a missing one, because the Step 6 gate would count it.
-7. Write `summary-<timestamp>.md` with the Step 4 table, overall and per tag. Rates count run 0 of each case, so they mean the same thing whatever k is; `golden` pass^k is the share of golden cases whose k runs all passed, with k and the independence note beside it. If any run did not complete — a reservation that did not fit, or a case that raised — head the summary with `INCOMPLETE: <ran>/<total> runs (<reason>)`, print the same line to stderr, and exit non-zero. A truncated run must never be able to satisfy the gate.
+7. Print `DECOYS: <passed>/<total> passed`; if any decoy passed, name it on stderr and exit non-zero after writing the results. Write `summary-<timestamp>.md` with the Step 4 table, overall and per tag, with `decoy` lines left out of every rate but the decoy pass rate. Rates count run 0 of each case, so they mean the same thing whatever k is; `golden` pass^k is the share of golden cases whose k runs all passed, with k and the independence note beside it. If any run did not complete — a reservation that did not fit, or a case that raised — head the summary with `INCOMPLETE: <ran>/<total> runs (<reason>)`, print the same line to stderr, and exit non-zero. A truncated run must never be able to satisfy the gate.
 
 A Python skeleton the user can start from; keep the same shape in TypeScript:
 
@@ -218,6 +223,10 @@ ROOT = Path(__file__).parent
 CFG = json.loads((ROOT / "config.json").read_text())
 for key in ("cost_cap_usd", "max_tokens_in", "max_tokens_out", "price", "judge_price"):
     assert key in CFG, f"config.json needs {key}"
+if CFG.get("reasoning"):
+    assert CFG["max_tokens_out"] >= 8192, (
+        f"reasoning model: max_tokens_out is {CFG['max_tokens_out']}, the floor is 8192")
+HOLDOUT = "--holdout" in sys.argv[1:]
 
 def usd(price, tokens_in, tokens_out):
     return (tokens_in * price["in_per_mtok"] + tokens_out * price["out_per_mtok"]) / 1_000_000
@@ -270,21 +279,24 @@ def load_cases():
     cases = [json.loads(l) for l in (ROOT / "cases.jsonl").read_text().splitlines() if l.strip()]
     ids = [c["id"] for c in cases]
     assert len(ids) == len(set(ids)), "duplicate case ids"
-    return cases
+    return [c for c in cases if HOLDOUT or "holdout" not in c["tags"]]
 
 async def run_case(case, run, sem, ledger):
     async with sem:
         expected = case.get("expected")
         judged = isinstance(expected, dict) and "rubric" in expected
-        check_input(case["id"], "generator", case["input"])
-        await ledger.reserve(WORST_CASE["generator"])
-        t0 = time.monotonic()
-        out, usage = await call_unit(case["input"], seed=CFG["seed"] + run,
-                                     temperature=CFG["temperature"],
-                                     max_tokens_out=CFG["max_tokens_out"])
-        latency_ms = int((time.monotonic() - t0) * 1000)
+        if "decoy" in case["tags"]:
+            out, usage, latency_ms = case["decoy_output"], {"in": 0, "out": 0}, 0
+        else:
+            check_input(case["id"], "generator", case["input"])
+            await ledger.reserve(WORST_CASE["generator"])
+            t0 = time.monotonic()
+            out, usage = await call_unit(case["input"], seed=CFG["seed"] + run,
+                                         temperature=CFG["temperature"],
+                                         max_tokens_out=CFG["max_tokens_out"])
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            await ledger.settle(WORST_CASE["generator"], usd(CFG["price"], usage["in"], usage["out"]))
         cost = usd(CFG["price"], usage["in"], usage["out"])
-        await ledger.settle(WORST_CASE["generator"], cost)
 
         checks = run_scorers(case, out)
         if not checks and not judged:
@@ -315,11 +327,15 @@ async def main():
     cases = load_cases()
     k = max(3, CFG.get("golden_runs", 3))
     jobs = [(c, i) for c in cases for i in range(k if "golden" in c["tags"] else 1)]
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    if HOLDOUT:
+        with open(ROOT / "holdout-runs.jsonl", "a") as f:
+            f.write(json.dumps({"run_stamp": stamp,
+                                "ids": [c["id"] for c in cases if "holdout" in c["tags"]]}) + "\n")
     settled = await asyncio.gather(*(run_case(c, i, sem, ledger) for c, i in jobs),
                                    return_exceptions=True)
     results = [r for r in settled if not isinstance(r, Exception)]
     errors = [r for r in settled if isinstance(r, Exception)]
-    stamp = time.strftime("%Y%m%dT%H%M%S")
     (ROOT / "runs").mkdir(exist_ok=True)
     with open(ROOT / "runs" / f"results-{stamp}.jsonl", "w") as f:
         for r in results:
@@ -331,18 +347,49 @@ async def main():
     else:
         reason = "case errors"
     incomplete = f"INCOMPLETE: {len(results)}/{len(jobs)} runs ({reason})" if errors else None
+    decoys = [r for r in results if "decoy" in r["tags"]]
+    leaked = sorted({r["id"] for r in decoys if r["passed"]})
+    decoy_line = f"DECOYS: {sum(r['passed'] for r in decoys)}/{len(decoys)} passed"
+    print(decoy_line)
     write_summary(results, ROOT / "runs" / f"summary-{stamp}.md",
-                  incomplete=incomplete, spent_usd=ledger.spent)
+                  incomplete=incomplete, spent_usd=ledger.spent, decoy_line=decoy_line)
     if errors:
         for e in errors:
             print(f"error: {e!r}", file=sys.stderr)
         print(incomplete, file=sys.stderr)
+    if leaked:
+        print(f"SCORER BROKEN: decoys passed: {', '.join(leaked)}", file=sys.stderr)
+    if errors or leaked:
         sys.exit(1)
 
 asyncio.run(main())
 ```
 
-`call_unit`, `count_tokens`, `run_scorers`, `run_judge`, and `write_summary` are the five functions to fill in against the real project. `call_unit` must pass `max_tokens_out` through as the API call's output limit; one that accepts the argument and drops it is what lets a run spend past the cap. `count_tokens` returns the provider's own count for a string — the tokenizer the model uses, not a word count, since it is what the input half of the reservation rests on. `run_judge` returns `(score, judge_version, usage)`: the score on the rubric's scale, the version from the `judge/prompt-v1.md` filename, and the judge call's own token counts, which is what puts the judge on the same ledger as the generator. It applies both ceilings to its own call the way `run_case` does for the generator — it is the only place that renders the judge prompt, so it is the only place that can check it. `write_summary` prints the `incomplete` line as the summary's first line when it is set. Do a dry run with `concurrency: 1` and a cost cap of a few cents before the first full run.
+`call_unit`, `count_tokens`, `run_scorers`, `run_judge`, and `write_summary` are the five functions to fill in against the real project. `call_unit` must pass `max_tokens_out` through as the API call's output limit; one that accepts the argument and drops it is what lets a run spend past the cap. `count_tokens` returns the provider's own count for a string — the tokenizer the model uses, not a word count, since it is what the input half of the reservation rests on. `run_judge` returns `(score, judge_version, usage)`: the score on the rubric's scale, the version from the `judge/prompt-v1.md` filename, and the judge call's own token counts, which is what puts the judge on the same ledger as the generator. It applies both ceilings to its own call the way `run_case` does for the generator — it is the only place that renders the judge prompt, so it is the only place that can check it. `write_summary` prints the `incomplete` line as the summary's first line when it is set, and the `decoy_line` beside the Step 4 table. Do a dry run with `concurrency: 1` and a cost cap of a few cents before the first full run, then project the full run from the lines it completed:
+
+```bash
+DRY_RESULTS='<results file of the dry run>'
+CASES='evals/<unit>/cases.jsonl'
+CONFIG='evals/<unit>/config.json'
+python3 -I -c '
+import json, sys
+dry = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+cases = [json.loads(l) for l in open(sys.argv[2]) if l.strip()]
+cfg = json.load(open(sys.argv[3]))
+k = max(3, cfg.get("golden_runs", 3))
+skip = ("holdout", "decoy")
+runs = sum(k if "golden" in c["tags"] else 1 for c in cases if not any(t in c["tags"] for t in skip))
+costs = [r["cost_usd"] for r in dry if not any(t in r.get("tags", []) for t in skip)]
+if not costs:
+    sys.exit(print("PROJECTION: N-A (no completed dry-run lines)"))
+lo, hi, mean, cap = min(costs) * runs, max(costs) * runs, sum(costs) / len(costs) * runs, cfg["cost_cap_usd"]
+print(f"PROJECTION: {runs} runs, USD {lo:.2f}-{hi:.2f} (mean {mean:.2f}) from {len(costs)} dry-run lines; cap USD {cap}")
+if hi > cap:
+    print("PROJECTION: over cap, so the full run would stop INCOMPLETE before covering the case set")
+' "$DRY_RESULTS" "$CASES" "$CONFIG"
+```
+
+Show the `PROJECTION:` lines and wait for a go-ahead before the full run. An unattended run — CI, a scheduled job, nobody to ask — stops at this gate and reports the projection instead of starting the full run. A band over the cap means raising the cap or cutting cases first, not finding out at the cap.
 
 Findings:
 
@@ -391,7 +438,7 @@ Side effects: <none | stubbed via ... | BLOCKED: ...>
 Generator:   <model>, temperature <t>, seed <s>
 Judge:       <model> (differs from generator), rubric-v1, direct 1-5
 
-Task set:    <N> cases — golden <n>, mined <n>, adversarial <n>
+Task set:    <N> cases — golden <n>, mined <n>, adversarial <n>, decoy <n>, holdout <n>
 Tags:        <tag list with counts>
 
 Scoring:     deterministic: <exact|regex|schema|trace|grounding>
@@ -409,7 +456,8 @@ RESULTS — <run file>
 ====================
 
 Run:     complete | INCOMPLETE <ran>/<total> runs (<reason>) — exit 1, gate fails
-Spend:   $<x> of $<cap> cap (generator + judge)
+Spend:   $<x> of $<cap> cap (generator + judge); projected USD <lo>-<hi> from the dry run
+Decoys:  <passed>/<total> passed (any pass is HIGH; rates below exclude decoys)
 
 Metric                  Overall   golden   mined   adversarial   vs baseline
 --------------------    -------   ------   -----   -----------   -----------
