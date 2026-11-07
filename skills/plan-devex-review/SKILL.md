@@ -176,7 +176,7 @@ Internalize these; don't enumerate them.
 ## Hall of Fame Reference
 
 During each review pass, load the relevant section from:
-\`~/.claude/skills/plan-devex-review/dx-hall-of-fame.md\`
+`~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`
 
 Read ONLY the section for the current pass (e.g., "## Pass 1" for Getting Started).
 Do NOT read the entire file at once. This keeps context focused.
