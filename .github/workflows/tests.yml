@@ -105,6 +105,7 @@ jobs:
           - test-snippet-text.sh
           - test-aws-context.sh
           - test-base-branch-detect.sh
+          - test-qa-rubric.sh
           - test-office-hours-contract.sh
     steps:
       - uses: actions/checkout@v4
