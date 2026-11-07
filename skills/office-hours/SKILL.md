@@ -617,36 +617,16 @@ This generates 3 style variations of the same brief (~40 seconds total). Each im
 it saved is printed on a `saved:` line — use those paths below, never assumed names
 (`$D` never overwrites, so a second run today saves `variant-A-2.png`).
 
-**Step 4: Show variants inline, then open comparison board**
+**Step 4: Pick a variant inline**
 
-Show each variant to the user inline first (read the PNGs with Read tool), then
-create and serve the comparison board:
+Read each `saved:` PNG with the Read tool so the variants show inline, then ask
+one AskUserQuestion that both picks and confirms: one option per saved variant (its
+letter and a few words on its direction) plus "None — regenerate with changes". On
+a regenerate answer, rewrite `$_DESIGN_DIR/brief.txt` with the change (Write tool),
+rerun the Step 3 block and ask again with the new `saved:` paths. Otherwise proceed
+with the picked variant.
 
-```bash
-_DESIGN_DIR='<DESIGN_DIR>'
-D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
-$D compare --images "<the saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
-```
-
-This opens the board in the user's default browser and blocks until feedback is
-received. Read stdout for the structured JSON result. No polling needed.
-
-If `$D serve` is not available or fails, fall back to AskUserQuestion:
-"I've opened the design board. Which variant do you prefer? Any feedback?"
-
-**Step 5: Handle feedback**
-
-If the JSON contains `"regenerated": true`:
-1. Read `regenerateAction` (or `remixSpec` for remix requests)
-2. Rewrite `$_DESIGN_DIR/brief.txt` with the updated brief (Write tool) and rerun the Step 3 `$D variants` block
-3. Create new board with `$D compare`
-4. POST the new HTML to the running server via `curl -X POST http://localhost:PORT/api/reload -H 'Content-Type: application/json' -d "{\"html\":\"$_DESIGN_DIR/design-board.html\"}"`
-   (parse the port from stderr: look for `SERVE_STARTED: port=XXXXX`)
-5. Board auto-refreshes in the same tab
-
-If `"regenerated": false`: proceed with the approved variant.
-
-**Step 6: Save approved choice**
+**Step 5: Save approved choice**
 
 The user's feedback reaches the shell the same way the brief does: **write the
 feedback summary with the Write tool** to `approved-feedback.txt` inside DESIGN_DIR
@@ -713,10 +693,11 @@ Generate a single-page HTML file with these constraints:
   matches the actual use case)
 - Add HTML comments explaining design decisions
 
-Write to a temp file:
+Create a private sketch directory, then write the HTML with the Write tool to the
+path it prints (Read the empty path first if the tool asks):
 ```bash
-SKETCH_FILE="/tmp/vibestack-sketch-$(date +%s).html"
-echo "SKETCH_FILE: $SKETCH_FILE"
+_SKETCH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-sketch.XXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
+echo "SKETCH_FILE: $_SKETCH_DIR/sketch.html"
 ```
 
 **Step 3: Render and capture**
@@ -728,7 +709,7 @@ SETUP printed on its `BROWSE_BIN:` line:
 SKETCH_FILE='<SKETCH_FILE>'
 B='<BROWSE_BIN>'
 $B goto "file://$SKETCH_FILE"
-$B screenshot /tmp/vibestack-sketch.png
+$B screenshot "${SKETCH_FILE%.html}.png"
 ```
 
 If `$B` is not available (browse binary not set up), skip the render step. Tell the
@@ -741,43 +722,61 @@ Show the screenshot to the user. Ask: "Does this feel right? Want to iterate on 
 If they want changes, regenerate the HTML with their feedback and re-render.
 If they approve or say "good enough," proceed.
 
-**Step 5: Include in design doc**
+**Step 5: Save it with the design doc**
 
-Reference the wireframe screenshot in the design doc's "Recommended Approach" section.
-The screenshot file at `/tmp/vibestack-sketch.png` can be referenced by downstream skills
-(`/plan-design-review`, `/design-review`) to see what was originally envisioned.
+The temp directory does not outlive the session, so copy the approved sketch into the
+project directory next to the design docs (replace `<SKETCH_FILE>` as above):
+
+```bash
+SKETCH_FILE='<SKETCH_FILE>'
+[ -s "$SKETCH_FILE" ] || { echo "ERROR: no sketch at $SKETCH_FILE" >&2; exit 1; }
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null
+_PD="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
+_BR=$(git branch --show-current 2>/dev/null | tr '/' '-')
+_OUT="$_PD/$(whoami)-${_BR:-nobranch}-sketch-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$_PD"
+cp "$SKETCH_FILE" "$_OUT.html" && echo "SKETCH_SAVED: $_OUT.html"
+[ -f "${SKETCH_FILE%.html}.png" ] && cp "${SKETCH_FILE%.html}.png" "$_OUT.png" && echo "SKETCH_SAVED: $_OUT.png"
+_SD=$(dirname "$SKETCH_FILE")
+case "$_SD" in */vibe-sketch.??????) rm -rf "$_SD" ;; esac
+```
+
+Put the saved PNG path (the HTML path when there is no screenshot) on the design
+doc's `Wireframe:` line and reference it in "Recommended Approach" — that is where
+`/plan-design-review` and `/design-review` look for what was originally envisioned.
 
 **Step 6: Outside design voices** (optional)
 
-After the wireframe is approved, offer outside design perspectives:
-
-```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
-
-If Codex is available, use AskUserQuestion:
-> "Want outside design perspectives on the chosen approach? Codex proposes a visual thesis, content plan, and interaction ideas. A Claude subagent proposes an alternative aesthetic direction."
+After the wireframe is approved, run the Phase 3.5 preflight block again (each Bash
+call is a fresh shell, so the `CODEX_MODE` printed there is gone). On `disabled`,
+skip this step. Otherwise use AskUserQuestion:
+> "Want outside design perspectives on the chosen approach? An outside model proposes a visual thesis, content plan, and interaction ideas. A Claude subagent proposes an alternative aesthetic direction."
 >
 > A) Yes — get outside design voices
 > B) No — proceed without
 
-If user chooses A, launch both voices simultaneously:
+If user chooses A, create a private prompt file with
+`umask 077; mktemp "${TMPDIR:-/tmp}/vibe-oh-prompt.XXXXXXXX"`, Read it, and Write into
+it the filesystem boundary from Phase 3.5,
+the approved approach and the full sketch HTML (Read the saved `.html`), then: "For this product approach, provide: a visual
+thesis (one sentence — mood, material, energy), a content plan (hero → support →
+detail → CTA), and 2 interaction ideas that change page feel. Apply beautiful
+defaults: composition-first, brand-first, cardless, poster not document. Be
+opinionated." Launch both voices together:
 
-1. **Codex** (via Bash, `model_reasoning_effort="medium"`):
-```bash
-TMPERR_SKETCH=$(mktemp /tmp/codex-sketch-XXXXXXXX)
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-command -v codex >/dev/null 2>&1 && codex exec "For this product approach, provide: a visual thesis (one sentence — mood, material, energy), a content plan (hero → support → detail → CTA), and 2 interaction ideas that change page feel. Apply beautiful defaults: composition-first, brand-first, cardless, poster not document. Be opinionated." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached < /dev/null 2>"$TMPERR_SKETCH"
-```
-Use a 5-minute timeout (`timeout: 300000`). After completion: `cat "$TMPERR_SKETCH" && rm -f "$TMPERR_SKETCH"`
+1. **Outside voice** — on `ready`, the Phase 3.5 Codex block with this prompt file
+   and `<EFFORT>` set to `medium`; under `under_codex`, that branch's `claude -p`
+   pass (scanned the same way); otherwise none — the subagent below runs alone.
 
-2. **Claude subagent** (via Agent tool):
+2. **Claude subagent** (via Agent tool), given the approved approach and the sketch HTML:
 "For this product approach, what design direction would you recommend? What aesthetic, typography, and interaction patterns fit? What would make this approach feel inevitable to the user? Be specific — font names, hex colors, spacing values."
 
 {{include lib/snippets/foreground-dispatch.md}}
 
-Present Codex output under `CODEX SAYS (design sketch):` and subagent output under `CLAUDE SUBAGENT (design direction):`.
-Error handling: all non-blocking. On failure, skip and continue.
+Present Codex output under `CODEX SAYS (design sketch):` (or the header the
+preflight branch names) and subagent output under `CLAUDE SUBAGENT (design direction):`.
+Error handling: all non-blocking. A non-zero `CODEX_EXIT` or `CODEX_SKIPPED` is a
+voice that did not complete — say so, never invent its proposal.
 
 ---
 
@@ -893,6 +892,7 @@ Repo: {owner/repo}
 Status: DRAFT
 Mode: Startup
 Supersedes: {prior filename — omit this line if first design on this branch}
+Wireframe: {saved sketch PNG path (HTML when no screenshot) — or none (<reason>), e.g. none (backend-only)}
 
 ## Problem Statement
 {from Phase 2A}
@@ -956,6 +956,7 @@ Repo: {owner/repo}
 Status: DRAFT
 Mode: Builder
 Supersedes: {prior filename — omit this line if first design on this branch}
+Wireframe: {saved sketch PNG path (HTML when no screenshot) — or none (<reason>), e.g. none (backend-only)}
 
 ## Problem Statement
 {from Phase 2B}
