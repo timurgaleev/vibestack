@@ -106,14 +106,15 @@ if os.path.exists(mark_file):
 SECRET = re.compile(
     r"(?<![A-Za-z0-9])(ghp|gho|ghs|ghu)_[A-Za-z0-9]{16,}|github_pat_"
     r"|glpat-[A-Za-z0-9_-]{10,}|hf_[A-Za-z0-9]{16,}|npm_[A-Za-z0-9]{16,}"
-    r"|dop_v1_[a-f0-9]{16,}|AKIA[0-9A-Z]{12,}"
+    r"|dop_v1_[a-f0-9]{16,}|(AKIA|ASIA)[0-9A-Z]{12,}"
     r"|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{16,}"
     r"|xox[abps]-|AIza[0-9A-Za-z_-]{10,}"
     r"|-----BEGIN [A-Z ]*PRIVATE KEY"
-    r"|://[^/\s:@]+:[^@\s/]+@"                        # user:pass@ in URLs
+    r"|://[^/\s:@]*:[^@\s/]+@"                        # user:pass@ in URLs
     r"|Bearer\s+[A-Za-z0-9._-]{20,}"
     r"|[A-Za-z_]*(?i:token|secret|password)\s*[=:]\s*\S{6,}"
     r"|[A-Za-z_]*(?i:key)\s*=\s*\S{6,}"               # '=' only: facts are 'key: text'
+    r'|"?SecretAccessKey"?\s*[:=]\s*"?[A-Za-z0-9/+=]{40}'  # AWS JSON / CLI output
     r"|eyJ[A-Za-z0-9_-]{10,}\.eyJ")                   # JWT
 
 def clamp_conf(v):

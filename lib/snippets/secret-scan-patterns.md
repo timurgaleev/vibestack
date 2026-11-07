@@ -1,7 +1,9 @@
 High-confidence secret patterns — scan the exact bytes about to leave for an external sink (issue body, PR/MR body, generated docs, a third-party model) and block on a match:
 
 - `AWS access key`: `AKIA[0-9A-Z]{16}`
+- `AWS temporary (STS) access key`: `ASIA[0-9A-Z]{16}`
 - `AWS secret key` style: 40-char base64 with `aws_secret_access_key` nearby
+- `AWS SecretAccessKey field` (JSON or CLI output): `"?SecretAccessKey"?[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9/+=]{40}`
 - `GitHub token`: `gh(p|o|s|u|r)_[A-Za-z0-9]{36}` — personal (`ghp_`), OAuth (`gho_`), app installation (`ghs_`), app user-to-server (`ghu_`) and refresh (`ghr_`) tokens
 - `GitHub fine-grained token`: `github_pat_[A-Za-z0-9_]{22,}`
 - `Slack token`: `xox[abpr]-[A-Za-z0-9-]{10,}`
@@ -15,7 +17,8 @@ High-confidence secret patterns — scan the exact bytes about to leave for an e
 - `DigitalOcean token`: `dop_v1_[a-f0-9]{64}`
 - `GCP service-account key`: a JSON blob carrying `"private_key"` with a `-----BEGIN PRIVATE KEY-----` body; the nearby `"private_key_id"` field confirms the service-account shape.
 - `Bearer token`: `Bearer[ \t]+[A-Za-z0-9._~+/=\-]{20,}` in a header/auth context. Entropy-gated so docs and examples don't false-positive: only block when the token is ≥20 chars AND has at least one digit AND mixed case (or otherwise looks high-entropy). Treat all-caps/underscore placeholders (`Bearer YOUR_TOKEN_HERE`), angle-bracket stubs (`Bearer <token>`), and repeated-character runs as non-secrets.
-- `.env`-style key=value: lines matching `^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=.+`
+- `.env`-style key=value: lines matching `^[[:space:]+-]{0,2}[[:space:]]*(-[[:space:]]+)?(export[[:space:]]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+` — a diff marker, a YAML list dash, an `export` or indentation in front does not hide it. Only the value is judged as a placeholder, so `EXAMPLE_API_KEY=<live value>` still blocks; an expansion (`$(gh auth token)`, `${API_KEY:-}`, `${{ secrets.NPM_TOKEN }}`) or a short stub ending in `...` (`sk-...`) is not a value.
+- `Credentials in a URL` (DSN): `://[^[:space:]:/@]{0,255}:[^[:space:]@/]{1,255}@` — `postgres://admin:<16 random chars>@db`. Only the password part is judged: a placeholder (`<password>`), a whole-value expansion (`${DB_PASSWORD}`), a common dev value (`postgres`, `pass`, `test`, `root`, `admin`, `secret`, `changeme`), a password that repeats the user name, or anything under 8 characters passes, so local and test connection strings do not block.
 - `Private key block`: `-----BEGIN.*PRIVATE KEY-----`
 
 Calibration note: keep this list to genuinely-secret credentials so the gate does not cry wolf. Hyphenated prose (e.g. `sk-learning-rate`) must not false-positive — the modern-OpenAI shapes require one of the literal `sk-proj-` / `sk-svcacct-` / `sk-admin-` prefixes before the base64url body.
