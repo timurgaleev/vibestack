@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.55.34 — 2026-11-07
+
+### Fixed
+
+- **`/setup-deploy` asks instead of assuming.** With several platforms detected it
+  asks which one serves production and confirms the project type; Heroku and
+  Railway go through the manual flow with the platform prefilled. "Not deployed
+  yet" stops without writing anything, and "never deploys" records `none`.
+  Step 4 offers only the merge methods the repository allows, resolves the
+  default branch instead of hard-coding `main`, and shows the full block for
+  confirmation. Per platform: GitHub Actions reads one named workflow's runs,
+  Vercel counts as auto-deploy only when Git-connected, the Netlify URL is
+  confirmed, and Fly's `/health` is recorded only after a 2xx probe.
+- **`/land-and-deploy` understands `none`.** A project `/setup-deploy` recorded as
+  never deploying prints `NO_DEPLOY:` and finishes as MERGED — NO DEPLOY NEEDED
+  instead of probing the literal `none`.
+- **`/canary` alerts only on confirmed findings.** A CRITICAL or HIGH finding is
+  reported after it repeats on two consecutive checks; a finding still pending
+  at the deadline gets one more confirming round, and `--quick` counts its
+  single pass. Monitoring runs on a stated cadence with a bounded wait between
+  rounds and stops at the deadline; the report gives the cadence achieved and
+  says that errors present at monitoring start need `--baseline` to be seen.
+
 ## 1.55.33 — 2026-11-07
 
 ### Fixed

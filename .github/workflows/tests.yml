@@ -110,6 +110,7 @@ jobs:
           - test-unslop-gate.sh
           - test-qa-rubric.sh
           - test-office-hours-contract.sh
+          - test-setup-deploy-config.sh
     steps:
       - uses: actions/checkout@v4
 
