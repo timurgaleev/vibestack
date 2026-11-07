@@ -10,7 +10,9 @@
 #   - the voices' plan-body extract stops at the decision-log marker, drops the
 #     restore-point comments, and refuses a plan without the marker;
 #   - no `codex exec "...<placeholder>..."` prompt interpolation remains, and no
-#     skill calls the removed remote-slug helper.
+#     skill calls the removed remote-slug helper;
+#   - the shared spec review loop keeps its severity, round-grading, cap-check,
+#     incomplete-input and builder-question rules, and both includers render it.
 #
 # Usage: test/test-plan-review-contract.sh [repo-root]
 #   repo-root defaults to this checkout; it must hold skills/ and lib/snippets/.
@@ -163,6 +165,24 @@ PY
               || no "codex exec with an interpolated prompt at: $(printf '%s' "$bad" | tr '\n' ' ')"
 hits="$(grep -rln 'remote-slug' "$SRC/skills" 2>/dev/null || true)"
 [ -z "$hits" ] && ok "no skill calls remote-slug" || no "remote-slug still used in: $hits"
+
+echo "spec review loop"
+LOOP="$SRC/lib/snippets/spec-review-loop.md"
+loop_has() { grep -qF -- "$1" "$LOOP" && ok "$2" || no "$2 (missing: $1)"; }
+loop_has 'Tag every issue `blocking`' "reviewer tags every issue blocking or minor"
+loop_has 'Fix only `blocking` issues' "only blocking issues are fixed"
+loop_has '`minor` issues go straight to Reviewer Concerns' "minor issues become Reviewer Concerns"
+loop_has 'mark each one `resolved` or `persisting`' "rounds 2-3 grade the previous findings"
+loop_has 'keep every Reviewer Concern already gathered' "a reviewer failure keeps earlier concerns"
+loop_has 'issues confirmed resolved k/N' "the cap verifies each applied fix against the amended text"
+loop_has 'INPUT_INCOMPLETE' "truncated or missing input is reported, not graded"
+loop_has '**Builder questions**' "reviewer returns ranked builder questions"
+loop_has '(my call)' "minor builder questions are decided and marked"
+loop_has 'at most 4 questions per call' "user-only builder questions go out in batches of 4"
+for s in office-hours plan-ceo-review; do
+  grep -qF 'issues confirmed resolved k/N' "$TMP/r/$s/SKILL.md" \
+    && ok "$s renders the spec review loop" || no "$s does not render the spec review loop"
+done
 
 echo
 echo "plan review contract: $pass passed, $fail failed"
