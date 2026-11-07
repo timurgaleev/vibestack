@@ -141,7 +141,16 @@ for f in "$ENG" "$AUTO"; do
   printf '%s\n' "$out" | grep -qxF "CEO plan found: $VB/projects/proj/ceo-plans/2026-01-01-x.md" \
     && ok "$name: same-branch CEO plan is found" || no "$name: same-branch CEO plan is found: '$out'"
 done
+# A newer plan from another branch must not hide this branch's older plan.
 printf -- '# CEO Plan: y\nBranch: other | Mode: HOLD SCOPE\n' > "$VB/projects/proj/ceo-plans/2026-02-01-y.md"
+for f in "$ENG" "$AUTO"; do
+  name="plan-eng-review"; [ "$f" = "$AUTO" ] && name="autoplan"
+  out="$(run_design "$f")"
+  printf '%s\n' "$out" | grep -qxF "CEO plan found: $VB/projects/proj/ceo-plans/2026-01-01-x.md" \
+    && ! printf '%s\n' "$out" | grep -qF "CEO plan from another branch" \
+    && ok "$name: same-branch CEO plan wins over a newer other-branch plan" || no "$name: same-branch CEO plan wins over a newer other-branch plan: '$out'"
+done
+rm "$VB/projects/proj/ceo-plans/2026-01-01-x.md"
 for f in "$ENG" "$AUTO"; do
   name="plan-eng-review"; [ "$f" = "$AUTO" ] && name="autoplan"
   out="$(run_design "$f")"

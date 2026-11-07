@@ -109,16 +109,19 @@ if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DES
   DESIGN="$_REPO_DESIGN"
 fi
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
-CEO_PLAN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/"*.md 2>/dev/null | head -1)
-if [ -n "$CEO_PLAN" ]; then
-  _RAW_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'no-branch')
-  _PLAN_BRANCH=$(sed -n 's/^Branch: \([^ |]*\).*/\1/p' "$CEO_PLAN" | head -1)
-  if [ -n "$_PLAN_BRANCH" ] && { [ "$_PLAN_BRANCH" = "$_RAW_BRANCH" ] || [ "$_PLAN_BRANCH" = "$BRANCH" ]; }; then
-    echo "CEO plan found: $CEO_PLAN"
-  else
-    echo "CEO plan from another branch (${_PLAN_BRANCH:-unknown}): $CEO_PLAN"
-  fi
-fi
+_RAW_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'no-branch')
+ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/"*.md 2>/dev/null | {
+  CEO_PLAN=""; _CEO_OTHER=""; _OTHER_BRANCH=""
+  while IFS= read -r _f; do
+    _PLAN_BRANCH=$(sed -n 's/^Branch: \([^ |]*\).*/\1/p' "$_f" | head -1)
+    if [ -n "$_PLAN_BRANCH" ] && { [ "$_PLAN_BRANCH" = "$_RAW_BRANCH" ] || [ "$_PLAN_BRANCH" = "$BRANCH" ]; }; then
+      CEO_PLAN="$_f"; break
+    fi
+    [ -n "$_CEO_OTHER" ] || { _CEO_OTHER="$_f"; _OTHER_BRANCH="${_PLAN_BRANCH:-unknown}"; }
+  done
+  if [ -n "$CEO_PLAN" ]; then echo "CEO plan found: $CEO_PLAN"
+  elif [ -n "$_CEO_OTHER" ]; then echo "CEO plan from another branch ($_OTHER_BRANCH): $_CEO_OTHER"; fi
+}
 ```
 
 A repo-local `DESIGN.md` or `docs/designs/*.md` wins on a tie — it is the copy the
