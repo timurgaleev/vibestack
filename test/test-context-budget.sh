@@ -107,6 +107,56 @@ printf '%s\n' "$OUT" | grep -q '^AGENT_DESC_CHARS 10 (1 agents)' && ok "agent de
   || bad "agent descriptions counted, README skipped" "$OUT"
 [ "$RC" = 0 ] && ok "config size never gates" || bad "config size never gates (rc=$RC)" "$OUT"
 
+echo "per-skill size (--skill)"
+# A skill's body and the sub-docs it reads on demand are paid for when it runs,
+# not at listing time, so --skill reports them for one skill without gating.
+SOLO="$TMP/solo-skills"
+mk_skill "$SOLO" solo "description: One skill."
+mkdir -p "$SOLO/solo/sub" "$SOLO/solo/bin"
+printf '%0100d' 0 > "$SOLO/solo/notes.md"
+printf '%050d' 0 > "$SOLO/solo/sub/deep.md"
+printf '%030d' 0 > "$SOLO/solo/bin/helper.md"
+printf '{"not":"a doc"}' > "$SOLO/solo/data.json"
+solo_rendered=$("$ROOT/bin/vibe-render-skill" "$SOLO/solo/SKILL.md" "$TMP/solo-rendered.md" >/dev/null 2>&1 \
+  && wc -c < "$TMP/solo-rendered.md" | tr -d ' ')
+run --skills-dir "$SOLO" --skill solo
+[ "$RC" = 0 ] && ok "--skill exits 0" || bad "--skill exits 0 (rc=$RC)" "$OUT"
+[ -n "$solo_rendered" ] && [ "$(field RENDERED_BYTES)" = "$solo_rendered" ] \
+  && ok "RENDERED_BYTES is the rendered SKILL.md size ($solo_rendered)" \
+  || bad "RENDERED_BYTES is the rendered SKILL.md size (want ${solo_rendered:-?}, got $(field RENDERED_BYTES))" "$OUT"
+[ "$(field SIBLING_DOC_BYTES)" = "150 (2 docs)" ] \
+  && ok "sibling .md docs summed at any depth, bin/ and non-.md files skipped" \
+  || bad "sibling .md docs summed at any depth, bin/ and non-.md files skipped (got $(field SIBLING_DOC_BYTES))" "$OUT"
+printf '%s\n' "$OUT" | grep -Eq '^  sub/deep\.md +50$' && ok "each sibling doc listed with its bytes" \
+  || bad "each sibling doc listed with its bytes" "$OUT"
+[ "$(field SKILL_BYTES)" = "$(( ${solo_rendered:-0} + 150 ))" ] && ok "SKILL_BYTES is rendered + sibling docs" \
+  || bad "SKILL_BYTES is rendered + sibling docs (got $(field SKILL_BYTES))" "$OUT"
+printf '%s\n' "$OUT" | grep -q '^TOTAL ' && bad "--skill skips the listing report" "$OUT" \
+  || ok "--skill skips the listing report"
+run --skills-dir "$SOLO" --skill nope
+[ "$RC" = 2 ] && ok "--skill with an unknown name exits 2" || bad "--skill with an unknown name exits 2 (rc=$RC)" "$OUT"
+run --skills-dir "$SOLO" --skill ../solo
+[ "$RC" = 2 ] && ok "--skill rejects a path instead of a name" || bad "--skill rejects a path instead of a name (rc=$RC)" "$OUT"
+run --skills-dir "$SOLO" --skill
+[ "$RC" = 2 ] && ok "--skill without a value exits 2" || bad "--skill without a value exits 2 (rc=$RC)" "$OUT"
+# An install links sub-doc directories in; their docs still count.
+INST="$TMP/installed"; mkdir -p "$INST/solo"
+cp "$TMP/solo-rendered.md" "$INST/solo/SKILL.md"
+ln -s "$SOLO/solo/sub" "$INST/solo/sub"
+ln -s "$SOLO/solo/notes.md" "$INST/solo/notes.md"
+run --rendered "$INST" --skill solo
+[ "$(field RENDERED_BYTES)" = "$solo_rendered" ] && [ "$(field SIBLING_DOC_BYTES)" = "150 (2 docs)" ] \
+  && ok "--rendered --skill measures an install through its symlinks" \
+  || bad "--rendered --skill measures an install through its symlinks" "$OUT"
+review_rendered=$("$ROOT/bin/vibe-render-skill" "$ROOT/skills/review/SKILL.md" "$TMP/review.md" >/dev/null 2>&1 \
+  && wc -c < "$TMP/review.md" | tr -d ' ')
+review_docs=$(find "$ROOT/skills/review" -name '*.md' ! -path '*/bin/*' ! -path "$ROOT/skills/review/SKILL.md" \
+  -exec cat {} + | wc -c | tr -d ' ')
+run --skill review
+[ "$(field RENDERED_BYTES)" = "$review_rendered" ] && [ "$(field SIBLING_DOC_BYTES | cut -d' ' -f1)" = "$review_docs" ] \
+  && ok "the real review skill: rendered $review_rendered + docs $review_docs" \
+  || bad "the real review skill (want $review_rendered + $review_docs)" "$OUT"
+
 echo "the real pack"
 run --budget 1000000
 [ "$RC" = 0 ] && ok "measures the repo's own skills" || bad "measures the repo's own skills (rc=$RC)" "$OUT"

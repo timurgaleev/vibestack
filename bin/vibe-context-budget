@@ -33,10 +33,12 @@
 #   --target-len N     per-description length the savings column assumes
 #                      (default 200)
 #   --warn-only        report an over-budget total but exit 0
+#   --skill NAME       report one skill's run-time cost instead: rendered
+#                      SKILL.md bytes plus the .md sub-docs beside it (not bin/)
 #
 # Exit 0 within budget (or --warn-only, or no budget known for the runtime),
 # 1 over budget or over the runtime's per-description cap, 2 usage or input
-# error.
+# error. --skill never gates: it exits 0, or 2 on a usage or input error.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,8 +51,9 @@ CONFIG_DIR="$ROOT/config/claude"
 TOP=10
 TARGET_LEN=200
 WARN_ONLY=0
+SKILL_NAME=""
 
-usage() { sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 need() { [ $# -ge 2 ] && [ -n "${2+x}" ] || { echo "vibe-context-budget: $1 needs a value" >&2; exit 2; }; }
 
 while [ $# -gt 0 ]; do
@@ -63,6 +66,8 @@ while [ $# -gt 0 ]; do
     --top)        need "$@"; TOP="$2"; shift 2 ;;
     --target-len) need "$@"; TARGET_LEN="$2"; shift 2 ;;
     --warn-only)  WARN_ONLY=1; shift ;;
+    --skill)      need "$@"; [ -n "$2" ] || { echo "vibe-context-budget: --skill needs a value" >&2; exit 2; }
+                  SKILL_NAME="$2"; shift 2 ;;
     -h|--help)    usage ;;
     *) echo "vibe-context-budget: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -85,6 +90,57 @@ done
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vibe-context-budget.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT INT TERM
+
+# Per-skill size: what one skill costs once it runs — its rendered body plus
+# the sub-docs it may read — as opposed to the listing every session pays for.
+if [ -n "$SKILL_NAME" ]; then
+  case "$SKILL_NAME" in
+    [A-Za-z0-9]*) ;;
+    *) echo "vibe-context-budget: --skill takes a skill name, not a path: $SKILL_NAME" >&2; exit 2 ;;
+  esac
+  case "$SKILL_NAME" in
+    *[!A-Za-z0-9._-]*) echo "vibe-context-budget: --skill takes a skill name, not a path: $SKILL_NAME" >&2; exit 2 ;;
+  esac
+  if [ -n "$RENDERED" ]; then
+    skill_dir="$RENDERED/$SKILL_NAME"
+    skill_md="$skill_dir/SKILL.md"
+  else
+    skill_dir="$SKILLS_DIR/$SKILL_NAME"
+    skill_md="$WORK/SKILL.md"
+  fi
+  [ -f "$skill_dir/SKILL.md" ] || { echo "vibe-context-budget: no skill named $SKILL_NAME under ${RENDERED:-$SKILLS_DIR}" >&2; exit 2; }
+  if [ -z "$RENDERED" ] && ! "$ROOT/bin/vibe-render-skill" "$skill_dir/SKILL.md" "$skill_md" >/dev/null 2>"$WORK/render.err"; then
+    echo "vibe-context-budget: cannot render $skill_dir/SKILL.md:" >&2
+    cat "$WORK/render.err" >&2
+    exit 2
+  fi
+  SKILL_PY='
+import os, sys
+
+name, skill_md, skill_dir = sys.argv[1:4]
+rendered = os.path.getsize(skill_md)
+docs = []
+# An install links sub-doc directories in, so follow links; bin/ holds scripts.
+for d, dirs, files in os.walk(skill_dir, followlinks=True):
+    if d == skill_dir:
+        dirs[:] = [x for x in dirs if x != "bin"]
+    for f in files:
+        p = os.path.join(d, f)
+        rel = os.path.relpath(p, skill_dir)
+        if f.endswith(".md") and rel != "SKILL.md" and os.path.isfile(p):
+            docs.append((rel, os.path.getsize(p)))
+total = sum(s for _, s in docs)
+print(f"Skill {name}: rendered SKILL.md + sibling docs (bytes)")
+print()
+print(f"RENDERED_BYTES {rendered}")
+for rel, size in sorted(docs, key=lambda x: (-x[1], x[0])):
+    print(f"  {rel:<36} {size:>7}")
+print(f"SIBLING_DOC_BYTES {total} ({len(docs)} docs)")
+print(f"SKILL_BYTES {rendered + total}")
+'
+  python3 -I -c "$SKILL_PY" "$SKILL_NAME" "$skill_md" "$skill_dir"
+  exit 0
+fi
 
 if [ -n "$RENDERED" ]; then
   [ -d "$RENDERED" ] || { echo "vibe-context-budget: not a directory: $RENDERED" >&2; exit 2; }
