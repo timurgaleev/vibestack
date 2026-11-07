@@ -14,6 +14,9 @@
 #   - task rows reach disk through a file and one validate-and-stamp block; a
 #     rerun that finds no tasks stamps an empty marker, so the aggregator never
 #     resurrects the previous run's tasks;
+#   - the final gate opens with urgent findings outside the plan, the CEO phase
+#     checklist follows the CEO skill's step order, and the eng phase asks for a
+#     performance budget;
 #   - the plan family includes the shared base-branch, task and confidence
 #     blocks instead of private copies, and has no hard-coded host paths.
 #
@@ -258,6 +261,41 @@ PY
       && ok "control characters in task text are flattened to spaces" || no "task text lost: $(printf '%s' "$agg" | tr '\n' ' ')"
   fi
 fi
+
+# --- final gate: urgent findings outside the plan come first -----------------
+gate="$(sed -n '/^## \/autoplan Review Complete$/,/^### Implementation Tasks/p' "$SKILL")"
+first="$(printf '%s\n' "$gate" | grep -m1 '^### ' || true)"
+[ "$first" = "### Urgent, outside this plan" ] && ok "gate opens with the urgent block" \
+                                             || no "gate's first section is '$first'"
+printf '%s\n' "$gate" | sed -n '/^### Urgent, outside this plan$/,/^### Plan Summary$/p' | grep -qF 'None.' \
+  && ok "urgent block says None. when empty" || no "urgent block has no empty form"
+
+# --- CEO phase checklist matches the CEO skill -------------------------------
+ceo="$(sed -n '/^## Phase 1: CEO Review/,/^## Phase 2: Design Review/p' "$SKILL")"
+n="$(printf '%s\n' "$ceo" | grep -c '^- Premises:' || true)"
+[ "$n" = "1" ] && ok "one premises override rule" || no "$n premises override rules"
+printf '%s\n' "$ceo" | grep -qF -- '- All 11 review sections (Section 11 only with UI scope):' \
+  && ok "CEO phase runs all 11 sections" || no "CEO phase section count drifted"
+order="$(printf '%s\n' "$ceo" | sed -n '/^\*\*Required execution checklist (CEO):\*\*/,/^Step 0\.5/p' \
+  | sed -n 's/^- \(0[A-F][-A-Za-z]*\):.*/\1/p' | tr '\n' ' ')"
+[ "$order" = "0A 0B 0C 0C-bis 0F 0D-prelude 0D 0D-POST 0E " ] && ok "Step 0 checklist follows the CEO skill's order" \
+                                                             || no "Step 0 checklist order: '$order'"
+pre="$(sed -n '/^## Pre-Gate Verification/,/^## Phase 4/p' "$SKILL")"
+printf '%s\n' "$pre" | grep -qF -- '- [ ] CEO plan written, and the spec review loop outcome recorded' \
+  && ok "pre-gate checks the CEO plan and spec loop" || no "pre-gate skips the CEO plan"
+n="$(printf '%s\n' "$pre" | grep -cF -- '- [ ] REALITY line present' || true)"
+[ "$n" = "2" ] && ok "pre-gate checks the REALITY line for CEO and Eng" || no "$n REALITY pre-gate rows"
+
+# --- performance budget -------------------------------------------------------
+eng="$(sed -n '/^## Phase 3: Eng Review/,/^## Decision Audit Trail/p' "$SKILL")"
+printf '%s\n' "$eng" | grep -qF "no budget source or measurement step named is a finding" \
+  && ok "eng phase flags hot paths with no budget" || no "eng phase does not ask for a budget"
+printf '%s\n' "$eng" | grep -qF "3. Perf risks + budget/bench named?" \
+  && ok "consensus row asks for a budget or benchmark" || no "consensus row has no budget"
+printf '%s\n' "$eng" | grep -qF "Performance risks addressed?" && no "old performance consensus row remains" \
+                                                               || ok "old performance consensus row gone"
+grep -A6 '^### Step 2: Read context' "$SKILL" | grep -qF 'CEO plan' \
+  && ok "Step 2 reads the CEO plan the Design Doc Check found" || no "Step 2 ignores the CEO plan"
 
 # --- plan-family includers ---------------------------------------------------
 # The shared blocks are tested once in their snippets; these rows keep each plan

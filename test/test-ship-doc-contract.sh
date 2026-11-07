@@ -82,6 +82,18 @@ else
   no "blocked/blockers path does not ask the user"
 fi
 
+echo "base ref"
+# Step 3 merges origin/<base>; a local <base> may be stale or absent, so every
+# diff, log and worktree that measures the branch reads the fetched ref. The
+# source is scanned, not the render: shared snippets name a generic <base>.
+LOCAL_BASE=$(grep -nE '(diff|log)( --[a-z-]+)* <base>\.\.|merge-base <base> |--detach <tmp> <base>' "$SRC")
+if [ -n "$LOCAL_BASE" ]; then
+  no "branch range against the local <base>: $(printf '%s' "$LOCAL_BASE" | head -3 | cut -c1-120)"
+else
+  ok "every branch range uses origin/<base>"
+fi
+grep -q 'git diff origin/<base>\.\.\.HEAD' "$SKILL" && ok "ranges read origin/<base>" || no "no origin/<base> range found"
+
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]
