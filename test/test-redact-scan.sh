@@ -149,7 +149,7 @@ done
 # written, push blocked), 1 when it accepted it. Accepting means the text was
 # actually stored, so a negative cannot pass by the sink failing for some
 # unrelated reason.
-SINKS="scan prepush decision review learn question timeline"
+SINKS="scan prepush decision review learn question timeline evidence"
 export VIBESTACK_PROJECT_SLUG="redact-test"
 PROJ="$VIBESTACK_HOME/projects/$VIBESTACK_PROJECT_SLUG"
 LR="$TMP/logrepo"; mkdir -p "$LR"
@@ -200,6 +200,9 @@ sink() {
     timeline)
       # Best-effort by contract: it never fails the caller, it just drops the event.
       log_sink 0 "$BIN/vibe-timeline-log" "$(with_field '{"skill":"t"}' event "$text")" ;;
+    evidence)
+      # A refused command line is never run and never recorded (exit 2).
+      log_sink 2 "$BIN/vibe-evidence" run --skill t --label s -- printf '%s' "$text" ;;
   esac
 }
 
@@ -332,7 +335,7 @@ done
 block_of() { sed -n '/^# --- secret patterns: begin/,/^# --- secret patterns: end/p' "$1"; }
 ref=$(block_of "$BIN/vibe-decision-log")
 [ -n "$ref" ] && ok "vibe-decision-log carries the matcher block" || no "vibe-decision-log has no matcher block"
-for b in vibe-review-log vibe-learnings-log vibe-question-log vibe-timeline-log; do
+for b in vibe-review-log vibe-learnings-log vibe-question-log vibe-timeline-log vibe-evidence; do
   [ -n "$ref" ] && [ "$(block_of "$BIN/$b")" = "$ref" ] && ok "$b matcher block matches" \
     || no "$b matcher block differs from vibe-decision-log"
 done
@@ -343,6 +346,13 @@ if [ -x /bin/bash ] && /bin/bash -c '[ "${BASH_VERSINFO[0]}" -lt 4 ]'; then
     /bin/bash -n "$BIN/$b" 2>/dev/null && ok "$b parses under /bin/bash 3" || no "$b does not parse under /bin/bash 3"
   done
 fi
+# A sink that keeps its own copy of the patterns drifts the day the list grows;
+# the greptile reply gate scans through the shared matcher instead.
+GT="$ROOT/skills/review/greptile-triage.md"
+grep -q 'AKIA\[0-9A-Z\]' "$GT" && no "greptile-triage.md carries its own pattern copy" \
+  || ok "greptile-triage.md keeps no private pattern copy"
+[ "$(grep -c 'vibe-redact" scan --file "$REPLY_FILE"' "$GT")" -ge 2 ] \
+  && ok "both greptile reply blocks scan through vibe-redact" || no "a greptile reply block does not scan through vibe-redact"
 sh_labels=$(sed -n "s/^  '\([^|]*\)|.*/\1/p" "$BIN/vibe-redact-prepush" | sort)
 py_labels=$(printf '%s\n' "$ref" | sed -n 's/^    ("\([^"]*\)", r".*/\1/p' | sort)
 [ -n "$sh_labels" ] && [ "$sh_labels" = "$py_labels" ] && ok "python and pre-push lists carry the same labels" \
