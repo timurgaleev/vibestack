@@ -557,7 +557,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 ## Important Rules
 
 1. **Repro is everything.** Every issue needs at least one screenshot. No exceptions.
-2. **Verify before documenting.** Replay the exact command or interaction from the same starting state (same URL, auth and inputs, after a reload) to confirm it is reproducible, not a fluke. It fails the same way → `replayed`; it does not → the issue stays `observed once`, never confirmed.
+2. **Verify before documenting.** Replay the exact command or interaction from the same starting state (same URL, auth and inputs, after a reload) to confirm it is reproducible, not a fluke. It fails the same way → `replayed`; it does not → the issue stays `observed once`, never confirmed. Never replay a non-idempotent action (a submit, send, purchase or delete) on a non-local target: a reload restores the page, not the server state, so the replay repeats the action. Such an issue stays `observed once`.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
 5. **Find bugs black-box.** Discovery and probing go through the browser, as a user, not a developer. Read source only to map a diff to pages (diff-aware mode), to build the contract map on a functional surface, and inside the Phase 8 fix loop.
@@ -626,7 +626,7 @@ For each fixable issue, in severity order:
 
 ### 8a. Locate source
 
-First replay the issue's repro — the exact command or interaction, from the same starting state. If it no longer fails the same way, do not fix it: mark it `observed once` and defer it with that reason.
+First replay the issue's repro — the exact command or interaction, from the same starting state. If it no longer fails the same way, do not fix it: mark it `observed once` and defer it with that reason. A non-idempotent repro on a non-local target is not replayed here either (rule 2): fix it only when its recorded evidence names the cause in the source (a stack trace, a failing request); otherwise defer it as `observed once`.
 
 ```bash
 # Grep for error messages, component names, route definitions

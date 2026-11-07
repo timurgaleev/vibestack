@@ -216,12 +216,19 @@ for skill in qa qa-only; do
   else
     no "$skill: rule 2 does not replay from the same starting state"
   fi
+  # A replay of a submit, send or purchase on a live target repeats it.
+  if printf '%s' "$rule2" | grep -Fq 'Never replay a non-idempotent action'; then
+    ok "$skill: rule 2 never replays a non-idempotent action on a live target"
+  else
+    no "$skill: rule 2 would replay a submit, send or purchase on a live target"
+  fi
   checkF "$skill: inline fields when the report template cannot be read" 'If the template cannot be read' "$R"
   bad_path="$(grep -nE 'qa-report-template\.md|issue-taxonomy\.md' "$R" | grep -vF '${CLAUDE_SKILL_DIR:-' | head -1)"
   if [ -z "$bad_path" ]; then ok "$skill: template and taxonomy reached through CLAUDE_SKILL_DIR"; else no "$skill: bare template path: $bad_path"; fi
 done
 section "$QA" '^### 8a' '^### ' > "$TMP/qa-8a.md"
 checkF "qa: 8a replays the repro from the same starting state" 'same starting state' "$TMP/qa-8a.md"
+checkF "qa: 8a does not replay a non-idempotent repro" 'non-idempotent' "$TMP/qa-8a.md"
 lint_hits="$("$ROOT/bin/vibe-lint-sources" 2>&1 | grep -E '/skills/qa(-only)?/.*host path' | head -1)"
 if [ -z "$lint_hits" ]; then ok "host-path lint: no hits in qa or qa-only"; else no "host-path lint: $lint_hits"; fi
 refuteF "qa: no dead browser-attach branch" 'Mode: cdp' "$ROOT/skills/qa/SKILL.md"

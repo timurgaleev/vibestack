@@ -366,7 +366,7 @@ Last, scrub the report: a claim of frequency ("always", "intermittent", "3 of 5"
 ## Important Rules
 
 1. **Repro is everything.** Every issue needs at least one screenshot. No exceptions.
-2. **Verify before documenting.** Replay the exact command or interaction from the same starting state (same URL, auth and inputs, after a reload) to confirm it is reproducible, not a fluke. It fails the same way → `replayed`; it does not → the issue stays `observed once`, never confirmed.
+2. **Verify before documenting.** Replay the exact command or interaction from the same starting state (same URL, auth and inputs, after a reload) to confirm it is reproducible, not a fluke. It fails the same way → `replayed`; it does not → the issue stays `observed once`, never confirmed. Never replay a non-idempotent action (a submit, send, purchase or delete) on a non-local target: a reload restores the page, not the server state, so the replay repeats the action. Such an issue stays `observed once`.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
 5. **Test as a user, not a developer.** The one exception is diff-aware mode: read the branch diff and the route, controller and view files it names only to work out which pages to test. Never read source to explain, diagnose or fix a bug.
