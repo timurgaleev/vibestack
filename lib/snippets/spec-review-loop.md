@@ -53,8 +53,9 @@ section. With no stated policy it is `auto-fix`.
   Reviewer Concern). Apply only the approved fixes. An issue the user declines is not
   re-raised on later iterations.
 
-If the reviewer returns blocking issues:
-1. Resolve each blocking issue under the fix policy above
+If the reviewer returns blocking issues or `INPUT_INCOMPLETE`:
+1. Resolve each blocking issue under the fix policy above (for `INPUT_INCOMPLETE`,
+   supply the missing input)
 2. Re-dispatch the reviewer subagent with the updated document and this round's issue
    list, again with `run_in_background: false`
 3. Maximum 3 iterations total
@@ -83,6 +84,11 @@ answers in.
 **Step 3: Report and persist metrics**
 
 After the loop completes (PASS, max iterations, convergence guard, or a stopped review):
+
+If no round produced a grade — every round returned `INPUT_INCOMPLETE`, or the
+missing input cannot be supplied — the document was never reviewed. Say "Spec
+review unavailable — presenting unreviewed doc." and log no score; never report
+it as having survived any rounds.
 
 1. Tell the user the result — summary by default:
    "Your doc survived N rounds of adversarial review. M issues caught and fixed.

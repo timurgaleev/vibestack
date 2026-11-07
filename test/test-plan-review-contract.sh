@@ -179,6 +179,8 @@ loop_has 'INPUT_INCOMPLETE' "truncated or missing input is reported, not graded"
 loop_has '**Builder questions**' "reviewer returns ranked builder questions"
 loop_has '(my call)' "minor builder questions are decided and marked"
 loop_has 'at most 4 questions per call' "user-only builder questions go out in batches of 4"
+loop_has 'If the reviewer returns blocking issues or `INPUT_INCOMPLETE`' "incomplete input is re-dispatched, not passed"
+loop_has 'If no round produced a grade' "a review that never graded is reported unavailable"
 for s in office-hours plan-ceo-review; do
   grep -qF 'issues confirmed resolved k/N' "$TMP/r/$s/SKILL.md" \
     && ok "$s renders the spec review loop" || no "$s does not render the spec review loop"

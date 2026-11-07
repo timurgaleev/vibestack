@@ -50,6 +50,10 @@ if command -v jq >/dev/null 2>&1; then
   # separately with a possible-duplicate marker injected by the renderer.
   AGGREGATED_TASKS=$(jq -rs \
     'map(select(.empty != true))
+     # Task text is rendered raw: a control character or newline in it would
+     # break the list (or forge an item), so it becomes a space.
+     | map(with_entries(if (.value | type) == "string" then .value |= gsub("[[:cntrl:]]"; " ") else . end)
+           | .files |= (if type == "array" then map(if type == "string" then gsub("[[:cntrl:]]"; " ") else . end) else . end))
      | group_by([.component, (.files | sort), .title])
      | map(
          # Take the highest-priority entry per group; tie-break by phase order

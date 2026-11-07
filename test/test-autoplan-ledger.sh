@@ -144,9 +144,12 @@ emit() {
   b="$(nth_bash "$EMIT" 2)" || b=""
   out="$(in_repo "$1" "$a")"
   path="$(printf '%s\n' "$out" | sed -n 's/^TASKS_ROWS: //p')"
+  echo "ROWS_PATH=$path"
   [ -n "${2:-}" ] && [ -n "$path" ] && cp "$2" "$path"
+  b="$(printf '%s' "$b" | ROWS="$path" python3 -I -c 'import os,sys; sys.stdout.write(sys.stdin.read().replace("<TASKS_ROWS>", os.environ["ROWS"]))')"
   in_repo "$1" "$b"; echo "RC=$?"
 }
+rows_path() { printf '%s\n' "$1" | sed -n 's/^ROWS_PATH=//p'; }
 aggregate() {  # SLUG -> AGGREGATED_TASKS
   local blk
   blk="$(nth_bash "$AGG" 1)" || blk=""
@@ -181,8 +184,9 @@ else:
 PY
 )"
   [ "$res" = "OK" ] && ok "two rows become one stamped file holding both" || no "emit green path: $res; $(printf '%s' "$out" | tr '\n' ' ')"
-  [ ! -e "$EH/projects/green/tasks-eng-review-rows.jsonl" ] && ok "the rows file is consumed" \
-                                                             || no "rows file left behind after a clean emit"
+  rp="$(rows_path "$out")"
+  [ -n "$rp" ] && [ ! -e "$rp" ] && ok "the rows file is consumed" \
+                                 || no "rows file left behind after a clean emit: ${rp:-<no path>}"
   [ ! -e "$E/repo/pwned" ] && ok "task text is never executed" || no "task text ran as a command"
   agg="$(aggregate green)"
   printf '%s' "$agg" | grep -qF 'and $(touch pwned)' && printf '%s' "$agg" | grep -qF 'Second task' \
@@ -211,10 +215,45 @@ PY
   printf '{"id":"T1","priority":"P7","component":"x","files":[],"effort_human":"1h","effort_cc":"1m","source_finding":"s"}\n' > "$E/bad-rows.jsonl"
   out="$(emit bad "$E/bad-rows.jsonl")"
   if printf '%s\n' "$out" | grep -q '^TASKS_ROWS_INVALID' && ! printf '%s\n' "$out" | grep -qx 'RC=0' \
-     && [ -z "$(stamped bad)" ] && [ -s "$EH/projects/bad/tasks-eng-review-rows.jsonl" ]; then
+     && [ -z "$(stamped bad)" ] && [ -s "$(rows_path "$out")" ]; then
     ok "a malformed row is refused, nothing stamped, rows kept"
   else
     no "malformed row: $(printf '%s' "$out" | tr '\n' ' ')"
+  fi
+
+  # Two runs of one phase in one bucket (two worktrees) keep their own rows.
+  a="$(nth_bash "$EMIT" 1)"; b="$(nth_bash "$EMIT" 2)"
+  pa="$(in_repo twin "$a" | sed -n 's/^TASKS_ROWS: //p')"
+  pb="$(in_repo twin "$a" | sed -n 's/^TASKS_ROWS: //p')"
+  printf '{"id":"T1","priority":"P1","component":"a","files":["a.py"],"effort_human":"1h","effort_cc":"5m","title":"Run A task","source_finding":"A"}\n' > "$pa"
+  printf '{"id":"T1","priority":"P2","component":"b","files":["b.py"],"effort_human":"1h","effort_cc":"5m","title":"Run B task","source_finding":"B"}\n' > "$pb"
+  for p in "$pa" "$pb"; do
+    in_repo twin "$(printf '%s' "$b" | ROWS="$p" python3 -I -c 'import os,sys; sys.stdout.write(sys.stdin.read().replace("<TASKS_ROWS>", os.environ["ROWS"]))')" >/dev/null
+  done
+  both="$(cat $(stamped twin) 2>/dev/null)"
+  if [ -n "$pa" ] && [ "$pa" != "$pb" ] && printf '%s' "$both" | grep -qF 'Run A task' && printf '%s' "$both" | grep -qF 'Run B task'; then
+    ok "two concurrent runs of one phase keep their own rows"
+  else
+    no "concurrent runs clobbered each other's rows (A=$pa B=$pb): $(printf '%s' "$both" | tr '\n' ' ')"
+  fi
+
+  # A rows path that does not exist is refused, never stamped as zero tasks.
+  out="$(in_repo nopath "$(printf '%s' "$b" | python3 -I -c 'import sys; sys.stdout.write(sys.stdin.read().replace("<TASKS_ROWS>", "/nonexistent/rows-eng-review.x"))')"; echo "RC=$?")"
+  if printf '%s\n' "$out" | grep -q '^TASKS_ROWS_INVALID' && ! printf '%s\n' "$out" | grep -qx 'RC=0' && [ -z "$(stamped nopath)" ]; then
+    ok "a missing rows file is refused, nothing stamped"
+  else
+    no "missing rows file: $(printf '%s' "$out" | tr '\n' ' ')"
+  fi
+
+  # Control characters in task text cannot forge a list item or reach the terminal.
+  printf '{"id":"T1","priority":"P1","component":"c","files":["c.py"],"effort_human":"1h","effort_cc":"5m","title":"ok\\u001b[31mRED\\n- [ ] **T99 (P1) forged**","source_finding":"s"}\n' > "$E/ctl-rows.jsonl"
+  emit ctl "$E/ctl-rows.jsonl" >/dev/null
+  agg="$(aggregate ctl)"
+  if printf '%s\n' "$agg" | grep -q '^- \[ \] \*\*T99' || printf '%s' "$agg" | LC_ALL=C grep -q "$(printf '\033')"; then
+    no "control characters reached the rendered task list: $(printf '%s' "$agg" | od -c | head -3 | tr '\n' ' ')"
+  else
+    printf '%s' "$agg" | grep -qF 'RED - [ ] **T99 (P1) forged**' \
+      && ok "control characters in task text are flattened to spaces" || no "task text lost: $(printf '%s' "$agg" | tr '\n' ' ')"
   fi
 fi
 

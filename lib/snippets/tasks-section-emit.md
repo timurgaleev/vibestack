@@ -39,7 +39,9 @@ prefix from `{SKILL_NAME}` (e.g. `plan-ceo-review` → `ceo-review`). The
 aggregator in `/autoplan` iterates over `ceo-review`, `design-review`,
 `eng-review`, `devex-review` and reads `tasks-<phase>-*.jsonl` files.
 
-**1. Get the rows path.** This also clears a rows file an interrupted run left.
+**1. Get the rows path.** Each run gets its own file: worktrees of one repo
+share this directory, and a fixed name would let two runs of the same phase
+read each other's rows.
 
 ```bash
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
@@ -47,25 +49,27 @@ PHASE="${SKILL_NAME:-{SKILL_NAME}}"
 PHASE="${PHASE#plan-}"
 TASKS_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$TASKS_DIR"
-rm -f "$TASKS_DIR/tasks-${PHASE}-rows.jsonl"
-echo "TASKS_ROWS: $TASKS_DIR/tasks-${PHASE}-rows.jsonl"
+echo "TASKS_ROWS: $(mktemp "$TASKS_DIR/rows-${PHASE}.XXXXXXXX")"
 ```
 
-**2. Write the rows** with the Write tool to the printed `TASKS_ROWS` path, one
+**2. Write the rows** with the Write tool to the printed `TASKS_ROWS` path (Read
+the empty file first), one
 JSON object per line, one line per task: `id` (T1, T2, ...), `priority`
 (P1/P2/P3), `component`, `files` (array of paths), `effort_human`, `effort_cc`,
 `title`, `source_finding` — all strings except `files`. With zero tasks, write
 nothing.
 
-**3. Validate and stamp** — run this even with zero tasks:
+**3. Validate and stamp** — run this even with zero tasks, substituting the
+printed `TASKS_ROWS` path:
 
 ```bash
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 PHASE="${SKILL_NAME:-{SKILL_NAME}}"
 PHASE="${PHASE#plan-}"
 TASKS_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-python3 -I - "$TASKS_DIR/tasks-${PHASE}-rows.jsonl" "$TASKS_DIR/tasks-${PHASE}-${RUN_ID}.jsonl" \
+# Zero-padded so two runs in the same second still order as numbers.
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%010d' "$$")"
+python3 -I - '<TASKS_ROWS>' "$TASKS_DIR/tasks-${PHASE}-${RUN_ID}.jsonl" \
   "$PHASE" "$RUN_ID" "$(git branch --show-current 2>/dev/null || echo unknown)" \
   "$(git rev-parse HEAD 2>/dev/null || echo unknown)" <<'PY'
 import json, os, sys
@@ -74,8 +78,11 @@ stamp = {"phase": phase, "run_id": run_id, "branch": branch, "commit": commit}
 keys = ("id", "priority", "component", "effort_human", "effort_cc", "title", "source_finding")
 try:
     lines = open(rows_path, encoding="utf-8").read().splitlines()
-except FileNotFoundError:
-    lines = []
+except OSError as e:
+    # Step 1 always creates the file; a missing one is a wrong path, never
+    # "zero tasks" — that would stamp an empty marker over real findings.
+    print("TASKS_ROWS_INVALID cannot read %s (%s)" % (rows_path, e.strerror))
+    sys.exit(1)
 rows, errors = [], []
 for n, line in enumerate(lines, 1):
     if not line.strip():
@@ -111,7 +118,7 @@ print("TASKS_FILE: %s (%d tasks)" % (out_path, len(rows)))
 PY
 ```
 
-On `TASKS_ROWS_INVALID`, fix the named lines in the rows file and re-run step 3;
-nothing was stamped. A run with zero tasks stamps one `"empty": true` marker
+On `TASKS_ROWS_INVALID`, fix the named lines in the rows file (or the path) and
+re-run step 3; nothing was stamped. A run with zero tasks stamps one `"empty": true` marker
 row, so the aggregator sees that this phase ran and found nothing, and the
 tasks from an earlier run of the phase stop counting.
