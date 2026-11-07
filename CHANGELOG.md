@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.55.39 — 2026-11-08
+
+### Fixed
+
+- **`/browse`: a stuck tab no longer makes the daemon look dead.** `/health`
+  reports browser liveness, with the active tab probed separately under a 1 s
+  bound; `status` names an unresponsive tab. When every tab is closed outside
+  browse, the next command opens a blank tab, and `newtab` works with no tab
+  open. A `--tab-id` pin is scoped to its request instead of switching the
+  shared active tab (`tab-each` too); a pin on a closed tab is refused rather
+  than run on the shared tab. Handoff uses the same profile and Chromium as the
+  headed launch. A headless daemon no longer returns its root token from
+  `/health`, and the extension refuses token-bearing messages from content
+  scripts.
+- **`/make-pdf` stays off the network without `--allow-network`.** Remote
+  references in untrusted HTML are neutralised after entity decoding, a
+  no-network content policy leads the print page and the diagram tab, and
+  every `load-html` passes the new `browse load-html --offline`, which routes
+  that one tab off the network. The DOCX converter's network entry points are
+  disabled while it runs offline. It also ignores a project's `.env` and
+  `bunfig.toml` when it falls back to bun, drops icns images from DOCX, and
+  pins its exit codes.
+- **`/claude` outside voice is hardened.** Nested runs force
+  `--permission-mode default` and an explicit `--tools` whitelist, P0/P1
+  labels fail the gate, a refusal or an intent stub grades unavailable (in
+  `/codex` too), the diff is fenced as data, and the model override is
+  validated.
+- **`/improve-arch` scopes first**, then rates each candidate's strength, ends
+  with a top recommendation, questions through a numbered frontier of
+  decisions, reads `GLOSSARY.md` first, and hands ADRs to
+  `/document-generate --adr`.
+
+### Changed
+
+- **The always-loaded rules, their Cursor mirrors and the trust docs are back in
+  step.** A new test compares each Claude rule with its `.mdc`; the status
+  vocabulary, memrain, skill routing, perf and patterns rules are updated;
+  `SECURITY.md` and the configuration docs name the configuration phase and
+  its five targets; `ETHOS.md` adds an "Honest work" principle.
+
 ## 1.55.38 — 2026-11-08
 
 ### Fixed
