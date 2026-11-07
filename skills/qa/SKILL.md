@@ -313,6 +313,8 @@ Before falling back to git diff heuristics, check for richer test plan sources:
 
 ## Phases 1-6: QA Baseline
 
+{{include lib/snippets/qa-scope.md}}
+
 ## Modes
 
 ### Diff-aware (automatic when on a feature branch with no URL)
@@ -333,7 +335,7 @@ This is the **primary mode** for developers verifying their work. When the user 
    - API endpoints → test them directly with `$B js "await fetch('/api/...')"`
    - Static pages (markdown, HTML) → navigate to them directly
 
-   **If no obvious pages/routes are identified from the diff:** Do not skip browser testing. The user invoked /qa because they want browser-based verification. Fall back to Quick mode — navigate to the homepage, follow the top 5 navigation targets, check console for errors, and test any interactive elements found. Backend, config, and infrastructure changes affect app behavior — always verify the app still works.
+   **If no obvious pages/routes are identified from the diff:** the change still gets tested — on the surface "Choosing the surface" selects. A CLI, library, job or API-only change is a functional surface: follow "Functional surface", not a homepage smoke test. When the app has pages that run on the changed backend, config or infrastructure, the surface is mixed: probe the changed behavior functionally, and run Quick mode in the browser (homepage, top 5 navigation targets, console, interactive elements) to verify the app still works.
 
 3. **Detect the running app** — probe common local dev ports for a real HTTP answer (a browse `goto` is not a liveness check: it can exit 0 on a refused connection):
    ```bash
@@ -371,6 +373,8 @@ Run full mode, then compare with the prior baseline resolved at setup — `prior
 ---
 
 {{include lib/snippets/qa-probe-consent.md}}
+
+{{include lib/snippets/qa-functional.md}}
 
 ---
 
@@ -564,14 +568,14 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Find bugs black-box.** Discovery and probing go through the browser, as a user, not a developer. Read source only to map a diff to pages (diff-aware mode) and inside the Phase 8 fix loop.
+5. **Find bugs black-box.** Discovery and probing go through the browser, as a user, not a developer. Read source only to map a diff to pages (diff-aware mode), to build the contract map on a functional surface, and inside the Phase 8 fix loop.
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
 7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
 9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
 10. **Use `snapshot -C` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
 11. **Show screenshots to the user.** After every `$B screenshot`, `$B snapshot -a -o`, or `$B responsive` command, use the Read tool on the output file(s) so the user can see them inline. For `responsive` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.
-12. **Never refuse to use the browser.** When the user invokes /qa or /qa-only, they are requesting browser-based testing. Never suggest evals, unit tests, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.
+12. **Never refuse to use the browser on a selected browser surface.** When the surface is browser or mixed, open the browser and test — never suggest evals, unit tests, or other alternatives as a substitute, even if the diff appears to have no UI changes. On a functional surface the contract-map probes are the test, and a unit-test run does not replace them either.
 
 Record baseline health score at end of Phase 6.
 
