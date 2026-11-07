@@ -773,30 +773,29 @@ echo "TEST_EXIT=$_TEXIT (full log: $_TLOG)"
 If `TEST_EXIT` is not 0: **BLOCKER.** Cannot merge with failing tests. If the user said
 there is no test suite, record Free tests as `NONE (user confirmed)` — a warning, not a pass.
 
-**E2E tests — check recent results:**
+**Project evals — the repo's own suite, tied to this head:** a unit is an
+`evals/<unit>/` with a committed `config.json` (the layout `/agent-eval` writes); its
+latest run is the newest `runs/summary-*.md`.
 
 ```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/evals/"*-e2e-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -20
+PR_HEAD='<PR_HEAD>'   # from Step 1's TARGET line
+_n=0
+for _cfg in $(git ls-tree -r --name-only "$PR_HEAD" -- evals 2>/dev/null | grep -E '^evals/[^/]+/config\.json$'); do
+  _u=${_cfg%/config.json}; _n=$((_n + 1))
+  _sum=$(find "$_u/runs" -maxdepth 1 -type f -name 'summary-*.md' -exec ls -t {} + 2>/dev/null | head -1)
+  if [ -z "$_sum" ]; then echo "EVAL $_u NOT_RUN"
+  elif head -1 "$_sum" | grep -q '^INCOMPLETE'; then echo "EVAL $_u INCOMPLETE $_sum"
+  elif grep -qF "$(printf '%s' "$PR_HEAD" | cut -c1-7)" "$_sum"; then echo "EVAL $_u TIED $_sum"
+  else echo "EVAL $_u UNTIED $_sum"
+  fi
+done
+[ "$_n" = 0 ] && echo "PROJECT_EVALS: N/A (no evals/<unit>/config.json at this head)"
 ```
 
-For each eval file from today, parse pass/fail counts. Show:
-- Total tests, pass count, fail count
-- How long ago the run finished (from file timestamp)
-- Total cost
-- Names of any failing tests
-
-If no E2E results from today: **WARNING — no E2E tests run today.**
-If E2E results exist but have failures: **WARNING — N tests failed.** List them.
-
-**LLM judge evals — check recent results:**
-
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/evals/"*-llm-judge-*-$(date +%Y-%m-%d)*.json 2>/dev/null | head -5
-```
-
-If found, parse and show pass/fail. If not found, note "No LLM evals run today."
+- `PROJECT_EVALS: N/A` — no suite is configured. Report N/A; it is not a warning.
+- `TIED` — the run names this head: show its pass rates; failures are a **WARNING** listing them.
+- `UNTIED`, `NOT_RUN`, `INCOMPLETE` — **WARNING**: eval evidence is unavailable for `<sha7>`.
+  A run that does not name the head may be another commit's, and an incomplete run is never a pass.
 
 ### 3.5c: PR body accuracy check
 
@@ -904,8 +903,7 @@ Build the full readiness report:
 ║                                                          ║
 ║  TESTS                                                   ║
 ║  ├─ Free tests:    PASS / FAIL (blocker)                 ║
-║  ├─ E2E tests:     52/52 pass (25 min ago) / NOT RUN     ║
-║  └─ LLM evals:     PASS / NOT RUN                        ║
+║  └─ Project evals: N/A / 52/52 on <sha7> / UNAVAILABLE   ║
 ║                                                          ║
 ║  DOCUMENTATION                                           ║
 ║  ├─ CHANGELOG:     Updated / NOT UPDATED (warning)       ║
@@ -957,7 +955,7 @@ Use AskUserQuestion (only when there are no blockers):
 
 If the user chooses B: **STOP.** Give specific next steps:
 - If reviews are stale: "Run `/review` or `/autoplan` to review the current code, then `/land-and-deploy` again."
-- If E2E not run: "Run your E2E tests to make sure nothing is broken, then come back."
+- If project evals are unavailable: "Run the project's evals on this head, then come back."
 - If docs not updated: "Run `/document-release` to update CHANGELOG and docs."
 - If PR body stale: "The PR description doesn't match what's actually in the diff — update it on GitHub."
 
