@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.55.17 — 2026-11-07
+
+### Added
+
+- **Shared AWS context block.** `lib/snippets/aws-context.md` establishes, read
+  only, which AWS identity and region every finding is about: it confirms the
+  caller with `sts get-caller-identity` and prints the profile, region, account
+  and principal (SSO permission set, assumed role, IAM user or root). An
+  identity the CLI did not confirm prints `unavailable` and N-A for every field,
+  so no check runs against a guessed scope; a missing region is asked, never
+  assumed. The identity call cannot wait on an MFA or SSO prompt and gives up on
+  an unreachable endpoint. Quota, price, availability and API-field claims that
+  set a finding's severity are checked against the AWS documentation tool when
+  one is connected, or marked as authoring-time knowledge. The AWS review skills
+  adopt it in a later release.
+
 ## 1.55.16 — 2026-11-07
 
 ### Changed
