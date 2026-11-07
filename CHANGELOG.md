@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.55.22 — 2026-11-07
+
+### Changed
+
+- **`/land-and-deploy` runs only when you type it.** A merge to production is a
+  one-way door, so "merge", "land" or "deploy" in passing conversation no longer
+  starts it. Codex and Kiro ignore the typed-only setting.
+- **The approval question says what the merge will deploy.** Before you approve,
+  `/land-and-deploy` reads the Deploy Configuration and every workflow at the PR
+  head that deploys — with its branch filters and environment gates — and shows
+  one `MERGE WILL DEPLOY` line; without evidence it says `unknown`, never
+  "nothing deploys".
+- **A recorded deploy command is surfaced after the merge.** When the project
+  deploys by running a command, `/land-and-deploy` says production has not moved
+  yet and offers to let you run it, run it after a separate confirmation, or
+  finish as merged but unverified.
+- **Eval evidence comes from the project's own suite.** The readiness report reads
+  the `evals/<unit>/` directories the repo commits at the PR head instead of
+  warning every run that no E2E tests ran today; no suite is N/A, and a run that
+  does not name the head is a warning.
+
+### Fixed
+
+- **The production URL keeps its scheme.** The Deploy Configuration parse cut at
+  the last colon and turned `https://example.com` into `//example.com`.
+- **The inline review fails closed.** An unreadable review checklist or an
+  unfixed critical finding stops the run with a pointer to `/review` instead of
+  reading as a pass, and fixes made during it end the run before merge.
+- **An unknown diff scope runs every check.** A scope helper that could not
+  classify the diff, failed silently or was missing — or `SCOPE_*` values left
+  in your shell — could make the run skip checks.
+- **The deploy log goes through `vibe-review-log`**, names the PR's branch and
+  merge commit, and a failed write says "not logged". The setup warnings no
+  longer promise a deploy can be verified from HTTP checks alone.
+- `/land-and-deploy` detects the base branch with the shared block and reads the
+  review checklist through the installed skill directory.
+
 ## 1.55.21 — 2026-11-07
 
 ### Changed
