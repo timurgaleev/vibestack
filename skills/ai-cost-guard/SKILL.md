@@ -133,9 +133,11 @@ aws budgets describe-budgets --account-id "$ACCOUNT" \
 aws budgets describe-budget-actions-for-account --account-id "$ACCOUNT" --output table \
   || echo "BUDGET_ACTIONS: unknown (describe-budget-actions-for-account failed)"
 # CloudWatch alarms on Bedrock invocation or token metrics
-aws cloudwatch describe-alarms --query 'MetricAlarms[?Namespace==`AWS/Bedrock`].[AlarmName,MetricName,Threshold]' --output table 2>/dev/null
+aws cloudwatch describe-alarms --query 'MetricAlarms[?Namespace==`AWS/Bedrock`].[AlarmName,MetricName,Threshold]' --output table \
+  || echo "ALARMS: unknown (describe-alarms failed)"
 # Applied quotas for the models in use (tokens per minute, requests per minute)
-aws service-quotas list-service-quotas --service-code bedrock --query 'Quotas[?contains(QuotaName, `tokens per minute`)].[QuotaName,Value]' --output table 2>/dev/null
+aws service-quotas list-service-quotas --service-code bedrock --query 'Quotas[?contains(QuotaName, `tokens per minute`)].[QuotaName,Value]' --output table \
+  || echo "QUOTAS: unknown (list-service-quotas failed)"
 ```
 
 - No budget with a Bedrock filter: `HIGH`. A notification-only budget: `MEDIUM` (an email at 3am does not stop the loop). A budget action that removes the invoke policy or an alarm that triggers a kill switch: pass.

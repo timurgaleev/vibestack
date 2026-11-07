@@ -239,6 +239,8 @@ JSON
   else
     no "plan resources wrong: $out"
   fi
+  grep -qF 'is listed as removed' "$TMP/aws-cost.md" \
+    && no "estimate prose promises a removed row the block never prints" || ok "estimate prose matches the block on deletes"
 fi
 EST="$(awk '/^## .*[Ee]stimate/ {on=1; print; next} on && /^## / {exit} on' "$AC")"
 [ -n "$EST" ] && ok "estimate mode has its own section" || no "no estimate section"
@@ -269,6 +271,20 @@ grep -q 'cached_tokens' "$AG" && grep -q 'cachedContentTokenCount' "$AG" \
   && ok "OpenAI and Gemini cache counters named" || no "OpenAI/Gemini cache counters missing"
 grep -qiE 'storage' "$AG" && grep -qiE 'explicit (context )?cach' "$AG" \
   && ok "Gemini explicit-cache storage charge named" || no "explicit-cache storage charge missing"
+
+echo "ai-cost-guard: a denied alarm or quota call is unknown, not empty"
+block "$AG" 'describe-alarms' | sed "s|<ACCOUNT>|123456789012|" > "$TMP/ag-cap.sh"
+if [ -s "$TMP/ag-cap.sh" ]; then
+  for sh in $SHELLS; do
+    out=$(runblock "$(command -v "$sh")" "$TMP/ag-cap.sh" SHIM_FAIL="describe-alarms list-service-quotas")
+    printf '%s\n' "$out" | grep -q '^ALARMS: unknown' \
+      && ok "[$sh] denied describe-alarms prints ALARMS: unknown" || no "[$sh] denied describe-alarms reads as no alarm: $out"
+    printf '%s\n' "$out" | grep -q '^QUOTAS: unknown' \
+      && ok "[$sh] denied list-service-quotas prints QUOTAS: unknown" || no "[$sh] denied list-service-quotas reads as no quota: $out"
+  done
+else
+  no "ai-cost-guard Bedrock cap block not found"
+fi
 
 echo
 echo "passed: $pass  failed: $fail"

@@ -741,7 +741,7 @@ exists), then print it in full. The file is for the next run to diff against.
 What a change will cost before it deploys, read from the change itself. The input is a
 Terraform plan as JSON (`terraform show -json <planfile> > plan.json`) or the output of
 `cdk diff`. List what the change creates or modifies — a replacement counts, a no-op does
-not, and a pure delete lowers the bill and is listed as removed, not priced:
+not, and a pure delete lowers the bill and is left out, not priced:
 
 ```bash
 PLAN_JSON='<path to the terraform show -json output>'
