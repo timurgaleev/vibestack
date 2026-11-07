@@ -102,9 +102,11 @@ For a `repo` row (an oversized log under a project's `.vibestack/`):
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-gc" trim '<PATH from the row>'
 ```
 
-It keeps the last 256 KB and moves the untrimmed original to
+It keeps the last 256 KB and keeps the untrimmed original in
 `~/.vibestack/gc-trash/<date>/repo/`; it refuses while that repository's browse
-daemon may be running.
+daemon may be running, and for a log with no line break in its last 256 KB.
+`undo` does not restore a trim: the gc-log line names the original, and
+`mv '<original>' '<log>'` puts it back.
 
 The bin moves it to `~/.vibestack/gc-trash/<date>/<channel>/` and appends an
 `undo:` line to `~/.vibestack/gc-log.md`. A `REFUSED:` line means the path is

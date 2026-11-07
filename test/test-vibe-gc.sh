@@ -278,5 +278,31 @@ python3 -I -c 'import sys; open(sys.argv[1], "w").write("net\n" * 300000)' "$RS/
   && [ ! -e "$VIBESTACK_HOME/gc-trash/$TODAY/repo/browse-network.log.1" ] \
   && ok "the same log named twice is trimmed once" || no "duplicate trim path: exit $rc"
 
+# Value: protects=trim is all-or-nothing, one refused path leaves every log untouched; fails_when=trim validates and cuts per path (a good log is trimmed before the refused one is seen); why_new=trim_refused passes one path at a time, so mixed batches are never exercised; seam=none
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("m\n" * 800000)' "$RS/browse-mixed.log"
+mixed_size=$(wc -c < "$RS/browse-mixed.log" | tr -d ' ')
+(cd "$REPO" && "$GC" trim "$RS/browse-mixed.log" "$RS/cookies.json" >/dev/null 2>&1); rc=$?
+[ "$rc" -ne 0 ] && [ "$(wc -c < "$RS/browse-mixed.log" | tr -d ' ')" = "$mixed_size" ] \
+  && [ ! -e "$VIBESTACK_HOME/gc-trash/$TODAY/repo/browse-mixed.log" ] \
+  && ok "one refused path in a batch leaves the good log untrimmed" || no "mixed batch: exit $rc, partial trim"
+
+# Value: protects=trim only acts inside a repository's .vibestack; fails_when=the repo lookup is dropped or falls back to the cwd so a log is trimmed from a non-repo directory; why_new=every trim row runs with cwd inside $REPO; seam=none
+mkdir -p "$TMP/norepo"
+(cd "$TMP/norepo" && "$GC" trim "$RS/browse-mixed.log" >/dev/null 2>&1); rc=$?
+[ "$rc" -ne 0 ] && [ "$(wc -c < "$RS/browse-mixed.log" | tr -d ' ')" = "$mixed_size" ] \
+  && ok "trim from a directory outside any repository refuses" || no "trim outside a repo: exit $rc"
+
+# The scan row's path is pasted into a quoted trim command, and a repository
+# names its own files: a name outside [A-Za-z0-9._-] is never offered or trimmed.
+BADLOG="$RS/"'bad$(id).log'
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("b\n" * 1000000)' "$BADLOG"
+printf '%s\n' "$(cd "$REPO" && "$GC" scan --days 30 2>/dev/null)" | grep -qF 'bad$(id)' \
+  && no "scan offered a log with shell characters in its name" || ok "scan never offers a log with shell characters in its name"
+trim_refused "a log with shell characters in its name" "$BADLOG"
+rm -f "$BADLOG"
+# One record longer than the window: cutting at a line break would keep nothing.
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("{\"blob\": \"" + "z" * 1500000 + "\"}")' "$RS/browse-oneline.jsonl"
+trim_refused "a log with no line break in its last 256 KB" "$RS/browse-oneline.jsonl"
+
 echo "vibe-gc: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -59,6 +59,7 @@ RANK = {"high": 0, "medium": 1, "low": 2}
 MAX_ROWS = 20
 REPO_LOG_MIN = 1 << 20
 REPO_LOG_KEEP = 256 << 10
+SAFE_LOG_NAME = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def die(msg, code=2):
@@ -416,8 +417,11 @@ def scan_repo():
     state = repo_state_dir()
     if not state or os.path.islink(state) or not os.path.isdir(state):
         return []
+    # A name outside SAFE_LOG_NAME is never offered: the row's path is pasted
+    # into a quoted shell command, and a repository chooses its own file names.
     logs = [p for p in (os.path.join(state, n) for n in entries(state))
-            if is_repo_log(p) and os.lstat(p).st_size > REPO_LOG_MIN]
+            if SAFE_LOG_NAME.fullmatch(os.path.basename(p))
+            and is_repo_log(p) and os.lstat(p).st_size > REPO_LOG_MIN]
     busy = browse_daemon(state) if logs else None
     rows = []
     for p in logs:
@@ -542,11 +546,44 @@ def trim_refusal(raw, state):
     p = os.path.abspath(os.path.expanduser(raw))
     if os.path.realpath(os.path.dirname(p)) != os.path.realpath(state):
         return "not directly in %s" % state
+    if not SAFE_LOG_NAME.fullmatch(os.path.basename(p)):
+        return "file name holds characters outside [A-Za-z0-9._-]"
     if not is_repo_log(p):
         return "not a regular .log or .jsonl file"
-    if os.lstat(p).st_size <= REPO_LOG_MIN:
+    size = os.lstat(p).st_size
+    if size <= REPO_LOG_MIN:
         return "under 1 MB; nothing to trim"
+    with open(p, "rb") as f:
+        f.seek(size - REPO_LOG_KEEP - 1)
+        if b"\n" not in f.read():
+            return "no line break in its last 256 KB; trimming would empty it"
     return None
+
+
+def keep_original(src, dest_dir):
+    """Claim a free trash name and keep src there, without moving src.
+
+    The name is claimed atomically (a hard link, or an exclusive create when
+    the trash is on another filesystem), so two trims never share a name.
+    """
+    base, k = os.path.basename(src), 0
+    while True:
+        dest = os.path.join(dest_dir, base if k == 0 else "%s.%d" % (base, k))
+        try:
+            os.link(src, dest)
+            return dest
+        except FileExistsError:
+            k += 1
+            continue
+        except OSError:
+            pass
+        try:
+            with open(dest, "xb") as out, open(src, "rb") as f:
+                shutil.copyfileobj(f, out)
+            shutil.copystat(src, dest)
+            return dest
+        except FileExistsError:
+            k += 1
 
 
 def trim_one(src, state, date):
@@ -557,23 +594,32 @@ def trim_one(src, state, date):
     # Keep whole lines only: the byte before the window decides whether the
     # first kept line is complete.
     nl = chunk.find(b"\n")
-    tail = chunk[nl + 1:] if nl >= 0 else b""
+    tail = chunk[nl + 1:]
     dest_dir = os.path.join(TRASH, date, "repo")
     os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, os.path.basename(src))
-    k = 1
-    while os.path.lexists(dest):
-        dest = os.path.join(dest_dir, "%s.%d" % (os.path.basename(src), k)); k += 1
     fd, tmp = tempfile.mkstemp(dir=state, prefix=".gc-trim.")
+    dest = None
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(tail)
         os.chmod(tmp, stat.S_IMODE(st.st_mode))
-        shutil.move(src, dest)
+        dest = keep_original(src, dest_dir)
+        # The log never leaves its path: the original is linked (or copied)
+        # aside, and bytes a writer appended since the read join the tail
+        # before it replaces the log.
+        grown = os.stat(src).st_size
+        if grown > st.st_size:
+            with open(src, "rb") as f, open(tmp, "ab") as out:
+                f.seek(st.st_size)
+                extra = f.read()
+                out.write(extra)
+                tail += extra
         os.replace(tmp, src)
     except BaseException:
         if os.path.lexists(tmp):
             os.unlink(tmp)
+        if dest and os.path.lexists(src) and os.path.lexists(dest):
+            os.unlink(dest)
         raise
     append_log("- %s trimmed '%s' to its last %d bytes; original kept at '%s'" % (now_iso(), src, len(tail), dest))
     print("trimmed\t%s\t%d\t%s" % (src, len(tail), dest))
