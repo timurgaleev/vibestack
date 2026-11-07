@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.55.28 — 2026-11-07
+
+### Changed
+
+- **The Claude settings deny reads of common credential files**: `~/.ssh/id_*`,
+  `~/.ssh/*.pem`, `~/.aws/credentials`, `~/.netrc`, the GitHub CLI hosts file
+  and the Docker config. This guards against an accidental read through Claude
+  Code's file tools and the file commands it recognizes; it is not a sandbox.
+- **The Cursor CLI permissions use Cursor's own grammar.** The shipped file was
+  written as `Bash(...)` rules, which Cursor does not read, so its deny list
+  protected nothing. It now denies whole commands with `Shell(...)` and allows
+  `WebFetch(*)`. No shell allow is shipped, so under `allowlist` cursor-agent
+  asks before each shell command; add your own `Shell(...)` entries to `allow`.
+
+### Fixed
+
+- **A sync keeps your Cursor permission rules.** It used to replace the whole
+  `permissions` block; it now merges both lists with yours and drops only the
+  `Bash(...)`, bare `WebFetch` and `WebSearch` entries an earlier pack shipped.
+
 ## 1.55.27 — 2026-11-07
 
 ### Added
