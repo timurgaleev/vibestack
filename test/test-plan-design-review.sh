@@ -13,7 +13,15 @@
 #   - the first failed generation routes to DESIGN_NOT_AVAILABLE and the skill
 #     forbids hand-built wireframes;
 #   - fixes are proposed and approved per issue, never applied first;
-#   - the overall score is the lowest of Passes 1-6 and `clean` is defined by it.
+#   - the overall score is the lowest of Passes 1-6 and `clean` is defined by it;
+#   - variants are picked inline in one question (no served-board steps), and
+#     approved.json records the chosen image's real path under DESIGN_DIR, which
+#     the Approved Mockups table reads;
+#   - the rubric asks for no gradient backgrounds and no motion minimum;
+#   - excluded artifacts and restated contracts are not gaps, approved fixes are
+#     verified in plan tasks, unasked findings stay on the unresolved list, every
+#     stage runs under context pressure, and a per-fix approval check precedes
+#     the exit gate.
 #
 # Usage: test/test-plan-design-review.sh [repo-root]
 set -uo pipefail
@@ -154,20 +162,42 @@ run_block ideal "$TMP/ideal.sh"; rc=$?
   && ok "the 10/10 brief reaches \$D byte-for-byte" || no "ideal brief: rc=$rc out='$(cat "$TMP/out-ideal")'"
 
 bash_after "$R" "**Save the approved choice." > "$TMP/approved.sh" || no "approved block found"
-sed 's/"<V>"/"B"/' "$TMP/approved.sh" > "$TMP/approved-b.sh"
+# The chosen image is a later round's de-duplicated name: the letter alone cannot find it.
+IMG="$DDIR/variant-B-2.png"; : > "$IMG"
+fill_approved() {  # fill_approved IMAGE -> approved-b.sh with letter B and that image
+  sed -e 's/"<V>"/"B"/' -e "s|\"<IMAGE>\"|\"$1\"|" "$TMP/approved.sh" > "$TMP/approved-b.sh"
+}
+fill_approved "$IMG"
 cp "$HOSTILE" "$DDIR/approved-feedback.txt"
 run_block approved "$TMP/approved-b.sh"; rc=$?
-if [ "$rc" -eq 0 ] && python3 -I - "$DDIR/approved.json" "$HOSTILE" <<'PY'
-import json, sys
+if [ "$rc" -eq 0 ] && python3 -I - "$DDIR/approved.json" "$HOSTILE" "$IMG" <<'PY'
+import json, os, sys
 rec = json.load(open(sys.argv[1], encoding="utf-8"))
 want = open(sys.argv[2], encoding="utf-8").read().strip()
 assert rec["approved_variant"] == "B", rec
 assert rec["feedback"] == want, rec["feedback"]
 assert rec["screen"] == "home-page", rec["screen"]
-assert set(rec) == {"approved_variant", "feedback", "date", "screen", "branch"}, rec
+assert rec.get("approved_path") == os.path.realpath(sys.argv[3]), rec
+assert set(rec) == {"approved_variant", "approved_path", "feedback", "date", "screen", "branch"}, rec
 PY
-then ok "approved.json is valid JSON carrying the feedback verbatim"
+then ok "approved.json carries the feedback verbatim and the chosen image's real path"
 else no "approved.json: rc=$rc out='$(cat "$TMP/out-approved")'"; fi
+rm -f "$DDIR/approved.json"
+OUTSIDE="$TMP/elsewhere/variant-B.png"; mkdir -p "$TMP/elsewhere"; : > "$OUTSIDE"
+fill_approved "$OUTSIDE"
+run_block outside "$TMP/approved-b.sh"; rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$DDIR/approved.json" ] \
+  && ok "an image outside DESIGN_DIR is refused" || no "approved.json written for an image outside DESIGN_DIR"
+ln -s "$OUTSIDE" "$DDIR/variant-C.png"
+fill_approved "$DDIR/variant-C.png"
+run_block symlink "$TMP/approved-b.sh"; rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$DDIR/approved.json" ] \
+  && ok "a link that resolves outside DESIGN_DIR is refused" || no "approved.json written through a link out of DESIGN_DIR"
+fill_approved "$DDIR/variant-D.png"
+run_block noimg "$TMP/approved-b.sh"; rc=$?
+[ "$rc" -ne 0 ] && [ ! -e "$DDIR/approved.json" ] \
+  && ok "an image that was never saved is refused" || no "approved.json written for a missing image"
+fill_approved "$IMG"
 run_block badv "$TMP/approved.sh"; rc=$?
 [ "$rc" -ne 0 ] && ok "an unsubstituted variant letter is refused" || no "approved.json written with variant '<V>'"
 rm -f "$DDIR/approved.json" "$DDIR/approved-feedback.txt"
@@ -248,6 +278,61 @@ grep -qF '"clean" only if the after-fix overall score (lowest of Passes 1-6) is 
   && ok "clean is defined by the minimum score" || no "clean status not tied to the minimum"
 grep -qF 'number of decisions the user individually approved' "$R" \
   && ok "decisions_made counts approved decisions only" || no "decisions_made still counts plan additions"
+
+echo "variant choice is inline"
+for dead in 'feedback.json' 'feedback-pending' '/api/reload' '$D compare' 'design-board.html'; do
+  grep -qF -- "$dead" "$R" && no "the unsupported comparison board is still documented ($dead)" \
+                            || ok "no comparison-board step ($dead)"
+done
+grep -qiE 'NEVER use AskUserQuestion to ask which variant|Do NOT use AskUserQuestion to ask which variant' "$R" \
+  && no "a rule still forbids asking which variant" || ok "no rule forbids asking which variant"
+grep -qF 'Read each `saved:` PNG with the Read tool' "$R" \
+  && grep -qF 'one AskUserQuestion that both picks and confirms' "$R" \
+  && ok "the inline pick-and-confirm question is the documented flow" || no "inline variant flow missing"
+sed -n '/^### Approved Mockups/,/^## Review Log/p' "$R" | grep -qF 'approved_path' \
+  && ok "the Approved Mockups table reads approved_path" || no "the Approved Mockups table guesses the image path"
+
+echo "rubric does not contradict itself"
+grep -qF 'use gradients, images, subtle patterns' "$R" \
+  && no "landing rules still ask for gradient backgrounds" || ok "no gradient-background instruction"
+grep -qiE '2-3 intentional motions' "$R" \
+  && no "a motion minimum is still required (rubric or Codex prompt)" || ok "no motion minimum"
+grep -qF 'No motion is a valid choice' "$R" \
+  && ok "the motion rule allows no motion" || no "the motion rule does not allow no motion"
+
+echo "decisions, debt and unresolved findings"
+grep -qF 'An artifact the plan explicitly excludes is not a missing requirement' "$R" \
+  && ok "an excluded artifact is not raised as a gap" || no "excluded artifacts are raised as gaps"
+grep -qF 'restates an approved contract' "$R" \
+  && ok "a restated approved contract counts as evidence" || no "restated contracts are re-asked"
+grep -qF "verification of each approved fix goes into the plan's tasks" "$R" \
+  && grep -qF 'TODOs are only for debt outside this plan' "$R" \
+  && ok "approved fixes are verified in plan tasks; TODOs hold out-of-scope debt" \
+  || no "TODO scoping missing"
+grep -qF 'including findings never asked' "$R" \
+  && ok "the unresolved list includes findings never asked" || no "unasked findings drop out of the unresolved list"
+grep -qF 'Priority Hierarchy Under Context Pressure' "$R" \
+  && no "a priority ranking still lets passes drop under context pressure" || ok "no priority ranking"
+grep -qF 'Complete every stage; shorten only optional commentary' "$R" \
+  && ok "every stage completes under context pressure" || no "context-pressure rule missing"
+
+echo "the design subagent can grade clean"
+# The shared grader accepts clean only as "Recommendation: proceed — no findings
+# because ..."; a subagent never told that shape grades every clean reply unavailable.
+sed -n '/^\*\*Second voice — Claude design subagent/,/^{{include lib\/snippets\/outside-voice-body.md}}/p' \
+  "$SRC/skills/plan-design-review/SKILL.md" | grep -qF 'Recommendation: proceed — no findings because' \
+  && ok "the subagent prompt names the clean Recommendation shape" \
+  || no "a clean design-subagent reply can never grade clean"
+
+echo "exit gate verifies per-issue approval"
+gate0="$(first_line "$R" '0. **Every applied fix has its own answer.**')"
+gate="$(first_line "$R" '## EXIT PLAN MODE GATE (BLOCKING)')"
+if [ -n "$gate0" ] && [ -n "$gate" ] && [ "$gate0" -lt "$gate" ] \
+   && sed -n "${gate0},${gate}p" "$R" | grep -qF 'back to pending'; then
+  ok "check 0 maps every applied fix to an individual answer before the gate"
+else
+  no "no per-issue approval check before ExitPlanMode (check 0 at ${gate0:-?}, gate at ${gate:-?})"
+fi
 
 echo
 echo "plan-design-review: $pass passed, $fail failed"

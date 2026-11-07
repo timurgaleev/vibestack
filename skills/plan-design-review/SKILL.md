@@ -132,10 +132,10 @@ Show it. The only reason to skip mockups is when there is literally no UI to des
 Design reviews without visuals are just opinion. Mockups ARE the plan for design work.
 You need to see the design before you code it.
 
-Commands: `variants` (generate mockup directions), `compare` (side-by-side review
-board), `check` (cross-model quality gate). Only `variants` is guaranteed — the
-other two report `DESIGN_<verb>_NOT_SUPPORTED` when the configured generator makes
-images but nothing else, and each call site below says what to do instead.
+Commands: `variants` (generate mockup directions) and `check` (cross-model quality
+gate). `check` reports `DESIGN_check_NOT_SUPPORTED` when the configured generator
+makes images but nothing else; its call site says what to do instead. The user
+picks a variant in the conversation; there is no served board.
 
 Setup is handled by the DESIGN SETUP section below. If `DESIGN_AVAILABLE` is printed,
 the designer is available and you should use it.
@@ -258,10 +258,12 @@ Flat design can strip away useful visual information that signals interactivity.
 Prioritize ruthlessly: things needed in a hurry go close at hand, everything
 else a few taps away with an obvious path to get there.
 
-## Priority Hierarchy Under Context Pressure
+## Under Context Pressure
 
-Step 0 > Step 0.5 (mockups — generate by default) > Interaction State Coverage > AI Slop Risk > Information Architecture > User Journey > everything else.
-Never skip Step 0 or mockup generation (when the designer is available). Mockups before review passes is non-negotiable. Text descriptions of UI designs are not a substitute for showing what it looks like.
+Complete every stage; shorten only optional commentary. Step 0, Step 0.5 (mockups,
+when the designer is available) and all seven passes run in full whatever the
+context budget — trim explanations, quotations and recaps instead. Mockups before
+review passes is non-negotiable.
 
 ## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 
@@ -309,7 +311,7 @@ If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-b
 `DESIGN_AVAILABLE` only means a key and `curl` are present; it does not prove the key
 works. The first real generation in Step 0.5 settles that (see its skip list).
 
-**Where design artifacts go.** Every mockup, comparison board, and `approved.json`
+**Where design artifacts go.** Every mockup and `approved.json`
 is written under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/` — never to `.context/`,
 `docs/`, `/tmp/`, or anywhere inside the repo. They are the user's data, not the
 project's: they have to survive a reboot, outlive the branch they were made on, and
@@ -361,14 +363,13 @@ If the user explicitly says "skip mockups" or "text only", respect that. Otherwi
 **PLAN MODE EXCEPTION — ALWAYS RUN:** These commands write design artifacts to
 `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/` (user config directory, not project files).
 Mockups are design artifacts that inform the plan, not code changes. The vibestack
-designer outputs PNGs and HTML comparison boards for human review during the
-planning phase. Generating mockups during planning is the whole point.
+designer outputs PNGs for human review during the planning phase. Generating
+mockups during planning is the whole point.
 
 Allowed commands under this exception:
 - `mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/..."`
 - Writing the brief and feedback files, and `approved.json`, inside `$_DESIGN_DIR`
-- `$D variants`, `$D check`, `$D compare`
-- `open` (to view a board or a mockup when no browser is already showing it)
+- `$D variants`, `$D check`
 
 First, set up the output directory. Name it after the screen/feature being designed and today's date:
 
@@ -418,140 +419,48 @@ images but does not critique them. Do the critique yourself: read each variant w
 the Read tool and judge it against the brief and the AI slop blacklist below, then
 flag failures the same way.
 
-**Do NOT show variants inline via Read tool and ask for preferences** — unless the
-board turns out to be unsupported and the inline fallback fires. Proceed
-directly to the Comparison Board + Feedback Loop section below. The comparison board
-IS the chooser — it has rating controls, comments, remix/regenerate, and structured
-feedback output. Showing mockups inline is a degraded experience.
+### Pick a variant inline
 
-### Comparison Board + Feedback Loop
+Read each `saved:` PNG with the Read tool so this round's variants show inline, then
+ask one AskUserQuestion that both picks and confirms: one option per saved variant
+(its letter and a few words on its direction) plus "None — regenerate with changes",
+inviting notes on what to change or borrow from the others. With more than three
+variants, split per the 5+-option rule; never drop a variant the user paid for.
 
-Create the comparison board and serve it over HTTP:
-
-```bash
-_DESIGN_DIR='<DESIGN_DIR>'
-D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
-$D compare --images "<this round's saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
-```
-
-This command generates the board HTML, starts an HTTP server on a random port,
-and opens it in the user's default browser. **Run it in the background** with `&`
-because the server needs to stay running while the user interacts with the board.
-
-If it prints `DESIGN_compare_NOT_SUPPORTED`, the configured generator produces
-variants only and there is no board to serve. Skip to the inline fallback below —
-there is no feedback file to wait for, so nothing else in this section applies.
-
-Parse the port from stderr output: `SERVE_STARTED: port=XXXXX`. You need this
-for the board URL and for reloading during regeneration cycles.
-
-**PRIMARY WAIT: AskUserQuestion with board URL**
-
-After the board is serving, use AskUserQuestion to wait for the user. Include the
-board URL so they can click it if they lost the browser tab:
-
-"I've opened a comparison board with the design variants:
-http://127.0.0.1:<PORT>/ — Rate them, leave comments, remix
-elements you like, and click Submit when you're done. Let me know when you've
-submitted your feedback (or paste your preferences here). If you clicked
-Regenerate or Remix on the board, tell me and I'll generate new variants."
-
-**Do NOT use AskUserQuestion to ask which variant the user prefers.** The comparison
-board IS the chooser. AskUserQuestion is just the blocking wait mechanism.
-
-**After the user responds to AskUserQuestion:**
-
-Check for feedback files next to the board HTML:
-- `$_DESIGN_DIR/feedback.json` — written when user clicks Submit (final choice)
-- `$_DESIGN_DIR/feedback-pending.json` — written when user clicks Regenerate/Remix/More Like This
-
-```bash
-_DESIGN_DIR='<DESIGN_DIR>'
-if [ -f "$_DESIGN_DIR/feedback.json" ]; then
-  echo "SUBMIT_RECEIVED"
-  cat "$_DESIGN_DIR/feedback.json"
-elif [ -f "$_DESIGN_DIR/feedback-pending.json" ]; then
-  echo "REGENERATE_RECEIVED"
-  cat "$_DESIGN_DIR/feedback-pending.json"
-  rm "$_DESIGN_DIR/feedback-pending.json"
-else
-  echo "NO_FEEDBACK_FILE"
-fi
-```
-
-The feedback JSON has this shape:
-```json
-{
-  "preferred": "A",
-  "ratings": { "A": 4, "B": 3, "C": 2 },
-  "comments": { "A": "Love the spacing" },
-  "overall": "Go with A, bigger CTA",
-  "regenerated": false
-}
-```
-
-**If `feedback.json` found:** The user clicked Submit on the board.
-Read `preferred`, `ratings`, `comments`, `overall` from the JSON. Proceed with
-the approved variant.
-
-**If `feedback-pending.json` found:** The user clicked Regenerate/Remix on the board.
-1. Read `regenerateAction` from the JSON (`"different"`, `"match"`, `"more_like_B"`,
-   `"remix"`, or custom text)
-2. If `regenerateAction` is `"remix"`, read `remixSpec` (e.g. `{"layout":"A","colors":"B"}`)
-3. Fold the feedback into an updated brief, rewrite `$_DESIGN_DIR/brief.txt` with
-   the Write tool, and rerun the `$D variants` block above. Board feedback
-   and anything the user typed reach a command only through that file — never
-   paste them into a command line
-4. Create new board: `$D compare --images "..." --output "$_DESIGN_DIR/design-board.html"`
-5. Reload the board in the user's browser (same tab):
-   `curl -s -X POST http://127.0.0.1:PORT/api/reload -H 'Content-Type: application/json' -d "{\"html\":\"$_DESIGN_DIR/design-board.html\"}"`
-6. The board auto-refreshes. **AskUserQuestion again** with the same board URL to
-   wait for the next round of feedback. Repeat until `feedback.json` appears.
-
-**If `NO_FEEDBACK_FILE`:** The user typed their preferences directly in the
-AskUserQuestion response instead of using the board. Use their text response
-as the feedback; it reaches a command only through the brief or feedback file.
-
-**INLINE FALLBACK:** Use this whenever no board is serving — either `$D compare`
-reported that boards are unsupported, or the server failed to start (no port
-available). Show each variant inline using the Read tool (so the user can see them),
-then use AskUserQuestion:
-"No comparison board is available, so I've shown the variants above.
-Which do you prefer? Any feedback?"
-
-This is the one path where AskUserQuestion may carry the variant choice itself.
-
-**After receiving feedback (any path):** Output a clear summary confirming
-what was understood:
-
-"Here's what I understood from your feedback:
-PREFERRED: Variant [X]
-RATINGS: [list]
-YOUR NOTES: [comments]
-DIRECTION: [overall]
-
-Is this right?"
-
-Use AskUserQuestion to verify before proceeding.
+- **A variant is picked:** that answer is the approval and the confirmation. Do not
+  ask again which one they chose or whether you understood it; their notes are the
+  feedback.
+- **None — regenerate:** fold what they said into the brief, rewrite
+  `$_DESIGN_DIR/brief.txt` with the Write tool, rerun the `$D variants` block above,
+  and ask again with the new `saved:` paths. Anything the user typed reaches a
+  command only through that file. After three rounds, ask whether to settle on the
+  closest variant or continue text-only — never loop.
 
 **Save the approved choice.** The confirmed feedback reaches the shell the same way
 the brief does: **write the feedback summary the user just confirmed with the Write
-tool** to `approved-feedback.txt` inside DESIGN_DIR (Read it first if it exists), then
-run this block, replacing `<DESIGN_DIR>` with the DESIGN_DIR path and `<V>` with the
-approved variant letter:
+tool** (the picked variant, its direction and the user's notes) to
+`approved-feedback.txt` inside DESIGN_DIR (Read it first if it exists), then run this
+block, replacing `<DESIGN_DIR>` with the DESIGN_DIR path, `<V>` with the approved
+variant letter and `<IMAGE>` with that variant's `saved:` path from the round the user
+picked from. The record keeps the image's real path in `approved_path`, which the
+Approved Mockups table and /design-html read:
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
 _FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
-python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
+python3 -I - "$_DESIGN_DIR" "$_FB_FILE" "<V>" "<IMAGE>" "$(git branch --show-current 2>/dev/null)" <<'VIBE_PY_EOF'
 import datetime, json, os, re, sys
-d, fb_file, variant, branch = sys.argv[1:5]
+d, fb_file, variant, image, branch = sys.argv[1:6]
 if not re.fullmatch(r"[A-J]", variant):
     sys.exit("approved variant must be one letter A-J, got %r" % variant)
+root, image = os.path.realpath(d), os.path.realpath(image)
+if os.path.commonpath([image, root]) != root or not os.path.isfile(image):
+    sys.exit("approved image %s is not a saved: path under %s; reselect from the paths this run printed" % (image, root))
 screen = re.sub(r"-[0-9]{8}$", "", os.path.basename(os.path.normpath(d)))
 feedback = open(fb_file, encoding="utf-8").read().strip() if os.path.isfile(fb_file) else ""
 if not feedback:
     sys.exit("write the confirmed feedback into %s with the Write tool first" % fb_file)
 rec = {"approved_variant": variant,
+       "approved_path": image,
        "feedback": feedback,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
        "screen": screen, "branch": branch}
@@ -561,13 +470,11 @@ print("APPROVED_SAVED:", os.path.join(d, "approved.json"))
 VIBE_PY_EOF
 ```
 
-**Do NOT use AskUserQuestion to ask which variant the user picked.** Read `feedback.json` — it already contains their preferred variant, ratings, comments, and overall feedback. Only use AskUserQuestion to confirm you understood the feedback correctly, never to re-ask what they chose.
-
 Note which direction was approved. This becomes the visual reference for all subsequent review passes.
 
-**Multiple variants/screens:** If the user asked for multiple variants (e.g., "5 versions of the homepage"), generate ALL as separate variant sets with their own comparison boards. Each screen/variant set gets its own subdirectory under `designs/`. Complete all mockup generation and user selection before starting review passes.
+**Multiple variants/screens:** If the user asked for multiple variants (e.g., "5 versions of the homepage"), generate ALL as separate variant sets, each with its own pick-and-confirm question. Each screen/variant set gets its own subdirectory under `designs/`. Complete all mockup generation and user selection before starting review passes.
 
-**If `DESIGN_NOT_AVAILABLE`** (printed at setup, or the first generation failed before saving an image): Tell the user: "The vibestack designer isn't set up yet — it needs `OPENAI_API_KEY` in your environment and `curl` on PATH. Proceeding with text-only review, but you're missing the best part." When a failed generation brought you here, say that instead and quote its error line. Then proceed to review passes with text-based review. Do not substitute hand-built HTML/CSS wireframes, screenshots, or a comparison board of your own: they delay the first review question and are not designer output.
+**If `DESIGN_NOT_AVAILABLE`** (printed at setup, or the first generation failed before saving an image): Tell the user: "The vibestack designer isn't set up yet — it needs `OPENAI_API_KEY` in your environment and `curl` on PATH. Proceeding with text-only review, but you're missing the best part." When a failed generation brought you here, say that instead and quote its error line. Then proceed to review passes with text-based review. Do not substitute hand-built HTML/CSS wireframes, screenshots, or a review page of your own: they delay the first review question and are not designer output.
 
 ## Design Outside Voices (parallel)
 
@@ -579,18 +486,15 @@ Use AskUserQuestion:
 
 If user chooses B, skip this step and continue.
 
-**Check Codex availability:**
-```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
+{{include lib/snippets/outside-voice-preflight.md}}
 
-**If Codex is available**, launch both voices simultaneously:
+On `disabled`, still write the `disabled` record from the body below before
+moving on, so a switched-off outside voice reads as an opt-out rather than a
+review that never ran.
 
-1. **Codex design voice** (via Bash):
-```bash
-TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-command -v codex >/dev/null 2>&1 && codex exec "Read the plan file at [plan-file-path]. Evaluate this plan's UI/UX design against these criteria.
+**Reviewer brief:**
+
+"You are a senior product designer evaluating this plan's UI/UX design against these criteria.
 
 HARD REJECTION — flag if ANY apply:
 1. Generic SaaS card grid as first impression
@@ -611,23 +515,23 @@ LITMUS CHECKS — answer YES or NO for each:
 7. Would design feel premium with all decorative shadows removed?
 
 HARD RULES — first classify as MARKETING/LANDING PAGE vs APP UI vs HYBRID, then flag violations of the matching rule set:
-- MARKETING: First viewport as one composition, brand-first hierarchy, full-bleed hero, 2-3 intentional motions, composition-first layout
+- MARKETING: First viewport as one composition, brand-first hierarchy, full-bleed hero, at most one authored motion moment (no motion is valid), texture from the brand or a real asset rather than decorative gradients, composition-first layout
 - APP UI: Calm surface hierarchy, dense but readable, utility language, minimal chrome
 - UNIVERSAL: CSS variables for colors, no default font stacks, one job per section, cards earn existence
 
-For each finding: what's wrong, what will happen if it ships unresolved, and the specific fix. Be opinionated. No hedging." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_DESIGN"
-# Each Bash call is a fresh shell, so stderr is read and removed here, not later.
-echo "--- codex stderr ---"
-cat "$TMPERR_DESIGN"; rm -f "$TMPERR_DESIGN"
-```
-Use a 5-minute timeout (`timeout: 300000`).
+Be opinionated. No hedging."
 
-2. **Claude design subagent** (via Agent tool):
-Dispatch a subagent with the prompt below.
+**Material:** the plan file being reviewed, followed by DESIGN.md when it exists. The
+variant approved in Step 0.5 (its direction and the user's notes) goes into the
+prompt's REVIEW CONTEXT as an approved decision.
+
+**Second voice — Claude design subagent.** Dispatch it in the same message as the pass
+below, so both run side by side. Give it its own output file from the private-files
+block, save its reply there, and grade it with the same grading block.
 
 {{include lib/snippets/foreground-dispatch.md}}
 
-"Read the plan file at [plan-file-path]. You are an independent senior product designer reviewing this plan. You have NOT seen any prior review. Evaluate:
+"Read the plan file at [plan-file-path]. You are an independent senior product designer reviewing this plan. You have NOT seen any prior review. This is a read-only review: do not edit or write any file. Evaluate:
 
 1. Information hierarchy: what does the user see first, second, third? Is it right?
 2. Missing states: loading, empty, error, success, partial — which are unspecified?
@@ -635,17 +539,20 @@ Dispatch a subagent with the prompt below.
 4. Specificity: does the plan describe SPECIFIC UI ("48px Söhne Bold header, #1a1a1a on white") or generic patterns ("clean modern card-based layout")?
 5. What design decisions will haunt the implementer if left ambiguous?
 
-For each finding: what's wrong, severity (critical/high/medium), and the fix."
+Start each finding with its severity in brackets — [Critical], [High], [Medium] or [Low] — then what's wrong and the fix. End with exactly one plain line: Recommendation: <action> because <reason> — with no findings, Recommendation: proceed — no findings because <what you checked>"
 
-**Error handling (all non-blocking):**
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run `codex login` to authenticate."
-- **Timeout:** "Codex timed out after 5 minutes."
-- **Empty response:** "Codex returned no response."
-- On any Codex error: proceed with Claude subagent output only, tagged `[single-model]`.
-- If Claude subagent also fails: "Outside voices unavailable — continuing with primary review."
+This subagent is the Claude voice, so where the body below would fall back to a
+Claude subagent for the first voice, skip that fallback and tag the completeness
+review `[single-model]`. Under `under_codex` it is a same-model subagent; label it so.
 
-Present Codex output under a `CODEX SAYS (design critique):` header.
-Present subagent output under a `CLAUDE SUBAGENT (design completeness):` header.
+Persist once, after both voices are graded: STATUS is `issues_found` when either
+graded `issues_found`, `clean` only when every completed voice graded `clean`, and
+`unavailable` when neither completed; SOURCE joins the voices that completed with `+`
+(e.g. `codex+claude`).
+
+{{include lib/snippets/outside-voice-body.md}}
+
+Present the completeness review under a `CLAUDE SUBAGENT (design completeness):` header.
 
 **Synthesis — Litmus scorecard:**
 
@@ -666,19 +573,13 @@ DESIGN OUTSIDE VOICES — LITMUS SCORECARD:
 ═══════════════════════════════════════════════════════════════
 ```
 
-Fill in each cell from the Codex and subagent outputs. CONFIRMED = both agree. DISAGREE = models differ. NOT SPEC'D = not enough info to evaluate.
+Fill in each cell from the Codex and subagent outputs. CONFIRMED = both agree. DISAGREE = models differ. NOT SPEC'D = not enough info to evaluate. A voice that graded `unavailable` gets `N/A` in its column — missing coverage, never a pass.
 
 **Pass integration (respects existing 7-pass contract):**
 - Hard rejections → raised as the FIRST items in Pass 1, tagged `[HARD REJECTION]`
 - Litmus DISAGREE items → raised in the relevant pass with both perspectives
 - Litmus CONFIRMED failures → pre-loaded as known issues in the relevant pass
 - Passes can skip discovery for pre-identified issues and go straight to the per-issue question
-
-**Log the result:**
-```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"design-outside-voices","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
-```
-Replace STATUS with "clean" or "issues_found", SOURCE with "codex+subagent", "codex-only", "subagent-only", or "unavailable".
 
 ## The 0-10 Rating Method
 
@@ -754,6 +655,11 @@ compare the plan and DESIGN.md with the decisions already made:
   pending until the user answers, even when DESIGN.md prescribes the exact token.
 - New evidence exposes a new requirement, conflict or tradeoff → name it as a new
   issue and get its own decision before changing the plan.
+- An artifact the plan explicitly excludes is not a missing requirement. Out-of-scope
+  or user-deferred work is not a gap; raise it only when the exclusion itself breaks
+  an in-scope flow.
+- A plan line that faithfully restates an approved contract (DESIGN.md, an earlier
+  approved decision) is evidence the plan covers it, not a new decision to ask about.
 
 {{include lib/snippets/prior-learnings.md}}
 ### Pass 1: Information Architecture
@@ -818,12 +724,12 @@ FIX TO 10: Rewrite vague UI descriptions with specific alternatives.
 - First viewport reads as one composition, not a dashboard
 - Brand-first hierarchy: brand > headline > body > CTA
 - Typography: expressive, purposeful — no default stacks (Inter, Roboto, Arial, system)
-- No flat single-color backgrounds — use gradients, images, subtle patterns
+- No flat single-color backgrounds by default: texture comes from the brand or a real asset (photography, product imagery, a brand pattern), never a halo, spotlight, stripe, or grid-paper gradient
 - Hero: full-bleed, edge-to-edge, no inset/tiled/rounded variants
 - Hero budget: brand, one headline, one supporting sentence, one CTA group, one image
 - No cards in hero. Cards only when card IS the interaction
 - One job per section: one purpose, one headline, one short supporting sentence
-- Motion: 2-3 intentional motions minimum (entrance, scroll-linked, hover/reveal)
+- Motion: at most one authored moment on the first viewport (an entrance or a scroll-linked reveal), ease-out from a visible default; hover states only where they carry information. No motion is a valid choice, never a finding
 - Color: define CSS variables, avoid purple-on-white defaults, one accent color default
 - Copy: product language not design commentary. "If deleting 30% improves it, keep deleting"
 - Beautiful defaults: composition-first, brand as loudest text, two typefaces max, cardless by default, first viewport as poster not document
@@ -909,7 +815,7 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 * **Map to Design Principles above.** One sentence connecting your recommendation to a specific principle.
 * Label with issue NUMBER + option LETTER (e.g., "3A", "3B").
 * **Escape hatch (tightened):** If a section has zero findings, state "No issues, moving on" and proceed. If it has findings, use AskUserQuestion for each — a gap with an "obvious fix" is still a gap and still needs user approval before any change lands in the plan. The only fix that skips the question is one the user already approved for that exact change in an earlier pass (see Carry decisions across passes).
-* **NEVER use AskUserQuestion to ask which variant the user prefers — unless the inline fallback fired and there is no board at all.** Always create a comparison board first (`$D compare --serve`) and open it in the browser. The board has rating controls, comments, remix/regenerate buttons, and structured feedback output. Use AskUserQuestion ONLY to notify the user the board is open and wait for them to finish — not to present variants inline and ask "which do you prefer?" That is a degraded experience.
+* **Variant choice is one question per variant set** (Step 0.5): the variants are shown inline first, and the same AskUserQuestion picks and confirms.
 
 {{include lib/snippets/tasks-section-emit.md}}
 
@@ -924,7 +830,10 @@ Existing DESIGN.md, UI patterns, and components that the plan should reuse.
 ### TODOS.md updates
 After all review passes are complete, present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step.
 
-For design debt: missing a11y, unresolved responsive behavior, deferred empty states. Each TODO gets:
+The verification of each approved fix goes into the plan's tasks — how the implementer
+proves the fix landed — never into TODOS.md. TODOs are only for debt outside this plan's
+scope: a11y, responsive behavior or empty states on screens this plan does not touch, or
+a fix the user deferred out of this plan. Each TODO gets:
 * **What:** One-line description of the work.
 * **Why:** The concrete problem it solves or value it unlocks.
 * **Pros:** What you gain by doing this work.
@@ -973,7 +882,9 @@ If all passes 8+: "Plan is design-complete. Run /design-review after implementat
 If any below 8: note what's unresolved and why (user chose to defer).
 
 ### Unresolved Decisions
-If any AskUserQuestion goes unanswered, note it here. Never silently default to an option.
+List every unresolved finding, including findings never asked: unanswered questions,
+declined or deferred fixes, and gaps you identified but did not raise. Never silently
+default to an option, and never drop a finding because its question was not asked.
 
 ### Approved Mockups
 
@@ -984,10 +895,12 @@ If visual mockups were generated during this review, add to the plan file:
 
 | Screen/Section | Mockup Path | Direction | Notes |
 |----------------|-------------|-----------|-------|
-| [screen name]  | ${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/[folder]/[filename].png | [brief description] | [constraints from review] |
+| [screen name]  | [approved_path from that screen's approved.json] | [brief description] | [constraints from review] |
 ```
 
-Include the full path to each approved mockup (the variant the user chose), a one-line description of the direction, and any constraints. The implementer reads this to know exactly which visual to build from. These persist across conversations and workspaces. If no mockups were generated, omit this section.
+Take each Mockup Path from the `approved_path` field of the screen's `approved.json` —
+never rebuild it from the variant letter, which a later round reuses — and add a
+one-line description of the direction and any constraints. The implementer reads this to know exactly which visual to build from. These persist across conversations and workspaces. If no mockups were generated, omit this section.
 
 ## Review Log
 
@@ -1006,7 +919,7 @@ Substitute values from the Completion Summary:
 - **STATUS**: "clean" only if the after-fix overall score (lowest of Passes 1-6) is 8+ AND 0 unresolved; otherwise "issues_open"
 - **initial_score**: overall design score before fixes — the lowest initial score of Passes 1-6 (0-10)
 - **overall_score**: overall design score after fixes — the lowest final score of Passes 1-6 (0-10)
-- **unresolved**: number of unresolved design decisions, including deferred ones and unanswered questions
+- **unresolved**: number of unresolved design findings, including deferred ones, unanswered questions and findings never asked
 - **decisions_made**: number of decisions the user individually approved (the Completion Summary's "Decisions made")
 - **COMMIT**: output of `git rev-parse --short HEAD`
 
@@ -1046,5 +959,16 @@ Use AskUserQuestion to present the next step. Include only applicable options:
 * One sentence max per option.
 * After each pass, pause and wait for feedback.
 * Rate before and after each pass for scannability.
+
+## Approval check before the gate
+
+Run this before the gate below, as its check 0. The gate verifies the review
+report's structure only; it cannot see whether a fix was approved.
+
+0. **Every applied fix has its own answer.** For each change this review made to the
+   plan, name the AskUserQuestion answer that approved that exact change. Grouped
+   issues, a DESIGN.md token, and scope, focus, mockup or next-step answers are not
+   approval. A change with no individual answer goes back to pending: revert it to a
+   pending finding, ask about it, refresh the review report, then run the gate.
 
 {{include lib/snippets/exit-plan-mode-gate.md}}
