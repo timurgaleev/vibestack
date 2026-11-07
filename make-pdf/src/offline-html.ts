@@ -19,22 +19,55 @@
  * Values are inspected the way the browser will read them: HTML entities and
  * CSS escapes decoded, tabs/newlines stripped, comments removed. A named
  * entity this decoder does not know is treated as remote (fail closed).
+ *
+ * This string pass is the second layer. The first is the content policy every
+ * page make-pdf loads carries (offlinePolicyMeta): Chromium itself refuses any
+ * fetch that is not data:, blob: or file:, including requests a data:
+ * stylesheet makes. The policy cannot stop a navigation (a meta refresh),
+ * which is why the sanitizer still runs, and why every page also goes into its
+ * browse tab with `load-html --offline`: the tab itself refuses any request,
+ * navigation included, that is not file:, data:, blob: or about:.
  */
+
+const LOCAL_SOURCES = "data: blob: file:";
+
+/** No-network policy for the print page, which runs no script of its own. */
+export const OFFLINE_PAGE_POLICY =
+  `default-src 'none'; img-src ${LOCAL_SOURCES}; style-src 'unsafe-inline' ${LOCAL_SOURCES}; ` +
+  `font-src ${LOCAL_SOURCES}; media-src ${LOCAL_SOURCES}`;
+
+/** The same for a page whose own inline scripts must run (the render tab). */
+export const OFFLINE_SCRIPT_PAGE_POLICY =
+  `${OFFLINE_PAGE_POLICY}; script-src 'unsafe-inline' 'unsafe-eval' ${LOCAL_SOURCES}; ` +
+  `worker-src ${LOCAL_SOURCES}; connect-src ${LOCAL_SOURCES}`;
+
+export function offlinePolicyMeta(policy: string): string {
+  return `<meta http-equiv="Content-Security-Policy" content="${policy}">`;
+}
+
+/** Put the policy first in <head>, ahead of anything that could fetch. */
+export function withOfflinePolicy(html: string, policy: string): string {
+  const head = html.match(/<head\b[^>]*>/i);
+  if (!head || head.index === undefined) return offlinePolicyMeta(policy) + html;
+  const at = head.index + head[0].length;
+  return html.slice(0, at) + offlinePolicyMeta(policy) + html.slice(at);
+}
 
 export function neutralizeRemoteRefs(html: string): string {
   // The end tag is matched the way the tokenizer matches it (`</style x>` and
   // `</style/>` both close the element), and a style left open runs to the end:
   // the page template appended after it is still style text to the browser.
-  // Inside <svg> a CDATA section is text, so a `</style>` inside one does not
-  // end the element; the match runs past it. Raw text would end there instead,
-  // and which reading applies depends on context, so when such a block holds
-  // anything remote, everything between the tags is dropped.
+  // Inside <svg> a CDATA section or a comment is not raw text, so a
+  // `</style>` inside one does not end the element; the match runs past it.
+  // Raw text would end there instead, and which reading applies depends on
+  // context, so when such a block holds anything remote, everything between
+  // the tags is dropped.
   const styled = html.replace(
-    /(<style\b[^>]*>)((?:<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|[\s\S])*?)(<\/style(?=[\s\/>])[^>]*>|$)/gi,
+    /(<style\b[^>]*>)((?:<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<!--[\s\S]*?(?:--!?>|$)|[\s\S])*?)(<\/style(?=[\s\/>])[^>]*>|$)/gi,
     (whole: string, open: string, css: string, close: string) => {
       const text = neutralizeStyleText(css);
       if (text === css) return whole;
-      return /<!\[CDATA\[(?:(?!\]\]>)[\s\S])*<\/style(?=[\s\/>])/i.test(css) ? open + close : open + text + close;
+      return /<\/style(?=[\s\/>])/i.test(css) ? open + close : open + text + close;
     },
   );
   return rewriteTags(styled);
@@ -144,17 +177,22 @@ function neutralizeCss(css: string, decodeEntities: (s: string) => string): stri
   const decoded = decodeCssEscapes(decodeEntities(css)).replace(/\/\*[\s\S]*?\*\//g, "");
   let changed = false;
 
-  let out = decoded.replace(/@import\b[^;]*;?/gi, (rule) => {
-    const target = rule.match(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)|"([^"]*)"|'([^']*)'/i);
+  // Bounded so an unterminated @import costs constant work per occurrence; a
+  // rule cut short loses its target and is dropped.
+  let out = decoded.replace(/@import\b[^;]{0,4096};?/gi, (rule) => {
+    const target = rule.match(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^()]*?))\s*\)|"([^"]*)"|'([^']*)'/i);
     const url = target ? (target[1] ?? target[2] ?? target[3] ?? target[4] ?? target[5] ?? "") : "";
-    if (!target || isSuspectUrl(url)) {
+    // A data: stylesheet can @import a remote one of its own.
+    if (!target || isSuspectUrl(url) || /^\s*data:/i.test(url)) {
       changed = true;
       return "";
     }
     return rule;
   });
 
-  out = out.replace(/\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/gi, (full, dq, sq, bare) => {
+  // An unquoted url() cannot hold `(`, and stopping there keeps a run of
+  // unclosed `url(` linear.
+  out = out.replace(/\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^()]*?))\s*\)/gi, (full, dq, sq, bare) => {
     if (!isSuspectUrl(dq ?? sq ?? bare ?? "")) return full;
     changed = true;
     return "url(#)";
@@ -347,7 +385,10 @@ function rewriteAttr(tagName: string, attr: Attr): Attr | null {
   }
 
   if (FETCH_ATTRS.has(name)) {
-    return value.split(";").some((part) => isSuspectUrl(part)) ? { name: attr.name, value: "#" } : attr;
+    // SMIL to/values can animate a presentation attribute to a remote url().
+    const remote = value.split(";").some((part) => isSuspectUrl(part)) ||
+      (/url\(/i.test(value) && neutralizeCss(value, (s) => s) !== value);
+    return remote ? { name: attr.name, value: "#" } : attr;
   }
 
   if (/url\(/i.test(value) || /\\/.test(value)) {
@@ -357,8 +398,8 @@ function rewriteAttr(tagName: string, attr: Attr): Attr | null {
   return attr;
 }
 
-// `"` is written as a numeric reference: the renderer later decodes &quot;
-// back into a bare quote for smartypants, which would end the attribute.
+// `"` is written as a numeric reference, which no later pass in the renderer
+// decodes back into a quote.
 function escapeAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&#34;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

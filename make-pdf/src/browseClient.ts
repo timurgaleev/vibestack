@@ -35,6 +35,7 @@ export interface LoadHtmlOptions {
   html: string;                   // raw HTML string
   waitUntil?: "load" | "domcontentloaded" | "networkidle";
   tabId: number;
+  offline?: boolean;              // load-html --offline: the tab may fetch only file:/data:/blob:/about:
 }
 
 export interface PdfOptions {
@@ -271,6 +272,7 @@ export function loadHtml(opts: LoadHtmlOptions): void {
       "load-html",
       "--from-file", payloadFile,
       "--tab-id", String(opts.tabId),
+      ...(opts.offline ? ["--offline"] : []),
     ]);
   } finally {
     cleanupPayloadFile(payloadFile);
@@ -282,9 +284,10 @@ export function loadHtml(opts: LoadHtmlOptions): void {
  * by path. Cheaper than loadHtml for large pages — no JSON payload round-trip;
  * browse reads the file directly (diagram-render bundle is ~9MB).
  */
-export function loadHtmlFile(opts: { file: string; tabId: number; waitUntil?: "load" | "domcontentloaded" | "networkidle" }): void {
+export function loadHtmlFile(opts: { file: string; tabId: number; waitUntil?: "load" | "domcontentloaded" | "networkidle"; offline?: boolean }): void {
   const args = ["load-html", opts.file, "--tab-id", String(opts.tabId)];
   if (opts.waitUntil) args.push("--wait-until", opts.waitUntil);
+  if (opts.offline) args.push("--offline");
   runBrowse(args);
 }
 

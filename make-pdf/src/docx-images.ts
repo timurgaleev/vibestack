@@ -11,6 +11,9 @@
  * through fails the export instead of hanging it.
  */
 
+import http from "node:http";
+import https from "node:https";
+
 const IMG_TAG_RE = /<img\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi;
 const SRC_ATTR_RE = /(?:^|[\s\/"'])src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
 
@@ -55,4 +58,47 @@ function decodeEntities(s: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+/**
+ * html-to-docx conversion. The converter downloads every http(s) <img> it is
+ * handed, so without --allow-network the process's request entry points
+ * refuse to open a connection while it runs, whatever markup reached it.
+ */
+export async function convertHtmlToDocx(
+  html: string,
+  meta: { title?: string; creator?: string },
+  opts: { allowNetwork: boolean },
+): Promise<Uint8Array> {
+  const { default: HTMLtoDOCX } = await import("html-to-docx");
+  const restore = opts.allowNetwork ? () => {} : blockNetwork();
+  try {
+    const buf = await HTMLtoDOCX(html, null, meta);
+    return buf instanceof Uint8Array ? buf : new Uint8Array(await (buf as Blob).arrayBuffer());
+  } finally {
+    restore();
+  }
+}
+
+function blockNetwork(): () => void {
+  const refuse = () => {
+    throw new Error("network access is off (pass --allow-network to allow it)");
+  };
+  const saved: Array<[any, string, unknown]> = [];
+  for (const mod of [http, https]) {
+    for (const key of ["request", "get"]) {
+      saved.push([mod, key, (mod as any)[key]]);
+      (mod as any)[key] = refuse;
+    }
+  }
+  saved.push([globalThis, "fetch", globalThis.fetch]);
+  (globalThis as any).fetch = async () => refuse();
+  // The converter reports a failed download through console.warning, which
+  // does not exist; without it the refusal would fail the whole export
+  // instead of skipping the image.
+  saved.push([console, "warning", (console as any).warning]);
+  (console as any).warning = () => {};
+  return () => {
+    for (const [obj, key, value] of saved) obj[key] = value;
+  };
 }

@@ -67,6 +67,12 @@ const HOSTILE: Array<[string, string]> = [
   ["style end tag written as </style/>", `<style>@import url(https://evil.test/a.css);</style/>`],
   ["start tag unfinished at end of input", `<div>\n<video poster=https://evil.test/eof.png`],
   ["start tag with an unterminated quote at end of input", `<div>\n<video poster="https://evil.test/eof.png`],
+  ["svg style abrupt <!--> comment", `<svg><style>@import url(https://evil.test/g1.css<!-->);</style></svg>`],
+  ["svg style --!> comment", `<svg><style>@import url(https://<!-- x --!>evil.test/g2.css);</style></svg>`],
+  ["svg style end tag inside a comment", `<svg><style><!-- </style> -->@import url(https://evil.test/g3.css);</style></svg>`],
+  ["SMIL set to url()", `<svg><rect><set attributeName="mask" to="url(https://evil.test/m.svg#a)"/></rect></svg>`],
+  ["SMIL values holding url()", `<svg><rect><animate attributeName="mask" values="none;url(https://evil.test/v.svg#a)"/></rect></svg>`],
+  ["data: stylesheet that imports a remote URL", `<style>@import url("data:text/css,@import url('https://evil.test/n.css');");</style>`],
 ];
 
 describe("sanitizeUntrustedHtml — offline (allowNetwork false)", () => {
@@ -144,6 +150,53 @@ describe("sanitizeUntrustedHtml — offline (allowNetwork false)", () => {
     expect(out.html).not.toContain("evil.test");
   });
 
+  test("render() checks attributes an entity-decoded quote would add", () => {
+    const out = render({ markdown: `<div><video title="a&quot; poster=&quot;https://evil.test/q.png"></video></div>` });
+    expect(out.html).not.toContain("evil.test");
+  });
+
+  test("render() strips a tag the stripper itself reassembles", () => {
+    const out = render({ markdown: `<div><me<meta>ta http-equiv="refresh" content="0;url=https://evil.test/nav"></div>` });
+    // What is left is an unknown <me> element; its attributes are inert.
+    expect(out.html).not.toMatch(/<meta[^>]*refresh/i);
+  });
+
+  // Dropping an attribute splices the text on either side of it, the same
+  // way dropping a tag does.
+  for (const [name, attr] of [
+    ["an event handler", `onx="1"`],
+    ["a single-quoted event handler", `onx='1'`],
+    ["a srcdoc attribute", `srcdoc="x"`],
+  ]) {
+    test(`render() strips a tag that removing ${name} reassembles`, () => {
+      const out = render({ markdown: `<div><me ${attr}ta http-equiv="refresh" content="0;url=https://evil.test/nav"></div>` });
+      expect(out.html).not.toMatch(/<meta[^>]*refresh/i);
+    });
+  }
+
+  test("strips nested reassembling tags in linear time", () => {
+    const depth = 20000;
+    const nested = `${"<me".repeat(depth)}<meta>${"ta>".repeat(depth)}`;
+    const t = performance.now();
+    const out = sanitizeUntrustedHtml(nested, OFFLINE);
+    expect(performance.now() - t).toBeLessThan(1500);
+    expect(out).not.toMatch(/<meta/i);
+  }, 120_000);
+
+  test("render() puts a no-network content policy first in <head>", () => {
+    const html = render({ markdown: "# T" }).html;
+    const head = html.slice(html.indexOf("<head>"), html.indexOf("<title>"));
+    expect(head).toMatch(/<meta http-equiv="Content-Security-Policy" content="default-src 'none';[^"]*">/);
+    expect(head).not.toMatch(/https?:/);
+  });
+
+  // An unclosed url( made every later url( rescan to the end of the text.
+  test("reads a value full of unclosed url( in linear time", () => {
+    const t = performance.now();
+    sanitizeUntrustedHtml(`<p style="${"url(".repeat(80000)}">x</p><style>${"url(".repeat(80000)}</style>`, OFFLINE);
+    expect(performance.now() - t).toBeLessThan(1500);
+  }, 120_000);
+
   test("render() leaves nothing remote for the page template to complete", () => {
     for (const tail of [
       `<style>\n@import url(http://evil.test/a.css);\nbody{background:url(http://evil.test/b.png)}\n`,
@@ -161,6 +214,10 @@ describe("sanitizeUntrustedHtml — --allow-network keeps remote assets", () => 
       expect(sanitizeUntrustedHtml(html, ONLINE)).toBe(html);
     });
   }
+
+  test("render() with allowNetwork sets no content policy", () => {
+    expect(render({ markdown: "# T", allowNetwork: true }).html).not.toContain("Content-Security-Policy");
+  });
 
   test("render() with allowNetwork keeps a remote stylesheet font", () => {
     const md = `# T\n\n<style>@import url("https://fonts.example.com/corp.css");</style>\n`;

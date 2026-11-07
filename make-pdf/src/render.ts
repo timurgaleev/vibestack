@@ -15,7 +15,7 @@ import { marked } from "marked";
 import { smartypants } from "./smartypants";
 import { printCss, type PrintCssOptions } from "./print-css";
 import { applyImageDirectives } from "./image-policy";
-import { neutralizeRemoteRefs } from "./offline-html";
+import { neutralizeRemoteRefs, offlinePolicyMeta, OFFLINE_PAGE_POLICY } from "./offline-html";
 
 export interface RenderOptions {
   markdown: string;
@@ -78,18 +78,20 @@ export function render(opts: RenderOptions): RenderResult {
   // text never reaches smartypants or the final page.
   const directedHtml = applyImageDirectives(rawHtml);
 
-  // 2. Sanitize
-  const cleanHtml = sanitizeUntrustedHtml(directedHtml, { allowNetwork: opts.allowNetwork });
-
-  // 3. Decode common entities so smartypants can match raw " and '.
+  // 2. Decode common entities so smartypants can match raw " and '.
   //    marked HTML-encodes quotes in text ("hello" → &quot;hello&quot;);
   //    without decoding, smartypants' regex never fires. These get re-encoded
   //    implicitly by the browser's HTML parser downstream, and for the ones
   //    that should stay as curly-quote Unicode, that IS the final form.
-  const decoded = decodeTypographicEntities(cleanHtml);
+  //    Decoding runs before the sanitizer: a &quot; inside an attribute value
+  //    becomes a real quote here, and the attributes it opens must be checked.
+  const decoded = decodeTypographicEntities(directedHtml);
+
+  // 3. Sanitize
+  const cleanHtml = sanitizeUntrustedHtml(decoded, { allowNetwork: opts.allowNetwork });
 
   // 4. Smartypants (code-safe)
-  const typographicHtml = smartypants(decoded);
+  const typographicHtml = smartypants(cleanHtml);
 
   // 4. Derive metadata (title from first H1 if not provided)
   const derivedTitle = opts.title ?? extractFirstHeading(typographicHtml) ?? "Document";
@@ -147,6 +149,7 @@ export function render(opts: RenderOptions): RenderResult {
     `<html lang="en">`,
     `<head>`,
     `<meta charset="utf-8">`,
+    opts.allowNetwork === true ? `` : offlinePolicyMeta(OFFLINE_PAGE_POLICY),
     `<title>${escapeHtml(derivedTitle)}</title>`,
     derivedAuthor ? `<meta name="author" content="${escapeHtml(derivedAuthor)}">` : ``,
     `<style>`,
@@ -219,23 +222,26 @@ export function sanitizeUntrustedHtml(
     "script", "iframe", "object", "embed", "link", "meta", "base", "form",
     "applet", "frame", "frameset",
   ];
+  // Every removal below leaves a space, never nothing: splicing the text on
+  // either side together turns `<me<meta>ta ...>` or `<me onx="1"ta ...>`
+  // into a new tag nothing would check.
   for (const tag of DANGER_TAGS) {
     const re = new RegExp(`<${tag}\\b[\\s\\S]*?</${tag}>`, "gi");
-    s = s.replace(re, "");
+    s = s.replace(re, " ");
     // Self-closing / unclosed variants
     const selfRe = new RegExp(`<${tag}\\b[^>]*/?>`, "gi");
-    s = s.replace(selfRe, "");
+    s = s.replace(selfRe, " ");
   }
 
   // SVG <script>
   s = s.replace(/<svg([^>]*)>([\s\S]*?)<\/svg>/gi, (_, attrs, body) => {
-    return `<svg${attrs}>${body.replace(/<script\b[\s\S]*?<\/script>/gi, "")}</svg>`;
+    return `<svg${attrs}>${body.replace(/<script\b[\s\S]*?<\/script>/gi, " ")}</svg>`;
   });
 
   // Event handler attributes (on* in any case).
-  s = s.replace(/\s+on[a-zA-Z]+\s*=\s*"[^"]*"/gi, "");
-  s = s.replace(/\s+on[a-zA-Z]+\s*=\s*'[^']*'/gi, "");
-  s = s.replace(/\s+on[a-zA-Z]+\s*=\s*[^\s>]+/gi, "");
+  s = s.replace(/\s+on[a-zA-Z]+\s*=\s*"[^"]*"/gi, " ");
+  s = s.replace(/\s+on[a-zA-Z]+\s*=\s*'[^']*'/gi, " ");
+  s = s.replace(/\s+on[a-zA-Z]+\s*=\s*[^\s>]+/gi, " ");
 
   // javascript: URLs in href/src/action/formaction
   s = s.replace(
@@ -245,8 +251,8 @@ export function sanitizeUntrustedHtml(
 
   // srcdoc attribute (iframe escape hatch — already stripped via iframe above,
   // but defense-in-depth).
-  s = s.replace(/\s+srcdoc\s*=\s*"[^"]*"/gi, "");
-  s = s.replace(/\s+srcdoc\s*=\s*'[^']*'/gi, "");
+  s = s.replace(/\s+srcdoc\s*=\s*"[^"]*"/gi, " ");
+  s = s.replace(/\s+srcdoc\s*=\s*'[^']*'/gi, " ");
 
   // style="url(javascript:..)" — strip javascript: inside style attrs.
   s = s.replace(/url\(\s*javascript:[^)]*\)/gi, "url(#)");
