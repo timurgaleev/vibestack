@@ -30,14 +30,18 @@ Rules:
 
 ### JSONL artifact (always write, even if zero tasks)
 
-`/autoplan` reads this file to aggregate across phases. Build each line with
-`jq -nc` so titles and source findings containing quotes, newlines, or
-backslashes serialize cleanly — never use hand-rolled `echo` / `printf`.
+`/autoplan` reads this artifact to aggregate across phases. Task text never
+passes through a shell command: you write the rows to a file, then one block
+validates and stamps them.
 
 The phase identifier is derived from this skill's name: strip the `plan-`
 prefix from `{SKILL_NAME}` (e.g. `plan-ceo-review` → `ceo-review`). The
 aggregator in `/autoplan` iterates over `ceo-review`, `design-review`,
 `eng-review`, `devex-review` and reads `tasks-<phase>-*.jsonl` files.
+
+**1. Get the rows path.** Each run gets its own file: worktrees of one repo
+share this directory, and a fixed name would let two runs of the same phase
+read each other's rows.
 
 ```bash
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
@@ -45,37 +49,76 @@ PHASE="${SKILL_NAME:-{SKILL_NAME}}"
 PHASE="${PHASE#plan-}"
 TASKS_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 mkdir -p "$TASKS_DIR"
-TASKS_FILE="$TASKS_DIR/tasks-${PHASE}-$(date +%Y%m%d-%H%M%S).jsonl"
-COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
-BRANCH=$(git branch --show-current 2>/dev/null || echo unknown)
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-
-# Repeat ONE jq invocation per task identified during this review.
-# Substitute the placeholders inline with shell variables you set per task:
-#   TASK_ID (T1, T2, ...), PRIORITY (P1/P2/P3), COMPONENT, TITLE,
-#   SOURCE_FINDING, EFFORT_HUMAN, EFFORT_CC, FILES_JSON (a JSON array literal
-#   like '["browse/src/sanitize.ts","browse/src/server.ts"]').
-if command -v jq >/dev/null 2>&1; then
-  jq -nc \
-    --arg phase "$PHASE" \
-    --arg run_id "$RUN_ID" \
-    --arg branch "$BRANCH" \
-    --arg commit "$COMMIT" \
-    --arg id "$TASK_ID" \
-    --arg priority "$PRIORITY" \
-    --arg component "$COMPONENT" \
-    --arg effort_human "$EFFORT_HUMAN" \
-    --arg effort_cc "$EFFORT_CC" \
-    --arg title "$TITLE" \
-    --arg source_finding "$SOURCE_FINDING" \
-    --argjson files "$FILES_JSON" \
-    '{phase:$phase, run_id:$run_id, branch:$branch, commit:$commit, id:$id, priority:$priority, component:$component, files:$files, effort_human:$effort_human, effort_cc:$effort_cc, title:$title, source_finding:$source_finding}' \
-    >> "$TASKS_FILE"
-else
-  echo "WARN: jq not installed — skipping JSONL write. Install jq for /autoplan aggregation." >&2
-fi
+echo "TASKS_ROWS: $(mktemp "$TASKS_DIR/rows-${PHASE}.XXXXXXXX")"
 ```
 
-If zero tasks were identified in this review, still touch the JSONL file
-(`: > "$TASKS_FILE"`) so the aggregator sees that the phase produced output
-this run (an empty file means "ran, no findings" — distinct from "didn't run").
+**2. Write the rows** with the Write tool to the printed `TASKS_ROWS` path (Read
+the empty file first), one
+JSON object per line, one line per task: `id` (T1, T2, ...), `priority`
+(P1/P2/P3), `component`, `files` (array of paths), `effort_human`, `effort_cc`,
+`title`, `source_finding` — all strings except `files`. With zero tasks, write
+nothing.
+
+**3. Validate and stamp** — run this even with zero tasks, substituting the
+printed `TASKS_ROWS` path:
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+PHASE="${SKILL_NAME:-{SKILL_NAME}}"
+PHASE="${PHASE#plan-}"
+TASKS_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
+# Zero-padded so two runs in the same second still order as numbers.
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%010d' "$$")"
+python3 -I - '<TASKS_ROWS>' "$TASKS_DIR/tasks-${PHASE}-${RUN_ID}.jsonl" \
+  "$PHASE" "$RUN_ID" "$(git branch --show-current 2>/dev/null || echo unknown)" \
+  "$(git rev-parse HEAD 2>/dev/null || echo unknown)" <<'PY'
+import json, os, sys
+rows_path, out_path, phase, run_id, branch, commit = sys.argv[1:7]
+stamp = {"phase": phase, "run_id": run_id, "branch": branch, "commit": commit}
+keys = ("id", "priority", "component", "effort_human", "effort_cc", "title", "source_finding")
+try:
+    lines = open(rows_path, encoding="utf-8").read().splitlines()
+except OSError as e:
+    # Step 1 always creates the file; a missing one is a wrong path, never
+    # "zero tasks" — that would stamp an empty marker over real findings.
+    print("TASKS_ROWS_INVALID cannot read %s (%s)" % (rows_path, e.strerror))
+    sys.exit(1)
+rows, errors = [], []
+for n, line in enumerate(lines, 1):
+    if not line.strip():
+        continue
+    try:
+        row = json.loads(line)
+    except ValueError as e:
+        errors.append("line %d: not JSON (%s)" % (n, e))
+        continue
+    if not isinstance(row, dict):
+        errors.append("line %d: not an object" % n)
+        continue
+    bad = {k for k in keys if not isinstance(row.get(k), str) or not row[k].strip()}
+    if row.get("priority") not in ("P1", "P2", "P3"):
+        bad.add("priority")
+    if not isinstance(row.get("files"), list) or not all(isinstance(f, str) for f in row["files"]):
+        bad.add("files")
+    if bad:
+        errors.append("line %d: bad %s" % (n, ", ".join(sorted(bad))))
+        continue
+    rows.append(dict(stamp, files=row["files"], **{k: row[k] for k in keys}))
+if errors:
+    for e in errors:
+        print("TASKS_ROWS_INVALID " + e)
+    sys.exit(1)
+out = rows or [dict(stamp, empty=True)]
+with open(out_path + ".tmp", "w", encoding="utf-8") as fh:
+    fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in out)
+os.replace(out_path + ".tmp", out_path)
+if os.path.exists(rows_path):
+    os.remove(rows_path)
+print("TASKS_FILE: %s (%d tasks)" % (out_path, len(rows)))
+PY
+```
+
+On `TASKS_ROWS_INVALID`, fix the named lines in the rows file (or the path) and
+re-run step 3; nothing was stamped. A run with zero tasks stamps one `"empty": true` marker
+row, so the aggregator sees that this phase ran and found nothing, and the
+tasks from an earlier run of the phase stop counting.

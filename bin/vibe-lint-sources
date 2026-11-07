@@ -16,13 +16,37 @@
 #               ${CLAUDE_SKILL_DIR} whose block has neither a :- default nor a
 #               command -v fallback. Only Claude Code substitutes them; other
 #               hosts see empty or literal text. Prose mentions never warn.
+#   hostpath  — warning by default, a finding under --strict: a file reached
+#               through ~/.claude/skills/<name>/..., a Read of a repo-relative
+#               `.claude/skills/` path, or a bare qa/templates, qa/references
+#               or review/TODOS-format.md path. Each resolves only where
+#               Claude Code installed the pack at that one path. Use
+#               ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/<name>}/... or
+#               .../../<sibling>/... instead.
 #
-# Usage: vibe-lint-sources [repo-root]   (default: repo containing this script)
-# Exit: 0 clean, 1 findings (one file:line message per finding). Warnings
-# (warn: file:line: ...) never change the exit code.
+# Usage: vibe-lint-sources [--strict] [repo-root]
+#        (default root: the repo containing this script)
+# Exit: 0 clean, 1 findings (one file:line message per finding), 2 usage or
+# a root with no skills/ directory. Warnings (warn: file:line: ...) never
+# change the exit code. Under --strict a run that read nothing — no skill or
+# snippet files, an unreadable file, or an awk failure in the hostpath pass —
+# is a finding, never "clean".
 set -uo pipefail
 
-ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+usage() { echo "usage: vibe-lint-sources [--strict] [repo-root]" >&2; exit 2; }
+STRICT=0
+ROOT=""
+for arg in "$@"; do
+  case "$arg" in
+    --strict) STRICT=1 ;;
+    -*) usage ;;
+    *) [ -z "$ROOT" ] || usage; ROOT="$arg" ;;
+  esac
+done
+ROOT="${ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# A mistyped flag or path ("strict", "/nonexistent") lands here as the root;
+# linting an empty glob would otherwise report "clean".
+[ -d "$ROOT/skills" ] || { echo "vibe-lint-sources: no skills/ directory under $ROOT" >&2; exit 2; }
 errors=0
 say() { echo "$1"; errors=$((errors + 1)); }
 
@@ -114,6 +138,36 @@ while IFS= read -r f; do
       }
     }'  "$f"
 done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
+
+# --- hard-coded host paths ------------------------------------------------
+# Every line counts, fenced or not: a prose "Read `~/.claude/skills/...`" sends
+# the model to the same missing file a fenced cat does. Directory mentions with
+# no file under them (`~/.claude/skills/`) describe install locations and pass.
+# A file this pass could not read is reported the same way a host path is, so
+# --strict fails closed instead of passing a tree it never looked at.
+HP_FILES=()
+for f in "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md; do
+  [ -e "$f" ] && HP_FILES+=("$f")
+done
+if [ "${#HP_FILES[@]}" -eq 0 ]; then
+  if [ "$STRICT" -eq 1 ]; then say "$ROOT: no skill or snippet files to check"; else echo "warn: $ROOT: no skill or snippet files to check"; fi
+fi
+while IFS= read -r line; do
+  if [ "$STRICT" -eq 1 ]; then say "$line"; else echo "warn: $line"; fi
+done < <(for f in ${HP_FILES[@]+"${HP_FILES[@]}"}; do
+  if [ ! -r "$f" ]; then echo "$f: unreadable — hostpath check could not run"; continue; fi
+  awk -v file="$f" '
+    {
+      form = ""
+      if (match($0, /~\/\.claude\/skills\/[^\/` \t]+\//)) form = substr($0, RSTART, RLENGTH)
+      else if (match($0, /[Rr]ead `\.claude\/skills\//)) form = substr($0, RSTART + 6, RLENGTH - 6)
+      else if (match($0, /(^|[^\/A-Za-z0-9_.-])(qa\/templates|qa\/references|review\/TODOS-format\.md)/)) {
+        form = substr($0, RSTART, RLENGTH); sub(/^[^qr]/, "", form)
+      }
+      if (form != "")
+        printf "%s:%d: hard-coded host path %s exists only where Claude Code installed the pack at that path — use ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/<name>}/... or .../../<sibling>/...\n", file, NR, form
+    }' "$f" || echo "$f: awk exited $? — hostpath check could not run"
+done)
 
 # --- positionals and python isolation --------------------------------------
 # The host replaces $N (digits with no word character after them) with the Nth
