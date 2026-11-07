@@ -16,7 +16,11 @@
 #     write `codex-plan-review`, /document-release `codex-doc-review`, the design
 #     voice `design-outside-voices`, each with `via` naming the includer — never
 #     the includer's own name, which the readiness dashboard reads as its gate;
-#   - a failed log write prints REVIEW_LOG_NOT_PERSISTED with the exit code.
+#   - a failed log write prints REVIEW_LOG_NOT_PERSISTED with the exit code;
+#   - /plan-ceo-review, /plan-eng-review and /plan-devex-review render the body
+#     byte-identically with no Codex run of their own, eng and devex carry no
+#     stale Step 0D-POST pointer, eng's fallback asks for a read-only subagent,
+#     and each overrides the preflight's disabled skip so the record is written.
 #
 # Usage: test/test-outside-voice-body.sh [repo-root]
 set -uo pipefail
@@ -153,6 +157,43 @@ chmod +x "$VH/bin/vibe-review-log"
 out="$(persist plan-eng-review clean codex completed)"
 printf '%s\n' "$out" | grep -q '^REVIEW_LOG_NOT_PERSISTED (exit 1)' \
   && ok "a failed log write is reported" || no "a failed log write was swallowed: '$out'"
+
+echo "plan-review includers"
+# Each plan review renders the shared body verbatim; a skill that re-inlines its
+# own Codex run is the drift this snippet exists to stop.
+for s in plan-ceo-review plan-eng-review plan-devex-review; do
+  mkdir -p "$TMP/real/$s"
+  if ! VIBESTACK_REPO_ROOT="$SRC" "$SRC/bin/vibe-render-skill" "$SRC/skills/$s/SKILL.md" "$TMP/real/$s/SKILL.md" >/dev/null 2>&1; then
+    no "$s renders"; continue
+  fi
+  if python3 -I - "$BODY" "$TMP/real/$s/SKILL.md" "$s" <<'PY'
+import sys
+body = open(sys.argv[1], encoding="utf-8").read().replace("{SKILL_NAME}", sys.argv[3])
+sys.exit(0 if body.strip() in open(sys.argv[2], encoding="utf-8").read() else 1)
+PY
+  then ok "$s renders the outside-voice body byte-identically"
+  else no "$s does not render the outside-voice body verbatim"; fi
+  grep -q 'TMPERR_PV' "$SRC/skills/$s/SKILL.md" \
+    && no "$s still carries its own Codex run" || ok "$s has no inlined Codex run"
+  # The preflight says "skip this section entirely" on disabled; without an
+  # override before the body, the body's disabled record is never reached and a
+  # switched-off outside voice reads as a review that never ran.
+  awk '/^\{\{include lib\/snippets\/outside-voice-preflight\.md\}\}$/{on=1;next}
+       /^\{\{include lib\/snippets\/outside-voice-body\.md\}\}$/{on=0}
+       on' "$SRC/skills/$s/SKILL.md" | tr '\n' ' ' \
+    | grep -qF 'On `disabled`, still write the `disabled` record' \
+    && ok "$s writes the disabled record despite the preflight's skip" \
+    || no "$s lets the preflight skip the disabled record"
+done
+for s in plan-eng-review plan-devex-review; do
+  grep -qF 'Step 0D-POST' "$SRC/skills/$s/SKILL.md" \
+    && no "$s points at a Step 0D-POST it does not have" || ok "$s has no stale Step 0D-POST reference"
+done
+r="$TMP/real/plan-eng-review/SKILL.md"
+sec="$(sed -n '/^## Outside Voice — Independent Plan Challenge/,/^### Outside Voice Integration Rule/p' "$r" 2>/dev/null)"
+printf '%s' "$sec" | grep -qF 'subagent_type: "Plan"' \
+  && ok "plan-eng-review fallback asks for a read-only subagent type" \
+  || no "plan-eng-review fallback subagent type is unrestricted"
 
 echo
 echo "passed $pass, failed $fail"

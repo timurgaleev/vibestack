@@ -71,7 +71,8 @@ EVAL_DEFS = [
     (re.compile(r"vibe-slug\b[^\n]*--identity"), ["SLUG", "PROJECT_REMOTE", "PROJECT_ROOT", "LEGACY_SLUG"]),
     (re.compile(r"eval[^\n]*vibe-slug\b"), ["SLUG"]),
     (re.compile(r"eval[^\n]*vibe-diff-scope\b"), ["SCOPE_FRONTEND", "SCOPE_BACKEND", "SCOPE_PROMPTS", "SCOPE_TESTS",
-                                                  "SCOPE_DOCS", "SCOPE_CONFIG", "SCOPE_MIGRATIONS", "SCOPE_API", "SCOPE_AUTH"]),
+                                                  "SCOPE_DOCS", "SCOPE_CONFIG", "SCOPE_MIGRATIONS", "SCOPE_API", "SCOPE_AUTH",
+                                                  "SCOPE_UNAVAILABLE"]),
 ]
 
 

@@ -16,7 +16,9 @@
 #     coverage, and fixes get a bounded re-review whose record carries the
 #     start snapshot;
 #   - skills/ship/SKILL.md: the dashboard clears only a review of the tree
-#     being shipped.
+#     being shipped;
+#   - skills/plan-eng-review/SKILL.md: a refused review-log or decision-log write
+#     is printed, and the Review Log forbids claiming an unconfirmed save.
 #
 # Usage: test/test-review-log.sh [repo-root]
 set -uo pipefail
@@ -142,6 +144,30 @@ DASH=$(awk '/^## Review Readiness Dashboard/{on=1;next} on&&/^## Step 2:/{exit} 
 printf '%s' "$DASH" | grep -qF 'vibe-review-log" --snapshot' && ok "ship snapshots the tree it ships" || no "ship dashboard takes no snapshot"
 printf '%s' "$DASH" | grep -qF 'tree changed since review' && ok "ship refuses a review of a different tree" || no "ship clears a review of a different tree"
 printf '%s' "$DASH" | grep -qF '`incomplete`' && ok "ship treats incomplete as not clean" || no "ship ignores the incomplete status"
+
+echo "plan-eng-review Review Log reports a failed save"
+ENG="$SRC/skills/plan-eng-review/SKILL.md"
+ENG_LOG=$(awk '/^## Review Log/{on=1;next} on&&/^## /{exit} on' "$ENG")
+# block_after "<anchor>" -> the first ```bash block after the anchor in the Review Log
+block_after() {
+  printf '%s\n' "$ENG_LOG" | awk -v a="$1" 'index($0,a){f=1} f&&/^```bash$/{b=1;next} b&&/^```$/{exit} b'
+}
+SH="$TMP/eng-refuse"; mkdir -p "$SH/bin"
+for b in vibe-review-log vibe-decision-log; do
+  printf '#!/usr/bin/env bash\necho "%s: refused" >&2\nexit 1\n' "$b" > "$SH/bin/$b"
+  chmod +x "$SH/bin/$b"
+done
+run_eng() {  # LABEL ANCHOR MARKER
+  local blk out
+  blk=$(block_after "$2")
+  [ -n "$blk" ] || { no "$1: no bash block after '$2'"; return; }
+  out=$(cd "$REPO" && VIBESTACK_HOME="$SH" bash -c "$blk" 2>&1)
+  printf '%s\n' "$out" | grep -q "^$3 (exit 1)" && ok "$1 failure is reported" || no "$1 failure swallowed: '$out'"
+}
+run_eng "eng review log" "PLAN MODE EXCEPTION" "REVIEW_LOG_NOT_PERSISTED"
+run_eng "eng architecture decision log" "durable architecture choice" "DECISION_LOG_NOT_PERSISTED"
+printf '%s' "$ENG_LOG" | grep -qF 'Never claim an unconfirmed save.' \
+  && ok "eng Review Log forbids claiming an unconfirmed save" || no "eng Review Log has no unconfirmed-save rule"
 
 echo
 echo "$pass passed, $fail failed"

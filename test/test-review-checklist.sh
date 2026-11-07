@@ -166,6 +166,76 @@ SH
   [ "$m" -ge 5 ] && ok "found $m production probes" || no "expected at least 5 production probes, found $m"
 fi
 
+echo "review/ship shared snippets"
+RV="$SRC/skills/review/SKILL.md"
+# step FILE "## Step N:" -> body up to the next "## " heading
+step() { awk -v h="$2" 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' "$1"; }
+for s in review ship; do
+  "$SRC/bin/vibe-render-skill" "$SRC/skills/$s/SKILL.md" "$TMP/$s.md" >/dev/null 2>&1 \
+    || no "$s does not render"
+done
+# contains RENDERED SNIPPET -> the snippet's bytes appear verbatim in the render
+contains() { python3 -I -c 'import sys; sys.exit(0 if open(sys.argv[2]).read().rstrip("\n") in open(sys.argv[1]).read() else 1)' "$1" "$2"; }
+for s in review ship; do
+  for snip in base-branch-detect confidence-calibration; do
+    contains "$TMP/$s.md" "$SRC/lib/snippets/$snip.md" && ok "$s renders $snip verbatim" \
+      || no "$s does not render $snip verbatim"
+  done
+  grep -q "symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed" "$TMP/$s.md" \
+    && no "$s keeps its own origin/HEAD fallback" || ok "$s has no private base fallback"
+  grep -q 'Force its confidence to 4-5' "$TMP/$s.md" \
+    && no "$s keeps its own calibration copy" || ok "$s has no private calibration copy"
+done
+step "$TMP/ship.md" '## Step 7:' > "$TMP/ship-s7"
+contains "$TMP/ship-s7" "$SRC/lib/snippets/implementer-dispatch-rules.md" \
+  && ok "ship Step 7 child prompt carries the implementer rules" || no "ship Step 7 lacks the implementer rules"
+awk '/^### Step 5d:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" > "$TMP/review-5d"
+contains "$TMP/review-5d" "$SRC/lib/snippets/test-value-bar.md" \
+  && ok "review Step 5d carries the test value bar" || no "review Step 5d lacks the test value bar"
+
+echo "review/ship host paths"
+hp="$("$SRC/bin/vibe-lint-sources" "$SRC" 2>&1 | grep -E 'skills/(review|ship)/SKILL\.md:[0-9]+: hard-coded host path' || true)"
+[ -z "$hp" ] && ok "no hard-coded host path in review or ship" || no "host-only paths remain: $(printf '%s' "$hp" | sed 's/^warn: //; s/: [^0-9].*//' | tr '\n' ' ')"
+# A missing design checklist must stop, not read as "nothing to flag".
+DR="$(sed -n '/^## Design Review (conditional/,/^## Step 9.1:/p' "$SHIP")"
+printf '%s\n' "$DR" | grep -q 'skipping design review' && no "ship skips design review silently when the checklist is missing" \
+  || ok "ship has no silent design-checklist skip"
+printf '%s\n' "$DR" | grep -q '\.\./review/design-checklist\.md`.*\*\*STOP\*\*' \
+  && ok "ship stops when the design checklist cannot be read" || no "ship design checklist read is not fail-closed"
+
+echo "SCOPE_UNAVAILABLE consumers"
+# A failed scope must run every specialist; normal flags keep the subset.
+SR="$TMP/scope-repo"; mkdir -p "$SR" "$TMP/vh/bin"
+git -C "$SR" init -q && git -C "$SR" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init \
+  && git -C "$SR" update-ref refs/remotes/origin/main HEAD
+# scope_block FILE -> the bash fence under "### Detect stack and scope"
+scope_block() {
+  awk '/^### Detect stack and scope/{s=1;next} s && /^```bash$/{on=1;next} on && /^```$/{exit} on{print}' "$1" \
+    | sed 's/<base>/main/g'
+}
+run_scope() { # FILE STUB_OUTPUT STUB_EXIT -> block output, with a stale SCOPE_AUTH/SCOPE_UNAVAILABLE in the env
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" %s\nexit %s\n' "$2" "$3" > "$TMP/vh/bin/vibe-diff-scope"
+  chmod +x "$TMP/vh/bin/vibe-diff-scope"
+  (cd "$SR" && SCOPE_AUTH=true SCOPE_UNAVAILABLE=true VIBESTACK_HOME="$TMP/vh" bash -c "$(scope_block "$1")" 2>&1)
+}
+for f in "$RV" "$SHIP"; do
+  n=$(basename "$(dirname "$f")")
+  out="$(run_scope "$f" "SCOPE_UNAVAILABLE=true" 2)"
+  printf '%s\n' "$out" | grep -q 'SCOPE_UNAVAILABLE=true' && ok "$n prints SCOPE_UNAVAILABLE=true on a failed scope" \
+    || no "$n hides a failed scope ($(printf '%s' "$out" | head -1))"
+  out="$(run_scope "$f" "SCOPE_BACKEND=true SCOPE_FRONTEND=false" 0)"
+  printf '%s\n' "$out" | grep -q 'SCOPE_BACKEND=true' && printf '%s\n' "$out" | grep -q 'SCOPE_UNAVAILABLE=false' \
+    && ok "$n keeps normal flags and reports scope available" || no "$n mangles normal flags ($(printf '%s' "$out" | head -1))"
+  printf '%s\n' "$out" | grep -q 'SCOPE_AUTH=false' && ok "$n drops a stale SCOPE_AUTH from the environment" \
+    || no "$n carries a stale SCOPE_AUTH into the selection"
+  sel="$(awk '/^### Select specialists/{on=1;next} on && /^### /{exit} on{print}' "$f")"
+  printf '%s\n' "$sel" | grep -q 'SCOPE_UNAVAILABLE=true.*every specialist' \
+    && ok "$n selection runs every specialist when the scope is unavailable" || no "$n selection has no unavailable-scope branch"
+done
+DR="$(sed -n '/^## Design Review (conditional/,/^## Step 9.1:/p' "$SHIP")"
+printf '%s\n' "$DR" | grep -q 'SCOPE_UNAVAILABLE=true' && ok "ship design review runs on an unavailable scope" \
+  || no "ship design review skips on an unavailable scope"
+
 echo "connect-review Step 3"
 S3="$(awk '/^## Step 3:/{on=1;next} on && /^## /{exit} on{print}' "$CR")"
 printf '%s\n' "$S3" | grep -q '^| Conversation state and memory admission |' \
