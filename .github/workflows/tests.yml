@@ -72,6 +72,7 @@ jobs:
           - test-context-provenance.sh
           - test-learn-honest-read.sh
           - test-plan-ceo-review.sh
+          - test-outside-voice-body.sh
           - test-plan-eng-review-rubric.sh
           - test-autoplan-ledger.sh
           - test-plan-design-review.sh
