@@ -582,7 +582,11 @@ fi
 # A fake codex on PATH with no credentials anywhere must stop at rung 3 rather
 # than attempt the round trip.
 FAKE="$TMP/fakepath"; mkdir -p "$FAKE"
-printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+# The probe keys its cache on the codex binary's path and mtime, so an upgrade
+# re-probes (test-codex-verdict.sh covers that). These rows swap the fake's
+# script to make the *same* binary answer differently; each swap pins the mtime
+# back, or the rewrite itself would look like an upgrade and defeat the replay.
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h2" \
       env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1); RC=$?
 chk "credentials absent reports unauthenticated" "$OUT" "CODEX: unauthenticated"
@@ -598,19 +602,19 @@ chk "an unkeyed legacy cache is ignored" "$OUT" "CODEX: unauthenticated"
 # Replay is asserted against a cache the probe wrote itself: prime it with a
 # codex that answers, then swap in one that would fail. Still usable means the
 # verdict came from the cache and no second round trip happened.
-printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h3b" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1); RC=$?
 chk "the first probe writes a usable verdict" "$OUT" "CODEX: usable"
 chk "and exits 0" "$RC" "0"
-printf '#!/bin/sh\nexit 9\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\nexit 9\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h3b" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "the second probe replays the cache instead of re-probing" "$OUT" "CODEX: usable"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h3b" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" --refresh 2>&1)
 chk "--refresh bypasses the cache and sees the truth" "$OUT" "CODEX: error"
-printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 mkdir -p "$TMP/h4"; printf 'garbage usable\n' > "$TMP/h4/codex-probe.txt"
 OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h4" \
       env -u CODEX_API_KEY -u OPENAI_API_KEY "$P" 2>&1)
@@ -623,11 +627,11 @@ chk "an expired cache is re-probed" "$OUT" "CODEX: unauthenticated"
 
 # Exit 0 is not an answer. A wrapper that exits without contacting anything
 # would otherwise be reported as usable.
-printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h6" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "exit 0 with no reply is not usable" "$OUT" "CODEX: error"
-printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h7" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "a real reply is usable" "$OUT" "CODEX: usable"
@@ -638,21 +642,21 @@ OUT=$(PATH="$FAKE:$PATH" CODEX_HOME="$TMP/nocodexhome" VIBESTACK_HOME="$TMP/h7" 
 chk "a cached verdict does not cross credential contexts" "$OUT" "CODEX: unauthenticated"
 
 # Credentials present but refused: the round trip itself has to name it.
-printf '#!/bin/sh\necho "Error: Not logged in. Run codex login." >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho "Error: Not logged in. Run codex login." >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h8" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "a logged-out round trip reports unauthenticated" "$OUT" "CODEX: unauthenticated"
 
 # A usage limit is its own verdict, relays Codex's reset line, and is cached --
 # but only briefly, because it lifts on its own.
-printf '#!/bin/sh\necho "ERROR: You have hit your usage limit. Try again at 4:05 PM." >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho "ERROR: You have hit your usage limit. Try again at 4:05 PM." >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h9" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1); RC=$?
 chk "a usage-limit refusal reports quota_exhausted" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: quota_exhausted"
 chk "and exits nonzero" "$RC" "1"
 printf '%s\n' "$OUT" | grep -q '^DETAIL: .*Try again at 4:05 PM' \
   && ok "Codex's reset line is relayed" || no "the reset line was dropped"
-printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h9" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "a fresh quota verdict is replayed, not re-paid" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: quota_exhausted"
@@ -666,26 +670,26 @@ OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h9" \
 chk "a quota verdict expires after 15 minutes, not an hour" "$OUT" "CODEX: usable"
 
 # A 429 body that names insufficient_quota is the quota, not a rate limit.
-printf '#!/bin/sh\necho "ERROR: 429 Too Many Requests: insufficient_quota" >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho "ERROR: 429 Too Many Requests: insufficient_quota" >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h10" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "insufficient_quota wins over the 429" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: quota_exhausted"
 
 # A plain rate limit is transient: named, never cached.
-printf '#!/bin/sh\necho "ERROR: stream error: 429 Too Many Requests (rate limit reached)" >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho "ERROR: stream error: 429 Too Many Requests (rate limit reached)" >&2\nexit 1\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h11" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "a plain 429 reports rate_limited" "$(printf '%s\n' "$OUT" | head -1)" "CODEX: rate_limited"
 [ -f "$TMP/h11/codex-probe.txt" ] && no "a rate-limited verdict was cached" \
                                  || ok "a rate-limited verdict is not cached"
-printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h11" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "the next probe after a rate limit sees the truth" "$OUT" "CODEX: usable"
 
 # codex echoes the prompt into the captured stream, and the prompt contains the
 # word. The echo alone, exit 0, is not a reply.
-printf '#!/bin/sh\necho user\necho "Reply with the single word OK."\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho user\necho "Reply with the single word OK."\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h12" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "the prompt echo alone is not a reply" "$OUT" "CODEX: error"
@@ -694,7 +698,7 @@ chk "the prompt echo alone is not a reply" "$OUT" "CODEX: error"
 # network blip must not switch Codex off for every skill until it expires.
 read -r _ets _ev _ek < "$TMP/h12/codex-probe.txt"
 chk "an error verdict is cached" "$_ev" "error"
-printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\necho OK\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 OUT=$(PATH="$FAKE:$PATH" CODEX_API_KEY=x VIBESTACK_HOME="$TMP/h12" \
       VIBE_CODEX_PROBE_TIMEOUT=5 "$P" 2>&1)
 chk "a fresh error verdict is replayed" "$OUT" "CODEX: error"
@@ -738,7 +742,7 @@ PFH="$TMP/pfhome"; mkdir -p "$PFH/.vibestack/bin"
 printf '#!/bin/sh\nprintf "CODEX: %%s\\n" "$STUB_VERDICT"\n[ "$STUB_VERDICT" = usable ]\n' \
   > "$PFH/.vibestack/bin/vibe-codex-probe"
 chmod +x "$PFH/.vibestack/bin/vibe-codex-probe"
-printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/codex"; chmod +x "$FAKE/codex"; touch -t 202001010000 "$FAKE/codex"
 pf() { # pf VERDICT -> the preflight's full output
   HOME="$PFH" VIBESTACK_HOME="$PFH/.vibestack" PATH="$FAKE:/usr/bin:/bin" STUB_VERDICT="$1" \
     env -u CODEX_THREAD_ID -u CODEX_SANDBOX -u VIBE_FORCE_CODEX_REVIEW bash "$PF" 2>&1

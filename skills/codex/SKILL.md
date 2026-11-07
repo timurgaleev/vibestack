@@ -99,13 +99,18 @@ or whether the account has quota left — and each of those otherwise surfaces o
 after the expensive prompt was built and a multi-minute run failed halfway.
 `vibe-codex-probe` makes one real round trip (cached for an hour per credential
 context; a quota verdict for 15 minutes, a rate limit never) and prints a
-`CODEX: <verdict>` line:
+`CODEX: <verdict>` line. `<MODEL>` is the name after a leading `-m` (Step 1),
+or empty; it is probed with `--model`, so a model the account cannot use stops
+here rather than mid-run:
 
 ```bash
 _PROBE="${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-codex-probe"
+_MODEL='<MODEL>'
+case "$_MODEL" in *[!A-Za-z0-9._:/-]*) echo "CODEX: error"; echo "DETAIL: invalid model name"; exit 1 ;; esac
 if [ -x "$_PROBE" ]; then
-  # The verdict is the first line; quota_exhausted and rate_limited add DETAIL: lines.
-  _PROBE_OUT=$("$_PROBE" 2>/dev/null)
+  # The verdict is the first line; the negative verdicts add DETAIL: lines.
+  # Not ${_MODEL:+--model "$_MODEL"}: zsh would pass that as a single argument.
+  if [ -n "$_MODEL" ]; then _PROBE_OUT=$("$_PROBE" --model "$_MODEL" 2>/dev/null); else _PROBE_OUT=$("$_PROBE" 2>/dev/null); fi
   echo "${_PROBE_OUT:-CODEX: error}"
 else
   # Probe not installed: fall back to the credential-presence check, and say so.
@@ -125,8 +130,11 @@ including any `DETAIL:` lines:
 - **`rate_limited`** — continue, but warn: "Codex is rate-limited right now; the run may be slow or fail. If it fails, retry in a few minutes."
 - **`unauthenticated`** or **`not_authed`** — stop: "Codex is not authenticated (or its token was refused). Run `codex login` or set `$CODEX_API_KEY` / `$OPENAI_API_KEY`, then re-run this skill."
 - **`quota_exhausted`** — stop: "Codex quota is exhausted for this account." Relay the `DETAIL:` lines — they carry the reset time when Codex gave one.
+- **`model_unusable`** — stop: "Codex refused the model: <DETAIL>." Name the model — the `-m` value, else the `model =` pin in `~/.codex/config.toml` — and give the fix: drop the pin to use the CLI default, pick a model the account can use, or upgrade the CLI when DETAIL says it needs a newer version. Then `vibe-codex-probe --refresh`.
+- **`sandbox_unavailable`** — stop: "Codex cannot start its read-only sandbox on this Linux host, so every command in a review would fail and the review would read nothing." Relay the `DETAIL:` lines; the last one is the fix.
 - **`unresponsive`** — stop: "Codex did not answer a one-word probe within its timeout. Check the network or `~/.codex/logs/`, then re-run (`vibe-codex-probe --refresh` forces a fresh check)."
-- **`error`** or anything else — stop: "Codex failed a one-word probe. The usual cause is a `model =` pin in `~/.codex/config.toml` this account cannot reach (see Error Handling). Run `vibe-codex-probe --refresh` after fixing it."
+- **`error`** with `DETAIL: invalid model name` — stop: "The `-m` value is not a valid model name." Nothing was probed.
+- **`error`** or anything else — stop: "Codex failed a one-word probe for an unrecognised reason. Check `~/.codex/logs/` (see Error Handling), then run `vibe-codex-probe --refresh`."
 
 Never continue past a stopping verdict: a run that cannot succeed must not be
 attempted and then reported as an empty review.
@@ -200,12 +208,7 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
+{{include lib/snippets/base-branch-detect.md}}
 
 Substitute the detected name for `<BASE>` in the bash blocks below that start
 with `BASE='<BASE>'`, and wherever the prompts in Step 2B and Step 2C say `<base>`.
@@ -236,13 +239,18 @@ Parse the user's input to determine which mode to run:
    - Otherwise, ask: "What would you like to ask Codex?"
 4. `/codex <anything else>` — **Consult mode** (Step 2C), where the remaining text is the prompt
 
-**Reasoning effort override:** If the user's input contains `--xhigh` anywhere,
-note it and remove it from the prompt text before passing to Codex. When `--xhigh`
-is present, use `model_reasoning_effort="xhigh"` for all modes regardless of the
-per-mode default below. Otherwise, use the per-mode defaults:
-- Review (2A): `high` — bounded diff input, needs thoroughness
-- Challenge (2B): `high` — adversarial but bounded by diff
-- Consult (2C): `medium` — large context, interactive, needs speed
+**Leading flags.** Options are read only from the start of the arguments — right
+after `review` / `challenge`, or first for a consult. The same text later on is
+part of the prompt and reaches Codex untouched. Strip the flags from the prompt:
+- `--effort <low|medium|high|xhigh>` sets the reasoning effort; `--xhigh` is
+  `--effort xhigh`. Any other value: stop, list the four levels, run nothing.
+- `-m <model>` picks the model (see Model & Reasoning). A name with anything but
+  letters, digits and `._:/-`: stop, run nothing.
+
+Every run block sets `_EFFORT='<EFFORT>'`: substitute the requested level,
+or nothing. The block resolves it — the request, else `VIBE_CODEX_EFFORT`, else
+the mode default: Review (2A) `high`, Challenge (2B) `high`, Consult (2C)
+`medium` — and refuses to start Codex on a value outside the four levels.
 
 ---
 
@@ -299,6 +307,8 @@ The run blocks below rebuild the path from the printed name — substitute it fo
 `<prompt-file-name>` / `<focus-file-name>` — and refuse to run when the file is
 missing or empty, so a prompt that was never written cannot reach Codex as an
 empty request.
+
+{{include lib/snippets/second-opinion-grounding.md}}
 
 ---
 
@@ -527,13 +537,15 @@ branch resolved in Step 0.7.
 2. Create temp file for stderr capture, and snapshot the working tree Codex is
 about to review. Keep the printed `START_TREE` for step 8: the log refuses a
 `clean` record when the tree moved after this point, so fixes made after the
-review never read as reviewed. Keep the printed `TMPERR` too: steps 3, 4 and 9
+review never read as reviewed. Keep `UNTRACKED` for step 8 as well: untracked
+files are in no diff Codex sees. Keep the printed `TMPERR` too: steps 3, 4 and 9
 start with `TMPERR='<TMPERR>'`, and the placeholder is replaced with that path.
 ```bash
 TMP_ROOT='<TMP_ROOT>'
 TMPERR=$(mktemp "$TMP_ROOT/codex-err-XXXXXX.txt")
 echo "TMPERR: $TMPERR"
 echo "START_TREE: $("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" --snapshot 2>/dev/null || echo unknown)"
+echo "UNTRACKED: $(git -C "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')"
 ```
 
 3. Run the review (5.5-minute timeout). **Codex CLI ≥ 0.130.0 rejects passing a
@@ -559,6 +571,8 @@ Codex may spend a few extra tokens reading them. Acceptable trade-off:
 ```bash
 BASE='<BASE>'
 TMPERR='<TMPERR>'
+_EFFORT='<EFFORT>'; _EFFORT=${_EFFORT:-${VIBE_CODEX_EFFORT:-high}}
+case "$_EFFORT" in low|medium|high|xhigh) ;; *) echo "Not run: reasoning effort '$_EFFORT' is not low, medium, high or xhigh." >&2; exit 1 ;; esac
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
 PYTHON_CMD=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
@@ -588,7 +602,7 @@ _cx() {
 # The 330s wrapper sits BELOW the 360s Bash gate so the wrapper fires FIRST and
 # a stall surfaces as a diagnosable exit 124 with an explicit message, never as
 # a silent harness kill that the gate in step 5 would read as "no findings".
-_cx 330 codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'skills.include_instructions=false' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < /dev/null >"$TMPRESP" 2>"$TMPERR"
+_cx 330 codex review --base "$BASE" -c 'sandbox_mode="read-only"' -c 'skills.include_instructions=false' -c "model_reasoning_effort=\"$_EFFORT\"" -c 'web_search="cached"' < /dev/null >"$TMPRESP" 2>"$TMPERR"
 _CODEX_EXIT=$?
 cat "$TMPRESP"; echo
 if [ "$_CODEX_EXIT" = "124" ]; then
@@ -601,8 +615,6 @@ fi
 "$PYTHON_CMD" "$_VERDICT_PY" --mode review --exit "$_CODEX_EXIT" --stderr "$TMPERR" "$TMPRESP"
 rm -f "$TMPRESP"
 ```
-
-If the user passed `--xhigh`, use `"xhigh"` instead of `"high"`.
 
 **A model override never reaches this call as `-m`.** `codex review` has no
 `-m` / `--model` option — its only override channel is `-c` — so forwarding the
@@ -625,6 +637,8 @@ focus text and the diff never enter argv or shell source:
 ```bash
 BASE='<BASE>'
 TMPERR='<TMPERR>'
+_EFFORT='<EFFORT>'; _EFFORT=${_EFFORT:-${VIBE_CODEX_EFFORT:-high}}
+case "$_EFFORT" in low|medium|high|xhigh) ;; *) echo "Not run: reasoning effort '$_EFFORT' is not low, medium, high or xhigh." >&2; exit 1 ;; esac
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
 FOCUS_FILE="$_REPO_ROOT/.vibestack/tmp/<focus-file-name>"
@@ -638,8 +652,11 @@ rm -f "$TMPRESP" "$_EVENTS_FILE"
 # Build the diff before Codex runs. A base that does not resolve (no local
 # branch in a fresh clone) or an empty diff would send an empty DIFF block,
 # and a NO_FINDINGS reply to that would grade clean — a pass for no review.
+# It runs from the merge base to the working tree, so uncommitted edits to
+# tracked files are reviewed too; untracked files are counted in step 2.
 _DIFF_FILE="$FOCUS_FILE.diff"
-git diff "origin/$BASE...HEAD" > "$_DIFF_FILE" 2>/dev/null || git diff "$BASE...HEAD" > "$_DIFF_FILE" 2>/dev/null || : > "$_DIFF_FILE"
+_MB=$(git merge-base "origin/$BASE" HEAD 2>/dev/null || git merge-base "$BASE" HEAD 2>/dev/null) || _MB=""
+if [ -n "$_MB" ]; then git diff "$_MB" > "$_DIFF_FILE" 2>/dev/null || : > "$_DIFF_FILE"; else : > "$_DIFF_FILE"; fi
 if [ ! -s "$_DIFF_FILE" ]; then
   rm -f "$_DIFF_FILE" "$FOCUS_FILE"
   echo "Codex review not run: no diff against $BASE (the base did not resolve, or the branch has no changes)."
@@ -677,7 +694,7 @@ _cx() {
   done
   wait "$_cx_p"
 }
-_cx 330 codex exec - -s read-only -c 'skills.include_instructions=false' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' --json -o "$TMPRESP" < "$_PROMPT_FILE" >"$_EVENTS_FILE" 2>"$TMPERR"
+_cx 330 codex exec - -s read-only -c 'skills.include_instructions=false' -c "model_reasoning_effort=\"$_EFFORT\"" -c 'web_search="cached"' --json -o "$TMPRESP" < "$_PROMPT_FILE" >"$_EVENTS_FILE" 2>"$TMPERR"
 _CODEX_EXIT=$?
 rm -f "$_PROMPT_FILE" "$FOCUS_FILE"
 cat "$TMPRESP" 2>/dev/null; echo
@@ -796,7 +813,11 @@ review, and the dashboard must not show either as a clean review;
 GATE ("pass", "fail" or "unverified"), findings (count of [P0]–[P3] markers, 0
 when unavailable or unverified), findings_fixed (count of findings that were
 addressed/fixed before shipping), COMPLETED (`true` when Codex exited 0 and the
-validator graded its output, `false` otherwise), START_TREE (the snapshot from
+validator graded its output, `false` otherwise — and `false` whenever step 2
+printed `UNTRACKED:` above 0 or the user scoped the review with `--commit` /
+`--uncommitted`; say why in the report: untracked files are in no diff Codex saw
+(`git add -N <file>` puts them in it for a re-run), and a scoped review covered
+part of the branch, not all of it), START_TREE (the snapshot from
 step 2; if it printed `unknown`, drop the `start_tree` field). The logger records
 the tree at log time itself. If it rejects a `clean` record because the tree
 changed since step 2, the edits made after the review were never reviewed — log
@@ -830,16 +851,17 @@ With focus (e.g., "security"):
 Review the changes on this branch against the base branch. Run `git diff origin/<base>` to see the diff. Focus specifically on SECURITY. Your job is to find every way an attacker could exploit this code. Think about injection vectors, auth bypasses, privilege escalation, data exposure, and timing attacks. Be adversarial."
 
 Create a `codex-prompt` file (see Prompt Files) and write the full prompt —
-boundary, any focus text, `<base>` substituted — into it with your Write tool.
+boundary, any focus text, `<base>` substituted — into it with your Write tool,
+then run the Date Grounding block on it.
 
 2. Run codex exec with **JSONL output** to capture reasoning traces and tool calls.
 The inner wrapper is 540s and the Bash call gets `timeout: 600000`, so on a stall
 the wrapper fires first and the run ends with a diagnosable exit 124 rather than a
 silent harness kill. Substitute the printed name for `<prompt-file-name>`:
 
-If the user passed `--xhigh`, use `"xhigh"` instead of `"high"`.
-
 ```bash
+_EFFORT='<EFFORT>'; _EFFORT=${_EFFORT:-${VIBE_CODEX_EFFORT:-high}}
+case "$_EFFORT" in low|medium|high|xhigh) ;; *) echo "Not run: reasoning effort '$_EFFORT' is not low, medium, high or xhigh." >&2; exit 1 ;; esac
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT" || exit 1
 PROMPT_FILE="$_REPO_ROOT/.vibestack/tmp/<prompt-file-name>"
@@ -880,7 +902,7 @@ TMPERR="$PROMPT_FILE.err"; TMPRESP="$PROMPT_FILE.resp"; _EVENTS_FILE="$PROMPT_FI
 _EXIT_FILE="$PROMPT_FILE.exit"; _TURN_FILE="$PROMPT_FILE.turn"
 rm -f "$_EXIT_FILE" "$_TURN_FILE" "$TMPRESP" "$_EVENTS_FILE"
 {
-  _cx 540 codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c 'model_reasoning_effort="high"' -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
+  _cx 540 codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c "model_reasoning_effort=\"$_EFFORT\"" -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
   _rc=$?; printf '%s\n' "$_rc" > "$_EXIT_FILE"; (exit "$_rc")
 } | tee "$_EVENTS_FILE" | VIBE_CODEX_TURN_FILE="$_TURN_FILE" PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
 import sys, json, os
@@ -1009,7 +1031,8 @@ B) Start a new conversation
 
 2. Create a `codex-prompt` file (see Prompt Files). Step 3 assembles the prompt;
 write it into this file with your Write tool — the user's question and any
-embedded plan reach Codex on stdin, never through the shell.
+embedded plan reach Codex on stdin, never through the shell — then run the
+Date Grounding block on it.
 
 3. **Plan review auto-detection:** If the user's prompt is about reviewing a plan,
 or if plan files exist and the user said `/codex` with no arguments:
@@ -1059,10 +1082,10 @@ if the user chose "Continue" in step 1, else `new`, and substitute the printed n
 for `<prompt-file-name>`. A resumed run reads the session id from
 `.context/codex-session-id`; both go through the same parser.
 
-If the user passed `--xhigh`, use `"xhigh"` instead of `"medium"`.
-
 ```bash
 _CODEX_MODE=<new|resume>
+_EFFORT='<EFFORT>'; _EFFORT=${_EFFORT:-${VIBE_CODEX_EFFORT:-medium}}
+case "$_EFFORT" in low|medium|high|xhigh) ;; *) echo "Not run: reasoning effort '$_EFFORT' is not low, medium, high or xhigh." >&2; exit 1 ;; esac
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT" || exit 1
 PROMPT_FILE="$_REPO_ROOT/.vibestack/tmp/<prompt-file-name>"
@@ -1107,9 +1130,9 @@ _EXIT_FILE="$PROMPT_FILE.exit"; _TURN_FILE="$PROMPT_FILE.turn"
 rm -f "$_EXIT_FILE" "$_TURN_FILE" "$TMPRESP" "$_EVENTS_FILE"
 {
   if [ -n "$_SID" ]; then
-    _cx 540 codex exec resume "$_SID" - -c 'sandbox_mode="read-only"' -c 'skills.include_instructions=false' -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
+    _cx 540 codex exec resume "$_SID" - -c 'sandbox_mode="read-only"' -c 'skills.include_instructions=false' -c "model_reasoning_effort=\"$_EFFORT\"" -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
   else
-    _cx 540 codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c 'model_reasoning_effort="medium"' -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
+    _cx 540 codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c "model_reasoning_effort=\"$_EFFORT\"" -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
   fi
   _rc=$?; printf '%s\n' "$_rc" > "$_EXIT_FILE"; (exit "$_rc")
 } | tee "$_EVENTS_FILE" | VIBE_CODEX_TURN_FILE="$_TURN_FILE" PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
@@ -1272,8 +1295,9 @@ uses them.
 - **Consult (2C):** `medium` — large context (plans, codebase), interactive, needs speed
 
 `xhigh` uses ~23x more tokens than `high` and causes 50+ minute hangs on large context
-tasks (OpenAI issues #8545, #8402, #6931). Users can override with `--xhigh` flag
-(e.g., `/codex review --xhigh`) when they want maximum reasoning and are willing to wait.
+tasks (OpenAI issues #8545, #8402, #6931). Override with a leading
+`--effort <level>` (`--xhigh` for short, e.g. `/codex review --xhigh`) or
+`VIBE_CODEX_EFFORT` when maximum reasoning is worth the wait.
 
 **Web search:** All codex commands pass `-c 'web_search="cached"'` so Codex can look up
 docs and APIs during review. This is OpenAI's cached index — fast, no extra cost. Use

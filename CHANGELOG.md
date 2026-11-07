@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.55.30 — 2026-11-07
+
+### Added
+
+- **`/codex` takes `--effort <low|medium|high|xhigh>` and `-m <model>`** as
+  leading flags (`--xhigh` still works). Without them the effort comes from
+  `VIBE_CODEX_EFFORT`, else the mode default; an invalid value stops before
+  Codex starts.
+
+### Changed
+
+- **The Codex probe names what is wrong.** A model the account cannot use
+  reports `model_unusable`, and a Linux host where Codex cannot start its
+  read-only sandbox reports `sandbox_unavailable`, each with Codex's own
+  message and a hint. The `-m` model is the one probed, and editing
+  `~/.codex/config.toml` or upgrading the CLI re-probes instead of replaying a
+  cached verdict.
+- **A custom-focus `/codex` review covers the working tree.** It diffs from the
+  merge base, so uncommitted edits are reviewed; untracked files are counted,
+  and they or a `--commit`/`--uncommitted` scope mark the review incomplete.
+- Challenge and consult prompts carry today's date and a rule against calling a
+  model, tool or version hallucinated only because Codex does not recognize it.
+
 ## 1.55.29 — 2026-11-07
 
 ### Changed
