@@ -296,8 +296,9 @@ echo "$DEPLOY_CONFIG"
 
 # If config exists, parse it
 if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
-  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/.*: *//')
-  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/.*: *//')
+  # Cut at the first colon only: a greedy match eats the URL's own "https:".
+  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
+  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
   echo "PERSISTED_PLATFORM:$PLATFORM"
   echo "PERSISTED_URL:$PROD_URL"
 fi
@@ -1318,8 +1319,9 @@ echo "$DEPLOY_CONFIG"
 
 # If config exists, parse it
 if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
-  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/.*: *//')
-  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/.*: *//')
+  # Cut at the first colon only: a greedy match eats the URL's own "https:".
+  PROD_URL=$(echo "$DEPLOY_CONFIG" | grep -i "production.*url" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
+  PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
   echo "PERSISTED_PLATFORM:$PLATFORM"
   echo "PERSISTED_URL:$PROD_URL"
 fi
