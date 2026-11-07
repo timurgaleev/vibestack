@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.55.32 — 2026-11-07
+
+### Changed
+
+- **`/spec --execute` hands work to a bounded executor.** A spawn gate refuses
+  when the session is not interactive, when the session-kind helper is missing,
+  or when the repo has no `CLAUDE.md` or `.claude/`; the spawn block re-checks
+  the session kind itself. The child reads an executor brief (baseline suite
+  first, red then green per acceptance criterion, a progress file re-read after
+  compaction, no commits, pushes or PRs), runs `claude -p` with a fixed tool
+  grant, no MCP servers, `git commit`/`git push`/`gh pr` denied, and stops at
+  USD 5 or 200 turns (`VIBE_SPEC_EXECUTE_USD`, `VIBE_SPEC_EXECUTE_TURNS`). Its
+  output goes to a log beside the archive.
+- **`/spec` sets a full contract for the implementer.** Section 11 carries the
+  shared test value bar, every Testing Plan row has a `Value:` card and a
+  `Test seams` row, and the issue template gains `## Rules for the implementing
+  agent`.
+- **`/spec` seeds from context.** A prior conversation or design doc seeds Phase 1
+  and 2 answers, each tagged with its source and confirmed in one round. The
+  dedupe block prints its temp paths and cleans them up.
+
+## 1.55.31 — 2026-11-07
+
+### Changed
+
+- **The plan reviews check the plan against the real surface.** `/plan-ceo-review`
+  0B and `/plan-eng-review` Step 0 end in a `REALITY:` line: every CLI flag,
+  route and config key the plan relies on as already existing is checked
+  against `--help`, the route table or the schema. The completion summaries
+  report it and the `/autoplan` pre-gate checks it.
+- **`/plan-eng-review` and `/autoplan` read the CEO plan.** The Design Doc Check
+  prefers a repo `DESIGN.md` or `docs/designs/` doc on a tie, and finds this
+  branch's newest CEO plan even when another branch wrote a newer one. Eng
+  reads its scope decisions as data and asks before using another branch's
+  plan; `/autoplan` ignores another branch's plan and says so.
+- **Completeness means covering the requirement, not the bigger diff.** CEO TODO
+  option C keeps work only inside accepted scope, eng's build-it-now option
+  records scope without editing product code, and both preference lists gain a
+  data-model rule. A hot path with no budget or measurement step is a
+  performance finding.
+- **The `/autoplan` final gate opens with urgent findings outside the plan**, and
+  its CEO checklist follows the CEO skill's real step order.
+
 ## 1.55.30 — 2026-11-07
 
 ### Added
