@@ -70,6 +70,7 @@ When the user types `/cso`, run this skill.
 - `/cso --supply-chain` — dependency audit only (Phases 0, 3, 12-14)
 - `/cso --owasp` — OWASP Top 10 only (Phases 0, 9, 12-14)
 - `/cso --scope auth` — focused audit on a specific domain
+- `/cso --paths <p,q>` — limit every phase to these paths (combinable with any flag except `--recheck`)
 - `/cso --recheck <id>` — re-examine one finding from the most recent saved report (its `id` or `fingerprint`) and decide whether it is resolved (Phases 0-1, the finding's own phase, 12-14)
 
 ## Mode Resolution
@@ -81,6 +82,7 @@ When the user types `/cso`, run this skill.
 5. When `--diff` is active, each phase constrains scanning to files/configs changed on the current branch vs the base branch. For git history scanning (Phase 2), `--diff` limits to commits on the current branch only.
    Phase 5b is the one phase that cannot be constrained that way — a live account has no diff. Under `--diff` it runs only when the branch diff touches AWS configuration: a Terraform file declaring an `aws` provider or an `aws_*` resource, a CDK app file, an IAM policy document, or a deploy config naming AWS. When it runs, it audits the whole account as usual and the report says so. When the diff touches none of those, skip it, print `AWS posture: skipped (--diff, no AWS configuration changed on this branch)`, and omit `"5b"` from `phases_run`.
 6. Phases 0, 1, 12, 13, 14 ALWAYS run regardless of scope flag.
+6a. `--paths <p,q>` passes the listed paths as pathspecs to every Grep search and every `git log` / `git ls-files` call (`-- <p> <q>`). The status can then be at most `partial`, with one gap line `outside --paths: <top-level directories not covered>`, and the saved report records the list in `paths`.
 7. If WebSearch is unavailable, skip checks that require it and note: "WebSearch unavailable — proceeding with local-only analysis." The phases that lost those checks are recorded as `partial` in the coverage record (Phase 13).
 8. Every phase the selected mode includes gets a coverage entry, whether it ran in full, ran degraded, or could not run. A phase that did not do its work never counts as a clean phase.
 
@@ -89,6 +91,18 @@ When the user types `/cso`, run this skill.
 The bash blocks throughout this skill show WHAT patterns to search for, not HOW to run them. Use Claude Code's Grep tool (which handles permissions and access correctly) rather than raw bash grep. The bash blocks are illustrative examples — do NOT copy-paste them into a terminal. Do NOT use `| head` to truncate results.
 
 **Exception — Phase 5b (AWS Account Posture).** That phase queries a live account, so there is nothing in the repository to grep. Its credential gate and every `aws` command in its Checks table are meant to be executed with Bash, as written. They are all read-only (`get`, `list`, `describe`), and the phase's own read-only contract is the limit on what may run. This exception covers Phase 5b only; every other phase stays on the Grep tool.
+
+**Exception — installed scanners (optional).** When one of these is already on `PATH`, run it with Bash alongside the phase's own method, never in place of it: `gitleaks` (Phase 2), `zizmor --offline .github/workflows` (Phase 4), `trivy config --skip-db-update .` (Phase 5), `semgrep --metrics=off --config <a rules file in the repo>` (Phases 7 and 9 — never `--config auto`, which fetches remote rules). Never install a scanner, and never let one update its database or rules during the audit. Scanner output is a candidate for Phase 12, not a finding. Record each scanner's version and outcome (`ran, N candidates` or `exited <rc>`) in that phase's coverage reason; a scanner that is absent is not a gap when the phase's own method ran. gitleaks prints matches, so it writes a redacted report to a private temp file and only the count reaches the session:
+```bash
+if command -v gitleaks >/dev/null 2>&1; then
+  GL_REPORT="$(mktemp)"
+  gitleaks git --redact --no-banner --report-format json --report-path "$GL_REPORT" . >/dev/null 2>&1
+  GL_RC=$?
+  GL_N="$(grep -c '"RuleID"' "$GL_REPORT" 2>/dev/null)"
+  echo "gitleaks $(gitleaks version 2>/dev/null) exited $GL_RC; report $GL_REPORT (${GL_N:-0} matches)"
+fi
+```
+Read that file with the Read tool, judge each match through the Phase 2 rules, and delete it before Phase 14. gitleaks exits 1 when it finds something; any other non-zero status is a failed run.
 
 ## Instructions
 
@@ -282,7 +296,9 @@ Goes beyond `npm audit`. Checks actual supply chain risk.
 [ -f go.mod ] && echo "DETECTED: go"
 ```
 
-**Standard vulnerability scan:** Run whichever package manager's audit tool is available. Each tool is optional — if not installed, note it in the report as "SKIPPED — tool not installed" with install instructions. This is NOT a finding, but it is a coverage gap: an ecosystem with no scan and no WebSearch lookup leaves Phase 3 `partial`, and its dependencies are reported as unchecked, never as clean. The audit continues with whatever tools ARE available.
+**Host-safe invocation.** A dependency scan reads the lockfile; it never resolves, downloads or builds the dependency set, so the audit never hydrates `node_modules`, never runs an install, `npm ci` or a build, and never executes a package's install script. Use the lockfile-only forms: `osv-scanner --lockfile <lockfile>`, `npm audit --package-lock-only --registry=https://registry.npmjs.org/ --userconfig=/dev/null`, `pip-audit -r <hashed requirements file> --require-hashes --no-deps --disable-pip`, `bundle-audit check` (`bundle audit`), `cargo audit`. A `pip-audit` with no hashed requirements file would resolve through pip and can build source distributions — use `osv-scanner` on the lockfile instead. Before running any of them, check for a repo `.npmrc`, `pip.conf` or `.yarnrc.yml` that redirects a registry or carries an auth line: report it as a Phase 3 lead and do not run that ecosystem's tool through it, because a redirected registry receives the user's token.
+
+**Standard vulnerability scan:** Run whichever package manager's audit tool is available, in the host-safe form above. Each tool is optional — if not installed, note it in the report as "SKIPPED — tool not installed" with install instructions. This is NOT a finding, but it is a coverage gap: an ecosystem with no scan and no WebSearch lookup leaves Phase 3 `partial`, and its dependencies are reported as unchecked, never as clean. The audit continues with whatever tools ARE available.
 
 **CVE lookup where no local advisory data exists:** A direct dependency whose ecosystem has no audit tool installed, or whose audit tool ran but carries no advisory data for that package, gets a WebSearch on the package name plus its pinned version and `CVE`. Cite the advisory ID in the finding. Such a finding is UNVERIFIED until the vulnerable function is shown to be called (Phase 12, active verification rule 5). Where WebSearch is unavailable, note the dependency as unchecked rather than assuming it is clean.
 
@@ -290,10 +306,12 @@ Goes beyond `npm audit`. Checks actual supply chain risk.
 
 **Lockfile integrity:** Check that lockfiles exist AND are tracked by git.
 
-**Agent-tooling pins.** MCP server and skill launch specs the repo carries — `.mcp.json`, `.claude/settings*.json`, agent Dockerfiles, hook commands — name code that runs with the agent's tool authority. Classify each launch spec by how it resolves:
+**Agent-tooling pins.** MCP server and skill launch specs the repo carries name code that runs with the agent's tool authority. Look in the repository only (a home-directory config only when the user asks): `.mcp.json`, `.claude/settings*.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`, the `[mcp_servers]` tables of `.codex/config.toml`, `.github/mcp.json` and any other MCP config under `.github/` (Copilot's), agent Dockerfiles, and hook commands. Read the package through its wrapper: `npx --package <pkg> <bin>` and `npx -p`, `uvx --from <pkg>`, `pipx run --spec <pkg>`, and for `docker run` skip the options before the image (`--rm -i -e X -v a:b`) — the image is the first argument that is not an option or an option's value. A launch spec you cannot parse is listed as REVIEW with its file and line, never executed and never dropped. Classify each launch spec by how it resolves:
 - `npx -y pkg@latest`, a bare `pkg` with no version, a dist-tag (`@next`, `@beta`), a docker image tag without a `@sha256:` digest, or `uvx pkg` without `==<version>` → HIGH: an auto-updating code path with tool authority; whatever the registry serves next runs on the next launch.
 - A version range (`^1.2`, `~1.2`, `>=1.2`) → MEDIUM.
 - An exact version or a digest → pass, noted as "reproducible, not vetted": a pin makes the launch repeatable, it does not make the pinned code safe.
+
+The fix for a floating spec pins the version the team reviewed and already runs (a lockfile entry, a deploy manifest, a tag in the repo's history) — never the registry's current latest looked up today, which pins whatever an attacker last published.
 
 **Severity:** CRITICAL for known CVEs (high/critical) in direct deps. HIGH for install scripts in prod deps / missing lockfile. MEDIUM for abandoned packages / medium CVEs / lockfile not tracked.
 
@@ -335,7 +353,7 @@ Phase 5 reads the IaC. This phase reads the live account, because what Terraform
 
 **Under `--diff`:** the account has no diff to constrain, so this phase runs only when the branch diff touches AWS configuration — a Terraform file declaring an `aws` provider or an `aws_*` resource, a CDK app file, an IAM policy document, or a deploy config naming AWS. If it does, run the phase in full against the whole account and say in the report that this phase alone was not limited to the branch. If it does not, print `AWS posture: skipped (--diff, no AWS configuration changed on this branch)` and omit `"5b"` from `phases_run`. Check this before the credential gate below.
 
-**Gate:** Run only when AWS is detected: a Terraform `provider "aws"` block, a CDK app (`aws-cdk-lib` in package.json or `aws_cdk` in requirements), `boto3` or `@aws-sdk` imports, or `aws sts get-caller-identity` succeeding. If none match, skip silently. Never ask the user for keys and never read `~/.aws/credentials` yourself.
+**Gate:** Run only when AWS is detected: a Terraform `provider "aws"` block, a CDK app (`aws-cdk-lib` in package.json or `aws_cdk` in requirements), `boto3` or `@aws-sdk` imports, or `aws sts get-caller-identity` succeeding. If none match, skip silently. Never ask the user for keys, never read `~/.aws/credentials` yourself, and never print `AWS_*` variables.
 
 Two failure modes are reported separately, because they need different fixes: the `aws` CLI is not installed, or it is installed and the identity call failed (no profile, expired session, wrong region, blocked network). The CLI's own error text names which. Report the skip line, record Phase 5b as `skipped` in the coverage record (the audit is then `partial`), then move on — an account nobody could reach is never reported as clean.
 
@@ -397,15 +415,21 @@ Find inbound endpoints that accept anything.
 
 **Webhook routes:** Use Grep to find files containing webhook/hook/callback route patterns. For each file, check whether it also contains signature verification (signature, hmac, verify, digest, x-hub-signature, stripe-signature, svix). Files with webhook routes but NO signature verification are findings.
 
+**Webhook depth.** A signature call in the file is not yet a verified handler. For each receiver, check:
+1. The signature is computed over the raw request bytes, not over a parsed and re-serialized body.
+2. A timestamp header is checked within a timestamp tolerance, so a captured request cannot be replayed later.
+3. Event IDs are deduplicated before any side effect, so a retried or replayed delivery does not act twice.
+4. The event is bound to the tenant or account it claims — the handler looks the target up through the verified sender, not through an ID inside the payload.
+
 **TLS verification disabled:** Use Grep to search for patterns like `verify.*false`, `VERIFY_NONE`, `InsecureSkipVerify`, `NODE_TLS_REJECT_UNAUTHORIZED.*0`.
 
 **OAuth scope analysis:** Use Grep to find OAuth configurations and check for overly broad scopes.
 
 **Verification approach (code-tracing only — NO live requests):** For webhook findings, trace the handler code to determine if signature verification exists anywhere in the middleware chain (parent router, middleware stack, API gateway config). Do NOT make actual HTTP requests to webhook endpoints.
 
-**Severity:** CRITICAL for webhooks without any signature verification. HIGH for TLS verification disabled in prod code / overly broad OAuth scopes. MEDIUM for undocumented outbound data flows to third parties.
+**Severity:** CRITICAL for webhooks without any signature verification. HIGH for TLS verification disabled in prod code / overly broad OAuth scopes. A replayable or forgeable event that moves money, ownership or access is HIGH, whichever of the four checks fails. MEDIUM for undocumented outbound data flows to third parties.
 
-**FP rules:** TLS disabled in test code excluded. Internal service-to-service webhooks on private networks = MEDIUM max. Webhook endpoints behind an API gateway that verifies the signature before the request reaches the app are NOT findings — but require evidence.
+**FP rules:** TLS disabled in test code excluded. Internal service-to-service webhooks on private networks = MEDIUM max only with evidence that the network control exists (a security group, network policy or ingress rule in the repo that keeps the route off the internet) — a comment or a hostname is not that evidence. Webhook endpoints behind an API gateway that verifies the signature before the request reaches the app are NOT findings — but require evidence.
 
 ### Phase 7: LLM, Agentic & MCP Security
 
@@ -447,7 +471,7 @@ Map findings to the OWASP Top 10 for LLM Applications and the OWASP Top 10 for A
 
 **Severity:** CRITICAL for user input in system prompts / unsanitized LLM output rendered as HTML / eval of LLM output / untrusted content (tool result, retrieved document, memory) able to trigger a consequential tool with another user's or a service's authority / MCP token passthrough or audience not validated. HIGH for missing tool call validation / exposed AI API keys / memory one user can poison for another / confused-deputy consent / MCP server reachable beyond loopback without auth. MEDIUM for unbounded LLM calls or delegation / RAG without input validation / OAuth metadata fetched without destination limits.
 
-**Harness surface.** Read the agent harness configuration the repo ships (`.claude/settings*.json` hooks and permissions, `.mcp.json`, hook scripts):
+**Harness surface.** Read the agent harness configuration the repo ships (`.claude/settings*.json` hooks and permissions, hook scripts, and every MCP config file listed under Phase 3's agent-tooling pins):
 - A hook command that interpolates tool input into a shell string — `$(...)` around a payload field, or an unquoted field from the tool input in the command text → HIGH: the tool input is attacker-reachable through any file or page the agent reads.
 - A literal secret in an MCP server's `env` block → CRITICAL; an env var reference is fine (`"${GITHUB_TOKEN}"`, a value read from the shell environment).
 - A wildcard `allow` (`Bash(*)`, `*`) is reported with its compensating control — a deny list, a PreToolUse hook, a sandbox — and is a finding only when no compensating control exists.
@@ -461,22 +485,18 @@ No blanket findings: the presence of an `env` block, a pin, `Bash(*)` or a track
 
 Scan installed Claude Code skills for malicious patterns. 36% of published skills have security flaws, 13.4% are outright malicious (Snyk ToxicSkills research).
 
-**Tier 1 — repo-local (automatic):** Scan the repo's local skills directory for suspicious patterns:
-
-```bash
-ls -la .claude/skills/ 2>/dev/null
-```
-
-Use Grep to search all local skill SKILL.md files for suspicious patterns:
+**Tier 1 — repo-local (automatic):** The skill roots are `.claude/skills`, `.agents/skills`, `.github/skills`, `.cursor/skills`, `.kiro/skills`, `.claude/plugins`, and any other `skills/` tree in the repo. Use Grep on every file under those roots, not only `SKILL.md`: `bin/*.sh` and other scripts, the commands in `hooks:` frontmatter, and `*.py` / `*.js` helpers. Search for:
 - `curl`, `wget`, `fetch`, `http`, `exfiltrat` (network exfiltration)
 - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `env.`, `process.env` (credential access)
 - `IGNORE PREVIOUS`, `system override`, `disregard`, `forget your instructions` (prompt injection)
+
+For each script or hook that fetches or runs something, answer the trust-path questions: Who controls the download destination — can a repo file, an env var or tool input redirect it? Are fetched versions pinned, or does it take whatever is served? Does a hook interpolate tool input into a shell string? Does a network call carry the inherited environment, so every token in the user's shell rides along?
 
 **Tier 2 — global skills (requires permission):** Before scanning globally installed skills or user settings, use AskUserQuestion:
 "Phase 8 can scan your globally installed AI coding agent skills and hooks for malicious patterns. This reads files outside the repo. Want to include this?"
 Options: A) Yes — scan global skills too  B) No — repo-local only
 
-If approved, run the same Grep patterns on globally installed skill files and check hooks in user settings.
+If approved, run the same Grep patterns and trust-path questions over the same roots under `$HOME`, plus `${COPILOT_HOME:-~/.copilot}/skills`, and check hooks in user settings.
 
 **Severity:** CRITICAL for credential exfiltration attempts / prompt injection in skill files. HIGH for suspicious network calls / overly broad tool permissions. MEDIUM for skills from unverified sources without review.
 
@@ -592,13 +612,15 @@ Before producing findings, run every candidate through this filter.
 - 8: Clear vulnerability pattern with known exploitation methods. Minimum bar.
 - Below 8: Do not report.
 
+The 8/10 score is a floor, not proof. A daily finding must also name four things, each filled in its finding: (1) the attacker-controlled entrypoint — the request, file, event or message an attacker can actually send; (2) the boundary crossed — user to user, tenant to tenant, unauthenticated to authenticated, untrusted content to tool authority; (3) the in-scope impact — what that attacker gains in the code this audit read, not in code outside it or a future change; (4) the controls checked — the middleware, config, framework default or gateway you looked at, and why each fails to stop it. A daily candidate missing any of the four is dropped; in comprehensive mode it stays as `TENTATIVE`, with the missing element named.
+
 **Comprehensive mode (`/cso --comprehensive`):** 2/10 confidence gate. Filter true noise only (test fixtures, documentation, placeholders) but include anything that MIGHT be a real issue. Flag these as `TENTATIVE` to distinguish from confirmed findings.
 
 **Hard exclusions — automatically discard findings matching these:**
 
 1. Denial of Service (DOS), resource exhaustion, or rate limiting issues — **EXCEPTION:** LLM cost/spend amplification findings from Phase 7 (unbounded LLM calls or delegation, missing cost caps) are NOT DoS — they are financial risk and must NOT be auto-discarded under this rule. **EXCEPTION:** an amplification an unauthenticated attacker can trigger with a concrete path — one small request that causes unbounded work (decompression bomb, unbounded fan-out, ReDoS on a user string) — is kept; plain volume flooding and missing rate limits are still discarded.
 2. Secrets or credentials stored on disk if otherwise secured (encrypted, permissioned)
-3. Memory consumption, CPU exhaustion, or file descriptor leaks
+3. Memory consumption, CPU exhaustion, or file descriptor leaks — defers to the amplification exception in exclusion 1: a decompression bomb, unbounded fan-out or ReDoS an unauthenticated attacker can trigger is kept
 4. Input validation concerns on non-security-critical fields without proven impact
 5. GitHub Action workflow issues unless clearly triggerable via untrusted input — **EXCEPTION:** Never auto-discard CI/CD pipeline findings from Phase 4 (unpinned actions, `pull_request_target`, script injection, secrets exposure) when `--infra` is active or when Phase 4 produced findings. Phase 4 exists specifically to surface these.
 6. Missing hardening measures — flag concrete vulnerabilities, not absent best practices. **EXCEPTION:** Unpinned third-party actions and missing CODEOWNERS on workflow files ARE concrete risks, not merely "missing hardening" — do not discard Phase 4 findings under this rule. **EXCEPTION:** Phase 5b reports the observed state of a live account, not a checklist gap. A region running workloads with no GuardDuty detector, Security Hub off, EBS default encryption off, no account-level public access block, or a static secret unchanged for 90 days is a measured configuration of real assets — do not discard Phase 5b findings under this rule.
@@ -607,14 +629,14 @@ Before producing findings, run every candidate through this filter.
 9. Memory safety issues in memory-safe languages (Rust, Go, Java, C#)
 10. Files that are only unit tests or test fixtures AND not imported by non-test code
 11. Log spoofing — outputting unsanitized input to logs is not a vulnerability
-12. SSRF where attacker only controls the path, not the host or protocol
+12. SSRF where attacker only controls the path, not the host or protocol — excluded only when the reachable host exposes nothing beyond what the caller can already reach; a path on an internal or metadata host is A01 (`/latest/meta-data/`, an internal admin API)
 13. A user's own content in the user-message position of their own AI conversation (NOT prompt injection) — does not extend to tool results, retrieved documents, memory, other users' content or agent-to-agent messages
 14. Regex complexity in code that does not process untrusted input (ReDoS on user strings IS real)
 15. Security concerns in documentation files (*.md) — **EXCEPTION:** SKILL.md files are NOT documentation. They are executable prompt code (skill definitions) that control AI agent behavior. Findings from Phase 8 (Skill Supply Chain) in SKILL.md files must NEVER be excluded under this rule.
 16. Missing audit logs — absence of logging is not a vulnerability — **EXCEPTION:** the Phase 5b CloudTrail check asks whether a live account has tamper-evident coverage of its own control plane (multi-region, log file validation on, actually logging), which is the account's forensic record of an intrusion, not application logging. Do not discard it under this rule.
 17. Insecure randomness in non-security contexts (e.g., UI element IDs)
 18. Git history secrets in commits no remote ever held (the Phase 2 remote exposure check prints `EXPOSURE: local only`; `unknown` is never excluded) — a tag that exists only locally is not exposure. Once pushed, a secret is a finding even if the same PR removed it
-19. Dependency CVEs with CVSS < 4.0 and no known exploit
+19. Dependency CVEs with CVSS < 4.0 and no known exploit, and the vulnerable function is unreachable (active verification rule 5)
 20. Docker issues in files named `Dockerfile.dev` or `Dockerfile.local` unless referenced in prod deploy configs
 21. CI/CD findings on archived or disabled workflows
 22. Nothing is excluded for being part of vibestack — its own skill files go through Phase 8 like any other skill, and a finding there needs the same concrete path as anywhere else
@@ -656,19 +678,22 @@ When a finding is VERIFIED, search the entire codebase for the same vulnerabilit
 1. Extract the core vulnerability pattern
 2. Use the Grep tool to search for the same pattern across all relevant files
 3. Report variants as separate findings linked to the original: "Variant of Finding #N"
+4. The parent finding's severity is the worst variant's: one HIGH variant of a MEDIUM finding makes the parent HIGH.
 
 **Parallel Finding Verification:**
 
-For each candidate finding, launch an independent verification sub-task using the Agent tool. The verifier has fresh context and cannot see the initial scan's reasoning — only the finding itself and the FP filtering rules.
+Verify candidates with independent sub-tasks using the Agent tool: at most 3 verifier agents per run, each taking a batch of candidates. The verifier has fresh context and cannot see the initial scan's reasoning.
 
 {{include lib/snippets/foreground-dispatch.md}}
 
-Prompt each verifier with:
-- The file path and line number ONLY (avoid anchoring)
+Prompt each verifier with, per candidate:
+- The file path and line number, plus a one-line invariant the code must hold ("a request for a tenant A object must check tenant A ownership") — never the finding title or the scan's reasoning, which anchor the verdict
 - The full FP filtering rules
-- "Read the code at this location. Assess independently: is there a security vulnerability here? Score 1-10. Below 8 = explain why it's not real."
+- "Read the code at this location and check the callers, middleware, config and existing mitigations that could enforce the invariant elsewhere. Does the invariant fail on a path an attacker can reach? Score 1-10. Below 8 = explain why it's not real."
 
-Launch all verifiers in parallel. Discard findings where the verifier scores below 8 (daily mode) or below 2 (comprehensive mode).
+Launch the verifiers in parallel. Discard findings where the verifier scores below 8 (daily mode) or below 2 (comprehensive mode). When a verifier scores a finding that survives lower than the scan did, or names a control the scan did not weigh, record its reason in the finding's `verifier_dissent` field (`null` when it agreed).
+
+As each candidate passes verification, print one line at once — `FINDING <n> [SEV] file:line — title` — so a session that is cut off later has not lost it.
 
 Phase 5b findings have no file and no line. Verify each by re-running its own read-only `aws` call and confirming the observed value, per "Phase 12 verification for this phase" in Phase 5b. The parallel launch and the discard threshold are the same.
 
@@ -683,6 +708,8 @@ AUDIT STATUS: complete | partial | not assessed
 Scope:   <mode>, <scope flag or full>, <diff or whole repo>
 Gaps:    <phase> — <what could not be done and why>   (one line per gap; "none" when complete)
 ```
+
+A gap caused by a failed command names it: `<command> exited <rc>: <stderr tail, redacted>`. Retry a failing command at most two retries before recording the gap; "tool failed" with no command, status and error text is not a gap line.
 
 - `complete` — every phase the mode selected ran with its primary method.
 - `partial` — at least one selected phase was skipped or degraded: an audit tool missing for an ecosystem with no fallback lookup, WebSearch unavailable, AWS detected but credentials unusable, a scope the run could not read, the run stopped early. Name each one.
@@ -707,39 +734,9 @@ SECURITY FINDINGS
 
 ## Confidence Calibration
 
-Every finding MUST include a confidence score (1-10):
+{{include lib/snippets/confidence-calibration.md}}
 
-| Score | Meaning | Display rule |
-|-------|---------|-------------|
-| 9-10 | Verified by reading specific code. Concrete bug or exploit demonstrated. | Show normally |
-| 7-8 | High confidence pattern match. Very likely correct. | Show normally |
-| 5-6 | Moderate. Could be a false positive. | Show with caveat: "Medium confidence, verify this is actually an issue" |
-| 3-4 | Low confidence. Pattern is suspicious but may be fine. | Suppress from main report. Include in appendix only. |
-| 1-2 | Speculation. | Only report if severity would be P0. |
-
-**Finding format:**
-
-\`[SEVERITY] (confidence: N/10) file:line — description\`
-
-Example:
-\`[P1] (confidence: 9/10) app/models/user.rb:42 — SQL injection via string interpolation in where clause\`
-\`[P2] (confidence: 5/10) app/controllers/api/v1/users_controller.rb:18 — Possible N+1 query, verify with production logs\`
-
-### Pre-emit verification gate (kills the "field doesn't exist" FP class)
-
-Before any finding is promoted to the report, the gate requires:
-
-1. **Quote the specific code line that motivates the finding** — file:line plus
-   the verbatim text of the line(s) that triggered it. If the finding is "field
-   X doesn't exist on model Y", quote the lines of class Y where the field
-   would live. If "dict.get() might return None", quote the dict initialization.
-   If "race condition between A and B", quote both A and B.
-
-2. **If you cannot quote the motivating line(s), the finding is unverified.**
-   Force its confidence to 4-5 (suppressed from the main report). It still goes
-   into the appendix so reviewers can audit calibration, but the user does NOT
-   see it in the critical-pass output. Do not work around this by inventing
-   speculative confidence 7+ — that defeats the gate.
+In this report P0 reads as CRITICAL, P1 as HIGH, P2 and P3 as MEDIUM, and the Phase 12 gate (8/10 daily, 2/10 comprehensive) still decides what is reported; this table sets the display and the unverified-finding rule.
 
 **Framework-meta nudge:** When the symbol is generated by a framework
 metaclass, descriptor, ORM Meta inner-class, or migration history (Django
@@ -767,8 +764,12 @@ For each finding:
 * **Phase:** N — [Phase Name]
 * **Category:** [Secrets | Supply Chain | CI/CD | Infrastructure | AWS Posture | Integrations | LLM Security | Skill Supply Chain | OWASP A01:2025-A10:2025 | OWASP API1:2023-API10:2023]
 * **Description:** [What's wrong]
+* **Attacker-controlled entrypoint:** [The request, file, event or message the attacker sends]
+* **Boundary crossed:** [Which trust boundary — user, tenant, auth level, content to tool]
 * **Exploit scenario:** [Step-by-step attack path]
-* **Impact:** [What an attacker gains]
+* **In-scope impact:** [What an attacker gains, in the code this audit read]
+* **Controls checked:** [Each control examined and why it does not stop this]
+* **Verifier dissent:** [The verifier's objection, or none]
 * **Recommendation:** [Specific fix with example]
 ```
 
@@ -791,7 +792,7 @@ A finding's absence from this run is not evidence that it was fixed. Classify ev
 - **Persistent** — matched in this run.
 - **Resolved** — not matched, AND all of these hold:
   1. its phase is in this run's `phases_run` with coverage `ran` (not `partial`, `skipped` or `not_applicable`);
-  2. this run's scope covered its location — under `--diff`, only if its file changed on this branch; a `--scope <domain>` run, only if the finding belongs to that domain;
+  2. this run's scope covered its location — under `--diff`, only if its file changed on this branch; a `--scope <domain>` run, only if the finding belongs to that domain; under `--paths`, only if its file is inside a listed path;
   3. this run's confidence gate could have reported it — a daily run cannot resolve a prior `TENTATIVE` finding it would have filtered anyway;
   4. you re-read the original location and can state the new evidence: quote the code that now stands where the vulnerable line was, show the file or code path no longer exists, or (Phase 5b) show the re-run `aws` call returns the fixed value.
 - **Not re-assessed** — not matched and not resolved. It stays open. List it under `trend.carried_forward` with its original fields and `"trend_state": "not re-assessed"`, so a later run that does cover it can resolve or confirm it.
@@ -827,23 +828,37 @@ When `Not re-assessed` is above zero, follow the trend line with: "Partial compa
 
 ### Phase 14: Save Report
 
+**Report location and permissions.** The report lists unfixed findings with their exploit paths, so it stays private and out of commits. Create the directory and the file before writing:
 ```bash
-mkdir -p .vibestack/security-reports
+umask 077
+mkdir -p .vibestack/security-reports && chmod 700 .vibestack/security-reports \
+  || echo "PERSISTENCE_FAILED: report not saved (cannot create .vibestack/security-reports)"
+if ! git check-ignore -q .vibestack/security-reports/report.json 2>/dev/null; then
+  EXCLUDE="$(git rev-parse --git-path info/exclude 2>/dev/null)" \
+    && mkdir -p "$(dirname "$EXCLUDE")" && printf '.vibestack/\n' >> "$EXCLUDE" \
+    && echo "IGNORE: added .vibestack/ to $EXCLUDE" \
+    || echo "IGNORE: nothing ignores .vibestack/ and info/exclude could not be updated"
+fi
+REPORT=".vibestack/security-reports/$(date +%Y-%m-%d-%H%M%S).json"
+( : > "$REPORT" && chmod 600 "$REPORT" ) && echo "REPORT: $REPORT" \
+  || echo "PERSISTENCE_FAILED: report not saved (cannot create $REPORT)"
 ```
+`.git/info/exclude` is local and untracked, so the ignore rule adds nothing to the diff. Write the JSON into the printed `REPORT:` path with the Write tool, then run `chmod 600 '<REPORT>' && [ -s '<REPORT>' ] && echo SAVED` with that path. If any step prints `PERSISTENCE_FAILED`, the write fails, the check does not print `SAVED`, or the secret scan below cannot run or blocks, print `PERSISTENCE_FAILED: report not saved` with the reason and never say the report was saved.
 
 **Secret scan before any report sink.** Before writing or publishing the audit report, scan the exact report bytes for high-confidence secrets so the audit never itself leaks a credential it found.
 {{include lib/snippets/secret-scan-patterns.md}}
 
-Write findings to `.vibestack/security-reports/{date}-{HHMMSS}.json` using this schema:
+Write findings to that `.vibestack/security-reports/{date}-{HHMMSS}.json` path using this schema:
 
 ```json
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "date": "ISO-8601-datetime",
   "status": "complete | partial | not assessed",
   "mode": "daily | comprehensive",
   "scope": "full | infra | code | skills | supply-chain | owasp | scope:<domain> | recheck",
   "diff_mode": false,
+  "paths": [],
   "phases_run": [0, 1, 2, 3, 4, 5, "5b", 6, 7, 8, 9, 10, 11, 12, 13, 14],
   "coverage": [
     { "phase": 3, "state": "ran | partial | skipped | not_applicable", "reason": "e.g. pip-audit not installed; Python deps unchecked" }
@@ -866,8 +881,12 @@ Write findings to `.vibestack/security-reports/{date}-{HHMMSS}.json` using this 
     "line": 0,
     "commit": "...",
     "description": "...",
+    "entrypoint": "...",
+    "boundary": "...",
     "exploit_scenario": "...",
     "impact": "...",
+    "controls_checked": "...",
+    "verifier_dissent": null,
     "recommendation": "...",
     "playbook": "...",
     "verification": "independently verified | self-verified"
@@ -898,7 +917,9 @@ Write findings to `.vibestack/security-reports/{date}-{HHMMSS}.json` using this 
 
 Phase identifiers are integers except `"5b"`, which is a string in both `phases_run` and a finding's `phase` field. Include `"5b"` in `phases_run` only when Phase 5b actually ran (AWS detected, credentials available, and — under `--diff` — AWS configuration changed on the branch); omit it whenever the phase was skipped. An AWS Posture finding fills `file` with the resource ARN, `<account-id>:<region>`, or `<account-id>:global`, per the three forms in Phase 5b, and leaves `line` at `0`; `commit` is `null` for these.
 
-If `.vibestack/` is not in `.gitignore`, note it in findings — security reports should stay local.
+`paths` holds the `--paths` list, empty for a whole-repo run. `impact` is the in-scope impact; `entrypoint`, `boundary` and `controls_checked` are the other three elements of the Phase 12 bar.
+
+A /cso learning records audit method or project architecture — where auth lives, which framework escape hatch is in use. It never holds a credential, a redacted excerpt, or an unfixed finding's location or exploit path; those stay in the report.
 
 {{include lib/snippets/capture-learnings.md}}
 ## Important Rules
@@ -910,6 +931,7 @@ If `.vibestack/` is not in `.gitignore`, note it in findings — security report
 - **Confidence gate is absolute.** Daily mode: below 8/10 = do not report. Period.
 - **Honest status.** Every report states complete, partial or not assessed, and names what was not examined. A finding is resolved only by new evidence, never by its absence.
 - **Never copy a secret.** No raw secret-bearing patches, files or scanner output in the session; findings and reports carry redacted excerpts only.
+- **Never print the environment.** Check whether a variable is set with `[ -n "${NAME:-}" ]`; never run `env`, `printenv`, `set` or `export` with no arguments, or `set -x`, and never `echo` a credential variable. Pass a child process the variable's name or a file path, never the value.
 - **Read-only.** Never modify code or cloud resources, and never rewrite git history. Phase 5b only calls `get`/`list`/`describe`. Produce findings and recommendations only.
 - **Assume competent attackers.** Security through obscurity doesn't work.
 - **Check the obvious first.** Hardcoded credentials, missing auth, SQL injection are still the top real-world vectors.
