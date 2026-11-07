@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.55.25 — 2026-11-07
+
+### Changed
+
+- **`/cso` reads every runtime's skills and MCP configs.** Phase 8 scans the
+  skill roots of Claude Code, Codex, Copilot, Cursor and Kiro and every file
+  under them, not only `SKILL.md`, and asks who controls download
+  destinations, whether hooks interpolate tool input, and what environment
+  reaches network calls. `/cso` and `/mcp-review` read each runtime's MCP
+  client config through `npx`/`uvx`/`pipx`/`docker` wrappers, flag floating
+  and ranged pins, and list a launch spec they cannot parse instead of dropping
+  it.
+- **A daily `/cso` finding meets a supported bar.** Besides the 8/10 floor it
+  names the attacker-controlled entrypoint, the boundary crossed, the in-scope
+  impact and the controls checked; AWS posture findings fill those from the
+  account. Verifiers get the location and an invariant, are capped at three and
+  record dissent, and exclusions 3, 12 and 19 no longer contradict the
+  amplification and reachability rules.
+- **Scans stay on the host's side.** Dependency scanners read lockfiles only and
+  are run as their own binaries, optional scanners never update rules or
+  databases, environment variables are checked by name, webhooks get four
+  checks, `--paths` narrows the audit, and the saved report is private and kept
+  out of git.
+
 ## 1.55.24 — 2026-11-07
 
 ### Changed
