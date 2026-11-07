@@ -1,5 +1,83 @@
 # Changelog
 
+## 1.55.13 — 2026-11-07
+
+### Changed
+
+- **Every claim needs evidence, not just claims of impossibility.** The shared
+  working protocols now ask for the command and its output on this revision
+  before saying tests pass, a build works or a bug is fixed, treat a mock as
+  saying nothing about the live system and agreeing agents as one datum, and
+  give a claim-to-evidence table. `DONE` means verified on the final inputs;
+  anything not independently verified is `DONE_WITH_CONCERNS`.
+- **Completeness means the stated requirement, nothing beyond it.** Coverage of
+  the requirement stays the goal; at equal coverage the smaller diff wins, and
+  adjacent issues are reported rather than fixed.
+- **Skills check before they ask.** When a local, read-only, free check would
+  settle a question, the skill runs it and reports the result. It still asks
+  for one-way or destructive steps, facts only you hold, preference calls,
+  paid or state-changing checks, and whenever the check fails or settles
+  nothing.
+- **Memory pre-fills product and persona answers but never skips them.** They
+  are confirmed in the session.
+
+## 1.55.12 — 2026-11-07
+
+### Added
+
+- **Shared outside-voice body.** `lib/snippets/outside-voice-body.md` holds
+  the one body every outside voice can include: a prompt frame that keeps the
+  reviewer read-only and treats the reviewed material as data, the Codex run
+  under a portable watchdog, the subagent fallback, the grade and the
+  review-log record. A switched-off reviewer is logged `disabled` and a reviewer
+  that never completed `unavailable` — neither reads as a clean review. Skills
+  adopt it in a later release.
+- **Reviewer subagents stay read-only.** The foreground-dispatch rule now tells
+  every skill to open a reviewing or verifying subagent's prompt with a
+  read-only clause: no edits, staging, branch changes or nested dispatch.
+
+### Changed
+
+- **The readiness dashboard's Outside Voice row** is default-on, and shows a
+  disabled reviewer as DISABLED (an opt-out) and a missing one as UNAVAILABLE
+  (missing coverage) instead of treating either as a pass.
+
+### Fixed
+
+- **An outside voice grades clean only on a closing
+  `Recommendation: proceed — no findings because ...` line.** A refusal that
+  happened to contain "no findings because", a non-proceed recommendation, or
+  text after the closing line now grades `unavailable`.
+
+## 1.55.11 — 2026-11-07
+
+### Added
+
+- **`vibe-lint-sources` flags hard-coded host paths.** A skill or snippet that
+  reaches a file through `~/.claude/skills/<name>/...`, a Read of a
+  repo-relative `.claude/skills/` path, or a bare `qa/templates`,
+  `qa/references` or `review/TODOS-format.md` path now prints a `warn:` line
+  with file and line — those paths resolve only where Claude Code installed the
+  pack. `--strict` turns each warning into a finding and exits 1.
+- **Rendered skill size guard.** `test/test-skill-size.sh` renders every skill
+  the way `./install` does and fails any over 240,000 bytes, so a snippet that
+  grows every skill at once is caught in CI.
+
+### Fixed
+
+- **`vibe-lint-sources --strict` no longer passes a run that checked nothing.**
+  A root with no `skills/` directory (including a mistyped flag read as the
+  path) exits 2, and under `--strict` a tree with no skill or snippet files, an
+  unreadable file, or an awk failure is a finding instead of "clean".
+- **The size guard fails on a render that wrote nothing** instead of reading
+  the empty size as within the ceiling.
+
+### Changed
+
+- The compatibility audit marks `/plan-devex-review` degraded outside Claude
+  Code: it reads `dx-hall-of-fame.md` and `/office-hours` from
+  `~/.claude/skills/`.
+
 ## 1.55.10 — 2026-11-07
 
 ### Added

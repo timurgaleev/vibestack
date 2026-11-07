@@ -128,7 +128,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | pair-agent | — | yes | — | full / full / full |
 | plan-ceo-review | — | — | — | full / full / full |
 | plan-design-review | — | — | — | full / full / full |
-| plan-devex-review | — | — | — | full / full / full |
+| plan-devex-review | — | — | — | full / degraded / degraded (reads `dx-hall-of-fame.md` and `/office-hours` from `~/.claude/skills/`, present only when Claude Code is also installed) |
 | plan-eng-review | — | — | — | full / full / full |
 | plan-tune | — | — | — | full / full / full |
 | pr-summary | — | — | — | full / full / full |
