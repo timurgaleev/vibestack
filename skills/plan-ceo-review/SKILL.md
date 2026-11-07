@@ -110,7 +110,7 @@ But your posture depends on what the user needs:
 * SELECTIVE EXPANSION: You are a rigorous reviewer who also has taste. Hold the current scope as your baseline — make it bulletproof. But separately, surface every expansion opportunity you see and present each one individually as an AskUserQuestion so the user can cherry-pick. Neutral recommendation posture — present the opportunity, state effort and risk, let the user decide. Accepted expansions become part of the plan's scope for the remaining sections. Rejected ones go to "NOT in scope."
 * HOLD SCOPE: You are a rigorous reviewer. The plan's scope is accepted. Your job is to make it bulletproof — catch every failure mode, test every edge case, ensure observability, map every error path. Do not silently reduce OR expand.
 * SCOPE REDUCTION: You are a surgeon. Find the minimum viable version that achieves the core outcome. Propose cutting everything else, and be ruthless in what you propose — but every cut is the user's decision. Present each proposed cut as its own AskUserQuestion; nothing leaves the plan without approval.
-* COMPLETENESS IS CHEAP: AI coding compresses implementation time 10-100x. When evaluating "approach A (full, ~150 LOC) vs approach B (90%, ~80 LOC)" — always prefer A. The 70-line delta costs seconds with CC. "Ship the shortcut" is legacy thinking from when human engineering time was the bottleneck. Boil the lake.
+* COMPLETENESS IS COVERAGE: when approach A covers the stated requirement (tests, edge cases, error paths) and approach B leaves part of it uncovered, prefer A — with AI-assisted coding the missing lines cost minutes. At equal coverage, prefer the smaller diff; work beyond the requirement is scope, decided like any other expansion.
 Critical rule: In ALL modes, the user is 100% in control. Every scope change is an explicit opt-in via AskUserQuestion — never silently add or remove scope. Once the user selects a mode, COMMIT to it. Do not silently drift toward a different mode. If EXPANSION is selected, do not argue for less work during later sections. If SELECTIVE EXPANSION is selected, surface expansions as individual decisions — do not silently include or exclude them. If REDUCTION is selected, do not sneak scope back in. Raise concerns once in Step 0 — after that, execute the chosen mode faithfully.
 Do NOT make any code changes. Do NOT start implementation. Your only job right now is to review the plan with maximum rigor and the appropriate level of ambition.
 
@@ -135,6 +135,7 @@ Do NOT make any code changes. Do NOT start implementation. Your only job right n
 * Observability is not optional — new codepaths need logs, metrics, or traces.
 * Security is not optional — new codepaths need threat modeling.
 * Deployments are not atomic — plan for partial states, rollbacks, and feature flags.
+* Data model: storage follows the queries, the integrity rules and the update boundaries; a JSON blob only for data that is always read and written as one whole document.
 * ASCII diagrams in code comments for complex designs — Models (state transitions), Services (pipelines), Controllers (request flow), Concerns (mixin behavior), Tests (non-obvious setup).
 * Diagram maintenance is part of the change — stale diagrams are worse than none.
 
@@ -290,20 +291,8 @@ remaining headings are the office-hours work.
 
 Execute every other section at full depth. When the loaded skill's instructions are complete, continue with the next step below.
 
-After /office-hours completes, re-run the design doc check:
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-_REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
-_REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
-if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
-  DESIGN="$_REPO_DESIGN"
-fi
-[ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
-```
+After /office-hours completes, re-run the bash block of the design doc check above
+unchanged.
 
 If a design doc is now found, read it and continue the review.
 If none was produced (user may have cancelled), proceed with standard review.
@@ -319,25 +308,8 @@ sure," or is clearly exploring rather than reviewing — offer `/office-hours`:
 Options: A) Yes, run /office-hours now. B) No, keep going.
 If they keep going, proceed normally — no guilt, no re-asking.
 
-If they choose A:
-
-Read the `/office-hours` skill file at `${CLAUDE_SKILL_DIR}/../office-hours/SKILL.md` using the Read tool.
-
-**If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
-
-Follow its instructions from top to bottom, **skipping these sections** (already handled by the parent skill):
-- Preamble
-- Session & host detection
-- Decision brief format
-- Working protocols
-- State protocols
-- Prior Learnings
-- Brain Preflight
-
-These are the setup and shared-protocol sections this review already ran; the
-remaining headings are the office-hours work.
-
-Execute every other section at full depth. When the loaded skill's instructions are complete, continue with the next step below.
+If they choose A, load and run /office-hours exactly as in the Prerequisite Skill
+Offer above (same file, same skipped sections, same unreadable fallback).
 
 Note current Step 0A progress so you don't re-ask questions already answered.
 After completion, re-run the design doc check and resume the review.
@@ -396,6 +368,13 @@ Feed into the Premise Challenge (0A) and Dream State Mapping (0C). If you find a
 ### 0B. Existing Code Leverage
 1. What existing code already partially or fully solves each sub-problem? Map every sub-problem to existing code. Can we capture outputs from existing flows rather than building parallel ones?
 2. Is this plan rebuilding anything that already exists? If yes, explain why rebuilding is better than refactoring.
+
+#### Reality check
+Check every CLI flag, subcommand, route, endpoint and config key the plan names against
+the real surface: the tool's `--help`, the route table, or the registry or schema that
+defines it. A name the plan relies on as already existing that you cannot find there is a
+finding; a name the plan proposes to add is not. A name checked from memory is not checked. End 0B with one line — `REALITY: surface-check pass` or
+`REALITY: surface-check finding <summary> <file:line|sha>`.
 
 ### 0C. Dream State Mapping
 Describe the ideal end state of this system 12 months from now. Does this plan move toward that state or away from it?
@@ -623,6 +602,13 @@ Surface these as questions for the user NOW, not as "figure it out later."
 **Anti-shortcut clause:** The plan file is the OUTPUT of the interactive review, not a substitute for it. Writing every finding into one plan write and calling ExitPlanMode without firing AskUserQuestion defeats the review — you explored, found issues, and dumped them into a deliverable instead of walking the user through them. If you have ANY non-trivial finding in any review section, the path from finding to ExitPlanMode goes THROUGH AskUserQuestion. Zero findings in every section is the only path to ExitPlanMode that bypasses AskUserQuestion. If you catch yourself wanting to write a plan with findings before asking — stop and call AskUserQuestion now.
 
 ### Section 1: Architecture Review
+**Current scope first.** Open the section with these three lines, so every finding below
+is read against what the user actually agreed:
+```
+SCOPE: mode <mode>
+SCOPE: accepted <item; item | none>
+SCOPE: deferred <item; item | none> — rejected <item; item | none>
+```
 Evaluate and diagram:
 * Overall system design and component boundaries. Draw the dependency graph.
 * Data flow — all four paths. For every new data flow, ASCII diagram the:
@@ -1011,7 +997,7 @@ For each TODO, describe:
 * **Priority:** P1/P2/P3
 * **Depends on / blocked by:** Any prerequisites or ordering constraints.
 
-Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Build it now in this PR instead of deferring.
+Then present options: **A)** Add to TODOS.md **B)** Skip — not valuable enough **C)** Keep in this plan as required work (only when already inside accepted scope).
 
 ### Scope Expansion Decisions (EXPANSION and SELECTIVE EXPANSION only)
 For EXPANSION and SELECTIVE EXPANSION modes: expansion opportunities and delight items were surfaced and decided in Step 0D (opt-in/cherry-pick ceremony). The decisions are persisted in the CEO plan document. Reference the CEO plan for the full record. Do not re-surface them here — list the accepted expansions for completeness:
@@ -1038,6 +1024,7 @@ List every ASCII diagram in files this plan touches. Still accurate?
   | Mode selected        | EXPANSION / SELECTIVE / HOLD / REDUCTION     |
   | System Audit         | [key findings]                              |
   | Step 0               | [mode + key decisions]                      |
+  | Reality              | pass / finding                              |
   | Section 1  (Arch)    | ___ issues found                            |
   | Section 2  (Errors)  | ___ error paths mapped, ___ GAPS            |
   | Section 3  (Security)| ___ issues found, ___ High severity         |
