@@ -176,6 +176,8 @@ echo "canary: alert after confirm"
 has    "notify only once confirmed on two checks"        'confirmed on two consecutive checks'
 has    "first occurrence is pending"                     'A first occurrence is **pending**'
 hasnt  "no immediate notification"                       'immediately notify'
+has    "a pending finding at the deadline gets a confirming round" 'one more confirming round'
+has    "--quick reports its single pass as findings"     'Under `--quick` there is no second check'
 
 echo "canary: cadence"
 has    "start and deadline recorded"                     'record the start time and the deadline'

@@ -318,7 +318,7 @@ foreground `sleep` is blocked on some hosts, so run the `sleep` as a background 
 whose timeout is a few seconds longer, and start the next round when it exits.
 Rounds never overlap: a round that took 60 seconds or more is followed straight away by
 the next. Once the deadline has passed, finish the current round and stop; never start a
-round after it. The report gives the cadence actually achieved, not the nominal one.
+round after it, except the one confirming round a pending CRITICAL or HIGH finding gets. The report gives the cadence actually achieved, not the nominal one.
 
 After each check, compare results against `baseline.json` (or `pre-monitor.json`):
 
@@ -337,7 +337,10 @@ After each check, compare results against `baseline.json` (or `pre-monitor.json`
 **Notify once confirmed.** A CRITICAL or HIGH finding reaches the user only when it is
 confirmed on two consecutive checks. A first occurrence is **pending**: record its time,
 page and evidence, say nothing, and run the next check; if that check clears it, it goes
-under `observations`. On confirmation, notify via AskUserQuestion:
+under `observations`. A finding still pending at the deadline gets one more confirming round,
+so a short run can still alert. Under `--quick` there is no second check:
+report each CRITICAL or HIGH finding of the single pass as a finding and set the status
+from it. On confirmation, notify via AskUserQuestion:
 
 ```
 CANARY ALERT
