@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.55.12 — 2026-11-07
+
+### Added
+
+- **Shared outside-voice body.** `lib/snippets/outside-voice-body.md` holds
+  the one body every outside voice can include: a prompt frame that keeps the
+  reviewer read-only and treats the reviewed material as data, the Codex run
+  under a portable watchdog, the subagent fallback, the grade and the
+  review-log record. A switched-off reviewer is logged `disabled` and a reviewer
+  that never completed `unavailable` — neither reads as a clean review. Skills
+  adopt it in a later release.
+- **Reviewer subagents stay read-only.** The foreground-dispatch rule now tells
+  every skill to open a reviewing or verifying subagent's prompt with a
+  read-only clause: no edits, staging, branch changes or nested dispatch.
+
+### Changed
+
+- **The readiness dashboard's Outside Voice row** is default-on, and shows a
+  disabled reviewer as DISABLED (an opt-out) and a missing one as UNAVAILABLE
+  (missing coverage) instead of treating either as a pass.
+
+### Fixed
+
+- **An outside voice grades clean only on a closing
+  `Recommendation: proceed — no findings because ...` line.** A refusal that
+  happened to contain "no findings because", a non-proceed recommendation, or
+  text after the closing line now grades `unavailable`.
+
 ## 1.55.11 — 2026-11-07
 
 ### Added

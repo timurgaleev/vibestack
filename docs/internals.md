@@ -210,7 +210,11 @@ Plus the focused snippets: `capture-learnings`, `prior-learnings`,
 `release-after-merge` (the tag-and-release step `/ship` and `/land-and-deploy` share),
 `outside-voice-preflight` — the `CODEX_MODE` resolution the three plan reviews
 share: config switch, running-under-Codex probe, install and auth checks, and
-the branch bullets they act on.
+the branch bullets they act on. `outside-voice-body` is what follows it: the read-only
+prompt frame, the Codex run under a watchdog, the subagent fallback, the grade
+(`clean` only on a closing `Recommendation: proceed — no findings because ...`
+line) and the review-log record, where a disabled or unavailable reviewer is
+logged as such, never as clean.
 
 ## Preamble flags
 
@@ -260,6 +264,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-plan-tune-profile.sh` | `/plan-tune` profile writes land under `VIBESTACK_HOME` as numbers and nothing lands in the working directory |
 | `test-plan-review-contract.sh` | Contracts between `/autoplan` and the plan-review and `/office-hours` skills it loads from disk |
 | `test-plan-ceo-review.sh` | `/plan-ceo-review` keeps the user in control of scope and reports failed metric writes |
+| `test-outside-voice-body.sh` | The shared outside-voice body grades reviewer output fail-closed and logs it under the right review name |
 | `test-plan-eng-review-rubric.sh` | `/plan-eng-review` rules and the shared Implementation Tasks snippet |
 | `test-plan-design-review.sh` | `/plan-design-review` keeps plan text out of the shell, every fix behind approval, and the review log honest |
 | `test-autoplan-ledger.sh` | `/autoplan` audit records: well-formed tables and one voice record per review |
