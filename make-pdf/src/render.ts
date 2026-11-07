@@ -15,6 +15,7 @@ import { marked } from "marked";
 import { smartypants } from "./smartypants";
 import { printCss, type PrintCssOptions } from "./print-css";
 import { applyImageDirectives } from "./image-policy";
+import { neutralizeRemoteRefs } from "./offline-html";
 
 export interface RenderOptions {
   markdown: string;
@@ -48,6 +49,9 @@ export interface RenderOptions {
   // CSS page numbers are suppressed so the custom Chromium footer wins cleanly.
   pageNumbers?: boolean;
   footerTemplate?: string;
+
+  // Remote assets in raw HTML stay only when this is true (--allow-network).
+  allowNetwork?: boolean;
 }
 
 export interface RenderResult {
@@ -67,7 +71,7 @@ export interface RenderResult {
  */
 export function render(opts: RenderOptions): RenderResult {
   // 1. Markdown → HTML
-  const rawHtml = marked.parse(opts.markdown, { async: false }) as string;
+  const rawHtml = marked.parse(stripFrontmatter(opts.markdown), { async: false }) as string;
 
   // 1.5. Image directive suffixes: `![a](x.png){width=50%}` → data-vibestack-*
   // attributes. Before the sanitizer (which keeps data- attrs) so the brace
@@ -75,7 +79,7 @@ export function render(opts: RenderOptions): RenderResult {
   const directedHtml = applyImageDirectives(rawHtml);
 
   // 2. Sanitize
-  const cleanHtml = sanitizeUntrustedHtml(directedHtml);
+  const cleanHtml = sanitizeUntrustedHtml(directedHtml, { allowNetwork: opts.allowNetwork });
 
   // 3. Decode common entities so smartypants can match raw " and '.
   //    marked HTML-encodes quotes in text ("hello" → &quot;hello&quot;);
@@ -201,8 +205,13 @@ function decodeTypographicEntities(html: string): string {
  *   - on* event handler attributes (onclick, ONCLICK, etc.).
  *   - href/src with javascript: scheme.
  *   - <svg> tags with <script> inside them.
+ *   - unless allowNetwork is true: every remote reference the page would
+ *     fetch while printing (see offline-html.ts).
  */
-export function sanitizeUntrustedHtml(html: string): string {
+export function sanitizeUntrustedHtml(
+  html: string,
+  opts: { allowNetwork?: boolean } = {},
+): string {
   let s = html;
 
   // Elements to remove entirely (including content).
@@ -241,6 +250,8 @@ export function sanitizeUntrustedHtml(html: string): string {
 
   // style="url(javascript:..)" — strip javascript: inside style attrs.
   s = s.replace(/url\(\s*javascript:[^)]*\)/gi, "url(#)");
+
+  if (opts.allowNetwork !== true) s = neutralizeRemoteRefs(s);
 
   return s;
 }
@@ -381,15 +392,38 @@ function wrapChaptersByH1(html: string): string {
   }
   const chunks: string[] = [];
   const preamble = html.slice(0, matches[0]);
-  if (preamble.trim().length > 0) {
+  // A preamble that prints nothing (styles, comments) rides along with the
+  // first chapter; as its own section it would cost a blank page.
+  const ownChapter = stripNonRendering(preamble).trim().length > 0;
+  if (ownChapter) {
     chunks.push(`<section class="chapter">${preamble}</section>`);
   }
   for (let i = 0; i < matches.length; i++) {
-    const start = matches[i];
+    const start = i === 0 && !ownChapter ? 0 : matches[i];
     const end = i + 1 < matches.length ? matches[i + 1] : html.length;
     chunks.push(`<section class="chapter">${html.slice(start, end)}</section>`);
   }
   return chunks.join("\n");
+}
+
+function stripNonRendering(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "");
+}
+
+/**
+ * Drop a leading YAML frontmatter block. marked would print it as a rule and
+ * a setext heading, and as a preamble it would take a chapter page of its own.
+ * Only a block whose first line is a `key:` pair counts, so a document that
+ * opens with a horizontal rule keeps it.
+ */
+export function stripFrontmatter(markdown: string): string {
+  const m = markdown.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/);
+  if (!m) return markdown;
+  const firstLine = m[1].split(/\r?\n/).find((l) => l.trim() !== "" && !l.trimStart().startsWith("#"));
+  if (!firstLine || !/^[A-Za-z0-9_][\w .-]*:(?:\s|$)/.test(firstLine)) return markdown;
+  return markdown.slice(m[0].length);
 }
 
 function extractFirstHeading(html: string): string | null {
