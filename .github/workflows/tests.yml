@@ -98,6 +98,7 @@ jobs:
           - test-skill-usage.sh
           - test-compact-snapshot.sh
           - test-jira-adapter.sh
+          - test-aws-context.sh
     steps:
       - uses: actions/checkout@v4
 
