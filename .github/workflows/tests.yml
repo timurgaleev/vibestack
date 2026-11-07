@@ -69,6 +69,7 @@ jobs:
           - test-release-after-merge.sh
           - test-review-log.sh
           - test-test-value-bar.sh
+          - test-test-bootstrap.sh
           - test-shared-protocols.sh
           - test-codex-verdict.sh
           - test-context-provenance.sh
