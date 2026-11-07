@@ -121,6 +121,33 @@ else
   _pass "T2: cursor git rule routes planning and review to the skills"
 fi
 
+# K1-K3: routing rules both always-loaded skill tables must carry. K1 keeps a
+# one-check fix from being forced through the full debugging workflow; K2 gives
+# an approved plan an execution path when no plugin provides one; K3 keeps the
+# prose second opinion from running on a draft the pack's own pass already
+# rewrote.
+CURSOR_RULE="$ROOT/config/cursor/rules/skills.mdc"
+for f in "$RULE" "$CURSOR_RULE"; do
+  base="$(basename "$f")"
+  if grep -E '`/investigate`' "$f" | grep -qF 'unless one read-only check confirms the cause and a narrow fix'; then
+    _pass "K1: $base lets one confirming read-only check skip /investigate"
+  else
+    _fail "K1: $base debug row has no one-check exception"
+  fi
+  if grep -iE 'approved multi-step plan' "$f" | grep -qE 'plugin' \
+     && grep -iE 'approved multi-step plan' "$f" | grep -qE 'cold-start brief'; then
+    _pass "K2: $base routes plan execution to a plugin, else lane-by-lane briefs"
+  else
+    _fail "K2: $base has no plan-execution row with a plugin and a brief fallback"
+  fi
+  if grep -F 'Writing Editor' "$f" | grep -qF 'unslop' \
+     && grep -F 'Never delegate the same question twice' -A6 "$f" | grep -qF 'Writing Editor'; then
+    _pass "K3: $base routes a prose second opinion after unslop and never twice"
+  else
+    _fail "K3: $base lacks the Writing Editor row or its never-twice clause"
+  fi
+done
+
 # Self-tests: each mutation must turn the check red.
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/skills-routing.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

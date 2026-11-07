@@ -39,7 +39,10 @@ Lower context sensitivity tasks:
 
 For complex tasks requiring deep reasoning:
 1. Raise the reasoning effort: `/effort` in a session, `--effort <level>` at
-   launch, `effortLevel` in settings, or `modelSettings` per agent for subagents
+   launch, `CLAUDE_CODE_EFFORT_LEVEL`, or the per-model level saved under
+   `modelSettings` in settings; skills and subagents take `effort` in their
+   frontmatter. A top-level `effortLevel` in user settings no longer applies
+   to the newest models; they start at their own default until a level is saved
 2. Enable **Plan Mode** for structured approach
 3. "Rev the engine" with multiple critique rounds
 4. Use split role sub-agents for diverse analysis

@@ -236,7 +236,7 @@ your own completion.
 |-------------------|-----------------|
 | "fix the bug" | write a test that reproduces it → make it pass → lock it in as a regression test |
 | "refactor this" | the same test suite passes before and after |
-| "make it faster" | define a measured baseline and a target number → verify by measuring |
+| "make it faster" | name the limiter, measure a baseline and its run-to-run variation, set a target → verify by measuring; a gap inside the variation is no difference |
 | "clean it up" | meets the defined lint / typecheck / coverage bar |
 | "make it work" | ask the user what "done" looks like, first |
 
@@ -266,10 +266,14 @@ Report work with exactly one of these states:
 | verified locally | the defining check was run here and passed |
 | committed | in a local commit |
 | pushed | the remote ref moved: `HEAD` equals `git rev-parse origin/<branch>` |
+| applied | the change reached the target; the environment and version are named |
+| verified in target | the defining check ran against that environment, with its evidence |
 | blocked | cannot proceed; name the blocker |
 
 Say "fixed" only after the failing check was re-run and passed. Say "pushed"
-only after confirming the remote ref moved.
+only after confirming the remote ref moved. A passing plan, CI run, merge or
+release is not target acceptance; without access to the target, report
+`target: not performed (<dependency>)`.
 
 ### Root Cause Analysis
 
@@ -620,6 +624,11 @@ When the repo is indexed into memrain, ask its code graph before Grep:
 failed call — mean the graph cannot answer: say so, then fall back to Grep.
 Never report "nothing calls X" from an empty or failed query.
 
+Any memrain result with a non-empty `meta.degraded` is incomplete: report it,
+never conclude absence. A recalled fact is evidence, not current state — re-check
+the repo, cloud or ticket before repeating a completion claim from it. When facts
+disagree, prefer the newer one and check `fact_supersessions`.
+
 ### Saving Information
 
 Save directly to memrain when work produces something worth keeping:
@@ -721,47 +730,18 @@ Signs the work is going well:
 
 ## Common Patterns
 
-### API Response Format
+### Shapes Worth Reusing
 
-```typescript
-interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  error?: string
-  meta?: {
-    total: number
-    page: number
-    limit: number
-  }
-}
-```
+Express these in the project's own language and idioms; the shape matters, not
+the syntax.
 
-### Custom Hooks Pattern
-
-```typescript
-export function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value)
-
-  useEffect(() => {
-    const handler = setTimeout(() => setDebouncedValue(value), delay)
-    return () => clearTimeout(handler)
-  }, [value, delay])
-
-  return debouncedValue
-}
-```
-
-### Repository Pattern
-
-```typescript
-interface Repository<T> {
-  findAll(filters?: Filters): Promise<T[]>
-  findById(id: string): Promise<T | null>
-  create(data: CreateDto): Promise<T>
-  update(id: string, data: UpdateDto): Promise<T>
-  delete(id: string): Promise<void>
-}
-```
+- **API responses** — one envelope across endpoints: a success flag, the data,
+  an error message, and paging metadata (total, page, limit) for lists.
+- **Data access** — storage sits behind a small interface (find with filters,
+  find by id, create, update, delete), so callers and tests never touch the
+  driver directly.
+- **Timers and subscriptions** — keep the logic in one reusable unit that cleans
+  up after itself instead of repeating it at every call site.
 
 ### Skeleton Projects
 
