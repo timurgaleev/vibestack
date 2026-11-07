@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.55.11 — 2026-11-07
+
+### Added
+
+- **`vibe-lint-sources` flags hard-coded host paths.** A skill or snippet that
+  reaches a file through `~/.claude/skills/<name>/...`, a Read of a
+  repo-relative `.claude/skills/` path, or a bare `qa/templates`,
+  `qa/references` or `review/TODOS-format.md` path now prints a `warn:` line
+  with file and line — those paths resolve only where Claude Code installed the
+  pack. `--strict` turns each warning into a finding and exits 1.
+- **Rendered skill size guard.** `test/test-skill-size.sh` renders every skill
+  the way `./install` does and fails any over 240,000 bytes, so a snippet that
+  grows every skill at once is caught in CI.
+
+### Fixed
+
+- **`vibe-lint-sources --strict` no longer passes a run that checked nothing.**
+  A root with no `skills/` directory (including a mistyped flag read as the
+  path) exits 2, and under `--strict` a tree with no skill or snippet files, an
+  unreadable file, or an awk failure is a finding instead of "clean".
+- **The size guard fails on a render that wrote nothing** instead of reading
+  the empty size as within the ceiling.
+
+### Changed
+
+- The compatibility audit marks `/plan-devex-review` degraded outside Claude
+  Code: it reads `dx-hall-of-fame.md` and `/office-hours` from
+  `~/.claude/skills/`.
+
 ## 1.55.10 — 2026-11-07
 
 ### Added
