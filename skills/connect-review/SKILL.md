@@ -71,11 +71,11 @@ grep -rlE 'converse\(|invoke_model\(|InvokeModelCommand|ConverseCommand|bedrock-
 grep -rlE 'sampleUtterances|"intentName"' --include='*.json' . 2>/dev/null | head
 ```
 
-If an input is missing, ask the user for the path or the resource id. If the `aws` CLI is configured, fill gaps with read-only calls and record the region — it decides whether the German-market notes apply:
+If an input is missing, ask the user for the path or the resource id. If the `aws` CLI is configured, fill gaps with read-only calls. The region the context block prints decides whether the German-market notes apply.
+
+{{include lib/snippets/aws-context.md}}
 
 ```bash
-aws sts get-caller-identity --query Account --output text
-aws configure get region
 aws connect list-instances --query 'InstanceSummaryList[].[Id,InstanceAlias]' --output table
 aws connect list-contact-flows --instance-id "$INSTANCE_ID" --output table
 aws connect describe-contact-flow --instance-id "$INSTANCE_ID" --contact-flow-id "$FLOW_ID" --query 'ContactFlow.Content' --output text > "${TMPDIR:-/tmp}/connect-review-flow.json"

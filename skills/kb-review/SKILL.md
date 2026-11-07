@@ -69,12 +69,13 @@ source of truth for configuration. If only the second hits, it is a hand-built
 pipeline: read the ingestion and query code and map each of the following steps
 onto it. If neither hits, ask where the knowledge base lives.
 
-**Live account, when the CLI works.** Check credentials once and stop with a setup
-note if they fail (profile tried, error text, `aws configure` or `aws sso login`).
+**Live account, when the CLI works.**
+
+{{include lib/snippets/aws-context.md}}
+
 Then list what exists:
 
 ```bash
-aws sts get-caller-identity --output json
 aws bedrock-agent list-knowledge-bases --output json
 aws bedrock-agent get-knowledge-base --knowledge-base-id <kb-id> --output json
 aws bedrock-agent list-data-sources --knowledge-base-id <kb-id> --output json
@@ -148,7 +149,8 @@ Step 7 as well — read the page count of each PDF sampled in Step 2 (`pdfinfo`,
 `mdls -name kMDItemNumberOfPages` on macOS), take the mean, multiply by the PDF object
 count, and record the sample size beside it so the number is read as the estimate it
 is. Note the update cadence from the newest and oldest `LastModified` values and
-from whatever writes to the prefix (a pipeline, a person, a Confluence export). For
+from whatever writes to the prefix (a pipeline, a person, a Confluence export) — Step 3
+treats that writer as a trust boundary, so name it here. For
 Confluence and web sources, record the space keys or seed URLs and the crawl scope.
 
 Findings at this step: **INFO** for every data source, **MEDIUM** if a data source
@@ -229,6 +231,7 @@ rather than a clean bill. On a zero exit, every returned document must belong to
 tenant A. A tenant B document is **CRITICAL**, and the fix is at ingestion (missing or
 wrong metadata, or permissions the connector did not crawl), not in the query.
 
+- **Who can write to the corpus.** Everything a writer puts in a data-source prefix is retrieved later as context, so the write path is a trust boundary. List the principals that can write there: the `s3:PutObject` grants in the bucket policy (`aws s3api get-bucket-policy --bucket <bucket>`) and in the repo's IAM (`grep -rnE 's3:(PutObject|\*)' --include='*.tf' --include='*.json' --include='*.yaml' --include='*.ts' .` near the bucket name). Then look for paths that put user content there: upload handlers, presigned PUT URLs, or a sync from a source end users edit, landing in a prefix a data source reads. Untrusted content that is retrievable by other tenants — the upload lands where the knowledge base embeds it and no per-tenant filter or user context keeps it with its author — is **HIGH**: one customer writes text another customer's assistant reads as context. Chain it with framing: if the answer path pastes retrieved passages into the prompt without marking them as data (`/bedrock-guardrails` Step 7), the same write is an indirect prompt injection into every tenant's session, and the finding says both.
 - **Source access control mirrored.** If the S3 bucket, Confluence space, or SharePoint site restricts who can read what, that restriction has to be reproduced as metadata plus a filter, because the knowledge base reads everything with its service role. **HIGH** if a restricted source feeds the knowledge base and no metadata carries the restriction.
 
 ---

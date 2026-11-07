@@ -102,6 +102,7 @@ For each list/search hit, confirm the schema has a `limit` (with a maximum) and 
 Check three layers: who may talk to the server, what each client may do, and what the server itself can reach.
 
 - **HTTP transport without auth.** A streamable HTTP server with no bearer or OAuth check on the MCP endpoint is open to anyone who can reach the port. Look for `requireBearerAuth`, `ProxyOAuthServerProvider`, `TokenVerifier`, `auth=` on the FastMCP constructor, or a framework middleware on the route. Missing on a network-bound server: CRITICAL. stdio-only server: not applicable, say so.
+- **Hosted behind an AgentCore gateway.** The gateway, not the server, then holds inbound auth, the resource policy and the target credentials; run `/bedrock-guardrails` (Step 7b) for those and review only the server's own code here.
 - **Per-client scopes.** When auth exists, does the server read scopes from the token and check them per tool (`scopes_required`, `requiredScopes`), or is every authenticated client allowed everything? Every tool reachable with any valid token, when the server has write tools: HIGH.
 - **Least privilege on the server's own credentials.** Read the env vars and config the server consumes (`os.environ`, `process.env`, `.env.example`, `config.*`). A server that only reads issues should not hold a token with delete scope; a database server should not connect as an owner role. Compare the credential's scope against the union of what the tools need. Over-scoped: HIGH.
 - **Secrets from the environment, never from code or logs.**

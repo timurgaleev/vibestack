@@ -106,6 +106,8 @@ jobs:
           - test-spec-execute.sh
           - test-snippet-text.sh
           - test-aws-context.sh
+          - test-aws-skills-contract.sh
+          - test-agent-eval-harness.sh
           - test-base-branch-detect.sh
           - test-unslop-gate.sh
           - test-qa-rubric.sh

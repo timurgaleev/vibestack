@@ -45,7 +45,8 @@ fi
 {{include lib/snippets/state-protocols.md}}
 
 ## User-invocable
-When the user types `/aws-cost`, run this skill.
+When the user types `/aws-cost`, run this skill. `/aws-cost --estimate <plan>` runs
+Estimate mode alone, on a change that has not deployed yet, and skips Steps 1-5.
 
 ---
 
@@ -59,23 +60,22 @@ uses: `cost-explorer`, `cost-comparison`, `cost-anomaly`, `cost-optimization`,
 `compute-optimizer`, `sp-performance`, `ri-performance`, `budgets`, `free-tier-usage`.
 Prefer this path when it exists: it returns structured JSON and handles pagination.
 
-**CLI path.** If no billing MCP tool is present, the aws CLI must work. Settle the
-profile first, then prove it authenticates. In this order:
+**CLI path.** If no billing MCP tool is present, the aws CLI must work. The block
+below uses `$AWS_PROFILE` when it is set and the `default` profile otherwise; when it
+succeeds, do not ask about profiles, even when others exist.
 
-1. If `$AWS_PROFILE` is set, use it. Do not ask.
-2. Otherwise run `aws sts get-caller-identity --output json` against the `default`
-   profile. If it succeeds, `default` is the profile; do not ask, even when other
-   profiles exist.
-3. If it fails and `aws configure list-profiles` prints more than one name, ask
-   which one to use (AskUserQuestion, one option per name), export the answer as
-   `AWS_PROFILE`, and run `aws sts get-caller-identity --output json` again.
-4. If the check still fails, stop and print a setup note: which profile was tried,
-   the error text, and the two fixes (`aws configure --profile <name>` or
-   `aws sso login --profile <name>`). Do not guess at credentials. Do not read
-   `~/.aws/credentials`.
+{{include lib/snippets/aws-context.md}}
 
-The successful call returns `Account` and `Arn`. Keep the account id in `ACCOUNT` for
-the budgets query in Step 1. On the MCP path the tool response carries the account.
+If it prints `AWS_CONTEXT: unavailable` with no `AWS_PROFILE` set and
+`aws configure list-profiles` prints more than one name, ask which one to use
+(AskUserQuestion, one option per name) and run the block again with
+`export AWS_PROFILE='<name>'` at its top — and at the top of every later block, since a
+fresh shell keeps no export. If it still fails, stop with the setup note above. Do not
+guess at credentials.
+
+The `ACCOUNT:` line is the account the payer check below and the budgets query in Step 1
+use. On the MCP path the tool response carries the account. `REGION: N-A` does not stop
+this skill: Cost Explorer is global, and Step 3 builds its region list from the account.
 
 **Is this the payer account?** The linked-account table in Step 1 only means anything for
 an Organizations management account, and nothing else in this skill establishes whether
@@ -83,6 +83,7 @@ this is one. Ask Organizations and keep the exit status, because "no organizatio
 "not allowed to look" are different answers:
 
 ```bash
+ACCOUNT='<ACCOUNT>'
 MASTER=$(aws organizations describe-organization \
   --query 'Organization.MasterAccountId' --output text 2>&1); ORG_RC=$?
 if [ "$ORG_RC" -eq 0 ] && [ "$MASTER" = "$ACCOUNT" ]; then
@@ -172,6 +173,7 @@ section; for `unknown`, keep the section and print it as N-A with the error text
 total. MCP path: `budgets`. CLI path:
 
 ```bash
+ACCOUNT='<ACCOUNT>'
 aws budgets describe-budgets --account-id "$ACCOUNT" --max-results 100 --output json
 ```
 
@@ -262,6 +264,45 @@ aws ce get-cost-and-usage \
 
 Without that drill-down, write the finding as a month-over-month change and give no
 date. A date that no query returned is the failure this whole step exists to avoid.
+
+**What started on the onset day.** With an onset date in hand, ask CloudTrail who created
+something in that service around it. Event history keeps 90 days and answers per region,
+so run it in the region the usage type moved in (filter the drill-down on the `REGION`
+dimension when the usage type does not name one), against the service's event source
+(`ec2.amazonaws.com`, `rds.amazonaws.com`, `bedrock.amazonaws.com`, ...):
+
+```bash
+ONSET='<onset day from the daily drill-down, YYYY-MM-DD>'
+MOVED_REGION='<region the usage type moved in>'
+EVENT_SOURCE='<event source of the service, such as ec2.amazonaws.com>'
+WINDOW=$(python3 -I -c '
+import datetime, sys
+d = datetime.date.fromisoformat(sys.argv[1])
+age = (datetime.datetime.now(datetime.timezone.utc).date() - d).days
+print(age, d - datetime.timedelta(days=1), d + datetime.timedelta(days=2))' "$ONSET" 2>/dev/null)
+AGE=$(printf '%s\n' "$WINDOW" | awk '{ print $(1) }')
+FROM=$(printf '%s\n' "$WINDOW" | awk '{ print $(2) }')
+TO=$(printf '%s\n' "$WINDOW" | awk '{ print $(3) }')
+if [ -z "${AGE:-}" ]; then
+  echo "ONSET_EVENTS: N-A (onset date not parsed)"
+elif [ "$AGE" -ge 90 ]; then
+  echo "ONSET_EVENTS: outside the 90-day history (onset $AGE days ago)"
+elif EVENTS=$(aws cloudtrail lookup-events --region "$MOVED_REGION" \
+    --lookup-attributes AttributeKey=EventSource,AttributeValue="$EVENT_SOURCE" \
+    --start-time "$FROM" --end-time "$TO" \
+    --query "Events[?starts_with(EventName, 'Create') || starts_with(EventName, 'Run') || starts_with(EventName, 'Put')].[EventTime,EventName,Username,Resources[0].ResourceName]" \
+    --output text 2>&1); then
+  echo "ONSET_EVENTS: $(printf '%s\n' "$EVENTS" | awk 'NF' | wc -l | tr -d ' ')"
+  printf '%s\n' "$EVENTS" | awk 'NF'
+else
+  echo "ONSET_EVENTS: N-A — $EVENTS"
+fi
+```
+
+Report each event with its time, name, resource and principal beside the anomaly. A denied
+lookup is N-A, an onset older than 90 days is "outside the 90-day history", and an empty
+list from a lookup that succeeded says no create-type call in that service and region
+started it — a usage change on an existing resource, which is worth saying.
 
 Severity: **HIGH** when the impact is over USD 500 or the anomaly is still open; **MEDIUM**
 otherwise. An anomaly that Cost Anomaly Detection already closed and that matches a
@@ -494,6 +535,65 @@ an empty datapoint list, or a `list-metrics` call that returned no dimension set
 make the gateway N-A. A gateway that is quiet but not silent is a candidate at **LOW**,
 not a saving.
 
+**Addresses, log groups and stopped instances.** Three more idle shapes, once per region
+in `$REGIONS`, each with its exit status kept so a denied call is N-A, not an empty list:
+
+```bash
+RGN='<region from the REGIONS line>'
+if EIPS=$(aws ec2 describe-addresses --region "$RGN" \
+    --query 'Addresses[?AssociationId==null].[PublicIp,AllocationId]' --output text 2>&1); then
+  echo "IDLE_EIPS: $(printf '%s\n' "$EIPS" | awk 'NF' | wc -l | tr -d ' ')"
+  printf '%s\n' "$EIPS" | awk 'NF'
+else
+  echo "IDLE_EIPS: N-A — $EIPS"
+fi
+if LOGS=$(aws logs describe-log-groups --region "$RGN" \
+    --query 'logGroups[?!retentionInDays].[logGroupName,storedBytes]' --output text 2>&1); then
+  printf '%s\n' "$LOGS" | awk 'NF { n++; b += $(2) } END { printf "NO_RETENTION_LOG_GROUPS: %d, %.1f GB stored\n", n, b / 1e9 }'
+else
+  echo "NO_RETENTION_LOG_GROUPS: N-A — $LOGS"
+fi
+if STOPPED=$(aws ec2 describe-instances --region "$RGN" --filters Name=instance-state-name,Values=stopped \
+    --query 'Reservations[].Instances[].[InstanceId,StateTransitionReason]' --output text 2>&1); then
+  # The transition time lives only in the reason text: "User initiated (2026-09-01 10:00:00 GMT)".
+  printf '%s\n' "$STOPPED" | python3 -I -c '
+import datetime, re, sys
+today = datetime.datetime.now(datetime.timezone.utc).date()
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    iid = line.split()[0]
+    m = re.search(r"\((\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2} GMT\)", line)
+    if not m:
+        print(f"STOPPED {iid}: N-A (no transition time in the state reason)")
+    elif (today - datetime.date.fromisoformat(m.group(1))).days >= 30:
+        print(f"STOPPED {iid}: {(today - datetime.date.fromisoformat(m.group(1))).days} days")
+'
+else
+  echo "STOPPED: N-A — $STOPPED"
+fi
+```
+
+Price none of them from a list. The account's own usage-type rows carry the rate it
+actually pays: run the Step 2 usage-type query against `EC2 - Other` and
+`AmazonCloudWatch` for the report month with `--metrics UnblendedCost UsageQuantity`,
+and read the rows ending `PublicIPv4:IdleAddress` (idle public IPv4 hours),
+`EBS:VolumeUsage.<type>` (volume GB-months) and `TimedStorage-ByteHrs` (log storage).
+
+- **Unattached Elastic IPs.** The `PublicIPv4:IdleAddress` row is already the month's
+  idle-address spend for that region; quote it as the saving. No such row, or a failed
+  query, makes the dollar figure N-A while the address list stands.
+- **Log groups with no retention** keep every byte forever. Report the count and the
+  `storedBytes` total as a candidate at **LOW**; a dollar figure comes only from the
+  `TimedStorage-ByteHrs` rate times those bytes, and setting a retention saves only what
+  falls outside the window, so say which window was assumed.
+- **Instances stopped 30 days or more** bill nothing for compute and everything for their
+  volumes. For each one, `aws ec2 describe-volumes --region "$RGN" --filters
+  Name=attachment.instance-id,Values=<instance id> --query 'Volumes[].[VolumeId,Size,VolumeType]'`,
+  then size times the account's `EBS:VolumeUsage.<type>` rate (row cost over row
+  quantity). A failed call, or a type with no row, is N-A for that instance. It is a
+  candidate at **LOW** until an owner confirms nobody needs it back.
+
 **MEDIUM** when idle spend is over USD 50/month, **HIGH** over USD 300/month. Both thresholds
 apply to resources that cleared the evidence bar above — instantaneous state alone never
 reaches MEDIUM.
@@ -633,6 +733,61 @@ echo "REPORT: $REPORT"
 
 Write the report in the Output format below to `$REPORT` (overwrite today's if it
 exists), then print it in full. The file is for the next run to diff against.
+
+---
+
+## Estimate mode
+
+What a change will cost before it deploys, read from the change itself. The input is a
+Terraform plan as JSON (`terraform show -json <planfile> > plan.json`) or the output of
+`cdk diff`. List what the change creates or modifies — a replacement counts, a no-op does
+not, and a pure delete lowers the bill and is left out, not priced:
+
+```bash
+PLAN_JSON='<path to the terraform show -json output>'
+python3 -I -c '
+import json, sys
+rows = [(rc["address"], rc["type"], "+".join(rc["change"]["actions"]))
+        for rc in json.load(open(sys.argv[1])).get("resource_changes", [])
+        if {"create", "update"} & set(rc["change"]["actions"])]
+for row in rows:
+    print("\t".join(row))
+print(f"ESTIMATE_RESOURCES: {len(rows)}")' "$PLAN_JSON"
+```
+
+For a CDK app, take the `[+]` (added) and `[~]` (modified) lines of `cdk diff` instead:
+each names the resource type and logical id.
+
+Price each billable component of each resource — a NAT gateway is hours plus processed
+bytes, an RDS instance is instance hours plus storage plus backup — never the resource as
+one number. When a billing MCP tool `bcm-pricing-calc` is present, build the estimate there
+from usage lines. Otherwise use the filtered Price List query `/connect-review` Step 7
+uses: list the service's attributes, read the real values of `usagetype`, then one
+`get-products` per component, filtered to the region the plan deploys to:
+
+```bash
+SVC='<service code, such as AmazonEC2>'
+PRICED_REGION='<region the change deploys to>'
+USAGE='<usagetype value from get-attribute-values>'
+aws pricing get-attribute-values --region us-east-1 --service-code "$SVC" \
+  --attribute-name usagetype --max-results 100 --query 'AttributeValues[].Value' --output text \
+  || echo "ATTRIBUTES: N-A (get-attribute-values failed for $SVC)"
+aws pricing get-products --region us-east-1 --service-code "$SVC" \
+  --filters "Type=TERM_MATCH,Field=regionCode,Value=$PRICED_REGION" \
+            "Type=TERM_MATCH,Field=usagetype,Value=$USAGE" \
+  --max-results 10 --output json \
+  || echo "PRICING: N-A (get-products failed for $SVC/$USAGE)"
+```
+
+The `--region` picks the Price List endpoint; the `regionCode` filter picks the priced
+region. A rate enters the table only from a query that returned one.
+
+Write the monthly delta table: resource, action, priced component, usage assumption (hours
+per month, GB, requests — stated, since the plan does not say how busy anything will be),
+unit rate with its source (`get-products` SKU or `bcm-pricing-calc`), monthly delta. A
+component with no rate is N-A, never zero, and the total reads
+`USD <sum of priced rows> + <n> unpriced components`, naming them. A zero would tell the
+reader the change is free.
 
 ---
 

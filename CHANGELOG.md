@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.55.37 — 2026-11-07
+
+### Added
+
+- **`/aws-cost` finds idle spend and prices a change before it deploys.** New
+  idle probes cover unattached Elastic IPs, log groups without retention and
+  instances stopped 30+ days, priced from the account's own usage rows. A
+  CloudTrail onset lookup names who created what around an anomaly's start.
+  `--estimate` prices a Terraform plan or CDK diff; an unpriced component is
+  N-A, never zero.
+- **`/bedrock-guardrails` reviews AgentCore** gateways and runtimes (authorizer,
+  resource policy, target credentials), and probes the regions its call sites
+  resolve to instead of a hard-coded one.
+- **`/agent-eval` guards its holdout set and proves its scorer.** Holdout cases are
+  read only by an explicit, logged `--holdout` run; at least three decoy cases
+  must fail under a working scorer; reasoning models get an output-token floor;
+  a dry-run cost projection gates the full run.
+
+### Changed
+
+- **The AWS review skills scope every finding to a confirmed account and region.**
+  aws-cost, connect-review, kb-review, ai-cost-guard, bedrock-guardrails and
+  `/cso` Phase 5b include the shared aws-context block. A failed identity,
+  budget, alarm or quota call reads as unknown, never as an empty account.
+- **`/kb-review` treats the data-source write path as a trust boundary**, and
+  `/ai-cost-guard` requires app-managed caches to be keyed to the tenant.
+
 ## 1.55.36 — 2026-11-07
 
 ### Added
