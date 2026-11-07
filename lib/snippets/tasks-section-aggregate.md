@@ -32,8 +32,9 @@ if command -v jq >/dev/null 2>&1; then
       jq -c --arg branch "$BRANCH" --arg commits "$COMMITS_RECENT" \
         '.commit as $c | select(.branch == $branch and ($commits | split("|") | index($c) != null))' \
         "$f" 2>/dev/null >> "$ALL_JSONL" || true
-    done < <(find "$TASKS_DIR" -maxdepth 1 -name "tasks-$phase-*.jsonl" 2>/dev/null | sort)
-    # Reduce to latest run_id per phase
+    done < <(find "$TASKS_DIR" -maxdepth 1 -name "tasks-$phase-*.jsonl" ! -name '*-rows.jsonl' 2>/dev/null | sort)
+    # Reduce to latest run_id per phase. A run that found nothing left one
+    # "empty" marker row, so it still wins here and hides the older run's tasks.
     if [ -s "$ALL_JSONL" ]; then
       jq -sc --arg phase "$phase" \
         '[.[] | select(.phase == $phase)] | (max_by(.run_id) // null) as $latest_run | if $latest_run then map(select(.run_id == $latest_run.run_id)) else [] end | .[]' \
@@ -48,7 +49,8 @@ if command -v jq >/dev/null 2>&1; then
   # Exact-match dedup by (component, sorted(files), title). Non-matches kept
   # separately with a possible-duplicate marker injected by the renderer.
   AGGREGATED_TASKS=$(jq -s \
-    'group_by([.component, (.files | sort), .title])
+    'map(select(.empty != true))
+     | group_by([.component, (.files | sort), .title])
      | map(
          # Take the highest-priority entry per group; tie-break by phase order
          sort_by({P1:0,P2:1,P3:2}[.priority] // 99, {"ceo-review":0,"design-review":1,"eng-review":2,"devex-review":3}[.phase] // 99) | .[0]
