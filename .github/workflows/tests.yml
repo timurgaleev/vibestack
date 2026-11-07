@@ -64,6 +64,7 @@ jobs:
           - test-document-generate-pr-body.sh
           - test-cso-contract.sh
           - test-investigate-contract.sh
+          - test-improve-arch-contract.sh
           - test-review-checklist.sh
           - test-ship-doc-contract.sh
           - test-ship-release-gates.sh

@@ -74,11 +74,21 @@ This skill is _informed_ by the project's domain model. The domain language give
 
 ## Process
 
-### 1. Explore
+### 1. Scope first
 
-If the project has a domain glossary (e.g. `CONTEXT.md`) and ADRs (`docs/adr/`), read them first.
+Decide where to look before looking. A refactor in code nobody touches rarely pays for itself, so the scope is either a **named direction** — the module, feature or pain the user pointed at — or, when the user named none, the files that change most:
 
-Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
+```bash
+git log --since="6 months ago" --name-only --pretty=format: | grep -v '^$' | sort | uniq -c | sort -rn | head -20
+```
+
+Widen the window for a quiet repo, narrow it for a busy one. Use the direction, or these hotspots, to seed the Explore brief in step 2. Say which scope you used in one line before exploring.
+
+### 2. Explore
+
+Read the project's domain glossary first: `GLOSSARY.md` if it exists, else `CONTEXT.md`. A repo with several bounded contexts may keep a `CONTEXT-MAP.md` listing them — pick the context the scope lives in and read that context's glossary, not every one. Read the ADRs (`docs/adr/`) too.
+
+Then use the Agent tool with `subagent_type=Explore` to walk the scoped part of the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
 
 {{include lib/snippets/foreground-dispatch.md}}
 
@@ -90,7 +100,7 @@ Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
-### 2. Present candidates
+### 3. Present candidates
 
 Present a numbered list of deepening opportunities. For each candidate:
 
@@ -98,20 +108,33 @@ Present a numbered list of deepening opportunities. For each candidate:
 - **Problem** — why the current architecture is causing friction
 - **Solution** — plain English description of what would change
 - **Benefits** — explained in terms of locality and leverage, and also in how tests would improve
+- **Strength** — **Strong** (the deletion test and the hotspot data both point here), **Worth exploring** (real friction, unclear payoff) or **Speculative** (a hunch the exploration did not confirm)
+- **Dependencies** — the dependency category from [DEEPENING.md](DEEPENING.md) (in-process, local-substitutable, remote but owned, true external), which decides how the deepened module gets tested
 
-**Use the project's domain vocabulary (e.g. from `CONTEXT.md` if it exists) for domain concepts, and [LANGUAGE.md](LANGUAGE.md) vocabulary for the architecture.** If the domain says "Order," talk about "the Order intake module" — not "the FooBarHandler," and not "the Order service."
+**Use the project's domain vocabulary (from the glossary, if one exists) for domain concepts, and [LANGUAGE.md](LANGUAGE.md) vocabulary for the architecture.** If the domain says "Order," talk about "the Order intake module" — not "the FooBarHandler," and not "the Order service."
 
 **ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly (e.g. _"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
 
-Do NOT propose interfaces yet. Ask the user: "Which of these would you like to explore?"
+End the list with one line:
 
-### 3. Grilling loop
+`Top recommendation: <candidate> because <one line>`
 
-Once the user picks a candidate, drop into a grilling conversation. Walk the design tree with them — constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+Do NOT propose interfaces yet. Ask which candidate to explore as a decision brief, one option per candidate, with the top recommendation marked `(recommended)`.
+
+### 4. Grilling loop
+
+Once the user picks a candidate, walk the design tree with them — constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive. Run it the same way every time:
+
+1. Keep a numbered frontier of open decisions and ask one at a time, each with a `Recommended:` answer worded so that a plain yes accepts it.
+2. Never ask what the code can answer. Look facts up yourself, or dispatch an Explore subagent with `run_in_background: false` and wait for it.
+3. Cross-check what the user says the code does against the code; when they differ, show the difference before deciding.
+4. For each term the design introduces, walk one edge-case scenario through it to prove the name holds.
+5. Stop when no open decision remains, and confirm the resulting design with the user in one summary.
 
 Side effects happen inline as decisions crystallize:
 
-- **Naming a deepened module after a concept not yet documented?** If the project uses a `CONTEXT.md` domain glossary, add the term there. Create the file lazily if it doesn't exist.
-- **Sharpening a fuzzy term during the conversation?** Update `CONTEXT.md` right there if the project uses one.
-- **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing — skip ephemeral reasons ("not worth it right now") and self-evident ones.
+- **Naming a deepened module after a concept not yet documented?** Add the term to the glossary (`GLOSSARY.md`, else `CONTEXT.md`). Create `GLOSSARY.md` lazily if neither exists.
+- **Sharpening a fuzzy term during the conversation?** Update the glossary right there.
+- **Two rules for every glossary entry.** Domain words only — a term goes in only if it is a word a domain expert would say, never a class name or implementation detail. One word per concept — when two words name the same thing, keep one and list the other under _Avoid_.
+- **User rejects the candidate, or settles a decision, with a load-bearing reason?** Offer an ADR only when the decision is hard to reverse, would be surprising without context, and came from a real trade-off; skip ephemeral reasons ("not worth it right now") and self-evident ones. On yes, hand off to `/document-generate --adr` with the decision and its reason — this skill never writes the ADR itself.
 - **Want to explore alternative interfaces for the deepened module?** See [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md).
