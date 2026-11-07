@@ -308,6 +308,7 @@ if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
   PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
   echo "PERSISTED_PLATFORM:$PLATFORM"
   echo "PERSISTED_URL:$PROD_URL"
+  case "$PLATFORM" in [Nn]one*) echo "NO_DEPLOY: /setup-deploy recorded that this project never deploys" ;; esac
 fi
 
 # Auto-detect platform from config files
@@ -326,7 +327,9 @@ done
 ```
 
 If `PERSISTED_PLATFORM` and `PERSISTED_URL` were found in CLAUDE.md, use them directly
-and skip manual detection. If no persisted config exists, use the auto-detected platform
+and skip manual detection. On `NO_DEPLOY:`, with no URL argument and no deploy observed
+for `MERGE_SHA`, skip Steps 6-7 and go to Step 9 with MERGED — NO DEPLOY NEEDED. On `NO_DEPLOY:` the persisted values are the `none` sentinel,
+not a platform or URL: never probe them, and Step 5 finishes as MERGED — NO DEPLOY NEEDED. If no persisted config exists, use the auto-detected platform
 to guide deploy verification. If nothing is detected, ask the user via AskUserQuestion
 in the decision tree below.
 
@@ -1367,6 +1370,7 @@ if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
   PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
   echo "PERSISTED_PLATFORM:$PLATFORM"
   echo "PERSISTED_URL:$PROD_URL"
+  case "$PLATFORM" in [Nn]one*) echo "NO_DEPLOY: /setup-deploy recorded that this project never deploys" ;; esac
   # /setup-deploy records either "automatic on push to <branch>" or the command that deploys.
   TRIGGER=$(echo "$DEPLOY_CONFIG" | grep -i '^[[:space:]]*-[[:space:]]*deploy trigger:' | head -1 | sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//')
   case "$TRIGGER" in ''|[Aa]uto*|[Nn]one*|*"on push"*|*"on merge"*) ;; *) echo "DEPLOY_TRIGGER_COMMAND: $TRIGGER" ;; esac
