@@ -133,6 +133,62 @@ grep -q 'warn: .*SKILL.md:3: python3 -c without -I' <<<"$out" && grep -q 'warn: 
   && ok "python3 -c and python3 - without -I warn with file:line" || no "unisolated python not warned: $out"
 [ "$(grep -c 'without -I' <<<"$out")" -eq 2 ] && ok "-I, -Ic, a script path and prose do not warn" || no "isolated python warned: $out"
 
+# 11. hostpath: a file read through a Claude Code install path resolves on no
+#     other host. Warns by default; --strict makes it a finding.
+d=$(mkfix hostpath); printf '%s\n' '# demo' \
+  'Read `~/.claude/skills/review/checklist.md`.' \
+  '```bash' 'cat ~/.claude/skills/review/specialists/testing.md' '```' \
+  '**Read `.claude/skills/review/design-checklist.md`.**' \
+  'Copy `qa/templates/qa-report-template.md` and see (qa/references/issue-taxonomy.md).' \
+  'Follow `review/TODOS-format.md`.' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "hostpath warning does not fail the lint" || no "hostpath warning failed the lint (rc=$rc): $out"
+for n in 2 4 6 7 8; do
+  grep -q "^warn: .*SKILL.md:$n: hard-coded host path" <<<"$out" \
+    && ok "hostpath form on line $n warns with file:line" || no "hostpath line $n not warned: $out"
+done
+[ "$(grep -c 'hard-coded host path' <<<"$out")" -eq 5 ] && ok "one hostpath warning per line" || no "hostpath warning count: $out"
+out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q '^[^w].*SKILL.md:6: hard-coded host path' <<<"$out" \
+  && ok "--strict turns a hostpath warning into a finding" || no "--strict did not fail on hostpath (rc=$rc): $out"
+
+d=$(mkfix hostpathok); printf '%s\n' '# demo' \
+  'Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/demo}/checklist.md`.' \
+  'Read `${CLAUDE_SKILL_DIR}/../review/TODOS-format.md` and `skills/qa/templates/x.md`.' \
+  'A global `~/.claude/skills/` directory, or one parked at `~/.claude/skills/vibestack`.' \
+  'Tell the model to ignore `.claude/skills/` entirely.' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ! grep -q 'host path' <<<"$out" \
+  && ok "braced fallback, sibling path and directory mentions pass --strict" || no "safe hostpath forms flagged (rc=$rc): $out"
+
+d=$(mkfix hostpathsnip); printf '# snip\n\nRead `~/.claude/skills/review/checklist.md`.\n' > "$d/lib/snippets/hp.md"
+out=$(bash "$LINT" "$d" 2>&1)
+grep -q '^warn: .*hp.md:3: hard-coded host path' <<<"$out" && ok "snippets are checked for host paths" || no "snippet host path missed: $out"
+
+# 12. --strict fails closed: a run that checked nothing is never "clean".
+out=$(bash "$LINT" --strict "$TMP/no-such-root" 2>&1); rc=$?
+[ "$rc" -eq 2 ] && grep -q 'no skills/ directory' <<<"$out" \
+  && ok "--strict on a missing root exits 2" || no "missing root passed (rc=$rc): $out"
+out=$(bash "$LINT" strict 2>&1); rc=$?
+[ "$rc" -eq 2 ] && ok "a mistyped --strict read as the root exits 2" || no "mistyped flag passed (rc=$rc): $out"
+d="$TMP/emptytree"; mkdir -p "$d/skills" "$d/lib/snippets"
+out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'no skill or snippet files to check' <<<"$out" \
+  && ok "--strict on a tree with no skill or snippet files fails" || no "empty tree passed --strict (rc=$rc): $out"
+d=$(mkfix unreadable); chmod 000 "$d/skills/demo/SKILL.md"
+if [ -r "$d/skills/demo/SKILL.md" ]; then
+  ok "unreadable-file case skipped (running as a user who can read mode 000)"
+else
+  out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'SKILL.md: unreadable' <<<"$out" \
+    && ok "--strict fails on an unreadable skill file" || no "unreadable file passed --strict (rc=$rc): $out"
+fi
+chmod 644 "$d/skills/demo/SKILL.md"
+d=$(mkfix awkfail); mkdir -p "$TMP/fakebin"; printf '#!/bin/sh\nexit 2\n' > "$TMP/fakebin/awk"; chmod +x "$TMP/fakebin/awk"
+out=$(PATH="$TMP/fakebin:$PATH" bash "$LINT" --strict "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'awk exited 2' <<<"$out" \
+  && ok "--strict fails when awk fails" || no "awk failure passed --strict (rc=$rc): $out"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

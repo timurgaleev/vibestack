@@ -30,6 +30,7 @@ jobs:
           - test-hooks.sh
           - test-render-skill.sh
           - test-source-lint.sh
+          - test-skill-size.sh
           - test-positional-literals.sh
           - test-python-isolation.sh
           - test-heredoc-compat.sh

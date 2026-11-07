@@ -104,7 +104,7 @@ new.
 | `vibe-first-task-detect` | Classify the repo into one first-task bucket for the first-run scaffold (local git + FS only, emits one enum token) |
 | `vibe-decision-log` / `vibe-decision-search` | Event-sourced local decision store (`--supersede` / `--redact`, secret rejection) |
 | `vibestack` | Umbrella CLI — `status` / `doctor` / `skills` / `version`, and dispatch to any `vibe-<tool>` |
-| `vibe-lint-sources` | Static lint over skill sources + snippets (fence balance, duplicate headings, nested includes, size); runs inside `./install` before rendering |
+| `vibe-lint-sources` | Static lint over skill sources + snippets (fence balance, duplicate headings, nested includes, size, hard-coded host paths); runs inside `./install` before rendering. `--strict` turns host-path warnings into findings and fails a run that read no files |
 | `vibe-certify` | Cross-runtime conformance: fixture-install per target + per-skill verification matrix |
 | `vibe-brand-audit` | Fail if tracked files, commit messages, or PR/release text name a source other than this project; run by CI on every PR |
 | `vibe-question-log` | Append an AskUserQuestion event to the project log — the only writer of the log `/plan-tune` reads; an event carrying a secret is refused |
@@ -240,6 +240,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-render-skill.sh` | `vibe-render-skill`: include expansion, nested-include rejection, infra-error handling |
 | `test-install-integration.sh` | `./install` / `./uninstall` across targets: byte-identical renders, atomic swap, recovery, PTY-driven prompts (`PTY_TIMEOUT` raises the 60s default for slow machines) |
 | `test-source-lint.sh` | `vibe-lint-sources` static checks over skill sources |
+| `test-skill-size.sh` | every skill's rendered `SKILL.md` stays at or under 240,000 bytes |
 | `test-vibe-bins.sh` | Smoke tests for the `vibe-*` binaries |
 | `test-evidence-bins.sh` | The evidence/version/detach/probe helpers, asserted in both directions — each must also FAIL when it should |
 | `test-certify.sh` | Cross-runtime conformance fixtures |
