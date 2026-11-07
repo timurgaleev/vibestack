@@ -121,7 +121,14 @@ name, skill_md, skill_dir = sys.argv[1:4]
 rendered = os.path.getsize(skill_md)
 docs = []
 # An install links sub-doc directories in, so follow links; bin/ holds scripts.
+# A link back to an ancestor would loop, so each directory is walked once.
+seen = set()
 for d, dirs, files in os.walk(skill_dir, followlinks=True):
+    st = os.stat(d)
+    if (st.st_dev, st.st_ino) in seen:
+        dirs[:] = []
+        continue
+    seen.add((st.st_dev, st.st_ino))
     if d == skill_dir:
         dirs[:] = [x for x in dirs if x != "bin"]
     for f in files:

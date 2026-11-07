@@ -303,6 +303,9 @@ rm -f "$BADLOG"
 # One record longer than the window: cutting at a line break would keep nothing.
 python3 -I -c 'import sys; open(sys.argv[1], "w").write("{\"blob\": \"" + "z" * 1500000 + "\"}")' "$RS/browse-oneline.jsonl"
 trim_refused "a log with no line break in its last 256 KB" "$RS/browse-oneline.jsonl"
+# The same record ending in a newline: the only break is the last byte.
+printf '\n' >> "$RS/browse-oneline.jsonl"
+trim_refused "a log whose only break in the window is its last byte" "$RS/browse-oneline.jsonl"
 
 echo "vibe-gc: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

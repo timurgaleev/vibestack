@@ -555,8 +555,12 @@ def trim_refusal(raw, state):
         return "under 1 MB; nothing to trim"
     with open(p, "rb") as f:
         f.seek(size - REPO_LOG_KEEP - 1)
-        if b"\n" not in f.read():
-            return "no line break in its last 256 KB; trimming would empty it"
+        window = f.read()
+    # The kept tail starts after the first line break in the window; with no
+    # break, or only the final one, it would be empty.
+    nl = window.find(b"\n")
+    if nl < 0 or nl == len(window) - 1:
+        return "no whole record in its last 256 KB; trimming would empty it"
     return None
 
 
