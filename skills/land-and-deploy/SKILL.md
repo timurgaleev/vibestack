@@ -210,12 +210,16 @@ echo "TARGET REPO=$REPO PR_NUMBER=$PR_NUMBER PR_HEAD=$PR_HEAD BASE_BRANCH=$BASE_
 # Classify the diff now, against the fetched base: after the merge the checkout moves
 # and the comparison is no longer this PR's.
 CHANGED=$(git diff --name-only "$BASE_SHA...$PR_HEAD" 2>/dev/null) || CHANGED=""
+# Values exported by the caller's shell must not stand in for a classification
+# the helper could not make.
+unset SCOPE_UNAVAILABLE SCOPE_FRONTEND SCOPE_BACKEND SCOPE_PROMPTS SCOPE_TESTS SCOPE_DOCS SCOPE_CONFIG SCOPE_MIGRATIONS SCOPE_API SCOPE_AUTH
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" "$BASE_SHA" 2>/dev/null)"
 SCOPE_KNOWN=false; DOCS_ONLY=false
-if [ -n "$CHANGED" ]; then
+if [ -n "$CHANGED" ] && [ "${SCOPE_UNAVAILABLE:-false}" != true ]; then
   SCOPE_KNOWN=true
   printf '%s\n' "$CHANGED" | grep -qvE '\.(md|mdx|rst)$|^docs/' || DOCS_ONLY=true
 fi
+[ "${SCOPE_UNAVAILABLE:-false}" = true ] && echo "SCOPE_UNAVAILABLE: the diff could not be classified — every check runs"
 echo "SCOPE KNOWN=$SCOPE_KNOWN DOCS_ONLY=$DOCS_ONLY FRONTEND=${SCOPE_FRONTEND:-false} BACKEND=${SCOPE_BACKEND:-false} CONFIG=${SCOPE_CONFIG:-false} DOCS=${SCOPE_DOCS:-false}"
 ```
 
