@@ -860,20 +860,34 @@ to `docs/designs/{topic-slug}.md` — that is where teammates and the plan-revie
 skills actually look, and a doc only in `~/.vibestack` is invisible to everyone
 but this machine.
 
-```bash
-git rev-parse --show-toplevel 2>/dev/null || echo "NOT_A_REPO"
-```
-
 Two gates before that second write:
 
-1. **Scan the exact bytes first.** The repo copy is committable and pushable, so
-   it is a sink. Check the doc's content against the patterns below. On a match,
-   do not write the repo copy: tell the user what kind of credential appeared,
-   where, and that it needs redacting (and rotating if it is real). The
-   `~/.vibestack` copy is unaffected — it never leaves the machine.
-2. **Ask before the first one.** Adding a file to someone's repo is a change to
+1. **Ask before the first one.** Adding a file to someone's repo is a change to
    their working tree. Ask once per repo; if they decline, keep the
    `~/.vibestack` copy and say so.
+2. **Scan the exact bytes.** The repo copy is committable and pushable, so it is
+   a sink. The block below runs the deterministic scanner on the saved doc and
+   copies it only on `REDACT_EXIT: 0`; a finding, or a scan that could not run,
+   leaves no repo copy. Replace `<DESIGN_DOC>` with the saved doc's path and
+   `<TOPIC_SLUG>` with the topic slug (lowercase letters, digits, dashes):
+
+```bash
+_DOC='<DESIGN_DOC>'
+_TOPIC='<TOPIC_SLUG>'
+case "$_TOPIC" in ''|*[!a-z0-9-]*) echo "ERROR: topic slug must be lowercase letters, digits and dashes: $_TOPIC" >&2; exit 1 ;; esac
+_TOP=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "REPO_COPY: skipped (not a git repo)"; exit 0; }
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$_DOC"
+_REDACT_EXIT=$?
+echo "REDACT_EXIT: $_REDACT_EXIT"
+[ "$_REDACT_EXIT" -eq 0 ] || { echo "REPO_COPY: skipped (credential scan exit $_REDACT_EXIT)"; exit 0; }
+mkdir -p "$_TOP/docs/designs" && cp "$_DOC" "$_TOP/docs/designs/$_TOPIC.md" && echo "REPO_COPY: $_TOP/docs/designs/$_TOPIC.md"
+```
+
+On a skip, tell the user what kind of credential the scan named and where, and
+that it needs redacting (and rotating if it is real). The `~/.vibestack` copy is
+unaffected — it never leaves the machine. The scanner sees single-token shapes;
+also read the doc against the list below for multi-line ones (a service-account
+JSON key) and treat a hit as a finding.
 
 {{include lib/snippets/secret-scan-patterns.md}}
 
