@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.55.23 — 2026-11-07
+
+### Added
+
+- **`/qa` and `/qa-only` test changes that have no page.** They choose the
+  surface first — browser, functional or mixed — so a CLI, library, API-only
+  endpoint, worker or migration is no longer dropped from diff-aware QA because
+  no route matched. A functional surface is probed against state the run owns,
+  with a contract map per behavior and its own report template.
+
+### Changed
+
+- **One health rubric for both skills.** Severity follows impact (data loss, a
+  blocked task, an impaired task, cosmetic), a Content category is added, the
+  manual accessibility checks run outside quick mode, and only the categories
+  that ran are scored: a quick run is labelled partial coverage, and two runs are
+  compared only when they scored the same categories.
+- `/qa` and `/qa-only` use the shared base-branch and test-bootstrap blocks and
+  read their report template and issue taxonomy through the installed skill
+  directory.
+
 ## 1.55.22 — 2026-11-07
 
 ### Changed
