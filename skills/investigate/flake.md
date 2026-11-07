@@ -28,10 +28,12 @@ echo "base   failed/N: $(rate "$WT")"
 git worktree remove --force "$WT"
 ```
 
-Read the two rates:
+Before the loop, run `CMD` once in each tree with its output visible. The failing test must exist on the base (a new or renamed test has no base rate, and a runner that matches nothing exits 0), and the base worktree resolves its own code, not the branch's: no activated branch `.venv`, editable install or `PATH` entry pointing back at the branch checkout. A run that ends with exit 126 or 127, or fails before any test starts, cannot run; fix that first, it is not a failure.
 
-- base `0/N`, branch above zero — the branch introduced it; the cause is in the diff.
-- both above zero at a similar rate — a pre-existing flake; it does not block this branch, and it is still not loosened (section 3).
+Read the two rates. `0/N` rules out only a rate above 3/N (about 15% at N=20): a 5% flake shows `0/20` one time in three.
+
+- base `0/N`, branch at least 5/20 (or the same ratio at a larger N) — the branch introduced it; the cause is in the diff. A branch count below that against base `0/N` is not yet distinguishable from noise: raise N on both sides until it is.
+- both above zero at a similar rate (counts within a few of each other at the same N) — a pre-existing flake; it does not block this branch, and it is still not loosened (section 3).
 - both `0/N` locally, red in CI — the difference is the environment: CPU count, parallelism, file-system speed, locale, time zone, clock, network. Diff the CI job's environment against yours the way Phase 2's working example diff does, and reproduce under the CI condition (fewer cores, the CI parallelism flag, the CI container image).
 
 Then date when it started. The last green CI run's `headSha` and the first red one bracket the commits that moved it:

@@ -195,6 +195,18 @@ if [ -f "$FLAKE" ]; then
   fl "condition-based waiting"            'condition-based wait'
   fl "flake evidence block"               'Flake evidence:'
   fl "evidence goes in the DEBUG REPORT"  'DEBUG REPORT'
+  # N=20 cannot tell a small branch rate from noise; a base run that measures
+  # nothing must not read as 0/N.
+  fl "0/N bounds the rate only below 3/N"  '`0/N` rules out only a rate above 3/N'
+  fl "branch blamed only at 5/20 or more"  'at least 5/20'
+  fl "the failing test must exist on base" 'must exist on the base'
+  fl "base worktree resolves its own code" 'resolves its own code'
+  fl "a run that cannot start is not a failure" 'exit 126 or 127'
+  if grep -qF 'red only in CI' "$SRC/skills/investigate/SKILL.md"; then
+    ok "Phase 1 sends a CI-only failure to flake.md instead of BLOCKED"
+  else
+    no "Phase 1 stops a CI-only failure before flake.md can be read"
+  fi
 else
   no "flake.md exists"
 fi
