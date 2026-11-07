@@ -707,16 +707,25 @@ Use AskUserQuestion:
 
 **If A (quick checklist):** Tell the user: "Running the review checklist against your diff now..."
 
-Read the review checklist:
+Read the review checklist from the installed review skill beside this one:
 ```bash
-cat ~/.claude/skills/review/checklist.md 2>/dev/null || echo "Checklist not found"
+_CL="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/land-and-deploy}/../review/checklist.md"
+[ -s "$_CL" ] && cat "$_CL" || { echo "CHECKLIST_UNREADABLE: $_CL"; exit 1; }
 ```
+`CHECKLIST_UNREADABLE`: **STOP** — "I couldn't read the review checklist, so no quick
+review happened. Run `/review`, then `/land-and-deploy` again." Never report a review
+that did not run as passed.
+
 Apply each checklist item to the current diff. This is the same quick review that `/ship`
-runs in its Step 3.5. Auto-fix trivial issues (whitespace, imports). For critical findings
-(SQL safety, race conditions, security), ask the user.
+runs in its Step 3.5. Auto-fix trivial issues (whitespace, imports). A critical finding
+(SQL safety, race conditions, security) that is not fixed here is a **STOP**: recommend
+`/review` — it never becomes a warning the merge carries.
 
 **If any code changes are made during the quick review:** Commit the fixes, then **STOP**
-and tell the user: "I found and fixed a few issues during the review. The fixes are committed — run `/land-and-deploy` again to pick them up and continue where we left off."
+and tell the user: "I found and fixed a few issues during the review and committed them.
+Push them, wait for CI on the new head, then run `/land-and-deploy` again." The new
+commit is a new head: this run stopped before merge, and only a fresh run's readiness
+gate covers it.
 
 **If no issues found:** Tell the user: "Review checklist passed — no issues found in the diff."
 
@@ -1756,7 +1765,7 @@ Timing:
 
 Reviews:
   Eng review: <CURRENT / STALE / NOT RUN>
-  Inline fix: <yes (N fixes) / no / skipped>
+  Inline review: <passed / skipped by user / not needed> (fixes mean the run stopped before merge)
 
 CI:           <PASSED (N checks on <sha7>) / NO CI RAN (approved for <sha7>)>
 Deploy:       <PASSED / FAILED / PENDING / UNKNOWN / NOT NEEDED> — <evidence: run, deployment record or "none for <sha7>">
