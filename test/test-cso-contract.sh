@@ -369,6 +369,9 @@ has   "replayable event is HIGH"           'A replayable or forgeable event that
 has   "private network cap needs evidence" 'MEDIUM max only with evidence'
 has   "--paths argument"                   '`/cso --paths <p,q>`'
 has   "--paths caps status"                'outside --paths:'
+# The Grep tool takes a path, not git pathspec syntax; only git gets `-- <p> <q>`.
+has   "--paths reaches Grep as its path"   'through its `path` parameter'
+hasnt "no git pathspecs handed to Grep"    'as pathspecs to every Grep search'
 has   "--paths in resolved rule"           'under `--paths`, only if its file is inside a listed path'
 has   "gap names the command"              '<command> exited <rc>: <stderr tail, redacted>'
 has   "two retries at most"                'at most two retries'
