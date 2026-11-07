@@ -2002,7 +2002,7 @@ cat "$_ADV_DIR/err"
 # The reply counts only when it ends on its Recommendation line, and a verdict other
 # than SHIP comes with severity-tagged findings. Anything else is missing coverage.
 _ADV_LAST=$(awk 'NF { l = $(0) } END { print l }' "$_ADV_DIR/out" 2>/dev/null | sed 's/\*\*//g; s/^[[:space:]>_#-]*//')
-_ADV_TAGS=$(grep -Ec '^[[:space:]>*_#-]*\[P[0-3]\]' "$_ADV_DIR/out" 2>/dev/null || true)
+_ADV_TAGS=$(grep -Ec '^[[:space:]>*_#|-]*([0-9]+[.)][[:space:]]*)?[*_]*\[P[0-3]\]' "$_ADV_DIR/out" 2>/dev/null || true)
 if [ "$_ADV_EXIT" -eq 124 ]; then _ADV="MISSING_COVERAGE (timed out after 540s)"
 elif [ "$_ADV_EXIT" -ne 0 ]; then _ADV="MISSING_COVERAGE (codex exited $_ADV_EXIT)"
 elif ! printf '%s\n' "$_ADV_LAST" | grep -Eq '^Recommendation:[[:space:]]*(SHIP|FIX FIRST|INVESTIGATE)'; then

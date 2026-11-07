@@ -303,6 +303,12 @@ for f in "$ROOT/skills/review/SKILL.md" "$ROOT/skills/ship/SKILL.md"; do
   expect "$n: findings without severity -> missing coverage" MISSING_COVERAGE "${got%% *}"
   got="$(grade_of "$f" $'Recommendation: SHIP — fine\nActually, wait: [P1] a.rb:3 leaks')"
   expect "$n: text after the Recommendation line -> missing coverage" MISSING_COVERAGE "${got%% *}"
+  got="$(grade_of "$f" $'1. [P1] a.rb:3 — unbounded retry\n2. **[P2]** b.rb:9 — leaked handle\nRecommendation: FIX FIRST — the retry storms the API')"
+  expect "$n: numbered-list findings + Recommendation -> covered" COVERED "${got%% *}"
+  got="$(grade_of "$f" $'| Severity | Finding |\n|---|---|\n| [P1] | a.rb:3 unbounded retry |\nRecommendation: FIX FIRST — the retry storms the API')"
+  expect "$n: table-row findings + Recommendation -> covered" COVERED "${got%% *}"
+  got="$(grade_of "$f" $'1. The retry loop never stops (see P1 above).\n| a.rb:3 | retry |\nRecommendation: FIX FIRST — retries storm')"
+  expect "$n: numbered and table text without a tag -> missing coverage" MISSING_COVERAGE "${got%% *}"
 done
 
 echo
