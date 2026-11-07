@@ -11,6 +11,7 @@
 #   vibe-codex-probe            # cached verdict, probing only when stale
 #   vibe-codex-probe --refresh  # ignore the cache
 #   vibe-codex-probe --ttl 600  # cache lifetime in seconds (default 3600)
+#   vibe-codex-probe --model M  # probe with the model the run will use (-c model="M")
 #
 # Prints one verdict line and exits 0 ONLY for `usable`:
 #   CODEX: usable          -- a real round trip returned successfully
@@ -18,13 +19,18 @@
 #   CODEX: unauthenticated -- no credentials, or the round trip was refused
 #   CODEX: quota_exhausted -- the account hit its usage limit; cached 15 minutes
 #   CODEX: rate_limited    -- a transient 429; never cached, the review may run
+#   CODEX: model_unusable  -- the configured or requested model was refused
+#                             (unsupported, unknown, or needs a newer CLI)
+#   CODEX: sandbox_unavailable -- Linux only: `codex sandbox` cannot start the
+#                             read-only sandbox, so every review command would fail
 #   CODEX: unresponsive    -- credentials present, no answer within the timeout;
 #                             cached 15 minutes
 #   CODEX: error           -- a round trip failed for some other reason; cached
 #                             15 minutes
 #
-# quota_exhausted and rate_limited are followed by `DETAIL: <line>` lines that
-# relay Codex's own message, which for a usage limit names the reset time.
+# quota_exhausted, rate_limited, model_unusable and sandbox_unavailable are
+# followed by `DETAIL: <line>` lines that relay Codex's own message, which for a
+# usage limit names the reset time.
 #
 # The negatives are ordered cheapest-first, so the paid round trip only runs
 # when the answer could still be `usable`.
@@ -35,15 +41,23 @@ CACHE="$VIBESTACK_HOME/codex-probe.txt"
 TTL=3600
 REFRESH=0
 TIMEOUT="${VIBE_CODEX_PROBE_TIMEOUT:-25}"
+MODEL=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --refresh) REFRESH=1; shift ;;
-    --ttl) TTL="${2:-3600}"; shift 2 ;;
-    -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --ttl|-m|--model)
+      [ $# -ge 2 ] || { echo "vibe-codex-probe: $1 needs a value" >&2; exit 2; }
+      case "$1" in --ttl) TTL="$2" ;; *) MODEL="$2" ;; esac
+      shift 2 ;;
+    -h|--help) sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "vibe-codex-probe: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+# The name becomes a TOML string inside -c model="..."; a quote would end it.
+case "$MODEL" in
+  *[!A-Za-z0-9._:/-]*) echo "vibe-codex-probe: invalid model name: $MODEL" >&2; exit 2 ;;
+esac
 
 # A verdict is only about the credentials and binary it was taken with. A
 # global cache let a `usable` recorded under one account satisfy a probe made
@@ -53,17 +67,25 @@ done
 # each source is set, where the codex home points, and when its auth.json last
 # changed. `codex login` rewrites that file, so logging in invalidates a cached
 # `unauthenticated` instead of leaving it standing for the rest of the hour.
+# config.toml carries the model pin and the binary decides which models and
+# sandbox it supports, so editing the one or upgrading the other re-probes too.
 _CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-_auth_stamp() {
-  local f="$_CODEX_HOME/auth.json"
-  [ -f "$f" ] || { echo none; return; }
-  stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo present
+_mtime() { # FILE -> mtime, following symlinks; "none" when absent
+  [ -e "$1" ] || { echo none; return; }
+  stat -L -c %Y "$1" 2>/dev/null || stat -L -f %m "$1" 2>/dev/null || echo present
 }
+_auth_stamp() { _mtime "$_CODEX_HOME/auth.json"; }
 _ctx_key() {
-  printf '%s|%s|%s|%s|%s' \
-    "$(command -v codex 2>/dev/null || echo none)" \
+  local bin
+  bin=$(command -v codex 2>/dev/null || echo none)
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s' \
+    "$bin" \
+    "$(readlink -f "$bin" 2>/dev/null || echo "$bin")" \
+    "$(_mtime "$bin")" \
     "$_CODEX_HOME" \
     "$(_auth_stamp)" \
+    "$(_mtime "$_CODEX_HOME/config.toml")" \
+    "$MODEL" \
     "${CODEX_API_KEY:+set}${CODEX_API_KEY:-unset}" \
     "${OPENAI_API_KEY:+set}${OPENAI_API_KEY:-unset}" \
     | { command -v shasum >/dev/null 2>&1 && shasum -a 256 || sha256sum; } | cut -c1-16
@@ -73,7 +95,10 @@ _KEY=$(_ctx_key)
 # A usage limit lifts on its own, usually within the hour, and a timeout or an
 # unclassified failure is as likely a network blip as a lasting fault. Each is
 # cached only long enough to stop every skill in a session paying for the same
-# refusal, so one bad moment does not switch Codex off for the whole hour.
+# refusal, so one bad moment does not switch Codex off for the whole hour. A
+# refused model or a broken sandbox is fixed by the user, and the fix (a
+# config.toml edit, an upgrade) already changes the key; the short lifetime
+# covers fixes the key cannot see, such as an account entitlement or a sysctl.
 SHORT_TTL=900
 
 emit() { # emit VERDICT [nocache] [DETAIL]
@@ -109,12 +134,12 @@ if [ "$REFRESH" -eq 0 ] && [ -f "$CACHE" ]; then
     _age=$(( $(date +%s) - _ts ))
     _ttl="$TTL"
     case "$_verdict" in
-      quota_exhausted|unresponsive|error)
+      quota_exhausted|unresponsive|error|model_unusable|sandbox_unavailable)
         [ "$_ttl" -gt "$SHORT_TTL" ] && _ttl="$SHORT_TTL" ;;
     esac
     if [ "$_age" -ge 0 ] && [ "$_age" -lt "$_ttl" ]; then
       printf 'CODEX: %s\n' "$_verdict"
-      if [ "$_verdict" = quota_exhausted ] && [ -f "$CACHE.detail" ]; then
+      if [ "$_verdict" != usable ] && [ -f "$CACHE.detail" ]; then
         sed 's/^/DETAIL: /' "$CACHE.detail" 2>/dev/null || true
       fi
       [ "$_verdict" = usable ] && exit 0 || exit 1
@@ -127,7 +152,6 @@ if [ -z "${CODEX_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ ! -f "$_CODE
   emit unauthenticated
 fi
 
-# --- rung 4: the success branch — a real round trip ---------------------------
 # GNU coreutils `timeout` is absent on stock macOS, so the bound is enforced
 # here: run in the background, poll, and signal the child if it overruns. The
 # signal reaches the codex process itself, not a process group -- this script
@@ -135,25 +159,54 @@ fi
 # grandchild codex leaves behind can therefore outlive the probe.
 _OUT=$(mktemp "${TMPDIR:-/tmp}/vibe-codex-probe.XXXXXX")
 trap 'rm -f "$_OUT"' EXIT
-
-codex exec -c 'sandbox_mode="read-only"' 'Reply with the single word OK.' \
-  > "$_OUT" 2>&1 < /dev/null &
-_PID=$!
-
-_waited=0
-while kill -0 "$_PID" 2>/dev/null; do
-  if [ "$_waited" -ge "$TIMEOUT" ]; then
-    kill -TERM "$_PID" 2>/dev/null || true
+_bounded() { # CMD... -> its exit status, or 124 after $TIMEOUT seconds; output in $_OUT
+  "$@" > "$_OUT" 2>&1 < /dev/null &
+  local pid=$! waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$TIMEOUT" ]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      return 124
+    fi
     sleep 1
-    kill -KILL "$_PID" 2>/dev/null || true
-    wait "$_PID" 2>/dev/null || true
-    emit unresponsive
+    waited=$(( waited + 1 ))
+  done
+  wait "$pid" 2>/dev/null
+}
+
+# --- rung 4: on Linux, can the read-only sandbox start at all? -----------------
+# Codex sandboxes commands with bubblewrap/landlock there, and a host without
+# unprivileged user namespaces (many containers, Ubuntu's AppArmor default)
+# lets the model answer while every command it runs fails. That review reads
+# nothing and still ends "no issues", so it is caught here, before paying for it.
+if [ "$(uname -s 2>/dev/null)" = Linux ]; then
+  _bounded codex sandbox -c 'sandbox_mode="read-only"' true
+  _RC=$?
+  if [ "$_RC" -ne 0 ]; then
+    _detail=$(grep -v '^[[:space:]]*$' "$_OUT" 2>/dev/null | head -3 | cut -c1-300)
+    [ "$_RC" -eq 124 ] && _detail="codex sandbox did not finish within ${TIMEOUT}s${_detail:+
+$_detail}"
+    # A CLI that predates this command form rejects the arguments before any
+    # sandbox starts; that is fixed by an upgrade, not by the kernel.
+    if grep -qiE 'unrecognized subcommand|unexpected argument' "$_OUT" 2>/dev/null; then
+      _hint="hint: this Codex CLI does not accept 'codex sandbox -c ... true'; upgrade the Codex CLI"
+    else
+      _hint="hint: allow unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, or kernel.apparmor_restrict_unprivileged_userns=0 on Ubuntu 24.04+), or run outside the container"
+    fi
+    emit sandbox_unavailable "" "${_detail:-codex sandbox exited $_RC}
+$_hint"
   fi
-  sleep 1
-  _waited=$(( _waited + 1 ))
-done
-wait "$_PID" 2>/dev/null
+fi
+
+# --- rung 5: the success branch — a real round trip ---------------------------
+# Installed skills stay out of the prelude, as in every real run, and the model
+# the run will use is the model probed.
+_bounded codex exec -c 'sandbox_mode="read-only"' -c 'skills.include_instructions=false' \
+  ${MODEL:+-c "model=\"$MODEL\""} 'Reply with the single word OK.'
 _RC=$?
+[ "$_RC" -eq 124 ] && emit unresponsive
 
 # Exit 0 alone is not proof of a round trip: a wrapper on PATH that exits
 # without contacting anything produces it. The reply has to actually come back,
@@ -180,5 +233,12 @@ if [ -n "$_detail" ]; then
 fi
 if [ "$_RC" -ne 0 ] && grep -qiE '401|unauthor|not logged in|invalid[_ ]api[_ ]key|authentication' "$_OUT" 2>/dev/null; then
   emit unauthenticated
+fi
+# A refused model fails every run identically, and its fix (drop or change the
+# `model =` pin, or upgrade the CLI) differs from an auth or network fault. It
+# is checked after auth because a refused token can also say "not supported".
+_detail=$(grep -iE 'not supported|status":40[04]|does not exist or you do not have access|requires a newer version of codex' "$_OUT" 2>/dev/null | head -3 | cut -c1-300)
+if [ -n "$_detail" ]; then
+  emit model_unusable "" "$_detail"
 fi
 emit error

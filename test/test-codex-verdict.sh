@@ -133,6 +133,159 @@ if grep -q 'checks 1, 2, 4' "$SKILL"; then no "unavailable label still names che
 else ok "unavailable label names the right checks"; fi
 if grep -q 'GATE: UNVERIFIED' "$SKILL"; then ok "gate has an UNVERIFIED state"
 else no "gate has no UNVERIFIED state"; fi
+fixed=$(grep -E '^[[:space:]]*_cx [0-9]+ codex (review|exec)' "$SKILL" | grep -cE 'model_reasoning_effort="(high|medium|low|xhigh)"' || true)
+if [ "$calls" -ge 5 ] && [ "$fixed" = 0 ]; then ok "no codex call hardcodes its reasoning effort"
+else no "$fixed codex calls still hardcode model_reasoning_effort"; fi
+if grep -q -- '--effort <low|medium|high|xhigh>' "$SKILL" && grep -q 'VIBE_CODEX_EFFORT' "$SKILL"; then ok "Step 1 documents --effort and VIBE_CODEX_EFFORT"
+else no "Step 1 does not document --effort / VIBE_CODEX_EFFORT"; fi
+S05=$(awk '/^## Step 0.5:/{on=1;next} on&&/^## /{exit} on' "$SKILL")
+for v in model_unusable sandbox_unavailable; do
+  if printf '%s' "$S05" | grep -q "\*\*\`$v\`\*\*"; then ok "Step 0.5 branches on $v"
+  else no "Step 0.5 has no $v branch"; fi
+done
+if printf '%s' "$S05" | grep -q -- '--model'; then ok "Step 0.5 passes a requested model to the probe"
+else no "Step 0.5 never passes the model to the probe"; fi
+
+# --- vibe-codex-probe against a stub codex ------------------------------------
+echo "probe"
+PROBE="$ROOT/bin/vibe-codex-probe"
+PB="$TMP/pbin"; mkdir -p "$PB" "$TMP/cxhome"
+: > "$TMP/cxhome/auth.json"; printf 'model = "gpt-x"\n' > "$TMP/cxhome/config.toml"
+# One argument per [..] so a value with spaces or quotes is checked exactly.
+cat > "$PB/codex" <<'STUB'
+#!/usr/bin/env bash
+printf '[%s]' "$@" >> "$PSTUB_ARGV"; echo >> "$PSTUB_ARGV"
+if [ "$1" = sandbox ]; then
+  [ -n "${PSTUB_SANDBOX_ERR:-}" ] && { printf '%s\n' "$PSTUB_SANDBOX_ERR" >&2; exit 1; }
+  exit 0
+fi
+[ -n "${PSTUB_ERR:-}" ] && { printf '%s\n' "$PSTUB_ERR" >&2; exit 1; }
+echo OK
+STUB
+printf '#!/bin/sh\necho "${PSTUB_OS:-Darwin}"\n' > "$PB/uname"
+chmod +x "$PB/codex" "$PB/uname"
+probe() { # STATE_DIR ARGS... -> probe stdout+stderr
+  local h=$1; shift
+  env -u CODEX_API_KEY -u OPENAI_API_KEY PATH="$PB:$PATH" CODEX_HOME="$TMP/cxhome" \
+    VIBESTACK_HOME="$h" PSTUB_ARGV="$TMP/pargv" bash "$PROBE" "$@" 2>&1 || return $?
+}
+pfirst() { printf '%s\n' "$1" | head -1; }
+
+: > "$TMP/pargv"
+out=$(probe "$TMP/ph1") || true
+expect "a healthy round trip is usable" "CODEX: usable" "$(pfirst "$out")"
+if grep -q '\[skills.include_instructions=false\]' "$TMP/pargv"; then ok "the probe keeps installed skills out of its round trip"
+else no "the probe round trip loads installed skills"; fi
+if grep -q '^\[sandbox\]' "$TMP/pargv"; then no "the sandbox rung ran off Linux"; else ok "the sandbox rung is Linux-only"; fi
+
+: > "$TMP/pargv"
+out=$(probe "$TMP/ph2" --model gpt-5.2-codex) || true
+if grep -q '\[-c\]\[model="gpt-5.2-codex"\]' "$TMP/pargv"; then ok "--model reaches the probe as -c model=\"<m>\""
+else no "--model not passed to the probe round trip"; sed 's/^/    /' "$TMP/pargv"; fi
+rc=0; out=$(probe "$TMP/ph2" --model 'bad"model') || rc=$?
+[ "$rc" = 2 ] && ok "a model name outside [A-Za-z0-9._:/-] is a usage error" || no "unsafe model name accepted (rc $rc)"
+
+for msg in \
+  'ERROR: {"detail":"The '"'"'gpt-9'"'"' model is not supported when using Codex with a ChatGPT account.","status":400}' \
+  'unexpected status 404 Not Found: The model `gpt-9` does not exist or you do not have access to it.' \
+  'Error: the gpt-9 model requires a newer version of Codex; upgrade the CLI.'; do
+  out=$(PSTUB_ERR="$msg" probe "$TMP/ph3" --refresh) || true
+  expect "model error -> model_unusable (${msg:0:40}...)" "CODEX: model_unusable" "$(pfirst "$out")"
+done
+if printf '%s\n' "$out" | grep -q '^DETAIL: .*newer version'; then ok "model_unusable relays the CLI's message as DETAIL"
+else no "model_unusable carries no DETAIL"; fi
+out=$(PSTUB_ERR='' probe "$TMP/ph3") || true
+if [ "$(pfirst "$out")" = "CODEX: model_unusable" ] && printf '%s\n' "$out" | grep -q '^DETAIL: '; then ok "a cached model_unusable still prints its DETAIL"
+else no "cached model_unusable lost its verdict or DETAIL: $out"; fi
+# Status codes and "not supported" also appear in failures that have nothing to
+# do with the model; those must not be reported as a refused model.
+out=$(PSTUB_ERR='unexpected status 401 Unauthorized: this token is not supported' probe "$TMP/ph3" --refresh) || true
+expect "a 401 that says 'not supported' is still unauthenticated" "CODEX: unauthenticated" "$(pfirst "$out")"
+out=$(PSTUB_ERR='stream error: status 400 Bad Request: context_length_exceeded' probe "$TMP/ph3" --refresh) || true
+expect "a bare 'status 400' is not a refused model" "CODEX: error" "$(pfirst "$out")"
+# A flag with its value missing is a usage error, not an endless loop.
+for flag in --model --ttl; do
+  # The probe itself is the background job, so the kill reaches it, not a subshell.
+  VIBESTACK_HOME="$TMP/ph3" PATH="$PB:$PATH" bash "$PROBE" "$flag" >/dev/null 2>&1 & ppid=$!
+  w=0; while kill -0 "$ppid" 2>/dev/null && [ "$w" -lt 50 ]; do sleep 0.1; w=$((w+1)); done
+  rc=0
+  if kill -0 "$ppid" 2>/dev/null; then kill -KILL "$ppid" 2>/dev/null; wait "$ppid" 2>/dev/null || true; no "$flag with no value hangs the probe"
+  else wait "$ppid" || rc=$?; [ "$rc" = 2 ] && ok "$flag with no value is a usage error" || no "$flag with no value exits $rc"; fi
+done
+
+# The cache key has to move with everything the verdict depends on.
+probe "$TMP/ph4" >/dev/null || true
+out=$(PSTUB_ERR='boom' probe "$TMP/ph4") || true
+expect "an unchanged context reuses the cached verdict" "CODEX: usable" "$(pfirst "$out")"
+touch -t 202001010000 "$TMP/cxhome/config.toml"
+out=$(PSTUB_ERR='boom' probe "$TMP/ph4") || true
+expect "editing config.toml invalidates a cached usable" "CODEX: error" "$(pfirst "$out")"
+probe "$TMP/ph5" >/dev/null || true
+touch -t 202001010000 "$PB/codex"
+out=$(PSTUB_ERR='boom' probe "$TMP/ph5") || true
+expect "replacing the codex binary invalidates a cached usable" "CODEX: error" "$(pfirst "$out")"
+probe "$TMP/ph6" >/dev/null || true
+out=$(PSTUB_ERR='boom' probe "$TMP/ph6" --model other-model) || true
+expect "a different --model is a different verdict" "CODEX: error" "$(pfirst "$out")"
+
+: > "$TMP/pargv"
+out=$(PSTUB_OS=Linux PSTUB_SANDBOX_ERR='bwrap: No permissions to create new namespace' probe "$TMP/ph7") || true
+expect "Linux: a sandbox that cannot start -> sandbox_unavailable" "CODEX: sandbox_unavailable" "$(pfirst "$out")"
+if printf '%s\n' "$out" | grep -q '^DETAIL: bwrap' && printf '%s\n' "$out" | grep -qi '^DETAIL: .*namespace'; then ok "sandbox_unavailable relays the failure and a fix hint"
+else no "sandbox_unavailable without DETAIL/hint: $out"; fi
+if grep -q '^\[exec\]' "$TMP/pargv"; then no "the paid round trip ran after the sandbox failed"; else ok "no paid round trip after a sandbox failure"; fi
+: > "$TMP/pargv"
+out=$(PSTUB_OS=Linux probe "$TMP/ph8") || true
+expect "Linux: a working sandbox continues to the round trip" "CODEX: usable" "$(pfirst "$out")"
+if grep -q '^\[sandbox\]\[-c\]\[sandbox_mode="read-only"\]\[true\]' "$TMP/pargv"; then ok "the sandbox rung runs codex sandbox read-only true"
+else no "sandbox rung argv wrong"; sed 's/^/    /' "$TMP/pargv"; fi
+# A CLI that predates this sandbox form rejects the command line itself; the
+# fix is an upgrade, not a sysctl, and the hint must say so.
+out=$(PSTUB_OS=Linux PSTUB_SANDBOX_ERR="error: unrecognized subcommand 'true'" probe "$TMP/ph9") || true
+expect "Linux: a CLI that rejects the sandbox command -> sandbox_unavailable" "CODEX: sandbox_unavailable" "$(pfirst "$out")"
+if printf '%s\n' "$out" | grep -qi '^DETAIL: .*upgrade' && ! printf '%s\n' "$out" | grep -qi 'namespace'; then ok "a rejected sandbox command hints an upgrade, not user namespaces"
+else no "rejected sandbox command gets the wrong hint: $out"; fi
+
+# Step 0.5's own block hands the model to the probe as two arguments, in bash
+# and in zsh (which does not word-split an unquoted ${x:+...}). printf "[%s]"
+# with no arguments prints "[]".
+S05B=$(awk '/^```bash$/{f=1;b="";next} f&&/^```$/{f=0; if(b ~ /_MODEL=/){printf "%s", b; exit} next} f{b=b $0 "\n"}' "$SKILL")
+mkdir -p "$TMP/vh/bin"
+printf '#!/bin/sh\nprintf "[%%s]" "$@" > "%s"\necho "CODEX: usable"\n' "$TMP/probe-args" > "$TMP/vh/bin/vibe-codex-probe"
+chmod +x "$TMP/vh/bin/vibe-codex-probe"
+for sh in bash zsh; do
+  command -v "$sh" >/dev/null 2>&1 || { ok "SKIP $sh not installed"; continue; }
+  : > "$TMP/probe-args"
+  VIBESTACK_HOME="$TMP/vh" "$sh" -c "${S05B//<MODEL>/gpt-5.2-codex}" >/dev/null 2>&1 || true
+  expect "Step 0.5 under $sh passes --model as its own argument" "[--model][gpt-5.2-codex]" "$(cat "$TMP/probe-args")"
+  : > "$TMP/probe-args"
+  VIBESTACK_HOME="$TMP/vh" "$sh" -c "${S05B//<MODEL>/}" >/dev/null 2>&1 || true
+  expect "Step 0.5 under $sh with no model passes nothing" "[]" "$(cat "$TMP/probe-args")"
+done
+
+# --- date grounding snippet ---------------------------------------------------
+echo "grounding"
+GSNIP="$ROOT/lib/snippets/second-opinion-grounding.md"
+if [ -f "$GSNIP" ]; then
+  awk '/^```bash$/{f=1;next} /^```$/{if(f)exit} f' "$GSNIP" > "$TMP/ground.sh"
+  printf 'the question\n' > "$TMP/gprompt"
+  sed -i.bak "s|<prompt-file-path>|$TMP/gprompt|g" "$TMP/ground.sh"
+  gout=$(bash "$TMP/ground.sh" 2>&1)
+  today=$(date -u +%F)
+  if grep -qxF "Current date (UTC): $today" "$TMP/gprompt" && printf '%s' "$gout" | grep -qF "Current date (UTC): $today"; then ok "the block prints the UTC date and writes it into the prompt file"
+  else no "date line missing from the prompt file or the output"; fi
+  if grep -q '\[unverified\]' "$TMP/gprompt" && head -1 "$TMP/gprompt" | grep -qx 'the question'; then ok "the unrecognised-name rule is appended after the prompt"
+  else no "the [unverified] rule is missing, or the prompt was overwritten"; fi
+else
+  no "lib/snippets/second-opinion-grounding.md missing"
+fi
+for step in '## Step 2B:' '## Step 2C:'; do
+  sec=$(awk -v a="$step" 'index($0,a)==1{on=1;next} on&&/^## /{exit} on' "$SKILL")
+  if printf '%s' "$sec" | grep -q 'Date Grounding'; then ok "${step#\#\# } runs the date grounding on its prompt file"
+  else no "${step#\#\# } does not run the date grounding"; fi
+done
+if grep -qx '{{include lib/snippets/second-opinion-grounding.md}}' "$SKILL"; then ok "the skill includes the grounding snippet"
+else no "the skill does not include the grounding snippet"; fi
 
 # --- end to end: run blocks against a stub codex ------------------------------
 # extract_block NEEDLE -> the bash fence in SKILL.md containing NEEDLE
@@ -169,7 +322,7 @@ while [ $# -gt 0 ]; do
   case "$1" in -o) out=$2; shift ;; esac
   shift
 done
-cat >/dev/null
+cat > "${STUB_STDIN:-/dev/null}"
 printf '%s' "${STUB_ERR:-}" >&2
 if [ -n "$out" ]; then
   printf '%s' "${STUB_RESP:-}" > "$out"
@@ -190,12 +343,13 @@ run_block() { # NEEDLE PROMPT_TEXT -> stdout+stderr of the block
   block=${block//<focus-file-name>/$name}
   block=${block//<new|resume>/new}
   block=${block//<BASE>/main}
+  block=${block//<EFFORT>/${EFFORT_SUB:-}}
   block=${block//<TMPERR>/$(mktemp "$TMP/codex-err-XXXXXX")}
-  (cd "$REPO" && env -u BASE -u TMPERR -u TMP_ROOT PATH="$TMP/bin:$PATH" STUB_ARGV="$TMP/argv" bash -c "$block" 2>&1) || true
+  (cd "$REPO" && env -u BASE -u TMPERR -u TMP_ROOT -u VIBE_CODEX_EFFORT ${CX_EFFORT_ENV:+VIBE_CODEX_EFFORT="$CX_EFFORT_ENV"} PATH="$TMP/bin:$PATH" STUB_ARGV="$TMP/argv" bash -c "$block" 2>&1) || true
 }
 
 echo "end to end"
-CHALLENGE='codex exec - -C "$_REPO_ROOT" -s read-only -c '"'"'skills.include_instructions=false'"'"' -c '"'"'model_reasoning_effort="high"'
+CHALLENGE='{"skill":"codex-challenge"'
 out=$(STUB_RESP='No problems found.' STUB_ERR='bwrap: Creating new namespace failed: Operation not permitted' \
   STUB_EVENTS="$BAD_CMD_PLAIN"$'\n{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}' \
   run_block "$CHALLENGE" 'challenge prompt')
@@ -208,6 +362,24 @@ if printf '%s' "$out" | grep -q 'CODEX_RESULT: OK'; then ok "challenge: healthy 
 else no "challenge: healthy run not OK"; printf '%s\n' "$out" | sed 's/^/    /'; fi
 if grep -q 'skills.include_instructions=false' "$TMP/argv" && grep -q -- '-o ' "$TMP/argv"; then ok "challenge: argv carries the isolation flag and -o"
 else no "challenge: argv missing isolation flag or -o"; fi
+
+# Reasoning effort: the --effort request wins, then VIBE_CODEX_EFFORT, then the
+# mode default; anything outside low|medium|high|xhigh stops before Codex runs.
+effort_of() { sed -n 's/.*model_reasoning_effort="\([^"]*\)".*/\1/p' "$TMP/argv" | tail -1; }
+OKRUN_EVENTS="$OK_CMD"$'\n{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
+: > "$TMP/argv"; STUB_RESP='An answer.' STUB_EVENTS="$OKRUN_EVENTS" run_block "$CHALLENGE" 'p' >/dev/null
+expect "challenge: no request and no env -> high" high "$(effort_of)"
+: > "$TMP/argv"; CX_EFFORT_ENV=low STUB_RESP='An answer.' STUB_EVENTS="$OKRUN_EVENTS" run_block "$CHALLENGE" 'p' >/dev/null
+expect "challenge: VIBE_CODEX_EFFORT=low -> low" low "$(effort_of)"
+: > "$TMP/argv"; EFFORT_SUB=xhigh CX_EFFORT_ENV=low STUB_RESP='An answer.' STUB_EVENTS="$OKRUN_EVENTS" run_block "$CHALLENGE" 'p' >/dev/null
+expect "challenge: the --effort request beats the env" xhigh "$(effort_of)"
+: > "$TMP/argv"; out=$(CX_EFFORT_ENV=turbo STUB_RESP='An answer.' STUB_EVENTS="$OKRUN_EVENTS" run_block "$CHALLENGE" 'p')
+if printf '%s' "$out" | grep -q 'Not run' && [ ! -s "$TMP/argv" ]; then ok "challenge: an invalid effort stops before Codex runs"
+else no "challenge: invalid effort reached Codex"; printf '%s\n' "$out" | sed 's/^/    /'; fi
+: > "$TMP/argv"; STUB_RESP='An answer.' STUB_EVENTS="$OKRUN_EVENTS" run_block 'codex exec resume "$_SID"' 'q' >/dev/null
+expect "consult: default effort is medium" medium "$(effort_of)"
+: > "$TMP/argv"; CX_EFFORT_ENV=low STUB_RESP='[P2] x' run_block 'codex review --base "$BASE"' '' >/dev/null
+expect "review: VIBE_CODEX_EFFORT reaches the bare review call" low "$(effort_of)"
 
 CONSULT='codex exec resume "$_SID"'
 : > "$TMP/argv"
@@ -249,6 +421,13 @@ git -C "$REPO" branch -D -q main
 out=$(STUB_RESP=$'NO_FINDINGS' run_block "$CUSTOM" 'focus on auth')
 if printf '%s' "$out" | grep -q '^VERDICT: clean' && [ -s "$TMP/argv" ]; then ok "custom review: diff against origin/<base> reaches Codex"
 else no "custom review: diff against origin/<base> did not reach Codex"; printf '%s\n' "$out" | sed 's/^/    /'; fi
+# Uncommitted edits to tracked files are part of what gets reviewed: the diff
+# runs from the merge base to the working tree, not to HEAD.
+echo dirty-edit-marker >> "$REPO/f.txt"
+out=$(STUB_STDIN="$TMP/stdin" STUB_RESP=$'NO_FINDINGS' run_block "$CUSTOM" 'focus on auth')
+if grep -q 'dirty-edit-marker' "$TMP/stdin" 2>/dev/null; then ok "custom review: an uncommitted edit reaches the Codex prompt"
+else no "custom review: the uncommitted edit was left out of the diff"; fi
+git -C "$REPO" checkout -q -- f.txt
 
 echo
 echo "$pass passed, $fail failed"
