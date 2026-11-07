@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.55.20 — 2026-11-07
+
+### Changed
+
+- **`/office-hours` second opinions follow the outside-voice switch.** The Phase
+  3.5 cold read and the design-sketch voices now go through the shared preflight,
+  so `codex_reviews disabled` turns them off and a session already running under
+  Codex gets Claude Code instead of Codex reviewing itself. The prompt is checked
+  for credentials before it leaves the machine; a finding falls back to the Claude
+  subagent.
+- **Builder mode asks fewer, better questions.** It asks why first when you have
+  not said, asks a listed question only when the answer changes what gets built,
+  says what a capability unlocks beyond the task, and tags each design-doc
+  decision as yours or its own call with the reason.
+- **The next-review handoff respects proactive mode.** `/office-hours` picks
+  `/plan-ceo-review`, `/plan-eng-review` or `/plan-design-review` from what the
+  session produced, and offers to launch it only in an interactive session with
+  proactive suggestions on; otherwise it prints a one-line recommendation.
+
+### Fixed
+
+- **The wireframe sketch is kept.** It was written to a shared `/tmp` path that
+  the next session overwrote; it now lives in a private temp directory, is saved
+  next to the design doc, and both design-doc templates carry a `Wireframe:` line.
+  The dead comparison-board steps are gone.
+- **The `docs/designs` copy of a design doc is scanned for credentials first.**
+  The scanner runs on the saved doc and the copy happens only when it finds
+  nothing.
+- **Builder-profile entries survive quotes in your words.** Entries are written
+  to a file and appended through a validator instead of being spliced into shell
+  source.
+- **The recent-context diff uses the repo's real base branch** instead of
+  assuming `origin/main`.
+
 ## 1.55.19 — 2026-11-07
 
 ### Changed
