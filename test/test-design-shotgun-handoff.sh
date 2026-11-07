@@ -48,6 +48,8 @@ FB='It'"'"'s "close" — $(touch pwned) `touch pwned2`'
 printf '%s\n' "$FB" > "$DDIR/approved-feedback.txt"
 
 run_save() {  # run_save ROUND_DIR LETTER [ARCHETYPE SECTIONS] -> rc; output in $TMP/out
+  # The section outline reaches the block through a file the Write tool wrote.
+  printf '%s\n' "${4:-}" > "$DDIR/approved-sections.txt"
   sed -e "s|<ROUND_DIR>|$1|" -e "s|<V>|$2|" -e "s|<DESIGN_DIR>|$DDIR|" \
       -e "s|<ARCHETYPE>|${3:-}|" -e "s|<SECTIONS>|${4:-}|" "$TMP/save.sh" > "$TMP/run.sh"
   (cd "$TMP" && env -u _DESIGN_DIR -u B bash "$TMP/run.sh") > "$TMP/out" 2>&1
@@ -75,6 +77,12 @@ rc=0; run_save "$DDIR" C || rc=$?
   || no "missing image: rc=$rc $(cat "$TMP/out")"
 
 echo "archetype hand-off"
+grep -qF '<SECTIONS>' "$TMP/save.sh" \
+  && no "the section outline is substituted into shell source" || ok "the section outline never enters shell source"
+rm -f "$DDIR/approved.json"
+rc=0; run_save "$DDIR" B classic-hero 'hero,$(touch pwned3)' || rc=$?
+[ "$rc" -ne 0 ] && [ ! -f "$DDIR/approved.json" ] && ! ls "$TMP" | grep -q pwned3 \
+  && ok "a hostile section outline is refused without running" || no "hostile outline: rc=$rc $(cat "$TMP/out")"
 rm -f "$DDIR/approved.json"
 rc=0; run_save "$DDIR" B classic-hero "hero,proof,pricing,faq" || rc=$?
 if [ "$rc" -eq 0 ] && python3 -I - "$DDIR/approved.json" <<'PY'

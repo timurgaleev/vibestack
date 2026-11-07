@@ -538,23 +538,26 @@ later round overwrites the earlier one), then run this block, replacing
 `<ROUND_DIR>` with the directory that round's
 `variant-*.png` files are in (`$_DESIGN_DIR` for the first round, `$_DESIGN_DIR/round-2`
 and so on after a remix). For a Persuade screen whose concepts varied the archetype,
-replace `<ARCHETYPE>` with the approved variant's archetype id and `<SECTIONS>` with its
-section outline as comma-separated lowercase names (`hero,proof,pricing,faq`); for any
-other screen replace both with nothing, leaving `""`. The record stores the approved
+replace `<ARCHETYPE>` with the approved variant's archetype id, and write its section
+outline with the Write tool to `approved-sections.txt` inside `$_DESIGN_DIR` as one line
+of comma-separated lowercase names (`hero,proof,pricing,faq`); the outline came from the
+brief and feedback, so it never goes into shell source. For any other screen replace
+`<ARCHETYPE>` with nothing, leaving `""`, and write `approved-sections.txt` empty. The record stores the approved
 image's absolute path, because the letter alone is ambiguous once there is more than
 one round, and /design-html builds the archetype and outline as given:
 ```bash
 _DESIGN_DIR='<DESIGN_DIR>'
 _FB_FILE="$_DESIGN_DIR/approved-feedback.txt"
-python3 -I - "$_DESIGN_DIR" "<ROUND_DIR>" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" --archetype "<ARCHETYPE>" --sections "<SECTIONS>" <<'VIBE_PY_EOF'
+python3 -I - "$_DESIGN_DIR" "<ROUND_DIR>" "$_FB_FILE" "<V>" "$(git branch --show-current 2>/dev/null)" --archetype "<ARCHETYPE>" --sections-file "$_DESIGN_DIR/approved-sections.txt" <<'VIBE_PY_EOF'
 import argparse, datetime, json, os, re, sys
 d, round_dir, fb_file, variant, branch = sys.argv[1:6]
 opt = argparse.ArgumentParser()
 opt.add_argument("--archetype", default="")
-opt.add_argument("--sections", default="")
+opt.add_argument("--sections-file", default="")
 opt = opt.parse_args(sys.argv[6:])
 if not re.fullmatch(r"[A-J]", variant):
     sys.exit("approved variant must be one letter A-J, got %r" % variant)
+opt.sections = open(opt.sections_file, encoding="utf-8").read().strip() if os.path.isfile(opt.sections_file) else ""
 sections = [s.strip() for s in opt.sections.split(",") if s.strip()]
 if opt.archetype and opt.archetype not in ("classic-hero", "long-form-story", "minimal-conversion", "comparison"):
     sys.exit("archetype must be classic-hero, long-form-story, minimal-conversion or comparison, got %r" % opt.archetype)
