@@ -76,12 +76,7 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
+{{include lib/snippets/base-branch-detect.md}}
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -176,7 +171,7 @@ Internalize these; don't enumerate them.
 ## Hall of Fame Reference
 
 During each review pass, load the relevant section from:
-`~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`
+`${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`
 
 Read ONLY the section for the current pass (e.g., "## Pass 1" for Getting Started).
 Do NOT read the entire file at once. This keeps context focused.
@@ -261,7 +256,7 @@ If they choose A:
 Say: "Running /office-hours inline. Once the design doc is ready, I'll pick up
 the review right where we left off."
 
-Read the `/office-hours` skill file at `~/.claude/skills/office-hours/SKILL.md` using the Read tool.
+Read the `/office-hours` skill file at `${CLAUDE_SKILL_DIR}/../office-hours/SKILL.md` using the Read tool.
 
 **If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
 
@@ -453,7 +448,7 @@ AskUserQuestion:
 Every great developer tool has a magical moment: the instant a developer goes from
 "is this worth my time?" to "oh wow, this is real."
 
-Load the "## Pass 1" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`
+Load the "## Pass 1" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`
 for gold standard examples.
 
 Identify the most likely magical moment for this product type, then present delivery
@@ -675,7 +670,7 @@ Rate 0-10: Can a developer go from zero to hello world in under 5 minutes?
 magical moment from 0D (delivery vehicle), and any Install/Hello World friction
 points from 0F.
 
-Load reference: Read the "## Pass 1" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 1" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Evaluate:
 - **Installation**: One command? One click? No prerequisites?
@@ -704,7 +699,7 @@ Rate 0-10: Is the interface intuitive, consistent, and complete?
 A solo founder expects `tool.do(thing)`. A platform engineer expects
 `tool.configure(options).execute(thing)`.
 
-Load reference: Read the "## Pass 2" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 2" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Evaluate:
 - **Naming**: Guessable without docs? Consistent grammar?
@@ -728,7 +723,7 @@ and how to fix it?
 **Evidence recall:** Reference any error-related friction points from 0F and confusion
 points from 0G.
 
-Load reference: Read the "## Pass 3" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 3" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 **Trace 3 specific error paths** from the plan or codebase. For each, evaluate against
 the three-tier system from the Hall of Fame:
@@ -753,7 +748,7 @@ Rate 0-10: Can a developer find what they need and learn by doing?
 style? A solo founder needs copy-paste examples front and center. A platform engineer
 needs architecture docs and API reference.
 
-Load reference: Read the "## Pass 4" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 4" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Evaluate:
 - **Information architecture**: Find what they need in under 2 minutes?
@@ -769,7 +764,7 @@ Evaluate:
 
 Rate 0-10: Can developers upgrade without fear?
 
-Load reference: Read the "## Pass 5" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 5" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Evaluate:
 - **Backward compatibility**: What breaks? Blast radius limited?
@@ -787,7 +782,7 @@ Rate 0-10: Does this integrate into developers' existing workflows?
 **Evidence recall:** Does local dev setup work for [persona from 0A]'s typical
 environment?
 
-Load reference: Read the "## Pass 6" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 6" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Evaluate:
 - **Editor integration**: Language server? Autocomplete? Inline docs?
@@ -805,7 +800,7 @@ Evaluate:
 
 Rate 0-10: Is there a community, and does the plan invest in ecosystem health?
 
-Load reference: Read the "## Pass 7" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 7" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Evaluate:
 - **Open source**: Code open? Permissive license?
@@ -821,7 +816,7 @@ Evaluate:
 
 Rate 0-10: Does the plan include ways to measure and improve DX over time?
 
-Load reference: Read the "## Pass 8" section from `~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 8" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Evaluate:
 - **TTHW tracking**: Can you measure getting started time? Is it instrumented?
@@ -839,7 +834,7 @@ Evaluate:
 This is NOT a scored pass. It's a checklist of proven patterns from vibestack's own DX.
 
 Load reference: Read the "## Claude Code Skill DX Checklist" section from
-`~/.claude/skills/plan-devex-review/dx-hall-of-fame.md`.
+`${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
 
 Check each item. For any unchecked item, explain what's missing and suggest the fix.
 
@@ -854,87 +849,23 @@ review.
 
 {{include lib/snippets/outside-voice-preflight.md}}
 
-Construct the plan review prompt. Read the plan file being reviewed (the file
-the user pointed this review at, or the branch diff scope). If a CEO plan document
-was written in Step 0D-POST, read that too — it contains the scope decisions and vision.
+**Reviewer brief:**
 
-Construct this prompt (substitute the actual plan content — if plan content exceeds 30KB,
-truncate to the first 30KB and note "Plan truncated for size"). **Always start with the
-filesystem boundary instruction:**
-
-"IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nYou are a brutally honest technical reviewer examining a development plan that has
+"You are a brutally honest technical reviewer examining a development plan that has
 already been through a multi-section review. Your job is NOT to repeat that review.
 Instead, find what it missed. Look for: logical gaps and unstated assumptions that
 survived the review scrutiny, overcomplexity (is there a fundamentally simpler
 approach the review was too deep in the weeds to see?), feasibility risks the review
 took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
-compliments. Just the problems.
+compliments. Just the problems."
 
-THE PLAN:
-<plan content>"
+**Material:** the plan file being reviewed (the file the user pointed this review at,
+or the branch diff scope), followed by the Developer Persona from Step 0A and the
+Competitive Benchmark from Step 0C, so the critique knows who uses the product and what
+it competes against. The persona also fills the prompt's REVIEW CONTEXT.
 
-**If `CODEX_MODE` is `ready`:**
-
-The prompt carries plan text, which routinely contains quotes, backticks and `$`
-expressions. Never interpolate it into shell source. First create a private prompt file:
-
-```bash
-umask 077; mktemp "${TMPDIR:-/tmp}/vibe-plan-prompt.XXXXXXXX"
-```
-
-Keep the printed path. Read that empty file first — the Write tool refuses to
-overwrite a file it has not read — then use the Write tool to put the **complete
-prompt** (boundary instruction, reviewer instructions and plan content) into it. If
-the write fails, do not run Codex; treat it as a Codex error below. Then run Codex
-with the prompt on stdin, substituting the shell-quoted path for `<prompt-file>`:
-
-```bash
-_PROMPT_FILE='<prompt-file>'
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-[ -s "$_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $_PROMPT_FILE" >&2; exit 1; }
-TMPERR_PV=$(mktemp "${TMPDIR:-/tmp}/codex-planreview-XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
-_CODEX_EXIT=0
-codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_PV" || _CODEX_EXIT=$?
-echo "CODEX_EXIT: $_CODEX_EXIT"
-# Each Bash call is a fresh shell, so stderr is read and removed here, not later.
-echo "--- codex stderr ---"
-cat "$TMPERR_PV"; rm -f "$TMPERR_PV"
-```
-
-Use a 5-minute timeout (`timeout: 300000`). The block prints Codex's stderr after its
-output; check it for the errors below.
-
-A non-zero `CODEX_EXIT`, a timeout, or an empty response means Codex did not
-complete: treat it as a Codex error below, never as a review with no findings.
-
-Present the full output verbatim:
-
-```
-CODEX SAYS (plan review — outside voice):
-════════════════════════════════════════════════════════════
-<full codex output, verbatim — do not truncate or summarize>
-════════════════════════════════════════════════════════════
-```
-
-**Error handling:** All errors are non-blocking — the outside voice is informational.
-- Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run \`codex login\` to authenticate."
-- Timeout: "Codex timed out after 5 minutes."
-- Empty response: "Codex returned no response."
-
-On any Codex error, fall back to the Claude adversarial subagent.
-
-**If `CODEX_MODE` is `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored), or `under_codex` with no completed `claude -p` pass:** under `under_codex` the preflight's `OUTSIDE_VOICE` branches govern — `claude -p` runs first, and only its fallback reaches this subagent.
-
-Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
-
-{{include lib/snippets/foreground-dispatch.md}}
-
-Subagent prompt: same plan review prompt as above.
-
-Present findings under an `OUTSIDE VOICE (Claude subagent):` header — under `under_codex`, use `OUTSIDE VOICE (same-model subagent — not cross-model):` instead, since the subagent is Codex too.
-
-If the subagent fails or times out: "Outside voice unavailable. Continuing to outputs."
+{{include lib/snippets/outside-voice-body.md}}
 
 **Cross-model tension:**
 
@@ -972,21 +903,7 @@ outside voice. If the user chooses B, the current approach stands — do not re-
 
 If no tension points exist, note: "No cross-model tension — both reviewers agree."
 
-**Persist the result:**
-```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"codex-plan-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
-```
-
-Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.
-SOURCE = "codex" if Codex ran, "claude" if subagent ran.
-
-**Cleanup:** Run `rm -f '<prompt-file>'` after processing (if Codex was used), substituting the same prompt-file path.
-
 ---
-
-When constructing the outside voice prompt, include the Developer Persona from Step 0A
-and the Competitive Benchmark from Step 0C. The outside voice should critique the plan
-in the context of who is using it and what they're competing against.
 
 ## CRITICAL RULE — How to ask questions
 

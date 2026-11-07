@@ -13,7 +13,9 @@
 #     pre-gate checklist verifies them;
 #   - task rows reach disk through a file and one validate-and-stamp block; a
 #     rerun that finds no tasks stamps an empty marker, so the aggregator never
-#     resurrects the previous run's tasks.
+#     resurrects the previous run's tasks;
+#   - the plan family includes the shared base-branch, task and confidence
+#     blocks instead of private copies, and has no hard-coded host paths.
 #
 # Usage: test/test-autoplan-ledger.sh [repo-root]
 set -uo pipefail
@@ -256,6 +258,35 @@ PY
       && ok "control characters in task text are flattened to spaces" || no "task text lost: $(printf '%s' "$agg" | tr '\n' ' ')"
   fi
 fi
+
+# --- plan-family includers ---------------------------------------------------
+# The shared blocks are tested once in their snippets; these rows keep each plan
+# skill on the snippet instead of a private copy that drifts from it.
+includes() { grep -qxF "{{include lib/snippets/$2.md}}" "$SRC/skills/$1/SKILL.md"; }
+for s in autoplan plan-ceo-review plan-devex-review; do
+  if includes "$s" base-branch-detect \
+     && ! grep -qF 'git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed' "$SRC/skills/$s/SKILL.md"; then
+    ok "$s detects the base branch through the shared block"
+  else
+    no "$s keeps its own base-branch fallback"
+  fi
+done
+for s in plan-ceo-review plan-eng-review plan-devex-review; do
+  includes "$s" tasks-section-emit && ok "$s emits tasks through the shared block" \
+                                   || no "$s does not include tasks-section-emit"
+done
+includes autoplan tasks-section-aggregate && ok "autoplan aggregates through the shared block" \
+                                          || no "autoplan does not include tasks-section-aggregate"
+if includes plan-eng-review confidence-calibration \
+   && ! grep -qF '| 1-2 | Speculation. | Only report if severity would be P0. |' "$SRC/skills/plan-eng-review/SKILL.md"; then
+  ok "plan-eng-review calibrates confidence through the shared block"
+else
+  no "plan-eng-review keeps its own confidence table"
+fi
+hp="$("$SRC/bin/vibe-lint-sources" "$SRC" 2>&1 | grep 'hard-coded host path' \
+      | grep -E '/skills/(autoplan|plan-ceo-review|plan-eng-review|plan-devex-review|plan-tune)/' || true)"
+[ -z "$hp" ] && ok "no hard-coded host paths in the plan family" \
+             || no "hard-coded host paths remain: $(printf '%s\n' "$hp" | sed 's/: hard-coded.*//' | tr '\n' ' ')"
 
 echo
 echo "autoplan ledger: $pass passed, $fail failed"
