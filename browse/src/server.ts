@@ -1320,7 +1320,10 @@ async function handleCommandInternal(
   // active tab: requests overlap while handleCommandInternalImpl awaits.
   let cr: CommandResult;
   try {
-    cr = await browserManager.runPinned(body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts));
+    // Commands that need no page (newtab, tabs, stop, ...) ignore a pin, so a
+    // stale BROWSE_TAB never blocks the recovery the not-found error suggests.
+    const pageless = META_COMMANDS_WITHOUT_PAGE.has(body.command) || body.command === 'newtab' || body.command === 'tabs';
+    cr = await browserManager.runPinned(pageless ? undefined : body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts));
   } catch (err: any) {
     if (!/^Tab \S+ not found/.test(err?.message ?? '')) throw err;
     cr = { status: 404, json: true, result: JSON.stringify({ error: err.message }) };

@@ -154,6 +154,11 @@ describe.skipIf(!hasChromium)('daemon tabs (real daemon)', () => {
     const r = await run('url', [], 987654);
     expect(r.status).not.toBe(200);
     expect(r.text).toContain('987654');
+    // The recovery the error suggests has to get past the same stale pin.
+    const fresh = await run('newtab', ['--json'], 987654);
+    expect(fresh.status).toBe(200);
+    expect((await run('tabs', [], 987654)).status).toBe(200);
+    await run('closetab', [String(JSON.parse(fresh.text).tabId)]);
   }, 15_000);
 
   test('after every tab is closed outside browse, status and goto recover', async () => {
