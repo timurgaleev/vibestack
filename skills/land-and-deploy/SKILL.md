@@ -384,11 +384,11 @@ Run whichever commands are relevant based on the detected platform. Build the re
 
 **Validation failures are WARNINGs, not BLOCKERs** (except `gh auth status` which already
 failed at Step 1). If `curl` fails, note "I couldn't reach that URL — might be a network
-issue, VPN requirement, or incorrect address. I'll still be able to deploy, but I won't
-be able to verify the site is healthy afterward."
+issue, VPN requirement, or incorrect address. Health checks are unavailable for it, so I
+can merge but not check the site afterward."
 If platform CLI is not installed, note "The {platform} CLI isn't installed on this machine.
-I can still deploy through GitHub, but I'll use HTTP health checks instead of the platform
-CLI to verify the deploy worked."
+HTTP checks show the site answers, not which revision it serves — without a deploy record
+for the merge commit, the deploy status stays UNKNOWN."
 
 ### 1.5c: Staging detection
 
@@ -1827,19 +1827,27 @@ VERDICT: <the first matching row of the table above>
 
 Save report to `<REPORT_DIR>/{date}-pr{number}-deploy.md`, using the `REPORT_DIR:` path the block above printed — the state root, never the work tree.
 
-Log to the review dashboard:
-
-```bash
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
-mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
-```
-
-Write a JSONL entry with timing data. `status` is SUCCESS only for DEPLOYED AND VERIFIED
-or MERGED — NO DEPLOY NEEDED, REVERTED for a confirmed rollback, and INCOMPLETE for every
-other verdict; the full verdict and each evidence state are kept alongside it:
+Log to the review dashboard. Fill one entry with timing data. `status` is SUCCESS only
+for DEPLOYED AND VERIFIED or MERGED — NO DEPLOY NEEDED, REVERTED for a confirmed rollback,
+and INCOMPLETE for every other verdict; the full verdict and each evidence state are kept
+alongside it:
 ```json
-{"skill":"land-and-deploy","timestamp":"<ISO>","status":"<SUCCESS/REVERTED/INCOMPLETE>","verdict":"<verdict>","pr":<number>,"head_sha":"<PR_HEAD>","merge_sha":"<sha>","merge_path":"<auto/direct/queue/external>","first_run":<true/false>,"deploy_status":"<PASSED/FAILED/PENDING/UNKNOWN/NOT_NEEDED>","verification":"<HEALTHY/DEGRADED/SKIPPED>","staging_status":"<VERIFIED/DEGRADED/SKIPPED/N/A>","review_status":"<CURRENT/STALE/NOT_RUN/INLINE_FIX>","ci_wait_s":<N>,"queue_s":<N>,"deploy_s":<N>,"staging_s":<N>,"canary_s":<N>,"total_s":<N>}
+{"skill":"land-and-deploy","timestamp":"<ISO>","status":"<SUCCESS/REVERTED/INCOMPLETE>","verdict":"<verdict>","pr":<number>,"head_sha":"<PR_HEAD>","merge_sha":"<sha>","merge_path":"<auto/direct/queue/external>","first_run":<true/false>,"deploy_status":"<PASSED/FAILED/PENDING/UNKNOWN/NOT_NEEDED>","verification":"<HEALTHY/DEGRADED/SKIPPED>","staging_status":"<VERIFIED/DEGRADED/SKIPPED/N/A>","review_status":"<CURRENT/STALE/NOT_RUN/INLINE_PASSED>","dry_run_s":<N>,"ci_wait_s":<N>,"queue_s":<N>,"deploy_s":<N>,"staging_s":<N>,"canary_s":<N>,"total_s":<N>}
 ```
+
+`vibe-review-log` writes it. After `--delete-branch` the checkout is on the base, so the
+block names the PR's branch and the merge commit in the entry itself rather than letting
+the writer take them from the checkout:
+```bash
+REPO='<REPO>'; PR_NUMBER='<PR_NUMBER>'; MERGE_SHA='<MERGE_SHA>'   # Step 1; readback
+ENTRY='<ENTRY>'   # the JSON line above, every <…> filled in
+_BR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName -q .headRefName 2>/dev/null) || _BR=unknown
+ENTRY=$(printf '%s' "$ENTRY" | jq -ce --arg b "$_BR" --arg c "$(printf '%s' "$MERGE_SHA" | cut -c1-7)" '. + {branch: $b, commit: $c}' 2>/dev/null) \
+  || { echo "DEPLOY_LOG: not logged (the entry is not valid JSON)"; exit 1; }
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" "$ENTRY" || { echo "DEPLOY_LOG: not logged (vibe-review-log failed)"; exit 1; }
+echo "DEPLOY_LOG: logged"
+```
+`DEPLOY_LOG: not logged` goes into the report as is; never say the run was logged.
 
 ---
 
