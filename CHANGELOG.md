@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.55.21 — 2026-11-07
+
+### Changed
+
+- **`/review` and `/ship` check that Codex can answer before relying on it.**
+  An installed `codex` or a saved login says nothing about an exhausted or
+  signed-out workspace; the mode now comes from `vibe-codex-probe`, so such a
+  workspace is reported up front instead of failing late. The Codex adversarial
+  reply counts as coverage only when it ends on its `Recommendation:` line and
+  any verdict other than SHIP comes with severity-tagged findings — written as
+  plain lines, a numbered list or a table — otherwise it is reported as missing
+  coverage, never as a clean review.
+- **`/review` and `/ship` use the shared base-branch detection and confidence
+  calibration.** Under the shared calibration, an unverified finding that would
+  be P0 or P1 now shows in the main report at confidence 5 with a "verify this"
+  caveat, instead of being kept in the appendix. The ship coverage subagent
+  gets the implementer dispatch rules, and `/review`'s fix step applies the test
+  value bar.
+
+### Fixed
+
+- **A diff whose scope cannot be computed gets every specialist.** When
+  `vibe-diff-scope` fails, `/review` and `/ship` used to read the missing flags
+  as "nothing changed" and skip specialists and the design review; they now run
+  all of them. `/ship` stops when the design checklist cannot be read instead
+  of skipping the design review.
+- **`/review` and `/ship` find their checklists on every runtime.** Checklist,
+  specialist, greptile-triage, TODOS-format and design-checklist reads resolve
+  through the installed skill directory instead of `~/.claude/skills`.
+- **Secrets are caught by the shared matcher everywhere.** `vibe-evidence`
+  refuses a command line that carries a credential, using the same patterns as
+  the other loggers, and greptile replies are scanned with `vibe-redact` before
+  they are posted; a scan that cannot run stops the reply.
+- **`/ship`'s GitLab helper runs its Python isolated.**
+
 ## 1.55.20 — 2026-11-07
 
 ### Changed
