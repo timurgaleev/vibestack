@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.55.33 — 2026-11-07
+
+### Fixed
+
+- **A suite that ran nothing no longer passes `/ship`.** Each test lane reports
+  the runner's own count (`tests_ran=N|0|unknown`) from its summary line (jest,
+  pytest, rspec, bun, go, unittest, node --test, cargo). A count of 0 is an
+  in-branch failure, a re-run lane is counted again, and the PR Test plan shows
+  the count for each lane.
+- **Edits after the review go back through review.** A new Step 16.0 compares the
+  reviewed tree and each lane's tree with the tree about to ship. CHANGELOG,
+  VERSION, TODOS and a manifest whose only change is its own version don't
+  count; anything else, or an unknown comparison, sends the ship back through
+  Steps 9-11. No lane allow-lists a manifest.
+- **Every branch diff, log and worktree reads the fetched `origin/<base>`.**
+- **Version files move together.** `vibe-version-bump` writes VERSION,
+  package.json and npm lockfiles together or not at all, the queue pick excludes
+  the branch's own PR, and CHANGELOG entries copy the file's own heading format.
+- **A failure is pre-existing only when proven red on the base branch** in a
+  detached worktree; green at base or an unavailable proof means in-branch.
+- **Bootstrap no longer reverts manifests or deletes failing tests**, and stages
+  only named files. Lane and eval logs go to a private temp directory, and long
+  eval suites are polled until they exit.
+
 ## 1.55.32 — 2026-11-07
 
 ### Changed
