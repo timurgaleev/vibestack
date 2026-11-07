@@ -213,6 +213,8 @@ Check if this bug matches a known pattern:
 
 **Working example diff:** When a similar path works (the same endpoint for another tenant, the previous release, a sibling component), diff the working and the failing case — inputs, config, code path, logged boundary values — and list every difference. The cause is in that list; each difference is a candidate hypothesis.
 
+**When the failure is intermittent or CI-only:** read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/flake.md` and follow it — base-vs-branch failure rates, a forced probe before any cause is named, order-dependent failures, races, and no loosened timeouts, retries or skips. Its `Flake evidence` block goes into the DEBUG REPORT.
+
 Also check:
 - `TODOS.md` for related known issues
 - `git log` for prior fixes in the same area — **recurring bugs in the same files are an architectural smell**, not a coincidence

@@ -429,6 +429,22 @@ test_bin_symlinks_present_per_target() {
   done
 }
 
+# --- sub-docs read at runtime are symlinked next to the rendered SKILL.md
+test_subdoc_symlinks_present_per_target() {
+  "$INSTALL" --target=all < /dev/null >/dev/null 2>&1
+  local src="$REPO_DIR/skills/investigate/flake.md" root link
+  assert_file_exists "$src" || return 1
+  for root in "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.kiro/skills" \
+              "$HOME/.agents/skills" "$HOME/.copilot/skills"; do
+    link="$root/investigate/flake.md"
+    if [ ! -L "$link" ]; then
+      echo "    expected symlink: $link" >&2
+      return 1
+    fi
+    assert_eq "$src" "$(readlink "$link")" "flake.md link target" || return 1
+  done
+}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # v1.5.0 install plan UX tests (TTY-gated via PTY harness)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1008,6 +1024,7 @@ run_test "uninstall_target_cursor_preserves_claude"             test_uninstall_t
 run_test "install_warns_about_hooks_for_non_claude"             test_install_warns_about_hooks_for_non_claude
 run_test "install_no_hook_warning_for_claude_only"              test_install_no_hook_warning_for_claude_only
 run_test "bin_symlinks_present_per_target"                      test_bin_symlinks_present_per_target
+run_test "subdoc_symlinks_present_per_target"                   test_subdoc_symlinks_present_per_target
 # v1.5.0 install plan UX tests (PTY-gated)
 run_test "v1.5: plan default Enter installs detected"           test_install_plan_default_enter_installs_detected
 run_test "v1.5: plan a installs all three"                      test_install_plan_a_installs_all_three
