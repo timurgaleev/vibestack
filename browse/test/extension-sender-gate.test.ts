@@ -77,6 +77,18 @@ describe('extension background sender gate', () => {
     expect(resp?.error).toBeTruthy();
   });
 
+  test('a content script cannot repoint the token at its own port', async () => {
+    for (const msg of [{ type: 'setPort', port: 45678 }, { type: 'fetchRefs' }, { type: 'sidebar-command', message: 'x' }]) {
+      const before = bg.fetched.length;
+      const resp = await send(bg.onMessage, msg, page);
+      await new Promise(r => setTimeout(r, 20));
+      expect(resp?.error).toBeTruthy();
+      expect(bg.fetched.slice(before).some(u => u.includes('45678') || u.includes('/refs') || u.includes('/sidebar-command'))).toBe(false);
+    }
+    const port = await send(bg.onMessage, { type: 'getPort' }, sidepanel);
+    expect(port.port).toBe(34567);
+  });
+
   test('the side panel still gets the token and the command proxy', async () => {
     const port = await send(bg.onMessage, { type: 'getPort' }, sidepanel);
     expect(port.token).toBe('root-token-for-tests');
