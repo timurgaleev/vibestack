@@ -737,9 +737,45 @@ if [[ -f "$CURSOR_CLI_CONFIG_SRC" ]]; then
 import json, sys
 src = json.load(open(sys.argv[1]))
 dst = json.load(open(sys.argv[2]))
-for key in ("permissions", "approvalMode", "version"):
+
+# Rules an earlier pack shipped and then withdrew. Cursor's documented grammar
+# has no Bash(...) or WebSearch token and writes WebFetch with a domain
+# pattern; the union below would otherwise keep these on every machine.
+RETIRED_PERMISSIONS = {
+    "allow": {"Bash(*)", "WebFetch", "WebSearch"},
+    "deny": {
+        "Bash(chmod -R 777 /:*)", "Bash(chown -R * /:*)", "Bash(dd if=/dev/zero:*)",
+        "Bash(fdisk:*)", "Bash(gdisk:*)", "Bash(halt:*)", "Bash(init 0:*)",
+        "Bash(init 6:*)", "Bash(mkfs:*)", "Bash(parted:*)", "Bash(poweroff:*)",
+        "Bash(reboot:*)", "Bash(rm -rf $HOME/*)", "Bash(rm -rf /)", "Bash(rm -rf /*)",
+        "Bash(rm -rf ~/*)", "Bash(shutdown:*)", "Bash(sudo rm -rf:*)",
+        "Bash(systemctl disable:*)", "Bash(systemctl halt:*)",
+        "Bash(systemctl poweroff:*)", "Bash(systemctl reboot:*)",
+        "Bash(systemctl stop:*)",
+    },
+}
+
+for key in ("approvalMode", "version"):
     if key in src:
         dst[key] = src[key]
+
+s_perms = src.get("permissions")
+d_perms = dst.get("permissions")
+if isinstance(s_perms, dict):
+    merged = dict(d_perms) if isinstance(d_perms, dict) else {}
+    for k, s_list in s_perms.items():
+        d_list = merged.get(k)
+        if not isinstance(s_list, list) or not isinstance(d_list, list):
+            merged[k] = s_list
+            continue
+        out = list(s_list)
+        for r in d_list:
+            if r in out or (isinstance(r, str) and r in RETIRED_PERMISSIONS.get(k, ())):
+                continue
+            out.append(r)
+        merged[k] = out
+    dst["permissions"] = merged
+
 print(json.dumps(dst, indent=2))
 PYEOF
 ) || merged=""

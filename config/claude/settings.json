@@ -38,7 +38,13 @@
       "Bash(systemctl halt:*)",
       "Bash(systemctl poweroff:*)",
       "Bash(systemctl reboot:*)",
-      "Bash(systemctl stop:*)"
+      "Bash(systemctl stop:*)",
+      "Read(~/.aws/credentials)",
+      "Read(~/.config/gh/hosts.yml)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.netrc)",
+      "Read(~/.ssh/*.pem)",
+      "Read(~/.ssh/id_*)"
     ],
     "defaultMode": "acceptEdits"
   },

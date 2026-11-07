@@ -43,6 +43,22 @@ If you sync vibekit to your own machine and want tighter control, edit
 - Remove `"Bash(*)"` from `permissions.allow` to be prompted per command.
 - Change `defaultMode` from `acceptEdits` to a prompting mode.
 
+The `deny` list also carries `Read(...)` rules for a few credential files:
+`~/.ssh/id_*`, `~/.ssh/*.pem`, `~/.aws/credentials`, `~/.netrc`,
+`~/.config/gh/hosts.yml` and `~/.docker/config.json`. Claude Code applies a
+`Read` deny to its own file tools, to the file commands it recognizes in Bash
+(`cat`, `head`, `tail`, `sed`, `tee`), to redirection targets, and to writes on
+the same path. It does not apply to a command that reads a file without naming
+it, such as `grep -r` from the parent directory, or to a script that opens the
+file itself. Treat these rules as a guard against an accidental read, not a
+sandbox; Claude Code's own sandbox is the OS-level control.
+
+`cursor/cli-config.json` uses Cursor's permission grammar (`Shell(...)`,
+`WebFetch(...)`). Its deny list names whole commands only (`shutdown`,
+`reboot`, `mkfs`, ...); argument-matching rules such as `rm -rf /` are left
+out rather than written in a form whose matching has not been verified. The
+sync unions both lists with yours, so rules you add there survive.
+
 The sync deep-merges settings and preserves your `permissions.allow` additions,
 but `defaultMode` is taken from the repo — re-apply your preference after a sync,
 or fork and change the shipped value.
