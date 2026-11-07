@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.55.19 — 2026-11-07
+
+### Changed
+
+- **The plan reviews share one outside-voice run.** `/plan-ceo-review`,
+  `/plan-eng-review` and `/plan-devex-review` had drifted copies of the Codex
+  pass; they now use the same prompt frame, grading and review-log record as
+  the other outside voices, and the Claude fallback asks for a read-only
+  subagent. A switched-off outside voice writes a `disabled` record instead of
+  nothing, so the dashboard can tell an opt-out from a review that never ran.
+  `/plan-eng-review` uses the shared confidence calibration, and `/plan-ceo-review`,
+  `/plan-devex-review` and `/autoplan` the shared base-branch detection.
+
+### Fixed
+
+- **The plan reviews and `/autoplan` find sibling skills on every runtime.**
+  They read `/office-hours`, the other plan reviews and the DX hall of fame from
+  `~/.claude/skills`, which only exists under Claude Code; they resolve through
+  the installed skill directory now.
+- **`/plan-eng-review` says when its review log was not saved.** A failed write
+  prints `REVIEW_LOG_NOT_PERSISTED` and the skill no longer reports the review
+  as logged. A durable architecture choice can be recorded in the decision log.
+- **`/plan-tune` runs its inline Python isolated**, so a `json.py` in the
+  working directory is never imported.
+
 ## 1.55.18 — 2026-11-07
 
 ### Changed
