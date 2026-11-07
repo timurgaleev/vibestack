@@ -365,6 +365,14 @@ REFUSAL = re.compile(
     r"\b(?:(?:I (?:cannot|can't|won't|will not|am unable to)|I'm unable to)\s+(?:review|analy[sz]e|evaluate|assess|inspect|access|complete|perform|provide|assist|help|proceed)"
     r"|unable to (?:review|analy[sz]e)|I must (?:decline|refuse))\b",
     re.I)
+# A short reply that only announces the exploration it is about to do: the run
+# stopped before answering anything.
+INTENT_STUB = re.compile(
+    r"^(?:I['’]ll|I will|I['’]m going to|I am going to|Let me|First,? I(?:['’]ll| will)?)\s+"
+    r"(?:(?:\w+ly|first|now|just)\s+)?(?:(?:start|begin) by\s+)?"
+    r"(?:look|check|inspect|examin|explor|read|review|investigat|search|scan|analy[sz]|dig|open|grep|find|go through|take a look)\w*\b",
+    re.I)
+INTENT_STUB_MAX = 400
 # `codex review` prints its transcript on stderr; a command that ran logs " succeeded in Nms:".
 TRANSCRIPT_SUCCESS = re.compile(r"^\s*succeeded in \d+(?:\.\d+)?m?s:?\s*$", re.M)
 EXIT_CODES = {'clean': 0, 'answered': 0, 'findings': 3, 'unverified': 4, 'unavailable': 1}
@@ -456,6 +464,11 @@ def refused(text, graded):
     return not graded and len(text.strip()) <= 600 and bool(REFUSAL.search(opening(text)))
 
 
+def intent_stub(text):
+    body = plain(text).strip()
+    return len(body) < INTENT_STUB_MAX and bool(INTENT_STUB.match(body))
+
+
 def plain(text):
     # Bold, inline code, headings and bullets around a marker do not hide it.
     return '\n'.join(re.sub(r'[*_`]', '', re.sub(r'^[\t ]*(?:#{1,6}[\t ]+|[-+*][\t ]+)?', '', l)) for l in text.splitlines())
@@ -493,6 +506,8 @@ def main(argv):
     failed = execution(text, stderr, exit_code, events, mode, blocking)
     if not failed and refused(text, bool(tags) or no_findings):
         failed = ('review_refused', 'Codex declined the request')
+    if not failed and mode == 'answer' and intent_stub(text):
+        failed = ('intent_stub', 'Codex announced what it would inspect and stopped')
     if failed:
         verdict, reason, detail = 'unavailable', failed[0], failed[1]
     elif mode == 'answer':
@@ -522,7 +537,9 @@ The validator prints `VERDICT:` (`clean`, `findings`, `unverified` or
 Consult), `FINDINGS:` and, for every non-clean verdict, `REASON:`. `unavailable`
 covers a non-zero exit, a sandbox that never started, every command failing, a
 review saying it could not read the diff (even when other commands succeeded,
-unless it also carries a P0/P1 finding), a refusal, and an empty final message.
+unless it also carries a P0/P1 finding), a refusal, an empty final message, and
+an answer under 400 characters that only announces what it will inspect
+(`intent_stub`).
 
 ---
 
