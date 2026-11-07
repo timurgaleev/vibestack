@@ -96,6 +96,16 @@ For a skill, hook or cache path:
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-gc" trash '<PATH from the row>'
 ```
 
+For a `repo` row (an oversized log under a project's `.vibestack/`):
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-gc" trim '<PATH from the row>'
+```
+
+It keeps the last 256 KB and moves the untrimmed original to
+`~/.vibestack/gc-trash/<date>/repo/`; it refuses while that repository's browse
+daemon may be running.
+
 The bin moves it to `~/.vibestack/gc-trash/<date>/<channel>/` and appends an
 `undo:` line to `~/.vibestack/gc-log.md`. A `REFUSED:` line means the path is
 settings, MCP configuration, transcripts, project state, a pack-owned skill or
@@ -174,4 +184,4 @@ Next review: <date + 30 days>
   a signal.
 - **Never hard-delete.** The trash and the log are the undo path.
 - **Sources and repos are never touched**, nor MCP, n8n, cron or launchd
-  state.
+  state. The one exception is `trim` on a log under a repo's `.vibestack/`.

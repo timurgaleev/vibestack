@@ -190,5 +190,93 @@ mode=$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777
 [ "$mode" = "0o600" ] && ! grep -q WebFetch "$SET" \
   && ok "permission removal keeps a 0600 settings file at 0600" || no "settings mode after removal: $mode"
 
+# ── repo-local state: browse logs under <toplevel>/.vibestack ───────────────
+export HOME="$TMP/home3"
+export VIBESTACK_HOME="$HOME/.vibestack"
+mkdir -p "$HOME"
+REPO="$TMP/repo"
+RS="$REPO/.vibestack"
+mkdir -p "$RS/qa-reports" "$RS/chromium-profile" "$REPO/sub"
+git -C "$REPO" init -q
+# 1.5 MB of numbered JSONL records: a trim must keep whole records only.
+python3 -I -c '
+import sys
+with open(sys.argv[1], "w") as f:
+    for i in range(1, 20001):
+        f.write("{\"n\": %d, \"pad\": \"%s\"}\n" % (i, "x" * 60))' "$RS/browse-audit.jsonl"
+chmod 640 "$RS/browse-audit.jsonl"
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("line\n" * 40000)' "$RS/browse-console.log"   # 200 KB
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("c" * 2000000)' "$RS/cookies.json"
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("r" * 2000000)' "$RS/qa-reports/report.log"
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("p" * 2000000)' "$RS/chromium-profile/Cookies.log"
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("s\n" * 1000000)' "$TMP/elsewhere.log"
+ln -s "$TMP/elsewhere.log" "$RS/browse-linked.log"
+audit_size=$(wc -c < "$RS/browse-audit.jsonl" | tr -d ' ')
+audit_last=$(tail -n 1 "$RS/browse-audit.jsonl")
+
+touch "$TMP/sentinel3"; sleep 1
+out4="$(cd "$REPO/sub" && "$GC" scan --days 30 2>/dev/null)"; rc=$?
+[ "$rc" -eq 0 ] && ok "scan from inside a repo exits 0" || no "repo scan exit $rc"
+printf '%s\n' "$out4" | awk -F'\t' '$2=="repo" && $3 ~ /\/\.vibestack\/browse-audit\.jsonl$/ && $5 >= 1024' | grep -q . \
+  && ok "a repo .vibestack log over 1 MB is a repo candidate" || no "browse-audit.jsonl not reported: $out4"
+printf '%s\n' "$out4" | grep -q 'browse-console\.log' \
+  && no "a log under 1 MB reported: $out4" || ok "a log under 1 MB is not reported"
+printf '%s\n' "$out4" | grep -qE 'cookies\.json|qa-reports|chromium-profile' \
+  && no "cookies, reports or profile reported: $out4" || ok "cookies, reports and the profile are never candidates"
+printf '%s\n' "$out4" | grep -q 'browse-linked\.log' \
+  && no "a symlinked log reported: $out4" || ok "a symlinked log is not reported"
+changed="$(find "$REPO" -newer "$TMP/sentinel3" 2>/dev/null | grep -v '/\.git/')"
+[ -z "$changed" ] && ok "repo scan changes nothing on disk" || no "repo scan wrote: $changed"
+
+trim_refused() {
+  local label="$1" target="$2" before
+  before=$(wc -c < "$target" | tr -d ' ')
+  (cd "$REPO" && "$GC" trim "$target" >/dev/null 2>&1); local rc=$?
+  if [ "$rc" -ne 0 ] && [ "$(wc -c < "$target" | tr -d ' ')" = "$before" ]; then ok "trim refuses $label"
+  else no "trim did not refuse $label (exit $rc)"; fi
+}
+trim_refused "cookies" "$RS/cookies.json"
+trim_refused "a report" "$RS/qa-reports/report.log"
+trim_refused "a file in the browser profile" "$RS/chromium-profile/Cookies.log"
+trim_refused "a log under 1 MB" "$RS/browse-console.log"
+trim_refused "a symlinked log" "$RS/browse-linked.log"
+trim_refused "a log outside the repo's .vibestack" "$TMP/elsewhere.log"
+
+# A running browse daemon is still appending; trimming under it loses records.
+sleep 300 & live=$!
+printf '{"pid": %d, "port": 1}\n' "$live" > "$RS/browse.json"
+out5="$(cd "$REPO" && "$GC" scan --days 30 2>/dev/null)"
+printf '%s\n' "$out5" | awk -F'\t' '$2=="repo" && $4 ~ /browse daemon running/' | grep -q . \
+  && ok "scan says the browse daemon is running" || no "running daemon not reported: $out5"
+trim_refused "a log while the browse daemon runs" "$RS/browse-audit.jsonl"
+kill "$live" 2>/dev/null; wait "$live" 2>/dev/null
+printf 'not json' > "$RS/browse.json"
+trim_refused "a log when the daemon state is unreadable" "$RS/browse-audit.jsonl"
+sh -c 'exit 0' & dead=$!; wait "$dead"
+printf '{"pid": %d, "port": 1}\n' "$dead" > "$RS/browse.json"
+
+(cd "$REPO/sub" && "$GC" trim "$RS/browse-audit.jsonl" >/dev/null 2>&1); rc=$?
+new_size=$(wc -c < "$RS/browse-audit.jsonl" | tr -d ' ')
+[ "$rc" -eq 0 ] && [ "$new_size" -le 262144 ] && [ "$new_size" -gt 200000 ] \
+  && ok "trim keeps at most the last 256 KB (exit $rc, $new_size B)" || no "trim exit $rc, size $new_size"
+head -n 1 "$RS/browse-audit.jsonl" | python3 -I -c 'import json, sys; json.loads(sys.stdin.readline())' 2>/dev/null \
+  && ok "the trimmed log starts on a whole record" || no "first line after trim is a partial record"
+[ "$(tail -n 1 "$RS/browse-audit.jsonl")" = "$audit_last" ] \
+  && ok "the newest record survives the trim" || no "last record changed by trim"
+mode=$(python3 -I -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$RS/browse-audit.jsonl")
+[ "$mode" = "0o640" ] && ok "trim keeps the log's mode" || no "mode after trim: $mode"
+kept="$VIBESTACK_HOME/gc-trash/$TODAY/repo/browse-audit.jsonl"
+[ -f "$kept" ] && [ "$(wc -c < "$kept" | tr -d ' ')" = "$audit_size" ] \
+  && ok "the untrimmed original is kept in gc-trash/<date>/repo" || no "original not kept at $kept"
+grep -q "trimmed '$RS/browse-audit.jsonl'" "$VIBESTACK_HOME/gc-log.md" 2>/dev/null \
+  && ok "gc-log.md records the trim" || no "no trim line in gc-log.md"
+(cd "$REPO" && "$GC" undo "$TODAY" >/dev/null 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "undo ignores trim lines" || no "undo after a trim exit $rc"
+python3 -I -c 'import sys; open(sys.argv[1], "w").write("net\n" * 300000)' "$RS/browse-network.log"
+(cd "$REPO" && "$GC" trim "$RS/browse-network.log" "$RS/../.vibestack/browse-network.log" >/dev/null 2>&1); rc=$?
+[ "$rc" -eq 0 ] && [ "$(wc -c < "$RS/browse-network.log" | tr -d ' ')" -le 262144 ] \
+  && [ ! -e "$VIBESTACK_HOME/gc-trash/$TODAY/repo/browse-network.log.1" ] \
+  && ok "the same log named twice is trimmed once" || no "duplicate trim path: exit $rc"
+
 echo "vibe-gc: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
