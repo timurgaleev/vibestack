@@ -48,7 +48,7 @@ if command -v jq >/dev/null 2>&1; then
 
   # Exact-match dedup by (component, sorted(files), title). Non-matches kept
   # separately with a possible-duplicate marker injected by the renderer.
-  AGGREGATED_TASKS=$(jq -s \
+  AGGREGATED_TASKS=$(jq -rs \
     'map(select(.empty != true))
      | group_by([.component, (.files | sort), .title])
      | map(
@@ -58,7 +58,7 @@ if command -v jq >/dev/null 2>&1; then
      | sort_by({P1:0,P2:1,P3:2}[.priority] // 99, {"ceo-review":0,"design-review":1,"eng-review":2,"devex-review":3}[.phase] // 99)
      | if length == 0 then "_No actionable tasks emitted from any phase._" else
          map("- [ ] **\(.id) (\(.priority), human: \(.effort_human) / CC: \(.effort_cc)) — \(.component)** — \(.title)\n  - Surfaced by: \(.phase) — \(.source_finding)\n  - Files: \(.files | join(", "))") | join("\n")
-       end' "$ALL_JSONL" 2>/dev/null | sed 's/^"//;s/"$//;s/\\n/\n/g')
+       end' "$ALL_JSONL" 2>/dev/null)
   rm -f "$ALL_JSONL"
 else
   AGGREGATED_TASKS="_jq not installed — install jq to aggregate per-phase task lists. Skipping._"

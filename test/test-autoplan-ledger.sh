@@ -187,6 +187,9 @@ PY
   agg="$(aggregate green)"
   printf '%s' "$agg" | grep -qF 'and $(touch pwned)' && printf '%s' "$agg" | grep -qF 'Second task' \
     && ok "aggregator renders both emitted tasks" || no "aggregator lost emitted tasks: $(printf '%s' "$agg" | tr '\n' ' ')"
+  # The rendered list is raw text: quotes in a title stay quotes, not \" escapes.
+  printf '%s\n' "$agg" | grep -qF -- '— Quote "it" and $(touch pwned)' \
+    && ok "aggregator keeps quotes in task text" || no "aggregator mangled quotes: $(printf '%s' "$agg" | grep -F 'pwned')"
 
   # A phase that found tasks last time and none now: the earlier tasks are stale.
   mkdir -p "$EH/projects/rerun"
