@@ -183,7 +183,7 @@ mkdir -p "$BREPO" && (
   cd "$BREPO" && git init -q -b feat2 && git config user.email t@example.com && git config user.name t &&
   printf 'a\n' > a.txt && printf '1.0.0\n' > VERSION && printf '# log\n' > CHANGELOG.md &&
   printf '{\n  "name": "x",\n  "version": "1.0.0",\n  "dependencies": {}\n}\n' > package.json &&
-  printf '{\n  "name": "x",\n  "version": "1.0.0",\n  "lockfileVersion": 3\n}\n' > package-lock.json &&
+  printf '{\n  "name": "x",\n  "version": "1.0.0",\n  "lockfileVersion": 3,\n  "packages": {\n    "": {\n      "name": "x",\n      "version": "1.0.0"\n    },\n    "node_modules/dep": {\n      "version": "2.0.0"\n    }\n  }\n}\n' > package-lock.json &&
   git add . && git commit -qm init
 )
 bind() { (cd "$BREPO" && HOME="$FH" bash "$TMP/bind.sh" 2>&1); }
@@ -196,6 +196,9 @@ chk "an unchanged tree needs no re-review" "$(moved review)" ""
   sed -i.bak 's/"version": "1.0.0"/"version": "1.0.1"/' package.json package-lock.json && rm -f ./*.bak)
 chk "version, CHANGELOG and version-only manifest edits need no re-review" "$(moved review)" ""
 chk "nor make the lane stale" "$(moved unit)" ""
+(cd "$BREPO" && sed -i.bak 's/"version": "2.0.0"/"version": "2.0.1"/' package-lock.json && rm -f ./*.bak)
+chk "a dependency's version-only lockfile edit is a moved path" "$(moved review)" "package-lock.json"
+(cd "$BREPO" && sed -i.bak 's/"version": "2.0.1"/"version": "2.0.0"/' package-lock.json && rm -f ./*.bak)
 (cd "$BREPO" && sed -i.bak 's/"dependencies": {}/"dependencies": {"left-pad": "1.0.0"}/' package.json && rm -f ./*.bak)
 chk "a dependency edit in package.json is a moved path" "$(moved review)" "package.json"
 chk "and makes the lane stale" "$(moved unit)" "package.json"

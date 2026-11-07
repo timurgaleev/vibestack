@@ -2573,14 +2573,15 @@ during Steps 4-6":
    _VB="${VIBESTACK_HOME:-$HOME/.vibestack}/bin"
    _NOW=$("$_VB/vibe-review-log" --snapshot 2>/dev/null)
    # Paths that differ between tree ${1} and now, release bookkeeping aside. A
-   # manifest is bookkeeping only when every changed line is a "version" line.
+   # manifest is bookkeeping only when it differs in nothing but its own version
+   # (root and packages[""]); a dependency's version is a real change.
    _moved() {
      if [ -z "${1}" ] || [ -z "$_NOW" ] || ! _D=$(git diff --name-only "${1}" "$_NOW" 2>/dev/null); then echo "MOVED ${2}: unknown"; return; fi
      printf '%s\n' "$_D" | while IFS= read -r _p; do
        case "$_p" in
          ''|CHANGELOG.md|VERSION|TODOS.md) continue ;;
          package.json|package-lock.json|npm-shrinkwrap.json)
-           git diff -U0 "${1}" "$_NOW" -- "$_p" | grep -E '^[-+][^-+]' | grep -qvE '^[-+][[:space:]]*"version":' || continue ;;
+           python3 -I -c 'import json,subprocess,sys; b=[json.loads(subprocess.run(["git","show",t+":"+sys.argv[3]],capture_output=True,check=True).stdout) for t in sys.argv[1:3]]; [(d.pop("version",None),d.get("packages",{}).get("",{}).pop("version",None)) for d in b]; sys.exit(b[0]!=b[1])' "${1}" "$_NOW" "$_p" 2>/dev/null && continue ;;
        esac
        echo "MOVED ${2}: $_p"
      done
