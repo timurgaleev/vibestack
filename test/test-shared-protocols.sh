@@ -34,7 +34,8 @@ else
   ok "old limitations-only title removed"
 fi
 check "DONE requires evidence for the final consumed inputs" 'final consumed inputs' "$WP"
-check "DONE names reuse and unverified parts" 'not independently verified' "$WP"
+check "DONE names reused results" 'any reused result. Anything not' "$WP"
+check "unverified work is DONE_WITH_CONCERNS, not DONE" 'not independently verified makes it' "$WP"
 check "execution cites command and revision" 'command plus the revision' "$WP"
 check "silenced stderr is not evidence" 'stderr was silenced' "$WP"
 check "mock evidence is not live evidence" 'mock or fixture' "$WP"
@@ -63,6 +64,9 @@ fi
 echo "observable questions"
 check "self-check runs a free read-only probe instead of asking" 'run it and report the result instead of asking' "$DB"
 check "only preference and state-changing or paid checks reach the user" 'state-changing or paid' "$DB"
+check "a one-way or destructive step is always asked" 'paid checks, and any one-way or' "$DB"
+check "a failed or inconclusive check is asked" 'check fails or settles nothing' "$DB"
+check "a fact only the user knows is asked" 'only the user knows the answer' "$DB"
 
 echo "brain preflight"
 check "product and persona answers are confirmed in-session" 'confirmed in this session' "$BP"

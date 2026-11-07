@@ -5,7 +5,8 @@
 When you finish a skill workflow, report status as one of:
 
 - **DONE** — completed, with evidence valid for the final consumed inputs; name
-  any reused result and anything not independently verified.
+  any reused result. Anything not independently verified makes it
+  DONE_WITH_CONCERNS.
 - **DONE_WITH_CONCERNS** — completed, but list the concerns.
 - **BLOCKED** — cannot proceed; state the blocker and what you tried.
 - **NEEDS_CONTEXT** — missing info; state exactly what is needed.

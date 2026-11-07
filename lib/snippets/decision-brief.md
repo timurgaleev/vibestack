@@ -115,8 +115,10 @@ answered on the spot, so a defect in it does not get corrected later — it
 becomes the wrong decision.
 
 - If a local, read-only, free check (a command, a file read, a render) could
-  settle it, run it and report the result instead of asking. Only preference
-  calls and state-changing or paid checks reach the user.
+  settle it, run it and report the result instead of asking. Ask anyway when the
+  check fails or settles nothing, when only the user knows the answer, and for
+  preference calls, state-changing or paid checks, and any one-way or
+  destructive step.
 - The title names the decision, not the topic: a reader can tell what changes.
 - ELI10 present, grounded in its first sentence, stakes named.
 - Exactly one option carries `(recommended)`, and `Recommendation:` gives the
