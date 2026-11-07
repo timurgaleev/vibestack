@@ -1894,19 +1894,54 @@ Every diff gets adversarial review from both Claude and Codex. LOC is not a prox
 DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
 DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
-# A live Codex session exports CODEX_THREAD_ID / CODEX_SANDBOX into every shell
-# it spawns. Spawning `codex exec` from inside one is the same model reviewing
-# itself at multiplied cost — treat it as unavailable unless forced.
-if [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
-  echo "CODEX_NOT_AVAILABLE (running under Codex — force with VIBE_FORCE_CODEX_REVIEW=1)"
-elif command -v codex >/dev/null 2>&1; then echo "CODEX_AVAILABLE"; else echo "CODEX_NOT_AVAILABLE"; fi
+echo "DIFF_SIZE: $DIFF_TOTAL"
+
 # Legacy opt-out — only gates Codex passes, Claude always runs
 OLD_CFG=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get codex_reviews 2>/dev/null || true)
-echo "DIFF_SIZE: $DIFF_TOTAL"
-echo "OLD_CFG: ${OLD_CFG:-not_set}"
+if [ "$OLD_CFG" = "disabled" ]; then
+  CODEX_MODE="disabled"
+elif [ "${VIBE_FORCE_CODEX_REVIEW:-0}" != "1" ] && { [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_SANDBOX:-}" ]; }; then
+  CODEX_MODE="under_codex"
+elif ! command -v codex >/dev/null 2>&1; then
+  CODEX_MODE="not_installed"
+else
+  # An installed binary, or an auth.json, says nothing about a usable Codex: the
+  # probe makes one cached round trip and names what it found. A missing probe
+  # is an unverified Codex, never a ready one.
+  _PROBE_OUT=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-codex-probe" 2>/dev/null || true)
+  [ -n "$_PROBE_OUT" ] && printf '%s\n' "$_PROBE_OUT"
+  case "$(printf '%s\n' "$_PROBE_OUT" | sed -n '1s/^CODEX: //p')" in
+    usable)          CODEX_MODE="ready" ;;
+    rate_limited)    CODEX_MODE="ready"; echo "CODEX_NOTE: rate_limited — running anyway; the pass's own result decides" ;;
+    missing)         CODEX_MODE="not_installed" ;;
+    unauthenticated) CODEX_MODE="not_authed" ;;
+    quota_exhausted) CODEX_MODE="quota_exhausted" ;;
+    *)               CODEX_MODE="unavailable" ;;
+  esac
+fi
+echo "CODEX_MODE: $CODEX_MODE"
 ```
 
-If `OLD_CFG` is `disabled`: skip Codex passes only. Claude adversarial subagent still runs (it's free and fast). Jump to the "Claude adversarial subagent" section.
+Branch on `CODEX_MODE`. In every case except `ready`, the Claude adversarial
+subagent still runs — it is free, fast, and independent of Codex.
+
+- **`disabled`** — the user turned Codex passes off. Skip them without comment.
+- **`under_codex`** — this session already runs inside a Codex host. Spawning `codex`
+  again is the same model reviewing its own work at multiplied cost, so skip both
+  Codex passes and say: "Already running under Codex — cross-model passes skipped (set
+  `VIBE_FORCE_CODEX_REVIEW=1` to run them anyway)."
+- **`not_installed`** — say so with the install hint below.
+- **`not_authed`** — report it as *unauthenticated*, not unavailable: "Codex is
+  installed but not authenticated — run `codex login`, or set `$CODEX_API_KEY`;
+  `vibe-codex-probe --refresh` re-checks at once."
+- **`quota_exhausted`** — "Codex usage limit reached", then the probe's `DETAIL:`
+  line(s) verbatim (they name when the limit resets).
+- **`unavailable`** — "Codex unavailable (<the `CODEX:` line, or `probe missing`>) —
+  skipped for 15 minutes; retry sooner with `vibe-codex-probe --refresh`."
+- **`ready`** — run both Codex sections below; mention a printed `CODEX_NOTE` in one line.
+
+Whichever branch fires, the review's coverage line must reflect it. A skipped or
+failed Codex pass is *missing coverage*, never a silent pass.
 
 **User override:** If the user explicitly requested "full review", "structured review", or "P1 gate", also run the Codex structured review regardless of diff size.
 
@@ -1949,46 +1984,55 @@ If the subagent fails, times out, or ends without the `Recommendation:` line: "C
 
 ### Codex adversarial challenge (always runs when available)
 
-If Codex is available AND `OLD_CFG` is NOT `disabled`:
+If `CODEX_MODE` is `ready`:
 
 ```bash
-TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
-echo "TMPERR_ADV: $TMPERR_ADV"
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-# Bound the run in the shell, below the Bash tool's own timeout, so a stall ends
-# as a diagnosable exit 124 instead of the harness killing the call with nothing
-# to show. macOS ships neither `timeout` nor `gtimeout` by default — resolve
-# whichever exists and run unwrapped when neither does.
-_codex_run() {
-  if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"
-  elif command -v timeout >/dev/null 2>&1; then timeout "$@"
-  else shift; "$@"; fi
-}
-command -v codex >/dev/null 2>&1 && _codex_run 540 codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR_ADV"
+_ADV_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-codex-adv.XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
+trap 'rm -rf "$_ADV_DIR"' EXIT
+_TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)
+# An array, not ${_TIMEOUT:+$_TIMEOUT 540}: zsh does not word-split that expansion, so the
+# wrapper would run as a single command named "timeout 540" and fail with exit 127.
+_TO=(); [ -n "$_TIMEOUT" ] && _TO=("$_TIMEOUT" 540)
+_ADV_EXIT=0
+"${_TO[@]}" codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff, then read every file listed by git ls-files --others --exclude-standard: new files not yet added are part of the change. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems.\n\nStart each finding with its severity — [P0], [P1], [P2] or [P3] — then file:line and the problem. End with exactly one line, whatever you found: Recommendation: SHIP | FIX FIRST | INVESTIGATE — <one clause why>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached -o "$_ADV_DIR/out" < /dev/null >/dev/null 2>"$_ADV_DIR/err" || _ADV_EXIT=$?
+cat "$_ADV_DIR/out" 2>/dev/null
+echo "--- codex stderr (exit $_ADV_EXIT) ---"
+cat "$_ADV_DIR/err"
+# The reply counts only when it ends on its Recommendation line, and a verdict other
+# than SHIP comes with severity-tagged findings. Anything else is missing coverage.
+_ADV_LAST=$(awk 'NF { l = $(0) } END { print l }' "$_ADV_DIR/out" 2>/dev/null | sed 's/\*\*//g; s/^[[:space:]>_#-]*//')
+_ADV_TAGS=$(grep -Ec '^[[:space:]>*_#-]*\[P[0-3]\]' "$_ADV_DIR/out" 2>/dev/null || true)
+if [ "$_ADV_EXIT" -eq 124 ]; then _ADV="MISSING_COVERAGE (timed out after 540s)"
+elif [ "$_ADV_EXIT" -ne 0 ]; then _ADV="MISSING_COVERAGE (codex exited $_ADV_EXIT)"
+elif ! printf '%s\n' "$_ADV_LAST" | grep -Eq '^Recommendation:[[:space:]]*(SHIP|FIX FIRST|INVESTIGATE)'; then
+  _ADV="MISSING_COVERAGE (no closing Recommendation line)"
+elif [ "${_ADV_TAGS:-0}" -gt 0 ]; then _ADV="COVERED ($_ADV_TAGS finding(s))"
+elif printf '%s\n' "$_ADV_LAST" | grep -Eq '^Recommendation:[[:space:]]*SHIP' \
+  && ! printf '%s\n' "$_ADV_LAST" | grep -Eiq "cannot|can.t|could not|couldn.t|unable to"; then
+  _ADV="COVERED (no findings)"
+else _ADV="MISSING_COVERAGE (verdict without severity-tagged findings)"
+fi
+echo "ADVERSARIAL: $_ADV"
 ```
 
-Set the Bash tool's `timeout` parameter to `600000` (10 minutes). It sits deliberately ABOVE the 540s shell bound so the wrapper fires first. After the command completes, read stderr, replacing `<TMPERR_ADV>` with the path printed above:
-```bash
-TMPERR_ADV='<TMPERR_ADV>'
-cat "$TMPERR_ADV"
-```
+Set the Bash tool's `timeout` parameter to `600000` (10 minutes), above the 540-second
+wrapper, so a stall surfaces as exit 124 with whatever Codex had written. The block
+prints the reply, its stderr and an `ADVERSARIAL:` line; use that line, never a
+judgement of your own from the text:
 
-Present the full output verbatim. This is informational — it never blocks shipping.
+- **`COVERED`** — present the reply verbatim. Its findings join the Fix-First flow like the Claude findings; the pass itself never blocks shipping.
+- **`MISSING_COVERAGE (<why>)`** — say "Codex adversarial pass produced NO coverage
+  (<why>)" and mark Codex ✗ in the synthesis; never count it as a clean pass. Name the
+  cause from stderr: "auth", "login", "unauthorized" or "API key" means "Run `codex login`."
 
-**Error handling:** All errors are non-blocking — adversarial review is a quality enhancement, not a prerequisite.
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate."
-- **Timeout (exit 124):** "Codex adversarial pass timed out after 9 minutes — the diff was NOT reviewed by Codex." Report it as missing coverage in the synthesis, never as a clean pass: a timeout that reads like agreement is worse than no second opinion at all.
-- **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
-
-**Cleanup:** Run `rm -f '<TMPERR_ADV>'` with the printed path after processing.
-
-If Codex is NOT available: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
+If `CODEX_MODE` is `not_installed`: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
 
 ---
 
 ### Codex structured review (large diffs only, 200+ lines)
 
-If `DIFF_TOTAL >= 200` AND Codex is available AND `OLD_CFG` is NOT `disabled`:
+If `DIFF_TOTAL >= 200` AND `CODEX_MODE` is `ready`:
 
 ```bash
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
@@ -1996,7 +2040,8 @@ cd "$_REPO_ROOT"
 _CX_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-codex-review.XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
 trap 'rm -rf "$_CX_DIR"' EXIT
 _CX_OUT="$_CX_DIR/out"
-# Same shell-level bound as the adversarial pass — see the note there.
+# Bounded below the Bash tool's timeout so a stall ends as exit 124; macOS ships
+# neither `timeout` nor `gtimeout` by default, so it runs unwrapped without them.
 _codex_run() {
   if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"
   elif command -v timeout >/dev/null 2>&1; then timeout "$@"
