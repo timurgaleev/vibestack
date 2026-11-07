@@ -602,6 +602,15 @@ MD
   sed 's|^- Deploy trigger: .*|- Deploy trigger: automatic on push to main|' "$d/CLAUDE.md" > "$d/CLAUDE.md.n" && mv "$d/CLAUDE.md.n" "$d/CLAUDE.md"
   out=$(run "$SH" "$d" "$TMP/strategy.sh")
   case "$out" in *DEPLOY_TRIGGER_COMMAND*) no "[$SH] an automatic trigger read as a command: $out" ;; *) ok "[$SH] an automatic trigger is not a command" ;; esac
+  # /setup-deploy option F records `none` for a project that never deploys; the
+  # sentinel must not be probed as a URL.
+  printf '## Deploy Configuration (configured by /setup-deploy)\n- Platform: none\n- Production URL: none\n- Deploy trigger: none\n' > "$d/CLAUDE.md"
+  for b in infra strategy; do
+    out=$(run "$SH" "$d" "$TMP/$b.sh")
+    case "$out" in *"NO_DEPLOY:"*) ok "[$SH] $b: Platform none reads as NO_DEPLOY" ;; *) no "[$SH] $b: Platform none not recognised: $out" ;; esac
+  done
+  awk '/^## Step 5:/{on=1} /^## Step 6:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | grep -qF 'On `NO_DEPLOY:`, with no URL argument' \
+    && ok "[$SH] Step 5 routes NO_DEPLOY to the no-deploy verdict" || no "[$SH] Step 5 has no NO_DEPLOY route"
 
   echo "[$SH] deploy fingerprint and pre-approval facts"
   d=$(repo "fp-$SH" app.js)
