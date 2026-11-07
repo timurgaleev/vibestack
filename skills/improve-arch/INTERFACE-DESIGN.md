@@ -28,11 +28,22 @@ For every candidate, write down:
 
 If you can't fill in every slot, the candidate isn't ready to evaluate yet — keep working.
 
+## Frame the problem first
+
+Before generating any shape, write down the problem space in a few lines: who calls the deepened module and what each caller needs from it, the constraints it must respect (dependency category, performance, existing callers), and the deepest realistic use case. Every shape is judged against this framing, so a shape that solves a different problem is easy to spot.
+
 ## Sub-agent fan-out
 
-For non-trivial deepenings, fan out: dispatch the candidates to multiple sub-agents in parallel, one per shape, each with a focused brief to flesh out the contract and the deepest example. Pass `run_in_background: false` on each Agent call and wait for every sub-agent to return before comparing candidates.
+For non-trivial deepenings, fan out: dispatch one sub-agent per shape in parallel, passing `run_in_background: false` on each Agent call and waiting for every sub-agent to return before comparing candidates. Give each the problem framing and one constraint per sub-agent, so the shapes come back genuinely different:
 
-Include [LANGUAGE.md](LANGUAGE.md) vocabulary in the brief, plus the project's domain vocabulary (e.g. from `CONTEXT.md` if it exists), so each sub-agent names things consistently with the architecture language and the project's domain language.
+- **Minimal surface** — the fewest concepts a caller has to learn.
+- **Maximal flexibility** — every variation a caller might need, reachable without editing the module.
+- **Trivial common case** — the most frequent call is one line; rare cases may cost more.
+- **Port and adapter** — the logic sits behind a port, with the dependency injected as an adapter.
+
+Each brief asks the sub-agent to flesh out the contract and the deepest example.
+
+Include [LANGUAGE.md](LANGUAGE.md) vocabulary in the brief, plus the project's domain vocabulary (from `GLOSSARY.md`, else `CONTEXT.md`, if one exists), so each sub-agent names things consistently with the architecture language and the project's domain language.
 
 Synthesize the returned candidates into a single comparison table for the user.
 
@@ -46,4 +57,4 @@ Put the candidates side by side. The columns matter more than the rows:
 - **Migration cost** — how disruptive adopting this shape is for existing callers.
 - **Invariants under stress** — what breaks first under contention, partial failure, unusual ordering.
 
-Don't pick. Hand the comparison to the user. The user picks.
+Recommend one shape (or a named hybrid) with a one-line because, then let the user choose.
