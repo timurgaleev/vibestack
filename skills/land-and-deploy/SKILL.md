@@ -213,7 +213,11 @@ CHANGED=$(git diff --name-only "$BASE_SHA...$PR_HEAD" 2>/dev/null) || CHANGED=""
 # Values exported by the caller's shell must not stand in for a classification
 # the helper could not make.
 unset SCOPE_UNAVAILABLE SCOPE_FRONTEND SCOPE_BACKEND SCOPE_PROMPTS SCOPE_TESTS SCOPE_DOCS SCOPE_CONFIG SCOPE_MIGRATIONS SCOPE_API SCOPE_AUTH
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" "$BASE_SHA" 2>/dev/null)"
+# A helper that is missing or fails silently prints nothing: that is an unknown
+# scope, not "nothing touched".
+_SC=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" "$BASE_SHA" 2>/dev/null)
+[ -n "$_SC" ] || _SC='SCOPE_UNAVAILABLE=true'
+eval "$_SC"
 SCOPE_KNOWN=false; DOCS_ONLY=false
 if [ -n "$CHANGED" ] && [ "${SCOPE_UNAVAILABLE:-false}" != true ]; then
   SCOPE_KNOWN=true

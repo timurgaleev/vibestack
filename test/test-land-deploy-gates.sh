@@ -29,8 +29,9 @@
 #   - the VERSION drift block passes --exclude-pr and its value as two arguments
 #     under zsh as well as bash;
 #   - the test command's exit status survives (no pipe into tail);
-#   - a scope helper that cannot classify the diff (SCOPE_UNAVAILABLE) leaves the
-#     scope unknown, and stale SCOPE_* values from the caller's shell never leak in;
+#   - a scope helper that cannot classify the diff (SCOPE_UNAVAILABLE), fails
+#     silently or is missing leaves the scope unknown, and stale SCOPE_* values
+#     from the caller's shell never leak in;
 #   - the Deploy Configuration parse keeps a URL's scheme (`https://`), and a
 #     recorded `Deploy trigger:` command is surfaced, an automatic one is not;
 #   - the deploy fingerprint covers any workflow carrying a deploy job, whatever
@@ -563,6 +564,16 @@ PY
   out=$( cd "$d" && FX="$d.fx" SCOPE_FRONTEND=true SCOPE_DOCS=true VIBESTACK_HOME="$TMP/su-vh-$SH" "$SH" "$d.t.sh" 2>&1 )
   case "$out" in *"SCOPE KNOWN=false DOCS_ONLY=false FRONTEND=false BACKEND=false CONFIG=false DOCS=false"*) ok "[$SH] SCOPE_UNAVAILABLE -> scope unknown, never docs-only, no stale flags" ;;
     *) no "[$SH] unavailable scope read as known: $(printf '%s\n' "$out" | grep '^SCOPE')" ;; esac
+  # A helper that crashes silently or is not installed prints nothing; an empty
+  # classification must read as unknown, not as "known, nothing touched".
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/su-vh-$SH/bin/vibe-diff-scope"
+  out=$( cd "$d" && FX="$d.fx" VIBESTACK_HOME="$TMP/su-vh-$SH" "$SH" "$d.t.sh" 2>&1 )
+  case "$out" in *"SCOPE KNOWN=false DOCS_ONLY=false"*) ok "[$SH] silent helper failure -> scope unknown" ;;
+    *) no "[$SH] silent helper failure read as known: $(printf '%s\n' "$out" | grep '^SCOPE')" ;; esac
+  mkdir -p "$TMP/su-none-$SH"
+  out=$( cd "$d" && FX="$d.fx" VIBESTACK_HOME="$TMP/su-none-$SH" "$SH" "$d.t.sh" 2>&1 )
+  case "$out" in *"SCOPE KNOWN=false DOCS_ONLY=false"*) ok "[$SH] missing helper -> scope unknown" ;;
+    *) no "[$SH] missing helper read as known: $(printf '%s\n' "$out" | grep '^SCOPE')" ;; esac
 
   echo "[$SH] Deploy Configuration parsing"
   d=$(repo "dc-$SH" app.js)
