@@ -167,7 +167,7 @@ Power-user shortcuts (one-word invocations) — handle these too:
    ```bash
    _STATE_ROOT="${VIBESTACK_HOME:-$HOME/.vibestack}"
    mkdir -p "$_STATE_ROOT" || { echo "cannot create $_STATE_ROOT — profile not saved" >&2; exit 1; }
-   python3 - "$_STATE_ROOT/developer-profile.json" '<DIM>' '<VALUE>' <<'PYEOF'
+   python3 -I - "$_STATE_ROOT/developer-profile.json" '<DIM>' '<VALUE>' <<'PYEOF'
 import json, os, sys
 from datetime import datetime, timezone
 
@@ -268,7 +268,7 @@ _LOG="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/question-log.jsonl"
 if [ ! -f "$_LOG" ]; then
   echo "NO_LOG"
 else
-  python3 - "$_LOG" <<'PYEOF'
+  python3 -I - "$_LOG" <<'PYEOF'
 import json, sys
 from collections import OrderedDict
 
@@ -398,7 +398,7 @@ is a trust boundary (Codex #15 in the design doc).
    the user never mentioned:
    ```bash
    _PROFILE="${VIBESTACK_HOME:-$HOME/.vibestack}/developer-profile.json"
-   python3 - "$_PROFILE" '<DIM>' '<NEW_VALUE>' <<'PYEOF'
+   python3 -I - "$_PROFILE" '<DIM>' '<NEW_VALUE>' <<'PYEOF'
 import json, os, sys
 from datetime import datetime, timezone
 
@@ -452,7 +452,7 @@ the user decides whether declared is wrong or behavior is wrong.
 ```bash
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 _VS_HOME="${VIBESTACK_HOME:-$HOME/.vibestack}"
-python3 - "$_VS_HOME/projects/$SLUG/question-log.jsonl" "$_VS_HOME/developer-profile.json" "$_VS_HOME/config.json" <<'PYEOF'
+python3 -I - "$_VS_HOME/projects/$SLUG/question-log.jsonl" "$_VS_HOME/developer-profile.json" "$_VS_HOME/config.json" <<'PYEOF'
 import json, os, sys
 from collections import Counter
 from datetime import datetime
