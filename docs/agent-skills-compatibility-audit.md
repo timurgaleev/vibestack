@@ -118,7 +118,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | improve-arch | — | — | — | full / full / full |
 | investigate | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | kb-review | — | — | — | full / full / full |
-| land-and-deploy | — | yes | — | full / full / full |
+| land-and-deploy | — | yes | — | full / full / full (typed-only through `disable-model-invocation: true`; Codex and Kiro ignore the key, so there the skill can still be invoked by the model) |
 | landing-report | — | — | — | full / full / full |
 | learn | — | — | — | full / full / full (`sync` needs memrain MCP; degrades to "not connected" without it) |
 | make-pdf | — | yes | — | full / full / full |
