@@ -178,6 +178,8 @@ has    "first occurrence is pending"                     'A first occurrence is 
 hasnt  "no immediate notification"                       'immediately notify'
 has    "a pending finding at the deadline gets a confirming round" 'one more confirming round'
 has    "--quick reports its single pass as findings"     'Under `--quick` there is no second check'
+awk '/^### Phase 6:/{on=1} /^### Phase 7:/{on=0} on' "$SKILL" | grep -qF 'Under `--quick`' \
+  && ok "Phase 6 status counts --quick findings" || no "Phase 6 status ignores --quick findings"
 
 echo "canary: cadence"
 has    "start and deadline recorded"                     'record the start time and the deadline'

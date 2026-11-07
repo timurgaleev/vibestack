@@ -373,7 +373,8 @@ status from confirmed alerts only:
 
 A confirmed alert that later clears stays in the report with `resolved: true`; it still
 counts toward the status. Findings seen on a single check never confirm — they go under
-`observations`.
+`observations`. Under `--quick` the single pass is the whole run: its findings count as
+confirmed for the status (a CRITICAL makes it BROKEN), and the report says they were seen once.
 
 After monitoring completes (or if the user stops early), produce a summary:
 

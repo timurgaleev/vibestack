@@ -609,8 +609,8 @@ MD
     out=$(run "$SH" "$d" "$TMP/$b.sh")
     case "$out" in *"NO_DEPLOY:"*) ok "[$SH] $b: Platform none reads as NO_DEPLOY" ;; *) no "[$SH] $b: Platform none not recognised: $out" ;; esac
   done
-  grep -qF 'On `NO_DEPLOY:`' "$ROOT/skills/land-and-deploy/SKILL.md" \
-    && ok "[$SH] NO_DEPLOY routes to the no-deploy verdict" || no "[$SH] NO_DEPLOY has no route in the skill"
+  awk '/^## Step 5:/{on=1} /^## Step 6:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | grep -qF 'On `NO_DEPLOY:`, with no URL argument' \
+    && ok "[$SH] Step 5 routes NO_DEPLOY to the no-deploy verdict" || no "[$SH] Step 5 has no NO_DEPLOY route"
 
   echo "[$SH] deploy fingerprint and pre-approval facts"
   d=$(repo "fp-$SH" app.js)
