@@ -31,6 +31,18 @@ const HOSTILE: Array<[string, string]> = [
   ["style string with a line continuation", `<style>.a { background-image: image-set("https:/\\\n/evil.test/lc.png" 1x); }</style>`],
   ["style comment-split @import", `<style>@import/**/"https://evil.test/d.css";</style>`],
   ["svg style entity-encoded", `<svg><style>@import "&#104;ttps://evil.test/e.css";</style></svg>`],
+  // Inside <svg> a <style> is foreign content, not raw text: comments drop
+  // out, CDATA sections unwrap, and only its own text children are CSS, so a
+  // URL can be assembled from pieces no raw-text reading sees whole. Chromium
+  // fetches each of these.
+  ["svg style comment-split scheme", `<svg><style>@import url(ht<!---->tps://evil.test/f1.css);</style></svg>`],
+  ["svg style CDATA-wrapped url", `<svg><style>@import url(<![CDATA[https://evil.test/f2.css]]>);</style></svg>`],
+  ["svg style child element splits url", `<svg><style>rect{fill:url(ht<x>junk</x>tps://evil.test/f3.svg#a)}</style></svg>`],
+  ["svg style comment-split string import", `<svg><style>@import "ht<!---->tps://evil.test/f4.css";</style></svg>`],
+  // A CDATA section carries `</style>` past the raw-text end of the element.
+  ["svg style split by a child with a quoted >", `<svg><style>body{background:url(ht<x a=">">j</x>tps://evil.test/f6.png)}</style></svg>`],
+  ["svg style split by a bogus comment", `<svg><style>body{background:url(ht</ x>tps://evil.test/f7.png)}</style></svg>`],
+  ["svg style end tag hidden in CDATA", `<svg><style><![CDATA[ </style> {} ]]> body{background:url(https://evil.test/f5.png)}</style></svg>`],
   ["style attr url()", `<p style="background: url(https://evil.test/a.png)">x</p>`],
   ["style attr entity-decoded", `<p style="background:url(&#104;ttps://evil.test/b.png)">x</p>`],
   ["style attr &quot; quoted", `<p style="background:url(&quot;https://evil.test/c.png&quot;)">x</p>`],
@@ -64,6 +76,26 @@ describe("sanitizeUntrustedHtml — offline (allowNetwork false)", () => {
       expect(out).not.toContain("evil.test");
     });
   }
+
+  // The foreign-content reading scans each <style> once; a quadratic pass let
+  // a 400 KB style of unclosed tags hold the renderer for seconds.
+  test("reads a style full of unclosed tags in linear time", () => {
+    const html = `<svg><style>${"a<b ".repeat(100000)}</style></svg>`;
+    const t = performance.now();
+    sanitizeUntrustedHtml(html, OFFLINE);
+    expect(performance.now() - t).toBeLessThan(3000);
+  });
+
+  test("keeps a CDATA-wrapped SVG stylesheet with no remote reference byte for byte", () => {
+    const html = `<svg><style><![CDATA[ .a { fill: url(#grad); } ]]></style><rect class="a"/></svg>`;
+    expect(sanitizeUntrustedHtml(html, OFFLINE)).toBe(html);
+  });
+
+  test("keeps the other rules of a CDATA-wrapped SVG stylesheet when only its import is remote", () => {
+    const out = sanitizeUntrustedHtml(`<svg><style><![CDATA[@import url(https://evil.test/g.css); .a { fill: red; }]]></style></svg>`, OFFLINE);
+    expect(out).not.toContain("evil.test");
+    expect(out).toContain(".a { fill: red; }");
+  });
 
   test("keeps local and data references in CSS", () => {
     const html = `<style>.a { background: url(local.png); } .b { background: url("data:image/png;base64,AAAA"); }</style>`;

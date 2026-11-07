@@ -5,7 +5,8 @@
  * page is neutralised here:
  *
  *   - <style> blocks and style="" attributes: remote @import rules are
- *     removed; remote url() and image-set() strings become `#`.
+ *     removed; remote url() and image-set() strings become `#`. A <style>
+ *     inside <svg> is also read as foreign content (see neutralizeStyleText).
  *   - srcset / imagesrcset with a remote candidate are dropped.
  *   - src, poster, background, data, SVG href/xlink:href, SMIL to/from/values
  *     and friends become `#` when remote; url() inside any other attribute
@@ -24,11 +25,89 @@ export function neutralizeRemoteRefs(html: string): string {
   // The end tag is matched the way the tokenizer matches it (`</style x>` and
   // `</style/>` both close the element), and a style left open runs to the end:
   // the page template appended after it is still style text to the browser.
+  // Inside <svg> a CDATA section is text, so a `</style>` inside one does not
+  // end the element; the match runs past it. Raw text would end there instead,
+  // and which reading applies depends on context, so when such a block holds
+  // anything remote, everything between the tags is dropped.
   const styled = html.replace(
-    /(<style\b[^>]*>)([\s\S]*?)(<\/style(?=[\s\/>])[^>]*>|$)/gi,
-    (_m, open: string, css: string, close: string) => open + neutralizeCss(css, decodeSafeEntities) + close,
+    /(<style\b[^>]*>)((?:<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|[\s\S])*?)(<\/style(?=[\s\/>])[^>]*>|$)/gi,
+    (whole: string, open: string, css: string, close: string) => {
+      const text = neutralizeStyleText(css);
+      if (text === css) return whole;
+      return /<!\[CDATA\[(?:(?!\]\]>)[\s\S])*<\/style(?=[\s\/>])/i.test(css) ? open + close : open + text + close;
+    },
   );
   return rewriteTags(styled);
+}
+
+/**
+ * A <style> is raw text in HTML but foreign content inside <svg>: there a
+ * comment drops out, a CDATA section unwraps, and only the element's own text
+ * children are its stylesheet, so a URL can be assembled from pieces the
+ * raw-text reading never sees whole. The text is neutralised as raw text
+ * first; while it still holds markup, each foreign reading of the result is
+ * checked as well, and a block that reaches a remote host under any of them
+ * is emptied (fail closed).
+ */
+function neutralizeStyleText(css: string): string {
+  const out = neutralizeCss(css, decodeSafeEntities);
+  if (!/<[!\/?a-zA-Z]/.test(out)) return out;
+  return foreignReadings(out).some((text) => neutralizeCss(text, decodeSafeEntities) !== text) ? "" : out;
+}
+
+/**
+ * The style text as an SVG <style> could see it: comments dropped, CDATA
+ * sections unwrapped, tags removed (attribute quotes respected). A child
+ * element either keeps its text (a tag that breaks out of SVG) or loses it
+ * (only direct text children count), so both readings are returned. One
+ * linear scan; anything left unterminated ends the text.
+ */
+function foreignReadings(css: string): string[] {
+  let all = "";
+  let direct = "";
+  let depth = 0;
+  const text = (t: string) => {
+    all += t;
+    if (depth === 0) direct += t;
+  };
+  let i = 0;
+  while (i < css.length) {
+    const lt = css.indexOf("<", i);
+    if (lt === -1) {
+      text(css.slice(i));
+      break;
+    }
+    text(css.slice(i, lt));
+    const next = css[lt + 1] ?? "";
+    if (css.startsWith("<!--", lt)) {
+      const e = css.indexOf("-->", lt + 4);
+      if (e === -1) break;
+      i = e + 3;
+    } else if (css.startsWith("<![CDATA[", lt)) {
+      const e = css.indexOf("]]>", lt + 9);
+      text(css.slice(lt + 9, e === -1 ? css.length : e));
+      if (e === -1) break;
+      i = e + 3;
+    } else if (/[a-zA-Z]/.test(next)) {
+      const tag = parseTag(css, lt);
+      if (!tag) break;
+      if (!tag.selfClosing) depth++;
+      i = tag.end;
+    } else if (next === "/" && /[a-zA-Z]/.test(css[lt + 2] ?? "")) {
+      const tag = parseTag(css, lt + 1);
+      if (!tag) break;
+      depth = Math.max(0, depth - 1);
+      i = tag.end;
+    } else if (next === "!" || next === "?" || next === "/") {
+      const e = css.indexOf(">", lt + 1);
+      if (e === -1) break;
+      i = e + 1;
+    } else {
+      text("<");
+      i = lt + 1;
+    }
+  }
+  return [all, direct];
 }
 
 // ─── URL classification ───────────────────────────────────────────────
