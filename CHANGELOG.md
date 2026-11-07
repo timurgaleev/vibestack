@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.55.13 — 2026-11-07
+
+### Changed
+
+- **Every claim needs evidence, not just claims of impossibility.** The shared
+  working protocols now ask for the command and its output on this revision
+  before saying tests pass, a build works or a bug is fixed, treat a mock as
+  saying nothing about the live system and agreeing agents as one datum, and
+  give a claim-to-evidence table. `DONE` means verified on the final inputs;
+  anything not independently verified is `DONE_WITH_CONCERNS`.
+- **Completeness means the stated requirement, nothing beyond it.** Coverage of
+  the requirement stays the goal; at equal coverage the smaller diff wins, and
+  adjacent issues are reported rather than fixed.
+- **Skills check before they ask.** When a local, read-only, free check would
+  settle a question, the skill runs it and reports the result. It still asks
+  for one-way or destructive steps, facts only you hold, preference calls,
+  paid or state-changing checks, and whenever the check fails or settles
+  nothing.
+- **Memory pre-fills product and persona answers but never skips them.** They
+  are confirmed in the session.
+
 ## 1.55.12 — 2026-11-07
 
 ### Added
