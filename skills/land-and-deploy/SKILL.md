@@ -1363,6 +1363,9 @@ if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
   PLATFORM=$(echo "$DEPLOY_CONFIG" | grep -i "platform" | head -1 | sed 's/^[^:]*:[[:space:]]*//')
   echo "PERSISTED_PLATFORM:$PLATFORM"
   echo "PERSISTED_URL:$PROD_URL"
+  # /setup-deploy records either "automatic on push to <branch>" or the command that deploys.
+  TRIGGER=$(echo "$DEPLOY_CONFIG" | grep -i '^[[:space:]]*-[[:space:]]*deploy trigger:' | head -1 | sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//')
+  case "$TRIGGER" in ''|[Aa]uto*|[Nn]one*|*"on push"*|*"on merge"*) ;; *) echo "DEPLOY_TRIGGER_COMMAND: $TRIGGER" ;; esac
 fi
 
 # Auto-detect platform from config files
@@ -1405,16 +1408,28 @@ A run with `headSha` = `MERGE_SHA` whose workflow deploys ("deploy", "release",
 docs-only change. A configured deploy whose run has not appeared yet is still pending:
 Step 6 keeps looking for it within its deadline.
 
-2. If the user gave a URL (`VERIFY_URL`): run Step 7 against it — even for a docs-only
+2. `DEPLOY_TRIGGER_COMMAND:` printed (the Deploy Configuration records a command as the
+   deploy trigger) and no run from rule 1: nothing deploys until that command runs. Tell
+   the user "PR #NNN is merged, but production has not moved yet — this project deploys
+   when `<command>` runs," show the command, and use AskUserQuestion:
+   - A) I'll run it myself — tell me when it's done
+   - B) Run it now — a separate one-way confirmation naming the exact command; run it only
+     from a checkout of `BASE_BRANCH` that contains `MERGE_SHA`
+     (`git merge-base --is-ancestor "$MERGE_SHA" HEAD`)
+   - C) Finish as MERGED (UNVERIFIED) → Step 9
+   After A or B, go to Step 6 with `DEPLOY_SHA=MERGE_SHA`. The command's exit 0 is not
+   proof of the revision — Step 6 still needs a record for `DEPLOY_SHA`.
+
+3. If the user gave a URL (`VERIFY_URL`): run Step 7 against it — even for a docs-only
    change. Without deployment evidence for `MERGE_SHA`, report the site's health
    separately from whether this change is live.
 
-3. `DOCS_ONLY=true` (and `KNOWN=true`), no URL argument, and no deploy triggered or
+4. `DOCS_ONLY=true` (and `KNOWN=true`), no URL argument, and no deploy triggered or
    expected: skip verification. Tell the user: "This was a docs-only change — nothing to
    deploy or verify." Record verification SKIPPED (docs-only) and go to Step 9 with
    MERGED — NO DEPLOY NEEDED.
 
-4. Otherwise use the configured production URL and deploy status checks in Steps 6-7.
+5. Otherwise use the configured production URL and deploy status checks in Steps 6-7.
    If there is neither a usable URL nor a deploy status, use AskUserQuestion once (also
    when Step 6 finishes without a URL for the canary):
    - **Re-ground:** "PR #NNN is merged. {What I know about the deploy}. I need a URL to check health — a merge alone doesn't prove this revision is live. If it's a library or CLI tool, there's nothing to verify."
@@ -1756,7 +1771,7 @@ deploy, and an HTTP 200 is not this revision being live:
 | Revert on the base, its deploy confirmed and production healthy — or nothing deploys | REVERTED |
 | The user accepted observed health failures (Step 7 A) | DEGRADED |
 | Staging-only chosen (Step 5a C) and staging healthy | STAGING VERIFIED — PRODUCTION UNVERIFIED |
-| Docs-only skip (Step 5 rule 3) or the user confirmed nothing deploys | MERGED — NO DEPLOY NEEDED |
+| Docs-only skip (Step 5 rule 4) or the user confirmed nothing deploys | MERGED — NO DEPLOY NEEDED |
 | Deploy of `MERGE_SHA` PASSED and production HEALTHY | DEPLOYED AND VERIFIED |
 | Deploy of `MERGE_SHA` PASSED but the canary was skipped or unavailable | DEPLOYED (UNVERIFIED) |
 | Everything else — deploy FAILED, PENDING or UNKNOWN, even when the site looks healthy | MERGED (UNVERIFIED) |
