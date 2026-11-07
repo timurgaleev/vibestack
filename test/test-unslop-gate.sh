@@ -92,6 +92,27 @@ EOF
   sed '/^## Options$/d' "$TMP/orig.md" > "$TMP/head.md"
   out=$(gate_run "$TMP/head.md")
   printf '%s\n' "$out" | grep -qx 'MARKS: identical' && no "dropped heading passed" || ok "a dropped heading is reported"
+
+  # A fence closes only on the same character, at least as long as the one
+  # that opened it. Docs about markdown nest a ``` block inside a ```` block,
+  # and a ~~~ line is ordinary content inside a ``` block.
+  # gate_on ORIG REWRITE -> the block's output for that pair
+  gate_on() {
+    cp "$2" "$RUN/rewrite.md"
+    printf '%s' "$GATE" \
+      | sed -e "s#<input>#$1#g" -e "s#<run>#$RUN#g" > "$TMP/gate.sh"
+    bash "$TMP/gate.sh" 2>&1
+  }
+  printf '%s\n' 'Write the block like this:' '' '````markdown' '```bash' 'echo real-command --flag' '```' '````' '' 'Done.' > "$TMP/nest.md"
+  sed 's/echo real-command --flag/echo tampered/' "$TMP/nest.md" > "$TMP/nest-new.md"
+  out=$(gate_on "$TMP/nest.md" "$TMP/nest-new.md")
+  printf '%s\n' "$out" | grep -qx 'CODE: CHANGED' && ok "a change inside a nested fence fails" || no "nested fence change passed: $out"
+  printf '%s\n' 'Text.' '' '```text' '~~~' 'keep this line' '```' '' 'More.' > "$TMP/tilde.md"
+  sed 's/keep this line/changed line/' "$TMP/tilde.md" > "$TMP/tilde-new.md"
+  out=$(gate_on "$TMP/tilde.md" "$TMP/tilde-new.md")
+  printf '%s\n' "$out" | grep -qx 'CODE: CHANGED' && ok "a ~~~ line inside a backtick fence does not close it" || no "tilde-in-backtick change passed: $out"
+  out=$(gate_on "$TMP/nest.md" "$TMP/nest.md")
+  printf '%s\n' "$out" | grep -qx 'CODE: identical' && ok "an untouched nested fence passes" || no "untouched nested fence flagged: $out"
 fi
 
 echo "input check"

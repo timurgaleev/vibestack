@@ -282,12 +282,26 @@ Then check that code, inline code, headings and link targets came through untouc
 ORIG="<input>"
 REWRITE="<run>/rewrite.md"
 RUN="<run>"
-FENCE='^[[:space:]]*(```|~~~)'
-awk -v re="$FENCE" '$(0) ~ re { print; f = !f; next } f' "$ORIG" > "$RUN/code-orig.txt"
-awk -v re="$FENCE" '$(0) ~ re { print; f = !f; next } f' "$REWRITE" > "$RUN/code-new.txt"
+# A fence closes only on its own character, at least as long as the opener,
+# so a ``` block nested in a ```` block, or a ~~~ line inside ```, stays code.
+FENCES='
+function run(l,   t, c, n) {
+  t = l; sub(/^[[:space:]]*/, "", t); c = substr(t, 1, 1)
+  if (c != "`" && c != "~") return ""
+  n = 0; while (substr(t, n + 1, 1) == c) n++
+  if (n < 3) return ""
+  return substr(t, 1, n)
+}
+{ r = run($(0)); t = $(0); sub(/^[[:space:]]*/, "", t) }
+!f && r != "" { f = 1; open = r; if (mode == "code") print; next }
+f && r != "" && substr(r, 1, 1) == substr(open, 1, 1) && length(r) >= length(open) && substr(t, length(r) + 1) ~ /^[[:space:]]*$/ { f = 0; if (mode == "code") print; next }
+(f && mode == "code") || (!f && mode == "prose")
+'
+awk -v mode=code "$FENCES" "$ORIG" > "$RUN/code-orig.txt"
+awk -v mode=code "$FENCES" "$REWRITE" > "$RUN/code-new.txt"
 for side in orig new; do
   [ "$side" = orig ] && SRC="$ORIG" || SRC="$REWRITE"
-  awk -v re="$FENCE" '$(0) ~ re { f = !f; next } !f' "$SRC" > "$RUN/prose-$side.txt"
+  awk -v mode=prose "$FENCES" "$SRC" > "$RUN/prose-$side.txt"
   { grep -oE '`[^`]+`' "$RUN/prose-$side.txt"
     echo "headings: $(grep -cE '^#{1,6}[[:space:]]' "$RUN/prose-$side.txt")"
     grep -oE '\]\([^)]*\)|^\[[^]]+\]:[[:space:]]*[^[:space:]]+' "$RUN/prose-$side.txt"
@@ -297,7 +311,7 @@ cmp -s "$RUN/code-orig.txt" "$RUN/code-new.txt" && echo "CODE: identical" || ech
 diff "$RUN/marks-orig.txt" "$RUN/marks-new.txt" && echo "MARKS: identical"
 ```
 
-`CODE: CHANGED` fails the rewrite outright: copy every fenced block from the original back over its rewritten version and run the check again. No reason makes a changed block acceptable. If the original has an odd number of fence lines, the check treats everything after the unclosed fence as code; say so in the report and leave that tail untouched. Each line the `MARKS` diff prints is an inline code span, a link target or the heading count that the rewrite lost (`<`) or added (`>`): put it back as it was.
+`CODE: CHANGED` fails the rewrite outright: copy every fenced block from the original back over its rewritten version and run the check again. No reason makes a changed block acceptable. If the original leaves a fence unclosed, the check treats everything after it as code; say so in the report and leave that tail untouched. Each line the `MARKS` diff prints is an inline code span, a link target or the heading count that the rewrite lost (`<`) or added (`>`): put it back as it was.
 
 If the second scan still finds high-severity hits, fix them and scan a third time. Stop when a scan returns no high hits; leftover low hits go in the report and are not chased.
 
