@@ -148,6 +148,29 @@ else
     git -C "$W" remote set-url origin "$TMP/flow/gone.git"
     run_block "$W"; expect_base "remote offline, develop default beside a main branch" develop
 
+    # origin/HEAD naming a pruned ref is not a base: the remote is asked.
+    setup pruned; W="$TMP/pruned/work"
+    git -C "$W" switch -q -c feat; commit "$W"
+    git -C "$W" update-ref refs/remotes/origin/develop HEAD
+    git -C "$W" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
+    git -C "$W" update-ref -d refs/remotes/origin/develop
+    run_block "$W"; expect_base "cached origin/HEAD naming a pruned ref" main
+
+    # An ssh remote is asked in batch mode with a bounded connect, never a prompt.
+    setup sshremote; W="$TMP/sshremote/work"
+    git -C "$W" switch -q -c feat; commit "$W"
+    git -C "$W" symbolic-ref -d refs/remotes/origin/HEAD
+    git -C "$W" remote set-url origin "ssh://git@example.invalid/x.git"
+    mkdir -p "$TMP/fakessh"; SSH_LOG="$TMP/ssh.log"; : > "$SSH_LOG"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexit 255\n' "$SSH_LOG" > "$TMP/fakessh/ssh"; chmod +x "$TMP/fakessh/ssh"
+    OUT="$(cd "$W" && GIT_SHIM_LOG="$TMP/git.log" PATH="$TMP/fakessh:$TMP/shim:$PATH" bash "$TMP/block.sh" 2>&1)"; RC=$?
+    if grep -q -- '-o BatchMode=yes' "$SSH_LOG" && grep -q -- '-o ConnectTimeout=5' "$SSH_LOG"; then
+      ok "ssh remote is asked with BatchMode=yes and ConnectTimeout=5"
+    else
+      no "ssh remote asked without batch mode or a connect bound: $(tr '\n' '|' < "$SSH_LOG")"
+    fi
+    expect_base "ssh remote that cannot answer falls back offline" main
+
     # The branch was merged; every commit on it is already in main.
     setup merged; W="$TMP/merged/work"; S="$TMP/merged/seed"
     git -C "$W" switch -q -c feat; commit "$W" "feature"

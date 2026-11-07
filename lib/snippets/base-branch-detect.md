@@ -10,12 +10,18 @@ _BD_BASE=""
 # again only if the remote cannot answer.
 _BD_CACHED="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"
 _BD_CACHED="${_BD_CACHED#origin/}"
+# A cache naming a pruned ref resolves to nothing; it is not a base.
+_BD_CTIP="$(git rev-parse -q --verify "refs/remotes/origin/$_BD_CACHED" 2>/dev/null)"
 if [ -n "$_BD_CACHED" ] && [ "$_BD_CACHED" != "$_BD_CUR" ] \
-   && [ "$(git rev-parse -q --verify "refs/remotes/origin/$_BD_CACHED" 2>/dev/null)" != "$_BD_HEAD" ]; then
+   && [ -n "$_BD_CTIP" ] && [ "$_BD_CTIP" != "$_BD_HEAD" ]; then
   _BD_BASE="$_BD_CACHED"
 fi
 if [ -z "$_BD_BASE" ]; then
-  _BD_BASE="$(GIT_TERMINAL_PROMPT=0 git ls-remote --symref origin HEAD 2>/dev/null \
+  # Never wait on a prompt: no terminal or GUI credential prompt, and ssh in
+  # batch mode with a bounded connect, so a broken remote fails fast.
+  _BD_BASE="$(GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
+    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o ConnectTimeout=5" \
+    git ls-remote --symref origin HEAD 2>/dev/null \
     | awk '$(1) == "ref:" { sub("^refs/heads/", "", $(2)); print $(2); exit }')"
 fi
 if [ -z "$_BD_BASE" ]; then
