@@ -29,6 +29,21 @@
 #   - the VERSION drift block passes --exclude-pr and its value as two arguments
 #     under zsh as well as bash;
 #   - the test command's exit status survives (no pipe into tail);
+#   - a scope helper that cannot classify the diff (SCOPE_UNAVAILABLE), fails
+#     silently or is missing leaves the scope unknown, and stale SCOPE_* values
+#     from the caller's shell never leak in;
+#   - the Deploy Configuration parse keeps a URL's scheme (`https://`), and a
+#     recorded `Deploy trigger:` command is surfaced, an automatic one is not;
+#   - the deploy fingerprint covers any workflow carrying a deploy job, whatever
+#     its file name, and the pre-approval facts list each deploy workflow's
+#     branch filters and environment gates;
+#   - the inline review's checklist resolves through the sibling review skill and
+#     an unreadable one stops instead of passing;
+#   - project eval evidence is N/A without a suite and counts only when a run
+#     names the PR head;
+#   - the deploy log goes through vibe-review-log with the PR branch named, and a
+#     failed write says "not logged";
+#   - Step 0 carries the shared base-branch-detect fallback verbatim;
 #   - static contract: no bun default, no "merge anyway" past blockers, PR body
 #     through vibe-untrusted, every merge bound to the head, honest verdicts.
 #
@@ -97,6 +112,14 @@ block '## Step 8: Revert' > "$TMP/revert.sh" || no "no revert block"
 block '### 3.5b: Test results' > "$TMP/tests.sh" || no "no test-command block"
 block '**The disarm block.**' > "$TMP/disarm.sh" || no "no disarm block"
 block '## Step 3.4: VERSION drift' > "$TMP/drift.sh" || no "no VERSION drift block"
+block '### 1.5a: Deploy infrastructure detection' > "$TMP/infra.sh" || no "no 1.5a detection block"
+block '## Step 5: Deploy strategy detection' > "$TMP/strategy.sh" || no "no Step 5 detection block"
+block 'Check whether this project has been through a successful' > "$TMP/fp-check.sh" || no "no Step 1.5 fingerprint check block"
+block 'Save the deploy config fingerprint' > "$TMP/fp-save.sh" || no "no 1.5e fingerprint save block"
+block '### 3.5d-bis: What the merge deploys' > "$TMP/facts.sh" || no "no 3.5d-bis deploy-facts block"
+block '**If A (quick checklist):**' > "$TMP/checklist.sh" || no "no inline-review checklist block"
+block '**Project evals' > "$TMP/evals.sh" || no "no project-evals block"
+block 'Log to the review dashboard' > "$TMP/log.sh" || no "no deploy-log block"
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
@@ -528,6 +551,141 @@ PY
   case "$rdir" in "$HOME/.vibestack/projects/"*/deploy-reports) [ -d "$rdir" ] && ok "[$SH] reports go under the state root" || no "[$SH] report dir not created: $rdir" ;;
     *) no "[$SH] report dir outside the state root: $out" ;; esac
   [ -z "$(git -C "$d" status --porcelain)" ] && ok "[$SH] report dir leaves the work tree clean" || no "[$SH] report dir dirtied the checkout: $(git -C "$d" status --porcelain)"
+
+  # Value: protects=an unclassifiable diff never shrinks the canary; fails_when=the
+  # SCOPE_UNAVAILABLE line is ignored or a caller's exported SCOPE_* survives the eval;
+  # why_new=the Step 1 rows above only run the real helper on a readable diff; seam=none
+  echo "[$SH] Step 1: scope helper unavailable"
+  d=$(repo "su-$SH" README.md); H=$(git -C "$d" rev-parse HEAD); prjson "$d" OPEN "$H"
+  mkdir -p "$TMP/su-vh-$SH/bin"
+  printf '#!/usr/bin/env bash\necho SCOPE_UNAVAILABLE=true\nexit 2\n' > "$TMP/su-vh-$SH/bin/vibe-diff-scope"
+  chmod +x "$TMP/su-vh-$SH/bin/vibe-diff-scope"
+  fill "$TMP/target.sh" "$d.t.sh" PR_NUMBER=12
+  out=$( cd "$d" && FX="$d.fx" SCOPE_FRONTEND=true SCOPE_DOCS=true VIBESTACK_HOME="$TMP/su-vh-$SH" "$SH" "$d.t.sh" 2>&1 )
+  case "$out" in *"SCOPE KNOWN=false DOCS_ONLY=false FRONTEND=false BACKEND=false CONFIG=false DOCS=false"*) ok "[$SH] SCOPE_UNAVAILABLE -> scope unknown, never docs-only, no stale flags" ;;
+    *) no "[$SH] unavailable scope read as known: $(printf '%s\n' "$out" | grep '^SCOPE')" ;; esac
+  # A helper that crashes silently or is not installed prints nothing; an empty
+  # classification must read as unknown, not as "known, nothing touched".
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/su-vh-$SH/bin/vibe-diff-scope"
+  out=$( cd "$d" && FX="$d.fx" VIBESTACK_HOME="$TMP/su-vh-$SH" "$SH" "$d.t.sh" 2>&1 )
+  case "$out" in *"SCOPE KNOWN=false DOCS_ONLY=false"*) ok "[$SH] silent helper failure -> scope unknown" ;;
+    *) no "[$SH] silent helper failure read as known: $(printf '%s\n' "$out" | grep '^SCOPE')" ;; esac
+  mkdir -p "$TMP/su-none-$SH"
+  out=$( cd "$d" && FX="$d.fx" VIBESTACK_HOME="$TMP/su-none-$SH" "$SH" "$d.t.sh" 2>&1 )
+  case "$out" in *"SCOPE KNOWN=false DOCS_ONLY=false"*) ok "[$SH] missing helper -> scope unknown" ;;
+    *) no "[$SH] missing helper read as known: $(printf '%s\n' "$out" | grep '^SCOPE')" ;; esac
+
+  echo "[$SH] Deploy Configuration parsing"
+  d=$(repo "dc-$SH" app.js)
+  cat > "$d/CLAUDE.md" <<'MD'
+# App
+
+## Deploy Configuration (configured by /setup-deploy)
+- Platform: fly
+- Production URL: https://app.example.com
+- Deploy workflow: auto-deploy on push
+- Merge method: squash
+
+### Custom deploy hooks
+- Pre-merge: none
+- Deploy trigger: ./scripts/deploy.sh production
+- Deploy status: fly status --app app
+- Health check: https://app.example.com/health
+MD
+  for b in infra strategy; do
+    out=$(run "$SH" "$d" "$TMP/$b.sh")
+    case "$out" in *"PERSISTED_URL:https://app.example.com"*) ok "[$SH] $b: the persisted URL keeps https://" ;; *) no "[$SH] $b: URL mangled: $(printf '%s\n' "$out" | grep PERSISTED_URL)" ;; esac
+    case "$out" in *"PERSISTED_PLATFORM:fly"*) ok "[$SH] $b: platform parsed" ;; *) no "[$SH] $b: platform: $(printf '%s\n' "$out" | grep PERSISTED_PLATFORM)" ;; esac
+  done
+  out=$(run "$SH" "$d" "$TMP/strategy.sh")
+  case "$out" in *"DEPLOY_TRIGGER_COMMAND: ./scripts/deploy.sh production"*) ok "[$SH] a recorded deploy-trigger command is surfaced" ;; *) no "[$SH] trigger command not surfaced: $out" ;; esac
+  sed 's|^- Deploy trigger: .*|- Deploy trigger: automatic on push to main|' "$d/CLAUDE.md" > "$d/CLAUDE.md.n" && mv "$d/CLAUDE.md.n" "$d/CLAUDE.md"
+  out=$(run "$SH" "$d" "$TMP/strategy.sh")
+  case "$out" in *DEPLOY_TRIGGER_COMMAND*) no "[$SH] an automatic trigger read as a command: $out" ;; *) ok "[$SH] an automatic trigger is not a command" ;; esac
+
+  echo "[$SH] deploy fingerprint and pre-approval facts"
+  d=$(repo "fp-$SH" app.js)
+  mkdir -p "$d/.github/workflows"
+  printf 'name: Release\non:\n  push:\n    branches: [main]\njobs:\n  deploy-prod:\n    runs-on: ubuntu-latest\n    environment: production\n    steps:\n      - run: ./deploy.sh\n' > "$d/.github/workflows/release.yml"
+  printf 'name: CI\non: [pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make test\n' > "$d/.github/workflows/ci.yml"
+  printf '## Deploy Configuration (configured by /setup-deploy)\n- Platform: fly\n- Production URL: https://app.example.com\n' > "$d/CLAUDE.md"
+  run "$SH" "$d" "$TMP/fp-save.sh" >/dev/null
+  out=$(run "$SH" "$d" "$TMP/fp-check.sh")
+  case "$out" in *CONFIRMED*) ok "[$SH] saved fingerprint reads back CONFIRMED" ;; *) no "[$SH] fresh fingerprint: $out" ;; esac
+  echo '# comment' >> "$d/.github/workflows/ci.yml"
+  out=$(run "$SH" "$d" "$TMP/fp-check.sh")
+  case "$out" in *CONFIRMED*) ok "[$SH] a non-deploy workflow edit keeps CONFIRMED" ;; *) no "[$SH] ci.yml edit: $out" ;; esac
+  echo '      - run: ./notify.sh' >> "$d/.github/workflows/release.yml"
+  out=$(run "$SH" "$d" "$TMP/fp-check.sh")
+  case "$out" in *CONFIG_CHANGED*) ok "[$SH] editing release.yml (a deploy job) -> CONFIG_CHANGED" ;; *) no "[$SH] deploy job in release.yml not fingerprinted: $out" ;; esac
+  ( cd "$d" && git add -A && git commit -q -m workflows )   # the facts read PR_HEAD's tree
+  fill "$TMP/facts.sh" "$d.facts.sh" PR_HEAD="$(git -C "$d" rev-parse HEAD)"
+  out=$(run "$SH" "$d" "$d.facts.sh")
+  if case "$out" in *release.yml*"branches: [main]"*) true ;; *) false ;; esac && case "$out" in *release.yml*"environment: production"*) true ;; *) false ;; esac; then
+    ok "[$SH] deploy facts list release.yml's branch filter and environment gate"
+  else
+    no "[$SH] deploy facts incomplete: $out"
+  fi
+  case "$out" in *ci.yml*) no "[$SH] a non-deploy workflow listed as deploying" ;; *) ok "[$SH] ci.yml is not listed as a deploy" ;; esac
+  case "$out" in *"Platform: fly"*) ok "[$SH] deploy facts carry the Deploy Configuration" ;; *) no "[$SH] Deploy Configuration missing from facts: $out" ;; esac
+
+  # Value: protects=the inline review fails closed; fails_when=a missing checklist prints
+  # a note and the review "passes", or the path is pinned to ~/.claude; why_new=no row ran
+  # this block; seam=none
+  echo "[$SH] inline review checklist"
+  sk="$TMP/sk-$SH"; mkdir -p "$sk/land-and-deploy"
+  out=$( cd "$TMP" && CLAUDE_SKILL_DIR="$sk/land-and-deploy" "$SH" "$TMP/checklist.sh" 2>&1 ); rc=$?
+  case "$out" in *CHECKLIST_UNREADABLE*) [ "$rc" != 0 ] && ok "[$SH] unreadable checklist -> CHECKLIST_UNREADABLE, non-zero" || no "[$SH] unreadable checklist exit 0" ;;
+    *) no "[$SH] unreadable checklist not a stop: rc=$rc $out" ;; esac
+  mkdir -p "$sk/review"; printf '# Pre-landing checklist\n- CHECK-ITEM-1 SQL safety\n' > "$sk/review/checklist.md"
+  out=$( cd "$TMP" && CLAUDE_SKILL_DIR="$sk/land-and-deploy" "$SH" "$TMP/checklist.sh" 2>&1 ); rc=$?
+  case "$out" in *CHECK-ITEM-1*) [ "$rc" = 0 ] && ok "[$SH] the sibling review checklist resolves and reads" || no "[$SH] readable checklist exit $rc" ;;
+    *) no "[$SH] sibling checklist not read: rc=$rc $out" ;; esac
+
+  echo "[$SH] project evals"
+  d=$(repo "ev-$SH" app.js); H=$(git -C "$d" rev-parse HEAD)
+  fill "$TMP/evals.sh" "$d.ev.sh" PR_HEAD="$H"
+  out=$(run "$SH" "$d" "$d.ev.sh")
+  case "$out" in *"PROJECT_EVALS: N/A"*) ok "[$SH] no eval suite -> N/A, not a warning" ;; *) no "[$SH] no suite: $out" ;; esac
+  for u in chat search rank judge; do mkdir -p "$d/evals/$u"; echo '{}' > "$d/evals/$u/config.json"; done
+  ( cd "$d" && git add -A && git commit -q -m evals )
+  H=$(git -C "$d" rev-parse HEAD); H7=$(printf '%s' "$H" | cut -c1-7)
+  mkdir -p "$d/evals/chat/runs" "$d/evals/search/runs" "$d/evals/judge/runs"
+  printf '# chat eval\nHead: %s\npass 10/10\n' "$H7" > "$d/evals/chat/runs/summary-20261107T100000.md"
+  printf '# search eval\npass 9/10\n' > "$d/evals/search/runs/summary-20261107T100000.md"
+  printf 'INCOMPLETE: 3/5 runs (cost cap)\nHead: %s\n' "$H7" > "$d/evals/judge/runs/summary-20261107T100000.md"
+  fill "$TMP/evals.sh" "$d.ev.sh" PR_HEAD="$H"
+  out=$(run "$SH" "$d" "$d.ev.sh")
+  case "$out" in *"EVAL evals/chat TIED"*) ok "[$SH] a run naming the head counts" ;; *) no "[$SH] tied run: $out" ;; esac
+  case "$out" in *"EVAL evals/search UNTIED"*) ok "[$SH] a run not naming the head is untied" ;; *) no "[$SH] untied run: $out" ;; esac
+  case "$out" in *"EVAL evals/rank NOT_RUN"*) ok "[$SH] a configured unit with no run is NOT_RUN" ;; *) no "[$SH] not-run unit: $out" ;; esac
+  case "$out" in *"EVAL evals/judge INCOMPLETE"*) ok "[$SH] an INCOMPLETE run is never a pass" ;; *) no "[$SH] incomplete run: $out" ;; esac
+  case "$out" in *"PROJECT_EVALS: N/A"*) no "[$SH] configured suite reported N/A" ;; *) ok "[$SH] configured suite is not N/A" ;; esac
+
+  echo "[$SH] deploy log"
+  d=$(repo "lg-$SH" app.js); H=$(git -C "$d" rev-parse HEAD); prjson "$d" MERGED "$H"
+  git -C "$d" checkout -q main; M=$(git -C "$d" rev-parse HEAD); M7=$(printf '%s' "$M" | cut -c1-7)
+  vh="$TMP/lg-vh-$SH"; mkdir -p "$vh"; ln -s "$ROOT/bin" "$vh/bin"
+  logrun() {  # logrun ENTRY
+    python3 -I - "$TMP/log.sh" "$d.lg.sh" "$M" "$1" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+for k, v in (("<REPO>", "acme/app"), ("<PR_NUMBER>", "12"), ("<MERGE_SHA>", sys.argv[3]), ("<ENTRY>", sys.argv[4])):
+    t = t.replace(k, v)
+open(sys.argv[2], "w").write(t)
+PY
+    ( cd "$d" && FX="$d.fx" VIBESTACK_HOME="$vh" "$SH" "$d.lg.sh" ) 2>&1
+  }
+  out=$(logrun '{"skill":"land-and-deploy","status":"SUCCESS","verdict":"DEPLOYED AND VERIFIED","pr":12,"dry_run_s":0}'); rc=$?
+  lf=$(find "$vh/projects" -name '*-reviews.jsonl' 2>/dev/null | head -1)
+  if [ "$rc" = 0 ] && case "$out" in *"DEPLOY_LOG: logged"*) true ;; *) false ;; esac && [ -n "$lf" ] \
+     && tail -1 "$lf" | jq -e --arg c "$M7" '.skill == "land-and-deploy" and .branch == "feature" and .commit == $c' >/dev/null; then
+    ok "[$SH] deploy entry written through vibe-review-log with the PR branch and merge commit"
+  else
+    no "[$SH] deploy entry not logged: rc=$rc $out / $(tail -1 "$lf" 2>/dev/null)"
+  fi
+  out=$(logrun 'not json'); rc=$?
+  case "$out" in *"DEPLOY_LOG: not logged"*) [ "$rc" != 0 ] && ok "[$SH] a failed write says not logged" || no "[$SH] failed write exit 0" ;; *) no "[$SH] failed write unreported: $out" ;; esac
 done
 
 echo "static contract"
@@ -543,6 +701,23 @@ grep -q 'production is untouched' "$S" && no "staging still promises production 
 grep -q 'MERGED (UNVERIFIED)' "$S" && grep -q 'MERGED — NO DEPLOY NEEDED' "$S" && grep -q 'ROLLBACK PENDING' "$S" \
   && ok "verdict table has the honest outcomes" || no "verdict table incomplete"
 grep -q '"status":"<SUCCESS/REVERTED/INCOMPLETE>"' "$S" && ok "JSONL status has INCOMPLETE" || no "JSONL status cannot say incomplete"
+grep -q '"dry_run_s":<N>' "$S" && ok "JSONL entry records dry_run_s" || no "JSONL entry has no dry_run_s"
+grep -q 'to verify the deploy worked' "$S" && no "1.5b still promises HTTP checks verify the deploy" || ok "1.5b promises reachability only"
+grep -q 'not which revision it serves' "$S" && ok "1.5b says HTTP checks prove reachability, not the revision" || no "1.5b reachability note missing"
+grep -q 'no E2E tests run today' "$S" && no "permanent 'no E2E tests run today' warning survives" || ok "no permanent E2E warning"
+grep -q 'vibestack}/evals/' "$S" && no "evals read from the global state root, not the project" || ok "evals read from the project's own evals/"
+grep -q 'Inline fix: <yes' "$S" && no "report can still claim inline fixes merged" || ok "no 'Inline fix: yes' report row"
+grep -q 'stopped before merge' "$S" && ok "inline fixes report as stopped before merge" || no "inline fixes not 'stopped before merge'"
+grep -qi 'push them, wait for CI' "$S" && ok "inline fixes: commit, push, wait for CI, rerun" || no "inline fix recovery skips push / CI"
+grep -q 'production has not moved yet' "$S" && ok "a recorded trigger command says production has not moved" || no "no recorded-trigger rule in Step 5"
+[ "$(grep -c 'MERGE WILL DEPLOY:' "$S")" -ge 2 ] && ok "MERGE WILL DEPLOY row in the report and the approval re-ground" || no "MERGE WILL DEPLOY not in both report and question"
+python3 -I - "$ROOT/lib/snippets/base-branch-detect.md" "$S" <<'PY' && ok "Step 0 carries the base-branch-detect fallback verbatim" || no "Step 0 fallback is not the shared snippet"
+import sys
+snip, skill = open(sys.argv[1]).read(), open(sys.argv[2]).read()
+a = snip.index("```bash\n"); b = snip.index("\n```", a + 8)
+sys.exit(0 if snip[a:b] in skill else 1)
+PY
+grep -q "sed 's|refs/remotes/origin/||'" "$S" && no "the old inline base fallback survives" || ok "no old inline base fallback"
 # Every gh merge/checks/view inside a bash block names the PR, except Step 1's
 # one current-branch lookup.
 python3 -I - "$S" > "$TMP/unbound.txt" <<'PY'

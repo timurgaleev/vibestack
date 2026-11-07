@@ -304,6 +304,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-codex-verdict.sh` | `/codex` grades every run, so a run that reviewed nothing reports `VERDICT: unavailable` |
 | `test-document-release.sh` | `/document-release` blocks against stub `gh`/`glab`: spawned mode, hostile PR text, fresh shells |
 | `test-document-generate-pr-body.sh` | `/document-generate` commits without an assistant trailer and publishes a PR body only through the trust envelope and secret scan |
+| `test-office-hours-contract.sh` | `/office-hours` contracts: one outside-voice preflight with prompts on stdin, shared base-branch detection, the inline variant pick, the saved sketch and the gated next-skill handoff |
 | `test-cso-contract.sh` | `/cso` text contracts: trend tracking resolves a finding only on new evidence, `--recheck` |
 | `test-review-checklist.sh` | `skills/review/checklist.md` and the `/connect-review` Bedrock step; runs every `rg` probe the checklist prints |
 | `test-review-log.sh` | `vibe-review-log` tree binding and honest-status guards, plus the `/review` contracts that feed it |

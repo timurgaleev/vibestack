@@ -476,6 +476,25 @@ test_full_round_trip_copilot() {
     "C4b: ...and drops includeCoAuthoredBy, leaving the user's key"
 }
 
+# ---------------------------------------------------------------------------
+# U14 — the secret-path read denies go in and come back out like any other
+# entry the pack unions into a list the user already had
+# ---------------------------------------------------------------------------
+test_secret_read_denies_round_trip() {
+  local sb; sb="$(new_sandbox)" || { _fail "U14: no sandbox"; return; }
+  cat > "$(SETTINGS "$sb")" <<'JSON'
+{"permissions": {"deny": ["Read(./secrets/**)"]}}
+JSON
+  run_install "$sb"
+  local f; f="$(SETTINGS "$sb")"
+  assert_expr "$f" "'Read(~/.aws/credentials)' in d['permissions']['deny'] and 'Read(./secrets/**)' in d['permissions']['deny']" "True" \
+    "U14a: precondition — the install added the secret-path denies next to the user's"
+
+  run_uninstall "$sb" >/dev/null
+  assert_expr "$f" "d['permissions']['deny']" "['Read(./secrets/**)']" \
+    "U14b: uninstall takes the secret-path denies back and keeps the user's own"
+}
+
 echo "uninstall --with-config: merged keys"
 test_ours_alone_is_removed
 test_grant_revoked_user_entries_kept
@@ -494,6 +513,7 @@ test_copilot_user_key_survives
 test_copilot_user_value_kept
 test_full_round_trip_claude
 test_full_round_trip_copilot
+test_secret_read_denies_round_trip
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

@@ -936,6 +936,18 @@ export class BrowserManager {
     this.tabOwnership.set(tabId, toClientId);
   }
 
+  /** Hand every tab a client owns back to root. Returns how many moved. */
+  releaseTabsOwnedBy(clientId: string): number {
+    let moved = 0;
+    for (const [tabId, owner] of this.tabOwnership) {
+      if (owner === clientId) {
+        this.tabOwnership.set(tabId, 'root');
+        moved++;
+      }
+    }
+    return moved;
+  }
+
   async getTabListWithTitles(): Promise<Array<{ id: number; url: string; title: string; active: boolean }>> {
     const tabs: Array<{ id: number; url: string; title: string; active: boolean }> = [];
     for (const [id, page] of this.pages) {

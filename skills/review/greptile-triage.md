@@ -144,7 +144,7 @@ argument. If the write fails or is refused, do not send: print the cause and the
 **3. Post it.** Substitute the printed path for `<reply-file>` and the comment's raw
 numeric `id` from the fetched JSON for `<comment-id>`. The block refuses a non-numeric
 id, an empty file, and a reply that matches a high-confidence credential pattern
-(the same shapes as `lib/snippets/secret-scan-patterns.md`) — a reply quoting a diff
+(`vibe-redact scan`, the shared matcher behind `lib/snippets/secret-scan-patterns.md`) — a reply quoting a diff
 line can carry a key that was never meant to leave the machine. On a credential match,
 rewrite the reply without the value; never post it. The block deletes the reply
 file and its directory after a successful post.
@@ -156,8 +156,8 @@ COMMENT_ID='<comment-id>'
 case "$COMMENT_ID" in ''|*[!0-9]*) echo "Not sent: comment id '$COMMENT_ID' is not numeric." >&2; exit 1 ;; esac
 case "$REPLY_FILE" in */vibe-greptile-reply.*/reply.md) ;; *) echo "Not sent: '$REPLY_FILE' is not a reply file from step 1." >&2; exit 1 ;; esac
 [ -s "$REPLY_FILE" ] || { echo "Not sent: $REPLY_FILE is missing or empty." >&2; exit 1; }
-if grep -Eq -e 'AKIA[0-9A-Z]{16}|gh[posur]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|xox[abpr]-[A-Za-z0-9-]{10,}|(sk|rk)_live_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48}|gl(pat|ptt|dt)-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{36}|dop_v1_[a-f0-9]{64}|-----BEGIN[A-Z ]*PRIVATE KEY-----|^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=.+' "$REPLY_FILE"; then
-  echo "Not sent: $REPLY_FILE matches a credential pattern. Rewrite it without the value." >&2; exit 1
+if ! "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$REPLY_FILE"; then
+  echo "Not sent: $REPLY_FILE matches a credential pattern, or the scan could not run. Rewrite it without the value." >&2; exit 1
 fi
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner') || { echo "Not sent: gh could not resolve the repo." >&2; exit 1; }
 PR_NUMBER=$(gh pr view --json number --jq '.number') || { echo "Not sent: gh could not resolve the PR." >&2; exit 1; }
@@ -170,8 +170,8 @@ Top-level comments (from `issues/$PR/comments`):
 REPLY_FILE='<reply-file>'
 case "$REPLY_FILE" in */vibe-greptile-reply.*/reply.md) ;; *) echo "Not sent: '$REPLY_FILE' is not a reply file from step 1." >&2; exit 1 ;; esac
 [ -s "$REPLY_FILE" ] || { echo "Not sent: $REPLY_FILE is missing or empty." >&2; exit 1; }
-if grep -Eq -e 'AKIA[0-9A-Z]{16}|gh[posur]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|xox[abpr]-[A-Za-z0-9-]{10,}|(sk|rk)_live_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48}|gl(pat|ptt|dt)-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{36}|dop_v1_[a-f0-9]{64}|-----BEGIN[A-Z ]*PRIVATE KEY-----|^[A-Z_]+_(KEY|TOKEN|SECRET|PASSWORD)=.+' "$REPLY_FILE"; then
-  echo "Not sent: $REPLY_FILE matches a credential pattern. Rewrite it without the value." >&2; exit 1
+if ! "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$REPLY_FILE"; then
+  echo "Not sent: $REPLY_FILE matches a credential pattern, or the scan could not run. Rewrite it without the value." >&2; exit 1
 fi
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner') || { echo "Not sent: gh could not resolve the repo." >&2; exit 1; }
 PR_NUMBER=$(gh pr view --json number --jq '.number') || { echo "Not sent: gh could not resolve the PR." >&2; exit 1; }
