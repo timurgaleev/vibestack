@@ -316,6 +316,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-test-bootstrap.sh` | `lib/snippets/test-bootstrap.md` stays the one wording of test-framework detection that /ship and /qa render |
 | `test-base-branch-detect.sh` | The base-branch fallback resolves in throwaway repos (stale cache, offline, merged branch, ssh remote) and the confidence snippet keeps its gate |
 | `test-aws-context.sh` | The shared AWS context block reports profile, region, account and principal against a fake CLI, and N-A for anything unconfirmed |
+| `test-snippet-text.sh` | Snippet wording a model copies or obeys literally: real backticks in the plan-file report, and the /qa probe rules for wizard steps and read-back before submit |
 | `test-shared-protocols.sh` | The claim, completeness, question and memory rules reach the skills that include them, within a byte budget |
 | `test-context-provenance.sh` | `/context-save` and `/context-restore` keep a resumed session off the wrong context or a guessed step |
 | `test-context-identity.sh` | Checkpoints are stamped with their project and restore never offers another project's |
