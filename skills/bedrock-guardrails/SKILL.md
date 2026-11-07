@@ -19,7 +19,7 @@ allowed-tools:
 
 ## When to invoke
 
-Use when: "bedrock guardrails", "review our bedrock setup", "is bedrock locked to eu-central-1", "do we leak PII into prompts", "bedrock IAM policy", "tenant isolation for the knowledge base", "EU data residency for the LLM feature", or when a PR adds a Bedrock invoke and nobody has looked at the surrounding controls yet.
+Use when: "bedrock guardrails", "review our bedrock setup", "is bedrock locked to our EU region", "do we leak PII into prompts", "bedrock IAM policy", "tenant isolation for the knowledge base", "EU data residency for the LLM feature", or when a PR adds a Bedrock invoke and nobody has looked at the surrounding controls yet.
 
 ## Preamble
 
@@ -57,7 +57,7 @@ Find every place the repo talks to Bedrock. Search infrastructure code and appli
 The inventory has to be complete: a call site missed here is skipped by every region, IAM, guardrail, logging and cost check downstream, and shows up in the report as nothing at all. So neither search is truncated, and both cover the whole current invocation surface — `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, `ConverseStream`, `StartAsyncInvoke`, `ApplyGuardrail`, `InvokeGuardrailChecks`, `RetrieveAndGenerate`, `RetrieveAndGenerateStream`, `InvokeAgent`, `InvokeInlineAgent`, `InvokeFlow`, and the OpenAI-compatible `chat/completions` and `responses` paths on the `bedrock-runtime` endpoint.
 
 ```bash
-grep -rnE 'aws_bedrock|bedrock:|AWS::Bedrock|aws_bedrockagent|bedrock_guardrail' \
+grep -rnE 'aws_bedrock|bedrock:|AWS::Bedrock|aws_bedrockagent|bedrock_guardrail|aws_bedrockagentcore_|bedrock-agentcore|BedrockAgentCore' \
   --include='*.tf' --include='*.tf.json' --include='*.hcl' --include='*.yaml' --include='*.yml' --include='*.json' --include='*.ts' --include='*.py' . 2>/dev/null \
   | grep -vE 'node_modules|\.terraform/|dist/|build/|vendor/'
 
@@ -66,11 +66,20 @@ grep -rnE 'bedrock-(agent-)?runtime|Bedrock(Agent)?Runtime|bedrock_(agent_)?runt
   | grep -vE 'node_modules|\.terraform/|dist/|build/|vendor/|_test\.|\.test\.|spec\.'
 ```
 
-Record each hit as a call site: file, line, model or profile id, and whether a guardrail is passed. This list is the row source for the rest of the audit. If a repo is large enough that you cap the output to read it, say so in the report and mark the downstream controls `N-A (call-site inventory partial)` naming what was cut — a partial inventory cannot carry a PASS. If the repo wraps Bedrock in a library the greps do not reach, widen the pattern to that wrapper's own function names before moving on.
+Record each hit as a call site: file, line, model or profile id, the region it resolves to, and whether a guardrail is passed. This list is the row source for the rest of the audit. If a repo is large enough that you cap the output to read it, say so in the report and mark the downstream controls `N-A (call-site inventory partial)` naming what was cut — a partial inventory cannot carry a PASS. If the repo wraps Bedrock in a library the greps do not reach, widen the pattern to that wrapper's own function names before moving on.
 
 Then decide the residency regime, and take it from a commitment, not from an inferred one. An `eu-*` provider block is where the account happens to deploy today, and accounts routinely span regions; a GDPR mention in a README is about processing personal data, not about where inference runs. `RESIDENCY=EU` needs an explicit written commitment — a DPA or contract clause, a documented residency statement in the product docs, an ADR that names EU-only inference, or a compliance control the repo references. Record which one, with its `file:line`. If nothing states it, use AskUserQuestion to ask whether the workload has an EU residency commitment; if the answer is no or unavailable, leave `RESIDENCY=none` and score cross-region routing under R3 as an undocumented cross-region decision (MEDIUM), not as a residency breach. Under `RESIDENCY=EU`, any call that resolves to a `us-*` region or a `us.` / `global.` inference profile is a HIGH finding, no exceptions.
 
-Check whether the CLI is usable for read-only evidence with `aws sts get-caller-identity --output text 2>/dev/null || echo "NO_AWS_CLI_SESSION"`. If there is no session, mark every control that needs live account state as `N-A (no CLI)` with a note on what to run, and audit from code alone. Do not ask for credentials.
+Then print the regions the call sites resolve to. A call site's region is the one its client is built with (`region_name=`, `region:`), else the `AWS_REGION` its deployment sets, else the provider block of the stack that deploys it; one that resolves to none of these adds nothing here and is the R1 finding in Step 2. List each distinct region once, space-separated, and leave the value empty when no call site resolves to a region — the live per-region checks below then report `N-A (region not established)` rather than probe a region nobody chose:
+
+```bash
+CALL_SITE_REGIONS='<distinct regions the call sites resolve to, space-separated, or empty>'
+echo "CALL_SITE_REGIONS: ${CALL_SITE_REGIONS:-none established}"
+```
+
+{{include lib/snippets/aws-context.md}}
+
+With `AWS_CONTEXT: unavailable`, audit from code alone and mark every control that needs live account state `N-A (AWS identity not established)` with a note on what to run. Do not ask for credentials.
 
 Every live check below runs through one probe helper, so that a call which fails cannot be read as a call which found nothing. An `AccessDenied`, an unknown region, a missing endpoint and an expired token all exit non-zero and produce `N-A`; only a zero exit with an empty result means "none configured". Write the helper once and source it in each later block, because shell state does not survive between tool calls.
 
@@ -88,7 +97,6 @@ bg_probe() {
 }
 PROBE
 . "${TMPDIR:-/tmp}/bg-probe.sh"
-bg_probe "identity" aws sts get-caller-identity --output json
 ```
 
 ---
@@ -118,7 +126,7 @@ grep -rnE 'aws:RequestedRegion' --include='*.tf' --include='*.json' --include='*
 bg_probe "R4-profile" aws bedrock get-inference-profile --inference-profile-identifier "$PROFILE_ID" --region "$SOURCE_REGION" --query 'models[].modelArn' --output json
 ```
 
-Finding shape: `FAIL HIGH: src/llm/client.ts:41 invokes global.anthropic.claude-... from an eu-central-1 account; IAM locks only aws:RequestedRegion, so routing to us-east-1 is not blocked.`
+Finding shape: `FAIL HIGH: src/llm/client.ts:41 invokes global.anthropic.claude-... from an EU account; IAM locks only aws:RequestedRegion, so routing to a US region is not blocked.`
 
 ---
 
@@ -160,7 +168,7 @@ fi
 bg_probe "I-inline-doc:${ROLE_NAME}" aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name "<inline policy name>" --query PolicyDocument --output json
 
 # authorization policies above the account; usually AccessDenied from a member account
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>&1) || ACCOUNT_ID=""
+ACCOUNT_ID='<ACCOUNT>'
 bg_probe "I-scp" aws organizations list-policies-for-target --target-id "$ACCOUNT_ID" --filter SERVICE_CONTROL_POLICY --output json
 bg_probe "I-rcp" aws organizations list-policies-for-target --target-id "$ACCOUNT_ID" --filter RESOURCE_CONTROL_POLICY --output json
 ```
@@ -193,9 +201,10 @@ grep -rnE 'grounding_source|groundingSource|guardContent|qualifiers|tagSuffix|am
 bg_probe "G1" aws bedrock list-guardrails --output json
 bg_probe "G-detail" aws bedrock get-guardrail --guardrail-identifier "$GUARDRAIL_ID" --guardrail-version "$GUARDRAIL_VERSION" --output json
 
-# enforced guardrails: once per region a Step 1 call site resolves to, then the org policy
-CALL_SITE_REGIONS=(eu-central-1)
-for _rgn in "${CALL_SITE_REGIONS[@]}"; do
+# enforced guardrails: once per region from the Step 1 CALL_SITE_REGIONS line, then the org policy
+CALL_SITE_REGIONS='<CALL_SITE_REGIONS>'
+[ -n "$CALL_SITE_REGIONS" ] || echo "G2-enforced: N-A (region not established)"
+for _rgn in $(printf '%s' "$CALL_SITE_REGIONS"); do
   bg_probe "G2-enforced:${_rgn}" aws bedrock list-enforced-guardrails-configuration --region "$_rgn" --output json
 done
 bg_probe "G2-org" aws organizations describe-effective-policy --policy-type BEDROCK_POLICY --output json
@@ -223,7 +232,13 @@ grep -rnE 'com\.amazonaws\.[a-z0-9-]+\.bedrock(-runtime|-agent-runtime)?|aws_vpc
 bg_probe "D1" aws bedrock get-model-invocation-logging-configuration --output json
 bg_probe "D3-account-dp" aws logs describe-account-policies --policy-type DATA_PROTECTION_POLICY --output json
 bg_probe "D3-group-dp" aws logs get-data-protection-policy --log-group-identifier "$LOG_GROUP_NAME" --output json
-bg_probe "D5-vpce" aws ec2 describe-vpc-endpoints --filters "Name=service-name,Values=com.amazonaws.${AWS_REGION:-eu-central-1}.bedrock-runtime" --query 'VpcEndpoints[].VpcEndpointId' --output json
+# the call-site regions from Step 1, else the CLI's configured region, else no probe at all
+CALL_SITE_REGIONS='<CALL_SITE_REGIONS>'
+_d5_regions="${CALL_SITE_REGIONS:-$(aws configure get region 2>/dev/null)}"
+[ -n "$_d5_regions" ] || echo "D5-vpce: N-A (region not established)"
+for _rgn in $(printf '%s' "$_d5_regions"); do
+  bg_probe "D5-vpce:${_rgn}" aws ec2 describe-vpc-endpoints --region "$_rgn" --filters "Name=service-name,Values=com.amazonaws.${_rgn}.bedrock-runtime" --query 'VpcEndpoints[].VpcEndpointId' --output json
+done
 ```
 
 Finding shape: `FAIL MEDIUM: infra/logging.tf:14 invocation logs go to a log group with no retention_in_days and the default AWS-managed key.`
@@ -262,6 +277,40 @@ grep -rnE 'json\.loads\(.*(response|output|completion)|JSON\.parse\(.*(response|
 ```
 
 Finding shape: `FAIL HIGH: agent/tools.py:130 model output is passed to subprocess.run without a validator or allowlist.`
+
+---
+
+## Step 7b: AgentCore gateways and runtimes
+
+Skip with `N-A (no AgentCore resources)` when Step 1 found no `aws_bedrockagentcore_*`, `AWS::BedrockAgentCore::*` or `bedrock-agentcore` hit. An AgentCore gateway or runtime is an endpoint other callers reach, so the questions are who can call it and where its outbound secrets live.
+
+- **A1 Inbound authorization.** A gateway's `authorizerType` names its inbound check — `CUSTOM_JWT`, `AWS_IAM`, or `NONE` for none at all; a runtime takes IAM (SigV4) or a JWT authorizer. `NONE` on a gateway that anything outside the account can reach is HIGH: every tool behind it is callable without an identity. `NONE` is only defensible on a development gateway nothing routes to, and that has to be visible in the config.
+- **A2 Resource policy.** Read the resource policy on every IAM-authorized gateway and runtime. An `Allow` with Principal `*` and neither an `aws:SourceVpc` nor an `aws:SourceVpce` condition is HIGH: any AWS principal anywhere can sign the call. On a JWT (OAuth) resource Principal `*` is expected — the token authorizer is what authenticates the caller, and the policy cannot name the token's subject — so it is not a finding there; say so in the row, so `/cso` does not report the same policy as public.
+- **A3 Target credentials.** Outbound API keys and OAuth clients a gateway target uses belong in AgentCore Identity credential providers, referenced by ARN. A key in the target's environment, in Lambda environment variables or in the IaC that defines the target is MEDIUM: it is readable by anyone who can read the function configuration and never rotates with the provider.
+
+```bash
+grep -rnE 'authorizerType|authorizer_type|authorizerConfiguration|authorizer_configuration|customJWTAuthorizer|credentialProvider|credential_provider|aws:SourceVpce?' \
+  --include='*.tf' --include='*.ts' --include='*.py' --include='*.json' --include='*.yaml' --include='*.yml' . 2>/dev/null | grep -vE 'node_modules|\.terraform/' | head -40
+
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+AC_REGION='<region the AgentCore IaC deploys to, else REGION from the context block>'
+bg_probe "A-gateways" aws bedrock-agentcore-control list-gateways --region "$AC_REGION" --output json
+bg_probe "A-runtimes" aws bedrock-agentcore-control list-agent-runtimes --region "$AC_REGION" --output json
+```
+
+Then, once per gateway and runtime the listing returned (a runtime takes only the A2 call):
+
+```bash
+. "${TMPDIR:-/tmp}/bg-probe.sh"
+AC_REGION='<same region as the listing>'
+GATEWAY_ID='<gatewayId from A-gateways>'
+RESOURCE_ARN='<gatewayArn or agentRuntimeArn from the listing>'
+bg_probe "A1-gateway" aws bedrock-agentcore-control get-gateway --region "$AC_REGION" --gateway-identifier "$GATEWAY_ID" --output json
+bg_probe "A2-policy" aws bedrock-agentcore-control get-resource-policy --region "$AC_REGION" --resource-arn "$RESOURCE_ARN" --output json
+bg_probe "A3-targets" aws bedrock-agentcore-control list-gateway-targets --region "$AC_REGION" --gateway-identifier "$GATEWAY_ID" --output json
+```
+
+Finding shape: `FAIL HIGH: infra/agentcore.tf:12 gateway "tools" has authorizer_type NONE and a public URL; every target behind it is callable without an identity.`
 
 ---
 
@@ -329,15 +378,18 @@ T3 Cache prefix holds no tenant data      N-A      -         single tenant
 P1 System prompt separated                PASS     -         src/llm/prompt.ts:5
 P2 Tool / retrieved text marked as data   FAIL     MEDIUM    api/rag.py:71                     wrap in <document> block
 P3 Output validated before action         PASS     -         agent/tools.py:40 zod schema
+A1 AgentCore inbound auth not NONE        N-A      -         no AgentCore resources
+A2 IAM resource policy limited to VPC     N-A      -         no AgentCore resources
+A3 Target credentials in Identity         N-A      -         no AgentCore resources
 Q1 Quotas known vs load                   FAIL     LOW       no capacity note                  record TPM in README
 Q2 Token budget per request               FAIL     MEDIUM    api/chat.ts:52                    set maxTokens + input cap
 Q3 Provisioned throughput decision        FAIL     LOW       Q3 probe: 1 bought, no note       record the decision
 
-Totals: PASS 9  FAIL 16  N-A 5    HIGH 5  MEDIUM 8  LOW 3
+Totals: PASS 9  FAIL 16  N-A 8    HIGH 5  MEDIUM 8  LOW 3
 
 CALL SITES
   src/llm/client.ts:41        global.anthropic.claude-...          guardrail: yes (v3)
-  src/batch/summarise.py:77   anthropic.claude-... (eu-central-1)  guardrail: NONE
+  src/batch/summarise.py:77   anthropic.claude-... (<region>)      guardrail: NONE
 
 REMEDIATION
   A. Region / inference profile   B. IAM scoped to ARNs   C. Guardrail resource   D. Logging and encryption
@@ -348,7 +400,7 @@ Under REMEDIATION emit one Terraform snippet per group A-D that has at least one
 ```hcl
 # A. Region pinned and the profile kept inside the residency regime
 provider "aws" {
-  region = "eu-central-1"
+  region = "<source-region>"
 }
 
 data "aws_caller_identity" "current" {}
@@ -360,7 +412,7 @@ resource "aws_bedrock_inference_profile" "app" {
   name = "${var.app}-${var.env}"
 
   model_source {
-    copy_from = "arn:aws:bedrock:eu-central-1:${data.aws_caller_identity.current.account_id}:inference-profile/eu.anthropic.claude-sonnet-4-20250514-v1:0"
+    copy_from = "arn:aws:bedrock:<source-region>:${data.aws_caller_identity.current.account_id}:inference-profile/eu.anthropic.claude-sonnet-4-20250514-v1:0"
   }
 }
 

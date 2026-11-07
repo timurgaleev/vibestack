@@ -310,6 +310,161 @@ S6=$(section '## Step 6: Eval Suites' '## Step 7:')
 printf '%s' "$S6" | grep -q 'Example only' && ok "app layout is an example, not the selector" || no "Step 6 still hard-codes one app layout"
 printf '%s' "$S6" | grep -q 'none declared' && ok "prompt changes without evals are a named gap" || no "no named gap for prompt changes without evals"
 
+# The skills' blocks resolve helpers as ${VIBESTACK_HOME:-$HOME/.vibestack}/bin.
+VH="$TMP/vh"; mkdir -p "$VH"; ln -s "$ROOT/bin" "$VH/bin"
+
+echo "Step 5: a suite that ran nothing is not a pass"
+LBLOCK="$TMP/lanes.sh"
+block '## Step 5: Run tests' > "$LBLOCK" && ok "lane block extracted" || { no "lane block not found"; : > "$LBLOCK"; }
+mkdir -p "$TMP/logs"
+printf 'No tests found, exiting with code 0\n' > "$TMP/logs/jest0"
+printf '============ no tests ran in 0.01s ============\n' > "$TMP/logs/pytest0"
+printf 'Finished in 0.001 seconds\n0 examples, 0 failures\n' > "$TMP/logs/rspec0"
+printf '?   \texample.com/x\t[no test files]\n' > "$TMP/logs/go0"
+printf ' 0 pass\n 0 fail\nRan 0 tests across 1 files. [5ms]\n' > "$TMP/logs/bun0"
+printf ' 12 pass\n 0 fail\n 30 expect() calls\nRan 12 tests across 3 files. [40ms]\n' > "$TMP/logs/bun12"
+printf 'Test Suites: 1 passed, 1 total\nTests:       3 passed, 3 total\nSnapshots:   0 total\n' > "$TMP/logs/jest3"
+printf '=========== 4 passed, 1 failed in 0.20s ===========\n' > "$TMP/logs/pytest5"
+printf '7 examples, 0 failures\n' > "$TMP/logs/rspec7"
+printf 'ok  \texample.com/x\t0.01s\n?   \texample.com/y\t[no test files]\n' > "$TMP/logs/gomixed"
+printf 'all good\n' > "$TMP/logs/custom"
+printf 'TAP version 13\n1..0\n# tests 0\n# pass 0\n# fail 0\n' > "$TMP/logs/nodetap0"
+printf '\342\204\271 tests 0\n\342\204\271 pass 0\n' > "$TMP/logs/nodespec0"
+printf '# tests 4\n# pass 4\n' > "$TMP/logs/nodetap4"
+printf 'running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n' > "$TMP/logs/cargo0"
+printf 'test result: ok. 2 passed; 0 failed; 0 ignored\ntest result: FAILED. 1 passed; 1 failed; 0 ignored\n' > "$TMP/logs/cargo4"
+# ran FIXTURE -> the tests_ran value the lane block reports for a lane whose
+# output is that fixture (the lane itself exits 0 every time).
+ran() {
+  python3 -I - "$LBLOCK" "$TMP/lanes.$1.sh" "$TMP/logs/$1" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+t = t.replace("'<test command for lane 1>'", "'cat %s'" % sys.argv[3]).replace("'<test command for lane 2>'", "'true'")
+t = t.replace("<lane1>", "a").replace("<lane2>", "b")
+open(sys.argv[2], "w").write(t)
+PY
+  ( cd "$TMP" && VIBESTACK_HOME="$VH" bash "$TMP/lanes.$1.sh" 2>&1 ) | sed -n 's/^LANE: a exit=0 tests_ran=\([^ ]*\) .*/\1/p'
+}
+for f in jest0 pytest0 rspec0 go0 bun0 nodetap0 nodespec0 cargo0; do
+  got=$(ran "$f")
+  [ "$got" = 0 ] && ok "$f: zero-test run reports tests_ran=0" || no "$f: zero-test run reports tests_ran='$got'"
+done
+for pair in bun12:12 jest3:3 pytest5:5 rspec7:7 nodetap4:4 cargo4:4; do
+  got=$(ran "${pair%%:*}")
+  [ "$got" = "${pair#*:}" ] && ok "${pair%%:*}: counted ${pair#*:} tests" || no "${pair%%:*}: tests_ran='$got', want ${pair#*:}"
+done
+for f in gomixed custom; do
+  got=$(ran "$f")
+  [ "$got" = unknown ] && ok "$f: no runner count -> tests_ran=unknown" || no "$f: tests_ran='$got', want unknown"
+done
+S5=$(section '## Step 5: Run tests' '## Test Failure Ownership Triage')
+S16=$(section '## Step 16: Verification Gate' '## Step 17:')
+printf '%s' "$S5" | grep -q 'tests_ran=0' && printf '%s' "$S5" | grep -q 'Step T2' \
+  && ok "tests_ran=0 goes to in-branch triage" || no "Step 5 does not route tests_ran=0 to Step T2"
+printf '%s' "$S5" | grep -q 'count unavailable' && ok "unknown count passes as 'count unavailable'" || no "no 'count unavailable' rule"
+printf '%s' "$S16" | grep -q 'tests_ran' && ok "Step 16 refuses a zero-test lane as FRESH" || no "Step 16 ignores tests_ran"
+S19T=$(section '## Test plan' '<If SHIP_ATTRIBUTION')
+printf '%s' "$S19T" | grep -q 'tests_ran' && ok "PR Test plan prints per-lane counts" || no "PR Test plan has no per-lane count"
+
+echo "Steps 5-6: logs in a private directory"
+grep -q '/tmp/vibestack-ship-$(git branch' "$SKILL" && no "lane/eval logs still go to a predictable /tmp path" || ok "no predictable /tmp log path"
+printf '%s' "$S5" | grep -q 'mktemp -d' && ok "Step 5 logs to a private mktemp -d" || no "Step 5 has no private log dir"
+printf '%s' "$S6" | grep -q 'vibe-detach" start' && printf '%s' "$S6" | grep -q 'vibe-detach" status' \
+  && ok "long eval suites run detached and are polled" || no "Step 6 has no detached eval path"
+printf '%s' "$S6" | grep -qi 'silence is not success' && ok "a silent job is not a pass" || no "no 'silence is not success' rule"
+
+echo "Step 12: version files move through vibe-version-bump"
+grep -q 'JSON.stringify' "$SKILL" && no "ship still rewrites package.json with JSON.stringify" || ok "no hand-rolled package.json write"
+WBLOCK="$TMP/write.sh"
+block '4. **Validate**' > "$WBLOCK" && ok "version write block extracted" || { no "version write block not found"; : > "$WBLOCK"; }
+sed -i.bak "s/<NEW_VERSION>/1.2.4/g" "$WBLOCK"
+npm_fixture() { # npm_fixture NAME LOCK_BODY
+  local d; d=$(fixture "$1" "1.2.3")
+  printf '{\n  "name": "x",\n  "version": "1.2.3"\n}\n' > "$d/package.json"
+  printf '%s\n' "$2" > "$d/package-lock.json"
+  printf '%s' "$d"
+}
+d=$(npm_fixture bumplock '{"name":"x","version":"1.2.3","lockfileVersion":3,"packages":{"":{"name":"x","version":"1.2.3"}}}')
+out=$( cd "$d" && VIBESTACK_HOME="$VH" bash "$WBLOCK" 2>&1 ); rc=$?
+[ "$rc" = 0 ] && ok "bump exits 0" || no "bump exit $rc: $out"
+[ "$(cat "$d/VERSION")" = 1.2.4 ] && ok "VERSION written" || no "VERSION not written"
+grep -q '"version": "1.2.4"' "$d/package.json" && ok "package.json written" || no "package.json not written"
+python3 -I -c 'import json,sys; l=json.load(open(sys.argv[1])); sys.exit(0 if l["version"]=="1.2.4" and l["packages"][""]["version"]=="1.2.4" else 1)' "$d/package-lock.json" \
+  && ok "package-lock.json moves with the manifest" || no "package-lock.json left at the old version"
+d=$(npm_fixture badlock 'not json')
+out=$( cd "$d" && VIBESTACK_HOME="$VH" bash "$WBLOCK" 2>&1 ); rc=$?
+[ "$rc" != 0 ] && ok "an unwritable lockfile stops the bump" || no "malformed lockfile still exited 0"
+[ "$(cat "$d/VERSION")" = 1.2.3 ] && ok "and nothing was written" || no "VERSION moved although the bump failed"
+S12=$(section '## Step 12: Version bump' '## Step 13:')
+printf '%s' "$S12" | grep -q 'DRIFT_STALE_PKG repair' && printf '%s' "$S12" | grep -q 'vibe-version-bump" "$REPAIR_VERSION"' \
+  && ok "drift repair goes through vibe-version-bump" || no "drift repair does not use vibe-version-bump"
+
+echo "Step 12: own PR excluded from the queue"
+QBLOCK="$TMP/queue.sh"
+block '3. **Queue-aware version pick' > "$QBLOCK" && ok "queue block extracted" || { no "queue block not found"; : > "$QBLOCK"; }
+sed -i.bak -e "s/<BUMP_LEVEL>/patch/g" -e "s/<BASE_VERSION>/1.2.3/g" -e "s/<base>/main/g" "$QBLOCK"
+QH="$TMP/qh"; mkdir -p "$QH/bin"
+cat > "$QH/bin/vibe-next-version" <<'SH'
+#!/usr/bin/env bash
+printf '%s|' "$@" > "$ARGS_OUT"
+echo '{"version":"1.2.4","claimed":[],"offline":false}'
+SH
+chmod +x "$QH/bin/vibe-next-version"
+printf '{"number":7}\n' > "$TMP/own-pr.json"
+for sh in bash zsh; do
+  command -v "$sh" >/dev/null 2>&1 || continue
+  ( cd "$TMP" && PATH="$TMP/stub:$PATH" STUB_PR="$TMP/own-pr.json" VIBESTACK_HOME="$QH" ARGS_OUT="$TMP/args.$sh" "$sh" "$QBLOCK" >/dev/null 2>&1 )
+  grep -q '|--exclude-pr|7|' "$TMP/args.$sh" 2>/dev/null && ok "$sh: own PR passed as --exclude-pr 7 (two arguments)" || no "$sh: queue call args: $(cat "$TMP/args.$sh" 2>/dev/null)"
+  ( cd "$TMP" && PATH="$TMP/stub:$PATH" STUB_PR="$TMP/none.json" VIBESTACK_HOME="$QH" ARGS_OUT="$TMP/args0.$sh" "$sh" "$QBLOCK" >/dev/null 2>&1 )
+  grep -q 'exclude-pr' "$TMP/args0.$sh" 2>/dev/null && no "$sh: --exclude-pr sent with no PR" || ok "$sh: no PR -> no --exclude-pr"
+done
+printf '%s' "$S12" | grep -q "ALREADY_BUMPED.*step 3's block" && ok "ALREADY_BUMPED drift check reuses the excluding block" || no "ALREADY_BUMPED drift check does not exclude its own PR"
+
+echo "Step 13: CHANGELOG follows the file"
+S13=$(section '## Step 13: CHANGELOG' '## Step 14:')
+printf '%s' "$S13" | grep -qF '## [X.Y.Z.W]' && no "Step 13 still hard-codes a header format" || ok "no hard-coded header format"
+printf '%s' "$S13" | grep -q 'first release entry' && ok "entry goes before the first release entry" || no "no placement rule"
+printf '%s' "$S13" | grep -q 'CHANGELOG: skipped' && ok "missing CHANGELOG is skipped" || no "no CHANGELOG: skipped path"
+printf '%s' "$S13" | grep -qi 'never create' && ok "never creates a CHANGELOG" || no "no never-create rule"
+printf '%s' "$S13" | grep -qi 'no bullet' && ok "merges and bumps need no bullet" || no "no bookkeeping-commit rule"
+
+echo "Step T: pre-existing is proven at base, not guessed"
+ST=$(section '## Test Failure Ownership Triage' '## Step 6:')
+printf '%s' "$ST" | grep -q 'heuristic' && no "triage still classifies by heuristic" || ok "no heuristic classification"
+BBLOCK="$TMP/base.sh"
+block 'Prove it at base' > "$BBLOCK" && ok "base proof block extracted" || { no "base proof block not found"; : > "$BBLOCK"; }
+sed -i.bak -e "s/<base>/main/g" -e "s|<failing test command>|sh t.sh|g" "$BBLOCK"
+base_fixture() { # base_fixture NAME BASE_EXIT
+  local d; d=$(fixture "$1" "")
+  ( cd "$d" && git checkout -q main && printf 'exit %s\n' "$2" > t.sh && git add t.sh && git commit -q -m t \
+    && git push -q origin main && git checkout -q feature && git merge -q main && printf 'exit 1\n' > t.sh )
+  printf '%s' "$d"
+}
+d=$(base_fixture redbase 1)
+out=$( cd "$d" && bash "$BBLOCK" 2>&1 )
+case "$out" in *"BASE_EXIT: 1"*) ok "red at base -> BASE_EXIT: 1" ;; *) no "red base: $out" ;; esac
+[ "$(git -C "$d" worktree list | wc -l | tr -d ' ')" = 1 ] && ok "the base worktree is removed" || no "base worktree left behind"
+d=$(base_fixture greenbase 0)
+out=$( cd "$d" && bash "$BBLOCK" 2>&1 )
+case "$out" in *"BASE_EXIT: 0"*) ok "green at base -> BASE_EXIT: 0" ;; *) no "green base: $out" ;; esac
+d=$(base_fixture nobase 1); git -C "$d" update-ref -d refs/remotes/origin/main
+out=$( cd "$d" && bash "$BBLOCK" 2>&1 )
+case "$out" in *"BASE_EXIT: unavailable"*) ok "no base ref -> unavailable" ;; *) no "missing base: $out" ;; esac
+printf '%s' "$ST" | grep -qi 'green at base' && printf '%s' "$ST" | grep -q 'in-branch' \
+  && ok "green at base is in-branch" || no "no green-at-base rule"
+printf '%s' "$ST" | grep -qi 'unavailable.*in-branch' && ok "unavailable defaults to in-branch" || no "no unavailable rule"
+printf '%s' "$ST" | grep -qi 'waiver' && printf '%s' "$ST" | grep -q 'never FRESH' \
+  && ok "a waiver never reads as FRESH" || no "no waiver rule"
+
+echo "Step 4: bootstrap never clobbers the tree"
+S4=$(section '## Step 4: Test Framework Bootstrap' '## Step 5:')
+printf '%s' "$S4" | grep -q 'git checkout -- package.json' && no "bootstrap still reverts with git checkout -- package.json" || ok "no whole-file checkout revert"
+printf '%s' "$S4" | grep -q 'delete silently' && no "B4.5 still deletes failing tests silently" || ok "no silent test deletion"
+printf '%s' "$S4" | grep -q 'git status --porcelain' && printf '%s' "$S4" | grep -qi 'before install' \
+  && ok "tree snapshotted before installing" || no "no pre-install snapshot"
+printf '%s' "$S4" | grep -q 'git add -- ' && printf '%s' "$S4" | grep -q 'git diff --cached --name-only' \
+  && ok "B8 stages by name and checks the index" || no "B8 does not stage by name"
+
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

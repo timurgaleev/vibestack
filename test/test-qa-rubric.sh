@@ -14,6 +14,11 @@
 #     contract; the functional report template has outcomes and no score.
 #   - /qa takes test detection and base-branch detection from the shared
 #     snippets, so they render line for line.
+#   - Both skills assemble the report from evidence (Observed, Expected,
+#     Evidence, Confirmation, Hypothesis), confirm by replaying from the same
+#     starting state, give quick mode a soft time budget, fall back to inline
+#     fields when the template cannot be read, and print a sanitised,
+#     collision-free OUTCOME_FILE path; the dead browser-attach branch is gone.
 #
 # Usage: test-qa-rubric.sh
 set -uo pipefail
@@ -173,6 +178,102 @@ if every_line "$ROOT/lib/snippets/base-branch-detect.md" "$QA"; then
 else
   no "qa: does not render base-branch-detect"
 fi
+
+echo "report assembled from evidence"
+for skill in qa qa-only; do
+  R="$TMP/$skill.md"
+  section "$R" '^### Assemble the report from evidence' '^##+ ' > "$TMP/$skill-assemble.md"
+  if [ -s "$TMP/$skill-assemble.md" ]; then ok "$skill: has the assembly step"; else no "$skill: no assembly step"; fi
+  for field in Observed Expected Evidence Confirmation Hypothesis; do
+    checkF "$skill: assembly field $field" "**$field**" "$TMP/$skill-assemble.md"
+  done
+  checkF "$skill: confirmation is replayed or observed once" '`replayed`' "$TMP/$skill-assemble.md"
+  checkF "$skill: an unreplayed issue says observed once" '`observed once`' "$TMP/$skill-assemble.md"
+  checkF "$skill: summary lines reuse the Observed sentence verbatim" 'Observed sentence verbatim' "$TMP/$skill-assemble.md"
+  checkF "$skill: a regression test asserts on the channel the bug was seen on" 'channel the bug was seen on' "$TMP/$skill-assemble.md"
+  checkF "$skill: claims no command backs are scrubbed" 'no command in this run backs' "$TMP/$skill-assemble.md"
+done
+qo_assemble="$(grep -n '^### Assemble the report from evidence' "$QO" | head -1 | cut -d: -f1)"
+qo_p6="$(grep -n '^### Phase 6' "$QO" | head -1 | cut -d: -f1)"
+if [ -n "$qo_assemble" ] && [ -n "$qo_p6" ] && [ "$qo_assemble" -lt "$qo_p6" ]; then
+  ok "qa-only: the report is assembled before Phase 6"
+else
+  no "qa-only: assembly step missing or after Phase 6"
+fi
+section "$QA" '^## Phase 10' '^## ' > "$TMP/qa-p10.md"
+checkF "qa: Phase 10 assembles the report from evidence" 'Assemble the report from evidence' "$TMP/qa-p10.md"
+
+echo "quick budget, replay, template fallback"
+for skill in qa qa-only; do
+  R="$TMP/$skill.md"
+  section "$R" '^### Quick' '^### ' > "$TMP/$skill-quickmode.md"
+  checkF "$skill: quick mode has a soft 3-minute budget" '3-minute' "$TMP/$skill-quickmode.md"
+  checkF "$skill: quick mode reports coverage left at the cap" 'unfinished coverage' "$TMP/$skill-quickmode.md"
+  refuteF "$skill: no 30-second smoke test" '30-second' "$R"
+  rule2="$(grep -E '^2\. \*\*Verify before documenting' "$R" | head -1)"
+  if printf '%s' "$rule2" | grep -Fq 'same starting state'; then
+    ok "$skill: rule 2 replays from the same starting state"
+  else
+    no "$skill: rule 2 does not replay from the same starting state"
+  fi
+  # A replay of a submit, send or purchase on a live target repeats it.
+  if printf '%s' "$rule2" | grep -Fq 'Never replay a non-idempotent action'; then
+    ok "$skill: rule 2 never replays a non-idempotent action on a live target"
+  else
+    no "$skill: rule 2 would replay a submit, send or purchase on a live target"
+  fi
+  checkF "$skill: inline fields when the report template cannot be read" 'If the template cannot be read' "$R"
+  bad_path="$(grep -nE 'qa-report-template\.md|issue-taxonomy\.md' "$R" | grep -vF '${CLAUDE_SKILL_DIR:-' | head -1)"
+  if [ -z "$bad_path" ]; then ok "$skill: template and taxonomy reached through CLAUDE_SKILL_DIR"; else no "$skill: bare template path: $bad_path"; fi
+done
+section "$QA" '^### 8a' '^### ' > "$TMP/qa-8a.md"
+checkF "qa: 8a replays the repro from the same starting state" 'same starting state' "$TMP/qa-8a.md"
+checkF "qa: 8a does not replay a non-idempotent repro" 'non-idempotent' "$TMP/qa-8a.md"
+lint_hits="$("$ROOT/bin/vibe-lint-sources" 2>&1 | grep -E '/skills/qa(-only)?/.*host path' | head -1)"
+if [ -z "$lint_hits" ]; then ok "host-path lint: no hits in qa or qa-only"; else no "host-path lint: $lint_hits"; fi
+refuteF "qa: no dead browser-attach branch" 'Mode: cdp' "$ROOT/skills/qa/SKILL.md"
+refuteF "qa: no CDP_MODE flag" 'CDP_MODE' "$QA"
+
+echo "outcome file name"
+# outcome_block RENDERED — the fenced bash block that prints OUTCOME_FILE:.
+outcome_block() {
+  awk '/^```bash$/ {on=1; buf=""; next} on && /^```$/ {on=0; if (buf ~ /OUTCOME_FILE:/) {printf "%s", buf; exit}; next} on {buf = buf $0 "\n"}' "$1"
+}
+mkdir -p "$TMP/fakebin" "$TMP/repo"
+printf '#!/bin/sh\necho 20260101T000000Z\n' > "$TMP/fakebin/date"
+printf '#!/bin/sh\n[ -n "${FAKE_USER:-}" ] || exit 1\necho "$FAKE_USER"\n' > "$TMP/fakebin/id"
+chmod +x "$TMP/fakebin/date" "$TMP/fakebin/id"
+git -C "$TMP/repo" init -q -b 'feature/Weird.name' 2>/dev/null || { git -C "$TMP/repo" init -q && git -C "$TMP/repo" checkout -q -b 'feature/Weird.name'; }
+git -C "$TMP/repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+# run_outcome SKILL FAKE_USER — run the skill's block in the scratch repo.
+run_outcome() {
+  (cd "$TMP/repo" && HOME="$TMP/home" VIBESTACK_HOME="$TMP/vs-$1" FAKE_USER="$2" \
+    PATH="$TMP/fakebin:$PATH" bash "$TMP/$1-outcome.sh" 2>/dev/null) | sed -n 's/^OUTCOME_FILE: //p' | head -1
+}
+for skill in qa qa-only; do
+  outcome_block "$TMP/$skill.md" > "$TMP/$skill-outcome.sh"
+  if [ ! -s "$TMP/$skill-outcome.sh" ]; then no "$skill: no block prints OUTCOME_FILE:"; continue; fi
+  git -C "$TMP/repo" switch -q 'feature/Weird.name' 2>/dev/null
+  first="$(run_outcome "$skill" 'j.doe')"
+  if [ "$(basename "$first")" = 'j-doe-feature-Weird-name-test-outcome-20260101T000000Z.md' ]; then
+    ok "$skill: user and branch sanitised, UTC stamp"
+  else
+    no "$skill: outcome name not sanitised: ${first:-<none>}"
+  fi
+  [ -n "$first" ] && mkdir -p "$(dirname "$first")" && : > "$first"
+  second="$(run_outcome "$skill" 'j.doe')"
+  if [ -n "$first" ] && [ "$second" = "${first%.md}-2.md" ]; then
+    ok "$skill: a name already taken gets a suffix"
+  else
+    no "$skill: collision not suffixed: ${second:-<none>}"
+  fi
+  git -C "$TMP/repo" switch -q --detach 2>/dev/null
+  third="$(run_outcome "$skill" '')"
+  case "$(basename "${third:-x}")" in
+    unknown-user-detached-test-outcome-20260101T000000Z.md) ok "$skill: unknown-user and detached fallbacks" ;;
+    *) no "$skill: fallbacks missing: ${third:-<none>}" ;;
+  esac
+done
 
 echo
 echo "passed: $pass  failed: $fail"

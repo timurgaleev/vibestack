@@ -365,6 +365,8 @@ elif ! AWS_STS_ERR=$(aws sts get-caller-identity --output text 2>&1 >/dev/null);
 fi
 ```
 
+{{include lib/snippets/aws-context.md}}
+
 **Read-only contract:** Every call in this phase is a `get`, `list`, or `describe`. No `put`, `create`, `update`, `delete`, `attach`, or `enable` — the audit observes the account, it does not repair it. An `AccessDenied` on a single call is noted as `AWS posture: <check> not readable` and is not itself a finding.
 
 Scope is the caller's account. IAM, CloudTrail and the account-level S3 block are global — one invocation each. The rows marked `--region <r>` (security groups, EBS, GuardDuty, Security Hub, Secrets Manager) are run once per region, with `<r>` substituted from:
