@@ -46,8 +46,11 @@ SHIM="$TMP/shim"; mkdir -p "$SHIM"
 cat > "$SHIM/aws" <<'SH'
 #!/bin/sh
 # Answers from SHIM_* env vars; anything unexpected is an error, like a real CLI.
+[ -n "${SHIM_LOG:-}" ] && printf '%s\n' "$*" >> "$SHIM_LOG"
 case "$*" in
   "sts get-caller-identity"*)
+    # Without --output text the real CLI prints JSON, which the block cannot parse.
+    case "$*" in *"--output text"*) ;; *) printf '{"Account": "123456789012"}\n'; exit 0 ;; esac
     if [ "${SHIM_STS_RC:-0}" != 0 ]; then
       [ -n "${SHIM_STS_OUT:-}" ] && printf '%s\n' "$SHIM_STS_OUT"
       printf '%s\n' "${SHIM_STS_ERR:-An error occurred (ExpiredToken)}" >&2
@@ -105,6 +108,17 @@ for SH in $SHELLS; do
 
   out="$(run "$SHP" yes SHIM_STS_OUT="123456789012${TAB}${USER_ARN}" SHIM_LIST_REGION=eu-west-1)"
   [ "$(field "$out" PRINCIPAL)" = iam-user ] && ok "iam user ARN -> iam-user" || no "PRINCIPAL wrong for user: $out"
+
+  echo "$SH: the identity call never waits"
+  : > "$TMP/shim.log"
+  out="$(run "$SHP" yes SHIM_LOG="$TMP/shim.log" SHIM_STS_OUT="123456789012${TAB}${SSO_ARN}" SHIM_LIST_REGION=eu-west-1)"
+  sts="$(grep '^sts get-caller-identity' "$TMP/shim.log" | head -1)"
+  case "$sts" in
+    *"--cli-connect-timeout 5"*"--cli-read-timeout 15"*) ok "sts call carries connect and read timeouts" ;;
+    *) no "sts call has no timeouts: ${sts:-<not called>}" ;;
+  esac
+  grep -q 'aws sts get-caller-identity' "$TMP/block.sh" && grep -q -- "--output text </dev/null 2>&1)" "$TMP/block.sh" \
+    && ok "sts call reads stdin from /dev/null, so a prompt fails instead of waiting" || no "sts call can block on a prompt"
 
   echo "$SH: region order"
   out="$(run "$SHP" yes AWS_REGION=ap-south-1 AWS_DEFAULT_REGION=sa-east-1 SHIM_STS_OUT="123456789012${TAB}${SSO_ARN}" SHIM_LIST_REGION=eu-west-1 SHIM_GET_REGION=us-west-2)"

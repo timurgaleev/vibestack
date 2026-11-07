@@ -6,7 +6,11 @@ block once, before any other AWS call:
 _AWS_PROFILE="${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-default}}"
 _AWS_ACCOUNT=""; _AWS_ARN=""; _AWS_RC=127; _AWS_ERR="aws CLI not found on PATH"
 if command -v aws >/dev/null 2>&1; then
-  _AWS_OUT="$(aws sts get-caller-identity --query '[Account,Arn]' --output text 2>&1)"
+  # No pager, no prompt and bounded timeouts: an MFA or SSO prompt reads EOF and
+  # fails, and an unreachable endpoint gives up instead of hanging the call.
+  _AWS_OUT="$(AWS_PAGER= AWS_CLI_AUTO_PROMPT=off aws sts get-caller-identity \
+    --cli-connect-timeout 5 --cli-read-timeout 15 \
+    --query '[Account,Arn]' --output text </dev/null 2>&1)"
   _AWS_RC=$?
   _AWS_ID="$(printf '%s\n' "$_AWS_OUT" | awk 'length($(1)) == 12 && $(1) ~ /^[0-9]+$/ && $(2) ~ /^arn:aws/ { print $(1), $(2); exit }')"
   _AWS_ACCOUNT="$(printf '%s\n' "$_AWS_ID" | awk '{ print $(1) }')"
@@ -47,8 +51,8 @@ fresh shell, so a later block that needs one of them restates it from the
 printed line — `ACCOUNT='<ACCOUNT>'`, `REGION='<REGION>'` — and passes the
 region explicitly with `--region "$REGION"`.
 
-- **`AWS_CONTEXT: unavailable`** — the identity call failed or printed no
-  identity. Do not run the AWS checks; mark each of them `N-A (AWS identity not
+- **`AWS_CONTEXT: unavailable`**, or no `AWS_CONTEXT:` line at all (the call
+  was killed or timed out) — the identity call failed or printed no identity. Do not run the AWS checks; mark each of them `N-A (AWS identity not
   established)`, show the printed error line, and name the fix for the profile
   shown: `aws sso login --profile <name>` for an SSO profile, `aws configure
   --profile <name>` otherwise. Never read `~/.aws/credentials` to work around it.
