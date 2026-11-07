@@ -122,12 +122,16 @@ Code caps stop the bug you know about. Provider caps stop the one you do not. Ch
 
 **AWS Bedrock.** Read-only commands; do not create anything.
 
+{{include lib/snippets/aws-context.md}}
+
 ```bash
+ACCOUNT='<ACCOUNT>'
 # A budget that covers Bedrock, and whether it has an action (stop/deny) or only a notification
-aws budgets describe-budgets --account-id "$(aws sts get-caller-identity --query Account --output text)" \
-  --query 'Budgets[].{name:BudgetName,limit:BudgetLimit,filters:CostFilters}' --output table 2>/dev/null
-aws budgets describe-budget-actions-for-account \
-  --account-id "$(aws sts get-caller-identity --query Account --output text)" --output table 2>/dev/null
+aws budgets describe-budgets --account-id "$ACCOUNT" \
+  --query 'Budgets[].{name:BudgetName,limit:BudgetLimit,filters:CostFilters}' --output table \
+  || echo "BUDGETS: unknown (describe-budgets failed)"
+aws budgets describe-budget-actions-for-account --account-id "$ACCOUNT" --output table \
+  || echo "BUDGET_ACTIONS: unknown (describe-budget-actions-for-account failed)"
 # CloudWatch alarms on Bedrock invocation or token metrics
 aws cloudwatch describe-alarms --query 'MetricAlarms[?Namespace==`AWS/Bedrock`].[AlarmName,MetricName,Threshold]' --output table 2>/dev/null
 # Applied quotas for the models in use (tokens per minute, requests per minute)
@@ -136,7 +140,7 @@ aws service-quotas list-service-quotas --service-code bedrock --query 'Quotas[?c
 
 - No budget with a Bedrock filter: `HIGH`. A notification-only budget: `MEDIUM` (an email at 3am does not stop the loop). A budget action that removes the invoke policy or an alarm that triggers a kill switch: pass.
 - Quotas at the account default with no per-model throttle: `MEDIUM` when the workload can fan out; note it as pass with the number otherwise.
-- If the AWS CLI is not configured, mark every line `unknown` and say what to run.
+- With `AWS_CONTEXT: unavailable`, or a line above printing `unknown`, mark the affected lines `unknown` and say what to run. A budget list that failed is not an empty one, so it never carries the no-budget `HIGH`.
 
 **Anthropic and OpenAI.** Neither exposes spend limits through the SDK; the check is a question to the user with the console path:
 
@@ -166,7 +170,7 @@ For every site from Step 1 check:
 
 - **Usage read and logged.** The response's usage object (`usage.input_tokens` / `usage.output_tokens` for Anthropic, `usage.prompt_tokens` / `completion_tokens` for OpenAI, `usage.inputTokens` / `outputTokens` in a Bedrock Converse response, `x-amzn-bedrock-*-token-count` headers for InvokeModel) is read and written to a log line or metric with the run id. Missing: `MEDIUM`. `grep -rnE 'usage\.|input_tokens|prompt_tokens|inputTokens|token-count'` should hit near each site. A site that does not bill in tokens logs the unit it does bill in — images returned, audio seconds, characters synthesized, requests — read from the response or the job record, not assumed from the arguments.
 - **`max_tokens` set on every call.** A call with no output cap pays for whatever the model decides to write. Missing: `MEDIUM`; `HIGH` inside a loop. `grep -rnE 'max_tokens|maxTokens|max_completion_tokens|maxOutputTokens'` and match hits to sites.
-- **Prompt caching where the prefix is stable.** A system prompt, tool list, or document over roughly 1k tokens that is identical across calls and not marked cacheable (`cache_control` on Anthropic, `cachePoint` in Bedrock Converse) is money spent on the same bytes every call. Not a safety finding; record it as `LOW` with the estimated saving from the usage numbers. Estimate that saving as a counterfactual, not a discount on the bill: saving = reads × (base input price − cache read price) − writes × (cache write price − base input price). A one-off eligible write that is never read again costs more than no cache at all. A prefix below the model's minimum cacheable length is simply not cached — zero cache counters, no premium. Caching never applies to output tokens. To measure reads and writes, log `cacheReadInputTokens` / `cacheWriteInputTokens` from the Bedrock Converse `usage` object and `cache_read_input_tokens` / `cache_creation_input_tokens` from Anthropic.
+- **Prompt caching where the prefix is stable.** A system prompt, tool list, or document over roughly 1k tokens that is identical across calls and not marked cacheable (`cache_control` on Anthropic, `cachePoint` in Bedrock Converse) is money spent on the same bytes every call. Not a safety finding; record it as `LOW` with the estimated saving from the usage numbers. Estimate that saving as a counterfactual, not a discount on the bill: saving = reads × (base input price − cache read price) − writes × (cache write price − base input price). A one-off eligible write that is never read again costs more than no cache at all. A prefix below the model's minimum cacheable length is simply not cached — zero cache counters, no premium. Caching never applies to output tokens. To measure reads and writes, log `cacheReadInputTokens` / `cacheWriteInputTokens` from the Bedrock Converse `usage` object, `cache_read_input_tokens` / `cache_creation_input_tokens` from Anthropic, `usage.prompt_tokens_details.cached_tokens` from OpenAI (caching there is automatic, with no write counter), and `usageMetadata.cachedContentTokenCount` from Gemini. Gemini's explicit context caching also bills storage for every cached token for as long as the TTL keeps it, so its saving subtracts that storage charge from the read discount; a long TTL on a rarely read cache costs more than it saves. An app-managed cache in front of the model (a response or embedding cache the code keeps itself) saves money only while it is keyed to the tenant or workspace and invalidated on a permission change; one entry shared across tenants is `MEDIUM`, because it serves one customer's answer to another.
 - **Model calls on a repetitive structural format.** Where a site sends rows of one fixed shape (log lines, invoice fields, dates) to a model, recommend a deterministic parser that returns a confidence score, with the model called only for rows below the threshold. `LOW`, as a recommendation; report it with the measured share of rows the parser would route to the model, from a sample of real input — without that share there is no saving to claim.
 - **Model pinned by name.** A model chosen from user input or an env var with no allowlist lets a caller upgrade to the most expensive tier. `MEDIUM`.
 
