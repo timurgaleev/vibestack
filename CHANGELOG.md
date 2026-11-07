@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.55.31 — 2026-11-07
+
+### Changed
+
+- **The plan reviews check the plan against the real surface.** `/plan-ceo-review`
+  0B and `/plan-eng-review` Step 0 end in a `REALITY:` line: every CLI flag,
+  route and config key the plan relies on as already existing is checked
+  against `--help`, the route table or the schema. The completion summaries
+  report it and the `/autoplan` pre-gate checks it.
+- **`/plan-eng-review` and `/autoplan` read the CEO plan.** The Design Doc Check
+  prefers a repo `DESIGN.md` or `docs/designs/` doc on a tie, and finds this
+  branch's newest CEO plan even when another branch wrote a newer one. Eng
+  reads its scope decisions as data and asks before using another branch's
+  plan; `/autoplan` ignores another branch's plan and says so.
+- **Completeness means covering the requirement, not the bigger diff.** CEO TODO
+  option C keeps work only inside accepted scope, eng's build-it-now option
+  records scope without editing product code, and both preference lists gain a
+  data-model rule. A hot path with no budget or measurement step is a
+  performance finding.
+- **The `/autoplan` final gate opens with urgent findings outside the plan**, and
+  its CEO checklist follows the CEO skill's real step order.
+
 ## 1.55.30 — 2026-11-07
 
 ### Added
