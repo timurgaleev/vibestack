@@ -11,6 +11,7 @@
 #   - no skill or snippet reads a fixed variant-<letter>.png or variant-<CHOSEN>
 #     path, or stages into a shared /tmp/variant-<letter>/ directory;
 #   - every skill that calls `$D variants` tells the model to use `saved:` paths;
+#   - every skill that writes approved.json records the image in approved_path;
 #   - design-shotgun's per-variant agent block, run with a stub designer, stages
 #     into a fresh mktemp directory, copies the printed `saved:` path, and leaves
 #     no staging directory behind on success, failure or exhausted retries;
@@ -46,6 +47,24 @@ while IFS= read -r f; do
   if grep -qF '`saved:`' "$f"; then ok "$name uses the printed saved: paths"
   else no "$name runs \$D variants without naming the saved: paths"; fi
 done <<<"$callers"
+
+echo "approved.json names its image"
+# A letter is ambiguous once a second round saved variant-A-2.png; /design-html
+# opens the record's approved_path, so every writer must store one.
+writers="$(python3 -I - "$SRC/skills" <<'PY'
+import glob, os, re, sys
+for path in sorted(glob.glob(os.path.join(sys.argv[1], "*", "SKILL.md"))):
+    text = open(path, encoding="utf-8").read()
+    for block in re.findall(r"```bash\n(.*?)\n```", text, re.S):
+        if '"approved.json"' in block and "json.dump" in block:
+            print("%s %s" % (os.path.basename(os.path.dirname(path)), "yes" if '"approved_path"' in block else "no"))
+PY
+)"
+[ -n "$writers" ] && ok "found skills that write approved.json" || no "found no approved.json writer"
+while read -r name has; do
+  [ -n "$name" ] || continue
+  [ "$has" = yes ] && ok "$name records approved_path" || no "$name writes approved.json without approved_path"
+done <<<"$writers"
 
 echo "design-shotgun staging"
 SHOT="$SRC/skills/design-shotgun/SKILL.md"

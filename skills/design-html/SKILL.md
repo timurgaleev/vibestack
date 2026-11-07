@@ -306,7 +306,11 @@ After routing, output a brief context summary:
 3. Read `DESIGN.md` tokens. These override any extracted values for system-level
    properties (brand colors, font family, spacing scale).
 
-4. Output an "Implementation spec" summary: colors (hex), fonts (family + weights),
+4. When `approved.json` carries `archetype` and `sections`, the user already chose the
+   page's structure in /design-shotgun: build that archetype with those sections in
+   that order, and do not re-pick the archetype or ask about it under Persuade pages.
+
+5. Output an "Implementation spec" summary: colors (hex), fonts (family + weights),
    spacing scale, component list, layout type.
 
 {{include lib/snippets/design-craft-floor.md}}
@@ -322,8 +326,9 @@ waitlist), settle these before writing markup:
   you want, and what proof the user can actually supply.
 - **Archetype.** Pick one archetype for the page's structure (show the product
   working, problem then outcome, compare and price, or a short launch/waitlist page)
-  and say in one line why it fits this visitor. The hero still holds to one headline,
-  one supporting line, one action group.
+  and say in one line why it fits this visitor — unless `approved.json` already
+  names one (Step 1, item 4). The hero still holds to one headline, one supporting
+  line, one action group.
 - **Primary action.** One named action, built with every state: default, hover and
   focus, **invalid** (a message beside the field that names the fix), **pending**
   (disabled, with a progress label), **failure** (what went wrong, the input kept,
@@ -796,7 +801,11 @@ Use AskUserQuestion:
 > A) Create DESIGN.md from these tokens
 > B) Skip — I'll handle the design system later
 
-If A: write `DESIGN.md` to the repo root with the extracted tokens.
+If A: write `DESIGN.md` to the repo root with the extracted tokens, in the section
+layout /design-consultation writes (Typography, Color, Spacing, Layout, Motion),
+plus a **Components** section listing each component this HTML built with its
+states (default, hover, focus, active, disabled, loading, error — only the states
+it has) and a **Do's and Don'ts** section with the concrete rules the build followed.
 
 ### Save Metadata
 
