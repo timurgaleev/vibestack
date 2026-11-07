@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.55.36 — 2026-11-07
+
+### Added
+
+- **`/investigate` has a flaky-test recipe.** When a failure is intermittent or
+  happens only in CI, Phase 2 points at a new `flake.md` sub-doc (installed as
+  a symlink beside `SKILL.md` in every target). It measures the failure rate on
+  the branch and the base, states what N runs can tell apart (`0/N` rules out
+  only a rate above 3/N; the branch is blamed at 5/20 or more), requires the
+  test to exist on the base and the base worktree to resolve its own code, and
+  dates the first moved commit from CI runs. A cause is named only after a
+  probe forces it, and every longer timeout, retry or skip is a gate relaxation
+  that must state its odds. It covers order-dependent failures and races.
+- **A CI-only failure has its own `LOOP:` line**, naming the rate loop and the CI
+  run that went red, so Phase 1 no longer stops it before the recipe.
+
 ## 1.55.35 — 2026-11-07
 
 ### Fixed

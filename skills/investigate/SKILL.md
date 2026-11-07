@@ -105,9 +105,9 @@ Gather context before forming any hypothesis.
 
    Bisection and differential runs drive a loop rather than replace one: the `LOOP:` line names the command they run. Bisect only from a clean tree — stash or revert every probe and tagged log first, so nothing rides across revisions — and run `git bisect reset` as soon as it names the first bad commit, before any other step.
 
-   Tighten it until it is fast, sharp and deterministic: seconds, not minutes; red on the reported symptom, not a nearby failure; the same result every run. For a flaky bug, raise the reproduction rate first — loop the command, pin seeds, clocks and ordering, add load or narrow the timing window — and record the rate (`red 7/50`). If no way gives a red run, stop and say exactly what you need (a log, a payload, access, a recording, an environment) and ask for it; a `headless` or `spawned` session reports `BLOCKED` with that list. Never work on a bug you cannot see.
+   Tighten it until it is fast, sharp and deterministic: seconds, not minutes; red on the reported symptom, not a nearby failure; the same result every run. For a flaky bug, raise the reproduction rate first — loop the command, pin seeds, clocks and ordering, add load or narrow the timing window — and record the rate (`red 7/50`). A failure that is red only in CI, or too rare to catch locally, is not a stop: its `LOOP:` line is the rate loop in `flake.md` section 1 (path in Phase 2; CI-only: the environment diff there), and its symptom is the CI log. If no way gives a red run, stop and say exactly what you need (a log, a payload, access, a recording, an environment) and ask for it; a `headless` or `spawned` session reports `BLOCKED` with that list. Never work on a bug you cannot see.
 
-   When the loop runs red, print one line: `LOOP: <command> — ran: yes — red on: <symptom>`. No Phase 2 until the `LOOP:` line is printed for a command you actually ran.
+   When the loop runs red, print one line: `LOOP: <command> — ran: yes — red on: <symptom>`. For a CI-only failure whose local rate loop stays `0/N`, the line names the loop you ran and the CI run that went red: `LOOP: <rate command> — ran: yes — red on: <symptom> in CI run <run id>`. No Phase 2 until the `LOOP:` line is printed for a command you actually ran.
 
 5. **Minimise:** Cut input, config and steps until removing anything more turns the loop green. Phase 4's regression test is built from this minimised repro.
 
@@ -212,6 +212,8 @@ Check if this bug matches a known pattern:
 | Stale cache | Shows old data, fixes on cache clear | Redis, CDN, browser cache, Turbo |
 
 **Working example diff:** When a similar path works (the same endpoint for another tenant, the previous release, a sibling component), diff the working and the failing case — inputs, config, code path, logged boundary values — and list every difference. The cause is in that list; each difference is a candidate hypothesis.
+
+**When the failure is intermittent or CI-only:** read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/investigate}/flake.md` and follow it — base-vs-branch failure rates, a forced probe before any cause is named, order-dependent failures, races, and no loosened timeouts, retries or skips. Its `Flake evidence` block goes into the DEBUG REPORT.
 
 Also check:
 - `TODOS.md` for related known issues

@@ -13,7 +13,11 @@
 #   - instrumentation is removed before the last run, and secrets are redacted
 #     from repro commands, output and every written artifact;
 #   - the LLM-agent branch bisects prompt revisions cheaply;
-#   - the extra triggers live in frontmatter, not the description.
+#   - the extra triggers live in frontmatter, not the description;
+#   - Phase 2 points intermittent and CI-only failures at flake.md, and that
+#     sub-doc keeps its recipe: base-vs-branch failure rates, a forced probe,
+#     no loosened gates, order-dependent failures, races, and the
+#     `Flake evidence` block.
 #
 # Usage: test/test-investigate-contract.sh [repo-root]
 set -euo pipefail
@@ -146,6 +150,72 @@ case "$DESC" in
   *'test fails'*|*'failing test'*|*'build is broken'*) no "triggers kept out of the description" ;;
   *) ok "triggers kept out of the description" ;;
 esac
+
+echo "flake recipe"
+# The pointer must sit in Phase 2 itself, so a mention in the report template
+# or the rules cannot stand in for it.
+PHASE2="$TMP/phase2"
+awk 'index($0, "## Phase 2: Pattern Analysis") {f=1} index($0, "## Phase 3: Hypothesis Testing") {exit} f' "$SKILL" > "$PHASE2"
+for t in 'flake.md' 'intermittent' 'CI-only'; do
+  if grep -qF -- "$t" "$PHASE2"; then ok "Phase 2 pointer: $t"; else no "Phase 2 pointer: $t"; fi
+done
+
+FLAKE="$SRC/skills/investigate/flake.md"
+if [ -f "$FLAKE" ]; then
+  ok "flake.md exists"
+  # A sub-doc is symlinked, not rendered: an include would ship as raw text.
+  if grep -qE '^\{\{include ' "$FLAKE"; then no "flake.md has no include directive"; else ok "flake.md has no include directive"; fi
+  fl()  { if grep -qF -- "$2" "$FLAKE"; then ok "$1"; else no "$1 (missing: $2)"; fi; }
+  fl "base vs branch failure rate"        'failed/N'
+  fl "at least ten runs per side"         'N ≥ 10'
+  fl "single-file test command in a loop" "project's single-file test command"
+  fl "first moved headSha dated"          'gh run list'
+  fl "only green runs date it"            '--status success'
+  fl "headSha named"                      'headSha'
+  fl "forced probe rule"                  'No probe, no cause.'
+  fl "never loosen a gate"                'Never loosen'
+  fl "relaxation states its odds"         'P(fail | regression)'
+  fl "rerun needs a named outside cause"  'named outside cause'
+  fl "timing fixed in the measurement"    'min/p50/p95/max'
+  fl "order-dependent section"            '## Order-dependent failures'
+  fl "victim alone vs after earlier files" 'alone, then after'
+  fl "bisect the earlier files"           'bisect'
+  fl "fix the polluter"                   'Fix the polluter'
+  for leak in 'environment variable' 'working directory' 'exit code' 'singleton' 'mock' \
+              'listening server' 'temp file' 'home-directory state' 'timer'; do
+    fl "names what leaked: $leak" "$leak"
+  done
+  fl "races section"                      '## Races'
+  fl "monotonic timestamps per actor"     'monotonic'
+  fl "forced interleaving hook"           'test-only hook'
+  fl "concurrent-writer invariant test"   'N ≥ 8'
+  fl "smaller window is not a fix"        'A smaller check-then-act window is not a fix.'
+  fl "atomic primitive fix shapes"        'atomic'
+  fl "run alone / full suite / random"    'random order'
+  fl "condition-based waiting"            'condition-based wait'
+  fl "flake evidence block"               'Flake evidence:'
+  fl "evidence goes in the DEBUG REPORT"  'DEBUG REPORT'
+  # N=20 cannot tell a small branch rate from noise; a base run that measures
+  # nothing must not read as 0/N.
+  fl "0/N bounds the rate only below 3/N"  '`0/N` rules out only a rate above 3/N'
+  fl "branch blamed only at 5/20 or more"  'at least 5/20'
+  fl "the failing test must exist on base" 'must exist on the base'
+  fl "base worktree resolves its own code" 'resolves its own code'
+  fl "a run that cannot start is not a failure" 'exit 126 or 127'
+  if grep -qF 'red only in CI' "$SRC/skills/investigate/SKILL.md"; then
+    ok "Phase 1 sends a CI-only failure to flake.md instead of BLOCKED"
+  else
+    no "Phase 1 stops a CI-only failure before flake.md can be read"
+  fi
+  if grep -qF 'red on: <symptom> in CI run <run id>' "$SRC/skills/investigate/SKILL.md"; then
+    ok "a CI-only failure has its own LOOP: line form"
+  else
+    no "the LOOP: gate still requires a local red run for a CI-only failure"
+  fi
+  fl "a failed base SETUP stops before any rate" 'no base rate"; git worktree remove'
+else
+  no "flake.md exists"
+fi
 
 echo
 echo "$pass passed, $fail failed"
