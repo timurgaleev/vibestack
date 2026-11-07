@@ -192,6 +192,20 @@ grep -qF '"skill":"codex-review","timestamp":"TIMESTAMP"' "$CX" && \
 grep -F '"skill":"codex-review","status":"timeout"' "$CX" | grep -vqF '"completed":false' \
   && no "a timeout record does not say it is incomplete" || ok "timeout records say completed=false"
 
+echo "codex: untracked files and scoped reviews leave the review incomplete"
+awk '/^```bash$/{f=1;b="";next} f&&/^```$/{f=0; if(b ~ /codex-err-XXXXXX/){printf "%s", b; exit} next} f{b=b $0 "\n"}' "$CX" \
+  | sed "s|<TMP_ROOT>|$TMP|" > "$TMP/cx-step2.sh"
+cx_untracked() { (cd "$REPO" && HOME="$FH" bash "$TMP/cx-step2.sh" 2>/dev/null | sed -n 's/^UNTRACKED: //p'); }
+chk "a clean tree has no untracked files" "$(cx_untracked)" "0"
+printf 'new\n' > "$REPO/new_module.py"
+chk "an untracked source file is counted before the run" "$(cx_untracked)" "1"
+rm -f "$REPO/new_module.py"
+S8=$(awk '/^8\. Persist the review result/{on=1} on&&/^9\. Clean up/{exit} on' "$CX")
+printf '%s' "$S8" | grep -qF 'UNTRACKED:' && printf '%s' "$S8" | grep -qF -- '--uncommitted' \
+  && printf '%s' "$S8" | grep -qF -- '--commit' \
+  && ok "step 8 logs completed=false for untracked files or a --commit/--uncommitted scope" \
+  || no "step 8 does not tie COMPLETED to untracked files and scoped reviews"
+
 echo "land-and-deploy: cite a FRESH run first"
 LD="$SRC/skills/land-and-deploy/SKILL.md"
 T35=$(awk '/^### 3.5b: Test results/{on=1;next} on&&/^### /{exit} on' "$LD")
