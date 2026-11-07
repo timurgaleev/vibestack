@@ -196,4 +196,23 @@ describe.skipIf(!chromiumPath || !fs.existsSync(chromiumPath))('revoke releases 
     expect(revoked.status).toBe(200);
     expect(bm.getTabOwner(tabId)).not.toBe('tab-owner');
   }, 60_000);
+
+  // A page that never answers its title must not leave the revoked name owning
+  // its tabs: ownership is released without asking any page for anything.
+  test('tabs are released even when a page never answers its title', async () => {
+    registry.createToken({ clientId: 'stalled-owner' });
+    const tabId = await bm.newTab(undefined, 'stalled-owner');
+    const original = bm.getTabListWithTitles;
+    bm.getTabListWithTitles = () => new Promise(() => {});
+    try {
+      const revoked = await tabs.fetchLocal(new Request('http://127.0.0.1:9/token/stalled-owner', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${TAB_ROOT}` },
+      }), conn);
+      expect(revoked.status).toBe(200);
+      expect(bm.getTabOwner(tabId)).toBe('root');
+    } finally {
+      bm.getTabListWithTitles = original;
+    }
+  }, 60_000);
 });

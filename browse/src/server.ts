@@ -2252,16 +2252,11 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
             status: 404, headers: { 'Content-Type': 'application/json' },
           });
         }
-        // Tabs are owned by client name. Hand them back to root so a later
-        // pairing that reuses the name does not inherit the revoked agent's tabs.
-        // The tokens are already gone; a page stuck answering its title must
-        // not hold the revoke response hostage, so the release is time-boxed.
-        const releaseTabs = browserManager.getTabListWithTitles().then(tabList => {
-          for (const tab of tabList) {
-            if (browserManager.getTabOwner(tab.id) === clientId) browserManager.transferTab(tab.id, 'root');
-          }
-        }).catch(() => {});
-        await Promise.race([releaseTabs, new Promise(resolve => setTimeout(resolve, 2000))]);
+        // Tabs are owned by client name. Hand them back to root before
+        // answering, so a later pairing that reuses the name does not inherit
+        // the revoked agent's tabs. Ownership is an in-memory map: no page is
+        // asked for anything, so a stalled renderer cannot delay or skip it.
+        browserManager.releaseTabsOwnedBy(clientId);
         console.log(`[browse] Revoked ${count} token(s) for: ${clientId}`);
         return new Response(JSON.stringify({ revoked: clientId, count }), {
           status: 200, headers: { 'Content-Type': 'application/json' },
