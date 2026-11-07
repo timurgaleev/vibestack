@@ -69,7 +69,14 @@ eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 ```
 
 1. Read `CLAUDE.md`, `TODOS.md` (if they exist).
-2. Run `git log --oneline -30` and `git diff origin/main --stat 2>/dev/null` to understand recent context.
+2. Run `git log --oneline -30`, find the base branch with the block below, then run
+   `git diff "origin/<BASE_BRANCH>" --stat 2>/dev/null` to understand recent context.
+
+{{include lib/snippets/base-branch-detect.md}}
+
+   Here the diff is background, not a review: a `BASE_CONTAINS_HEAD` line only means
+   there is no branch diff to read — say so in one line and carry on.
+
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    ```bash
@@ -287,6 +294,7 @@ Use this mode when the user is building for fun, learning, hacking on open sourc
 2. **Ship something you can show people.** The best version of anything is the one that exists.
 3. **The best side projects solve your own problem.** If you're building it for yourself, trust that instinct.
 4. **Explore before you optimize.** Try the weird idea first. Polish later.
+5. **Name what it unlocks.** When a capability comes up, say what else it makes possible beyond the task in front of them — the second use is often the more exciting one.
 
 **Wild exemplar:**
 
@@ -306,6 +314,10 @@ Both are outcome-framed. Only one has the 'whoa.' Builder mode's job is to surfa
 ### Questions (generative, not interrogative)
 
 Ask these **ONE AT A TIME** via AskUserQuestion. The goal is to brainstorm and sharpen the idea, not interrogate.
+
+**Ask why first.** If the user has not said why they want this, open with that — an open question, no options. The answer reorders everything below.
+
+**Ask only what changes the build.** Ask a listed question only when its answer changes what gets built. Otherwise state your pick as a proposal ("I'd make it shareable as a live URL — say if not") and move on.
 
 - **What's the coolest version of this?** What would make it genuinely delightful?
 - **Who would you show this to?** What would make them say "whoa"?
@@ -405,13 +417,12 @@ Use AskUserQuestion to confirm. If the user disagrees with a premise, revise und
 
 ## Phase 3.5: Cross-Model Second Opinion (optional)
 
-**Binary check first:**
+{{include lib/snippets/outside-voice-preflight.md}}
 
-```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
+In this phase the "next section" above is Phase 4: on `disabled`, note that the
+second opinion did NOT run and go there without asking.
 
-Use AskUserQuestion (regardless of codex availability):
+Otherwise use AskUserQuestion:
 
 > Want a second opinion from an independent AI perspective? It will review your problem statement, key answers, premises, and any landscape findings from this session without having seen this conversation — it gets a structured summary. Usually takes 2-5 minutes.
 > A) Yes, get a second opinion
@@ -419,7 +430,7 @@ Use AskUserQuestion (regardless of codex availability):
 
 If B: skip Phase 3.5 entirely. Remember that the second opinion did NOT run (affects design doc, founder signals, and Phase 4 below).
 
-**If A: Run the Codex cold read.**
+**If A: run the cold read through the voice `CODEX_MODE` chose.**
 
 1. Assemble a structured context block from Phases 1-3:
    - Mode (Startup or Builder)
@@ -429,11 +440,10 @@ If B: skip Phase 3.5 entirely. Remember that the second opinion did NOT run (aff
    - Agreed premises (from Phase 3)
    - Codebase context (project name, languages, recent activity)
 
-2. **Write the assembled prompt to a temp file** (prevents shell injection from user-derived content):
+2. **Write the assembled prompt to a private temp file** (user words never enter shell source):
 
 ```bash
-CODEX_PROMPT_FILE=$(mktemp /tmp/vibestack-codex-oh-XXXXXXXX.txt)
-echo "CODEX_PROMPT_FILE: $CODEX_PROMPT_FILE"
+umask 077; mktemp "${TMPDIR:-/tmp}/vibe-oh-prompt.XXXXXXXX"
 ```
 
 Read the printed file, then write the full prompt into it with the Write tool. **Always start with the filesystem boundary:**
@@ -444,17 +454,25 @@ Then add the context block and mode-appropriate instructions:
 
 **Builder mode instructions:** "You are an independent technical advisor reading a transcript of a builder brainstorming session. [CONTEXT BLOCK HERE]. Your job: 1) What is the COOLEST version of this they haven't considered? 2) What's the ONE thing from their answers that reveals what excites them most? Quote it. 3) What existing open source project or tool gets them 50% of the way there — and what's the 50% they'd need to build? 4) If you had a weekend to build this, what would you build first? Be specific. Be direct. No preamble."
 
-3. Run Codex. Each Bash call is a fresh shell, so replace `<CODEX_PROMPT_FILE>` with
-the path printed above; the prompt reaches Codex on stdin, and stderr is read and
-both files removed in the same call:
+3. **`ready` — the Codex pass.** Replace `<PROMPT_FILE>` with the printed path and
+`<EFFORT>` with `high`. The block scans the prompt for credentials first (it carries
+the user's own words to another vendor's model) and runs Codex only on
+`REDACT_EXIT: 0`; the prompt reaches Codex on stdin, and stderr is read and both
+files removed in the same call:
 
 ```bash
-CODEX_PROMPT_FILE='<CODEX_PROMPT_FILE>'
-TMPERR_OH=""
-trap 'rm -f "$TMPERR_OH" "$CODEX_PROMPT_FILE"' EXIT
+_PROMPT_FILE='<PROMPT_FILE>'
+_CX_EFFORT='<EFFORT>'
+TMPERR_CX=""
+trap 'rm -f "$TMPERR_CX" "$_PROMPT_FILE"' EXIT
+case "$_CX_EFFORT" in high|medium) ;; *) echo "ERROR: effort must be high or medium, got: $_CX_EFFORT" >&2; exit 1 ;; esac
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-[ -s "$CODEX_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $CODEX_PROMPT_FILE" >&2; exit 1; }
-TMPERR_OH=$(mktemp /tmp/codex-oh-err-XXXXXXXX) || { echo "ERROR: mktemp failed" >&2; exit 1; }
+[ -s "$_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $_PROMPT_FILE" >&2; exit 1; }
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$_PROMPT_FILE"
+_REDACT_EXIT=$?
+echo "REDACT_EXIT: $_REDACT_EXIT"
+if [ "$_REDACT_EXIT" -ne 0 ]; then echo "CODEX_SKIPPED: the prompt did not pass the credential scan"; exit 0; fi
+TMPERR_CX=$(mktemp "${TMPDIR:-/tmp}/vibe-oh-cxerr.XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
 # Portable timeout: gtimeout → timeout → a polling watchdog (returns 124 on overrun).
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
@@ -475,15 +493,19 @@ _cx() {
 }
 _CODEX_EXIT=0
 # 270s sits below the 300s Bash timeout, so a stall ends here as exit 124.
-command -v codex >/dev/null 2>&1 || { echo "CODEX_NOT_INSTALLED"; exit 0; }
-_cx 270 codex exec - -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < "$CODEX_PROMPT_FILE" 2>"$TMPERR_OH" || _CODEX_EXIT=$?
+_cx 270 codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c "model_reasoning_effort=\"$_CX_EFFORT\"" -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_CX" || _CODEX_EXIT=$?
 echo "CODEX_EXIT: $_CODEX_EXIT"
 echo "--- codex stderr ---"
-cat "$TMPERR_OH"
+cat "$TMPERR_CX"
 ```
 
 Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT` (124 is the
-270-second stall bound) is a Codex error.
+270-second stall bound) is a Codex error. `CODEX_SKIPPED` (any `REDACT_EXIT` but 0 —
+a finding, or a scan that could not run) means the prompt stayed here: tell the user
+what kind of credential the scan named and where, then use the Claude subagent.
+Under `under_codex` with `claude_cli`, the `claude -p` pass gets the same gate: run
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file '<PROMPT_FILE>'; echo "REDACT_EXIT: $?"`
+first and send the prompt only on exit 0, else go to the subagent.
 
 **Error handling:** All errors are non-blocking — second opinion is a quality enhancement, not a prerequisite.
 - **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate." Fall back to Claude subagent.
@@ -492,7 +514,7 @@ Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT` (124 is the
 
 On any Codex error, fall back to the Claude subagent below.
 
-**If CODEX_NOT_AVAILABLE (or Codex errored):**
+**Claude subagent** (the preflight's subagent path, or Codex errored or was skipped):
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
 
@@ -500,27 +522,12 @@ Dispatch via the Agent tool. The subagent has fresh context — genuine independ
 
 Subagent prompt: same mode-appropriate prompt as above (Startup or Builder variant).
 
-Present findings under a `SECOND OPINION (Claude subagent):` header.
-
 If the subagent fails or times out: "Second opinion unavailable. Continuing to Phase 4."
 
-4. **Presentation:**
-
-If Codex ran:
-```
-SECOND OPINION (Codex):
-════════════════════════════════════════════════════════════
-<full codex output, verbatim — do not truncate or summarize>
-════════════════════════════════════════════════════════════
-```
-
-If Claude subagent ran:
-```
-SECOND OPINION (Claude subagent):
-════════════════════════════════════════════════════════════
-<full subagent output, verbatim — do not truncate or summarize>
-════════════════════════════════════════════════════════════
-```
+4. **Presentation:** show the output verbatim — do not truncate or summarize — between
+`════` rules under the header of the voice that ran: `SECOND OPINION (Codex):`,
+`SECOND OPINION (Claude subagent):`, or the header the preflight branch names
+under `under_codex`.
 
 5. **Cross-model synthesis:** After presenting the second opinion output, provide 3-5 bullet synthesis:
    - Where Claude agrees with the second opinion
@@ -622,36 +629,16 @@ This generates 3 style variations of the same brief (~40 seconds total). Each im
 it saved is printed on a `saved:` line — use those paths below, never assumed names
 (`$D` never overwrites, so a second run today saves `variant-A-2.png`).
 
-**Step 4: Show variants inline, then open comparison board**
+**Step 4: Pick a variant inline**
 
-Show each variant to the user inline first (read the PNGs with Read tool), then
-create and serve the comparison board:
+Read each `saved:` PNG with the Read tool so the variants show inline, then ask
+one AskUserQuestion that both picks and confirms: one option per saved variant (its
+letter and a few words on its direction) plus "None — regenerate with changes". On
+a regenerate answer, rewrite `$_DESIGN_DIR/brief.txt` with the change (Write tool),
+rerun the Step 3 block and ask again with the new `saved:` paths. Otherwise proceed
+with the picked variant.
 
-```bash
-_DESIGN_DIR='<DESIGN_DIR>'
-D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
-$D compare --images "<the saved: paths, comma-separated>" --output "$_DESIGN_DIR/design-board.html" --serve
-```
-
-This opens the board in the user's default browser and blocks until feedback is
-received. Read stdout for the structured JSON result. No polling needed.
-
-If `$D serve` is not available or fails, fall back to AskUserQuestion:
-"I've opened the design board. Which variant do you prefer? Any feedback?"
-
-**Step 5: Handle feedback**
-
-If the JSON contains `"regenerated": true`:
-1. Read `regenerateAction` (or `remixSpec` for remix requests)
-2. Rewrite `$_DESIGN_DIR/brief.txt` with the updated brief (Write tool) and rerun the Step 3 `$D variants` block
-3. Create new board with `$D compare`
-4. POST the new HTML to the running server via `curl -X POST http://localhost:PORT/api/reload -H 'Content-Type: application/json' -d "{\"html\":\"$_DESIGN_DIR/design-board.html\"}"`
-   (parse the port from stderr: look for `SERVE_STARTED: port=XXXXX`)
-5. Board auto-refreshes in the same tab
-
-If `"regenerated": false`: proceed with the approved variant.
-
-**Step 6: Save approved choice**
+**Step 5: Save approved choice**
 
 The user's feedback reaches the shell the same way the brief does: **write the
 feedback summary with the Write tool** to `approved-feedback.txt` inside DESIGN_DIR
@@ -718,10 +705,11 @@ Generate a single-page HTML file with these constraints:
   matches the actual use case)
 - Add HTML comments explaining design decisions
 
-Write to a temp file:
+Create a private sketch directory, then write the HTML with the Write tool to the
+path it prints (Read the empty path first if the tool asks):
 ```bash
-SKETCH_FILE="/tmp/vibestack-sketch-$(date +%s).html"
-echo "SKETCH_FILE: $SKETCH_FILE"
+_SKETCH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-sketch.XXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
+echo "SKETCH_FILE: $_SKETCH_DIR/sketch.html"
 ```
 
 **Step 3: Render and capture**
@@ -733,7 +721,7 @@ SETUP printed on its `BROWSE_BIN:` line:
 SKETCH_FILE='<SKETCH_FILE>'
 B='<BROWSE_BIN>'
 $B goto "file://$SKETCH_FILE"
-$B screenshot /tmp/vibestack-sketch.png
+$B screenshot "${SKETCH_FILE%.html}.png"
 ```
 
 If `$B` is not available (browse binary not set up), skip the render step. Tell the
@@ -746,43 +734,61 @@ Show the screenshot to the user. Ask: "Does this feel right? Want to iterate on 
 If they want changes, regenerate the HTML with their feedback and re-render.
 If they approve or say "good enough," proceed.
 
-**Step 5: Include in design doc**
+**Step 5: Save it with the design doc**
 
-Reference the wireframe screenshot in the design doc's "Recommended Approach" section.
-The screenshot file at `/tmp/vibestack-sketch.png` can be referenced by downstream skills
-(`/plan-design-review`, `/design-review`) to see what was originally envisioned.
+The temp directory does not outlive the session, so copy the approved sketch into the
+project directory next to the design docs (replace `<SKETCH_FILE>` as above):
+
+```bash
+SKETCH_FILE='<SKETCH_FILE>'
+[ -s "$SKETCH_FILE" ] || { echo "ERROR: no sketch at $SKETCH_FILE" >&2; exit 1; }
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null
+_PD="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
+_BR=$(git branch --show-current 2>/dev/null | tr '/' '-')
+_OUT="$_PD/$(whoami)-${_BR:-nobranch}-sketch-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$_PD"
+cp "$SKETCH_FILE" "$_OUT.html" && echo "SKETCH_SAVED: $_OUT.html"
+[ -f "${SKETCH_FILE%.html}.png" ] && cp "${SKETCH_FILE%.html}.png" "$_OUT.png" && echo "SKETCH_SAVED: $_OUT.png"
+_SD=$(dirname "$SKETCH_FILE")
+case "$_SD" in */vibe-sketch.??????) rm -rf "$_SD" ;; esac
+```
+
+Put the saved PNG path (the HTML path when there is no screenshot) on the design
+doc's `Wireframe:` line and reference it in "Recommended Approach" — that is where
+`/plan-design-review` and `/design-review` look for what was originally envisioned.
 
 **Step 6: Outside design voices** (optional)
 
-After the wireframe is approved, offer outside design perspectives:
-
-```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
-
-If Codex is available, use AskUserQuestion:
-> "Want outside design perspectives on the chosen approach? Codex proposes a visual thesis, content plan, and interaction ideas. A Claude subagent proposes an alternative aesthetic direction."
+After the wireframe is approved, run the Phase 3.5 preflight block again (each Bash
+call is a fresh shell, so the `CODEX_MODE` printed there is gone). On `disabled`,
+skip this step. Otherwise use AskUserQuestion:
+> "Want outside design perspectives on the chosen approach? An outside model proposes a visual thesis, content plan, and interaction ideas. A Claude subagent proposes an alternative aesthetic direction."
 >
 > A) Yes — get outside design voices
 > B) No — proceed without
 
-If user chooses A, launch both voices simultaneously:
+If user chooses A, create a private prompt file with
+`umask 077; mktemp "${TMPDIR:-/tmp}/vibe-oh-prompt.XXXXXXXX"`, Read it, and Write into
+it the filesystem boundary from Phase 3.5,
+the approved approach and the full sketch HTML (Read the saved `.html`), then: "For this product approach, provide: a visual
+thesis (one sentence — mood, material, energy), a content plan (hero → support →
+detail → CTA), and 2 interaction ideas that change page feel. Apply beautiful
+defaults: composition-first, brand-first, cardless, poster not document. Be
+opinionated." Launch both voices together:
 
-1. **Codex** (via Bash, `model_reasoning_effort="medium"`):
-```bash
-TMPERR_SKETCH=$(mktemp /tmp/codex-sketch-XXXXXXXX)
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-command -v codex >/dev/null 2>&1 && codex exec "For this product approach, provide: a visual thesis (one sentence — mood, material, energy), a content plan (hero → support → detail → CTA), and 2 interaction ideas that change page feel. Apply beautiful defaults: composition-first, brand-first, cardless, poster not document. Be opinionated." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached < /dev/null 2>"$TMPERR_SKETCH"
-```
-Use a 5-minute timeout (`timeout: 300000`). After completion: `cat "$TMPERR_SKETCH" && rm -f "$TMPERR_SKETCH"`
+1. **Outside voice** — on `ready`, the Phase 3.5 Codex block with this prompt file
+   and `<EFFORT>` set to `medium`; under `under_codex`, that branch's `claude -p`
+   pass (scanned the same way); otherwise none — the subagent below runs alone.
 
-2. **Claude subagent** (via Agent tool):
+2. **Claude subagent** (via Agent tool), given the approved approach and the sketch HTML:
 "For this product approach, what design direction would you recommend? What aesthetic, typography, and interaction patterns fit? What would make this approach feel inevitable to the user? Be specific — font names, hex colors, spacing values."
 
 {{include lib/snippets/foreground-dispatch.md}}
 
-Present Codex output under `CODEX SAYS (design sketch):` and subagent output under `CLAUDE SUBAGENT (design direction):`.
-Error handling: all non-blocking. On failure, skip and continue.
+Present Codex output under `CODEX SAYS (design sketch):` (or the header the
+preflight branch names) and subagent output under `CLAUDE SUBAGENT (design direction):`.
+Error handling: all non-blocking. A non-zero `CODEX_EXIT` or `CODEX_SKIPPED` is a
+voice that did not complete — say so, never invent its proposal.
 
 ---
 
@@ -807,11 +813,14 @@ Count the signals. You'll use this count in Phase 6 Signal Reflection — quote 
 After counting signals, append a session entry to the builder profile. This is the single
 source of truth for all closing state (tier, journey tracking, resources shown).
 
+Create a private entry file:
+
 ```bash
-mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}"
+umask 077; mktemp "${TMPDIR:-/tmp}/vibe-oh-entry.XXXXXXXX"
 ```
 
-Append one JSON line with these fields (substitute actual values from this session):
+Read the printed file, then write ONE JSON object into it with the Write tool, with
+these fields (substitute actual values from this session):
 - `date`: current ISO 8601 timestamp
 - `mode`: "startup" or "builder" (from Phase 1 mode selection)
 - `project_slug`: the SLUG value from the preamble
@@ -822,9 +831,34 @@ Append one JSON line with these fields (substitute actual values from this sessi
 - `resources_shown`: empty array `[]` for now (populated after resource selection in Phase 6)
 - `topics`: array of 2-3 topic keywords that describe what this session was about
 
+The assignment and topics are the user's words, so they reach the log through that
+file, never through shell source. Append it with this block, replacing `<ENTRY_FILE>`
+with the printed path; it rejects anything that is not one object with list-valued
+`signals`, `resources_shown` and `topics`, and removes the file once appended:
+
 ```bash
-echo '{"date":"TIMESTAMP","mode":"MODE","project_slug":"SLUG","signal_count":N,"signals":SIGNALS_ARRAY,"design_doc":"DOC_PATH","assignment":"ASSIGNMENT_TEXT","resources_shown":[],"topics":TOPICS_ARRAY}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
+_ENTRY='<ENTRY_FILE>'
+python3 -I - "$_ENTRY" "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl" <<'VIBE_PY_EOF'
+import json, os, sys
+src, dst = sys.argv[1:3]
+try:
+    with open(src, encoding="utf-8") as f:
+        entry = json.load(f)
+except (OSError, ValueError) as e:
+    sys.exit("PROFILE_REJECTED: %s is not one JSON object (%s); rewrite it with the Write tool" % (src, e))
+lists = ("signals", "resources_shown", "topics")
+if not isinstance(entry, dict) or entry.get("mode") not in ("startup", "builder", "resources") \
+        or any(not isinstance(entry.get(k, []), list) for k in lists):
+    sys.exit("PROFILE_REJECTED: needs mode startup, builder or resources and list-valued " + ", ".join(lists))
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+with open(dst, "a", encoding="utf-8") as f:
+    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+os.remove(src)
+print("PROFILE_APPENDED:", dst)
+VIBE_PY_EOF
 ```
+
+On `PROFILE_REJECTED`, fix the file with the Write tool and rerun the block.
 
 This entry is append-only. The `resources_shown` field will be updated via a second append
 after resource selection in Phase 6.
@@ -860,26 +894,43 @@ section that re-argues a case already closed. Drop template sections that came
 out empty instead of leaving headings with "TBD" under them. There is no page
 limit; length just has to earn itself, because a doc that reads like a
 transcript is one nobody opens twice.
+Tag each decision bullet with whose call it was: `(yours)` when the user decided
+it, `(my call — <reason>)` when you proposed it and they did not push back — a
+reader must be able to tell a choice from a default nobody examined.
 
 **Repo copy.** When the session runs inside a git repository, also write the doc
 to `docs/designs/{topic-slug}.md` — that is where teammates and the plan-review
 skills actually look, and a doc only in `~/.vibestack` is invisible to everyone
 but this machine.
 
-```bash
-git rev-parse --show-toplevel 2>/dev/null || echo "NOT_A_REPO"
-```
-
 Two gates before that second write:
 
-1. **Scan the exact bytes first.** The repo copy is committable and pushable, so
-   it is a sink. Check the doc's content against the patterns below. On a match,
-   do not write the repo copy: tell the user what kind of credential appeared,
-   where, and that it needs redacting (and rotating if it is real). The
-   `~/.vibestack` copy is unaffected — it never leaves the machine.
-2. **Ask before the first one.** Adding a file to someone's repo is a change to
+1. **Ask before the first one.** Adding a file to someone's repo is a change to
    their working tree. Ask once per repo; if they decline, keep the
    `~/.vibestack` copy and say so.
+2. **Scan the exact bytes.** The repo copy is committable and pushable, so it is
+   a sink. The block below runs the deterministic scanner on the saved doc and
+   copies it only on `REDACT_EXIT: 0`; a finding, or a scan that could not run,
+   leaves no repo copy. Replace `<DESIGN_DOC>` with the saved doc's path and
+   `<TOPIC_SLUG>` with the topic slug (lowercase letters, digits, dashes):
+
+```bash
+_DOC='<DESIGN_DOC>'
+_TOPIC='<TOPIC_SLUG>'
+case "$_TOPIC" in ''|*[!a-z0-9-]*) echo "ERROR: topic slug must be lowercase letters, digits and dashes: $_TOPIC" >&2; exit 1 ;; esac
+_TOP=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "REPO_COPY: skipped (not a git repo)"; exit 0; }
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$_DOC"
+_REDACT_EXIT=$?
+echo "REDACT_EXIT: $_REDACT_EXIT"
+[ "$_REDACT_EXIT" -eq 0 ] || { echo "REPO_COPY: skipped (credential scan exit $_REDACT_EXIT)"; exit 0; }
+mkdir -p "$_TOP/docs/designs" && cp "$_DOC" "$_TOP/docs/designs/$_TOPIC.md" && echo "REPO_COPY: $_TOP/docs/designs/$_TOPIC.md"
+```
+
+On a skip, tell the user what kind of credential the scan named and where, and
+that it needs redacting (and rotating if it is real). The `~/.vibestack` copy is
+unaffected — it never leaves the machine. The scanner sees single-token shapes;
+also read the doc against the list below for multi-line ones (a service-account
+JSON key) and treat a hit as a finding.
 
 {{include lib/snippets/secret-scan-patterns.md}}
 
@@ -898,6 +949,7 @@ Repo: {owner/repo}
 Status: DRAFT
 Mode: Startup
 Supersedes: {prior filename — omit this line if first design on this branch}
+Wireframe: {saved sketch PNG path (HTML when no screenshot) — or none (<reason>), e.g. none (backend-only)}
 
 ## Problem Statement
 {from Phase 2A}
@@ -961,6 +1013,7 @@ Repo: {owner/repo}
 Status: DRAFT
 Mode: Builder
 Supersedes: {prior filename — omit this line if first design on this branch}
+Wireframe: {saved sketch PNG path (HTML when no screenshot) — or none (<reason>), e.g. none (backend-only)}
 
 ## Problem Statement
 {from Phase 2B}
@@ -1033,7 +1086,7 @@ entry is already in it, so the counts include the session you are closing.
 
 ```bash
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
-PROFILE=$(python3 - "${SLUG:-unknown}" <<'PY'
+PROFILE=$(python3 -I - "${SLUG:-unknown}" <<'PY'
 import json, os, sys
 home = os.environ.get("VIBESTACK_HOME") or os.path.expanduser("~/.vibestack")
 slug = sys.argv[1]
@@ -1221,11 +1274,11 @@ If WebSearch is unavailable, skip this section entirely.
 
 **After presenting resources — log to builder profile and offer to open:**
 
-1. Log the selected resource URLs to the builder profile:
-```bash
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
-echo '{"date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","mode":"resources","project_slug":"'"${SLUG:-unknown}"'","signal_count":0,"signals":[],"design_doc":"","assignment":"","resources_shown":["URL1","URL2","URL3"],"topics":[]}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
-```
+1. Log the selected resource URLs to the builder profile the way Phase 4.5 does:
+   a fresh entry file from its `mktemp` block, written with the Write tool as
+   `{"date": "<now, ISO 8601 UTC>", "mode": "resources", "project_slug": "<SLUG>", "signal_count": 0, "signals": [], "design_doc": "", "assignment": "", "resources_shown": ["<url>", ...], "topics": []}`,
+   then appended with the Phase 4.5 append block. URLs come from search results, so
+   they never enter shell source.
 
 2. Log to analytics:
 ```bash
@@ -1259,14 +1312,19 @@ silently failed to save is worse than never offering the switch:
 
 ### Next-skill handoff
 
-After resources, don't just list the next step — offer to launch it. Use AskUserQuestion to ask which review to run now (default `/plan-eng-review`), then invoke it with the Skill tool in this same session so the user doesn't retype anything:
+Pick the next review from what the session produced: **`/plan-ceo-review`** when
+the scope is still expanding (EXPANSION — the 10-star version is in question),
+**`/plan-eng-review`** when it is well-scoped and ready for architecture, tests and
+edge cases, **`/plan-design-review`** when the work is UI-heavy.
 
-- **`/plan-eng-review`** (default) — well-scoped implementation planning; lock in architecture, tests, edge cases
-- **`/plan-ceo-review`** — ambitious features (EXPANSION mode); rethink the problem, find the 10-star product
-- **`/plan-design-review`** — visual/UX design review
-- Skip — stop here, I'll run it later
+Offer to launch it only when the preamble printed `PROACTIVE` as anything but
+`false` **and** `SESSION_KIND: interactive`. Then use AskUserQuestion with the
+mapped skill as the recommended option, the other two, and "Skip — I'll run it
+later"; on a pick, invoke it with the Skill tool in this same session so the user
+doesn't retype anything; on Skip, stop. Otherwise print one line —
+`Next: /<skill> — <one-line reason>` — and stop without asking or invoking.
 
-On a pick, invoke the chosen skill via the Skill tool. On Skip, stop. The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they read it during their pre-review system audit.
+The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they read it during their pre-review system audit.
 
 ---
 
