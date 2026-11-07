@@ -34,7 +34,7 @@ function getBaseUrl() {
 
 async function loadAuthToken() {
   if (authToken) return;
-  // Get token from browse server /health endpoint (localhost-only, safe).
+  // Get token from browse server /health endpoint (served in headed mode only).
   // Previously read from .auth.json in extension dir, but that breaks
   // read-only .app bundles and codesigning.
   const base = getBaseUrl();
@@ -296,6 +296,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!ALLOWED_TYPES.has(msg.type)) {
     console.warn('[vibestack] Rejected unknown message type:', msg.type);
     return;
+  }
+
+  // The token and the command proxy belong to this extension's own pages
+  // (side panel, popup). Content scripts run inside arbitrary web pages and
+  // carry sender.tab, so they get neither.
+  if ((msg.type === 'getPort' || msg.type === 'command') && sender.tab) {
+    console.warn(`[vibestack] Rejected ${msg.type} from content script context`);
+    sendResponse({ error: 'Not available to content scripts' });
+    return true;
   }
 
   if (msg.type === 'getPort') {
