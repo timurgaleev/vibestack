@@ -31,7 +31,7 @@ your own completion.
 |-------------------|-----------------|
 | "fix the bug" | write a test that reproduces it → make it pass → lock it in as a regression test |
 | "refactor this" | the same test suite passes before and after |
-| "make it faster" | define a measured baseline and a target number → verify by measuring |
+| "make it faster" | name the limiter, measure a baseline and its run-to-run variation, set a target → verify by measuring; a gap inside the variation is no difference |
 | "clean it up" | meets the defined lint / typecheck / coverage bar |
 | "make it work" | ask the user what "done" looks like, first |
 
@@ -61,10 +61,14 @@ Report work with exactly one of these states:
 | verified locally | the defining check was run here and passed |
 | committed | in a local commit |
 | pushed | the remote ref moved: `HEAD` equals `git rev-parse origin/<branch>` |
+| applied | the change reached the target; the environment and version are named |
+| verified in target | the defining check ran against that environment, with its evidence |
 | blocked | cannot proceed; name the blocker |
 
 Say "fixed" only after the failing check was re-run and passed. Say "pushed"
-only after confirming the remote ref moved.
+only after confirming the remote ref moved. A passing plan, CI run, merge or
+release is not target acceptance; without access to the target, report
+`target: not performed (<dependency>)`.
 
 ## Root Cause Analysis
 

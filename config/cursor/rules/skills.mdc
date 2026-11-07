@@ -24,7 +24,7 @@ investigate before fixing. Then run the implementation and review skills.
 | Weigh product scope or the bigger problem | `/plan-ceo-review` |
 | Turn a rough intent into a precise spec | `/spec` |
 | Implement a feature or bugfix with tests | `/tdd` |
-| Debug an error, test failure, or odd behavior | `/investigate` |
+| Debug an error, test failure, or odd behavior, unless one read-only check confirms the cause and a narrow fix | `/investigate` |
 | Review a diff before merge | `/code-review`, `/review` |
 | Tidy code for reuse/simplicity (no bug hunt) | `/simplify` |
 | Audit security | `/cso` |
@@ -38,6 +38,7 @@ investigate before fixing. Then run the implementation and review skills.
 | Record or review a session learning | `/learn` |
 | Check code-quality health or find refactors | `/health`, `/improve-arch` |
 | Audit and prune the installed runtime configuration | `/vibe-gc` |
+| Execute an approved multi-step plan | a plugin's plan-execution skill, when one is installed; otherwise run the `/plan-eng-review` cold-start briefs lane by lane, then `/review` and `/ship` |
 
 ## Second opinion from another model
 
@@ -51,13 +52,15 @@ a question to GPT, Gemini, Grok or an OpenRouter model. It is optional
 | Put one question to several models at once | `/deliberation:ask-all` |
 | Settle a contested design decision | `/deliberation:consensus` |
 | Ask one named model | `/deliberation:ask-gpt`, `:ask-gemini`, `:ask-grok`, `:ask-openrouter` |
+| Second opinion on a prose rewrite, after `/unslop` (plugin) | the deliberation Writing Editor |
 
 - Use the namespaced form. The short aliases (`/ask-all`) exist only if the
   plugin's setup installed them.
 - **Never delegate the same question twice.** Most vibestack review skills
   (`/review`, `/ship`, `/plan-eng-review`, `/plan-ceo-review`, `/spec`, …) already
   run their own outside voice through Codex. When one of them is running, do not
-  add a deliberation call on top.
+  add a deliberation call on top. Likewise `/unslop` is the prose pass: the
+  Writing Editor does not run on the same draft unless asked.
 - Only Gemini can edit files; GPT, Grok and OpenRouter advise only.
 
 ## Notes

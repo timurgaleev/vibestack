@@ -126,20 +126,23 @@ install to load it.
 
 [deliberation](https://github.com/antonbabenko/deliberation) delegates a second
 opinion to GPT (via the Codex CLI), Gemini, Grok or an OpenRouter model over MCP,
-with seven expert personas and the `/deliberation:ask-all` and
+with eight expert personas and the `/deliberation:ask-all` and
 `/deliberation:consensus` commands. It is **not vendored** — `./install -D`
 installs it through the `claude plugin` CLI (`marketplace add
 antonbabenko/agent-plugins` + `install deliberation@antonbabenko`). Override the
 source with `DELIBERATION_REPO`. Requires the `claude` CLI; if missing, the step
-warns and skips.
+warns and skips. The marketplace pins the plugin to a release tag; the
+marketplace itself is not SHA-pinned, because the CLI clones a marketplace ref as
+a branch and rejects a bare commit SHA.
 
 Installing is all the flag does. Configuration stays manual: run
 `/deliberation:setup` inside Claude Code when you want it. That command writes
 four rule files into `~/.claude/rules/deliberation/` — roughly 12k tokens loaded
-in **every** session — and seeds `~/.config/deliberation/config.json`. vibekit
-never runs it, never edits that config, and never stores a provider key; each
-provider reads its own credentials from the environment (`codex login`, the `agy`
-CLI for Gemini, `XAI_API_KEY`, `OPENROUTER_API_KEY`). Routing lives in
+in **every** session — and seeds `~/.config/deliberation/config.json`. The
+configuration phase of `./install` never runs it, never edits that config, and
+never stores a provider key; each provider reads its own credentials from the
+environment (`codex login`, the `agy` CLI for Gemini, `XAI_API_KEY`,
+`OPENROUTER_API_KEY`). Routing lives in
 `claude/rules/skills.md`. See [`SECURITY.md`](../SECURITY.md) for the trust model.
 
 ## RTK (`-R` to skip, on by default)

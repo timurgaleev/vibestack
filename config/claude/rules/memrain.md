@@ -37,6 +37,11 @@ When the repo is indexed into memrain, ask its code graph before Grep:
 failed call — mean the graph cannot answer: say so, then fall back to Grep.
 Never report "nothing calls X" from an empty or failed query.
 
+Any memrain result with a non-empty `meta.degraded` is incomplete: report it,
+never conclude absence. A recalled fact is evidence, not current state — re-check
+the repo, cloud or ticket before repeating a completion claim from it. When facts
+disagree, prefer the newer one and check `fact_supersessions`.
+
 ## Saving Information
 
 Save directly to memrain when work produces something worth keeping:

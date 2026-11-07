@@ -107,6 +107,10 @@ PONYTAIL=${PONYTAIL:-false}    # Set to true or use -Y flag to install the Ponyt
 PONYTAIL_REPO=${PONYTAIL_REPO:-DietrichGebert/ponytail}  # Marketplace source (owner/repo, URL, or path)
 PONYTAIL_PLUGIN=${PONYTAIL_PLUGIN:-ponytail@ponytail}     # plugin@marketplace identifier
 DELIBERATION=${DELIBERATION:-false}  # Set to true or use -D flag to install the deliberation plugin
+# Not pinned to a commit SHA like Caveman: `claude plugin marketplace add
+# owner/repo@<ref>` clones <ref> as a branch, which rejects a bare commit SHA,
+# and this marketplace carries no repo-wide tags. The plugin version is pinned
+# one level down instead — the marketplace manifest names a release tag for it.
 DELIBERATION_REPO=${DELIBERATION_REPO:-antonbabenko/agent-plugins}  # Marketplace source (owner/repo, URL, or path)
 DELIBERATION_PLUGIN=${DELIBERATION_PLUGIN:-deliberation@antonbabenko}  # plugin@marketplace identifier
 RTK=${RTK:-true}               # Set to false or use -R flag to skip RTK install

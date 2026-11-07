@@ -78,7 +78,28 @@ test_rules_accounted_for() {
   fi
 }
 
+# G5: Codex and Copilot serve every language, and patterns.md reaches both
+# whole. A TypeScript or React example there reads as the house language for a
+# Python or Terraform repo.
+test_patterns_language_neutral() {
+  local out hits=""
+  for out in "$AGENTS" "$HERE/../config/copilot/copilot-instructions.md" "$HERE/../config/claude/rules/patterns.md"; do
+    # Only the Common Patterns section: other rules keep their short examples.
+    awk '/^#+ Common Patterns$/ { on = 1; lvl = index($0, " "); next }
+         on && /^#+ / && index($0, " ") <= lvl { on = 0 }
+         on' "$out" \
+      | grep -qE '^[[:space:]]*(```|~~~)[[:space:]]*(typescript|tsx|ts|javascript|jsx)[[:space:]]*$' \
+      && hits="$hits $(basename "$out")"
+  done
+  if [[ -n "$hits" ]]; then
+    _fail "G5: TypeScript/JavaScript code blocks in:$hits"
+  else
+    _pass "G5: shared patterns carry no language-specific code blocks"
+  fi
+}
+
 test_no_drift
+test_patterns_language_neutral
 test_no_dangling_rule_links
 test_no_claude_tool_names
 test_rules_accounted_for
