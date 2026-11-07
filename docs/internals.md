@@ -220,6 +220,8 @@ origin/HEAD is ignored for the remote's answer, asked without any prompt, and a
 base that already contains the branch stops with `BASE_CONTAINS_HEAD`),
 `confidence-calibration` (the P0-P3 scale, the 1-10 confidence table and the
 quote-or-demote gate),
+`aws-context` (the AWS identity and region every AWS finding is scoped to,
+confirmed read-only with `sts get-caller-identity` and never assumed),
 `release-after-merge` (the tag-and-release step `/ship` and `/land-and-deploy` share),
 `test-value-bar` (the four questions, the value card with its optional
 `no_claim`, and what never counts as coverage), `implementer-dispatch-rules`
@@ -313,6 +315,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-test-value-bar.sh` | The test value bar reaches every skill that writes, proposes or reviews tests, without drifting copies |
 | `test-test-bootstrap.sh` | `lib/snippets/test-bootstrap.md` stays the one wording of test-framework detection that /ship and /qa render |
 | `test-base-branch-detect.sh` | The base-branch fallback resolves in throwaway repos (stale cache, offline, merged branch, ssh remote) and the confidence snippet keeps its gate |
+| `test-aws-context.sh` | The shared AWS context block reports profile, region, account and principal against a fake CLI, and N-A for anything unconfirmed |
 | `test-shared-protocols.sh` | The claim, completeness, question and memory rules reach the skills that include them, within a byte budget |
 | `test-context-provenance.sh` | `/context-save` and `/context-restore` keep a resumed session off the wrong context or a guessed step |
 | `test-context-identity.sh` | Checkpoints are stamped with their project and restore never offers another project's |
