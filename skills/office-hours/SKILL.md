@@ -405,13 +405,12 @@ Use AskUserQuestion to confirm. If the user disagrees with a premise, revise und
 
 ## Phase 3.5: Cross-Model Second Opinion (optional)
 
-**Binary check first:**
+{{include lib/snippets/outside-voice-preflight.md}}
 
-```bash
-command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
-```
+In this phase the "next section" above is Phase 4: on `disabled`, note that the
+second opinion did NOT run and go there without asking.
 
-Use AskUserQuestion (regardless of codex availability):
+Otherwise use AskUserQuestion:
 
 > Want a second opinion from an independent AI perspective? It will review your problem statement, key answers, premises, and any landscape findings from this session without having seen this conversation — it gets a structured summary. Usually takes 2-5 minutes.
 > A) Yes, get a second opinion
@@ -419,7 +418,7 @@ Use AskUserQuestion (regardless of codex availability):
 
 If B: skip Phase 3.5 entirely. Remember that the second opinion did NOT run (affects design doc, founder signals, and Phase 4 below).
 
-**If A: Run the Codex cold read.**
+**If A: run the cold read through the voice `CODEX_MODE` chose.**
 
 1. Assemble a structured context block from Phases 1-3:
    - Mode (Startup or Builder)
@@ -429,11 +428,10 @@ If B: skip Phase 3.5 entirely. Remember that the second opinion did NOT run (aff
    - Agreed premises (from Phase 3)
    - Codebase context (project name, languages, recent activity)
 
-2. **Write the assembled prompt to a temp file** (prevents shell injection from user-derived content):
+2. **Write the assembled prompt to a private temp file** (user words never enter shell source):
 
 ```bash
-CODEX_PROMPT_FILE=$(mktemp /tmp/vibestack-codex-oh-XXXXXXXX.txt)
-echo "CODEX_PROMPT_FILE: $CODEX_PROMPT_FILE"
+umask 077; mktemp "${TMPDIR:-/tmp}/vibe-oh-prompt.XXXXXXXX"
 ```
 
 Read the printed file, then write the full prompt into it with the Write tool. **Always start with the filesystem boundary:**
@@ -444,17 +442,25 @@ Then add the context block and mode-appropriate instructions:
 
 **Builder mode instructions:** "You are an independent technical advisor reading a transcript of a builder brainstorming session. [CONTEXT BLOCK HERE]. Your job: 1) What is the COOLEST version of this they haven't considered? 2) What's the ONE thing from their answers that reveals what excites them most? Quote it. 3) What existing open source project or tool gets them 50% of the way there — and what's the 50% they'd need to build? 4) If you had a weekend to build this, what would you build first? Be specific. Be direct. No preamble."
 
-3. Run Codex. Each Bash call is a fresh shell, so replace `<CODEX_PROMPT_FILE>` with
-the path printed above; the prompt reaches Codex on stdin, and stderr is read and
-both files removed in the same call:
+3. **`ready` — the Codex pass.** Replace `<PROMPT_FILE>` with the printed path and
+`<EFFORT>` with `high`. The block scans the prompt for credentials first (it carries
+the user's own words to another vendor's model) and runs Codex only on
+`REDACT_EXIT: 0`; the prompt reaches Codex on stdin, and stderr is read and both
+files removed in the same call:
 
 ```bash
-CODEX_PROMPT_FILE='<CODEX_PROMPT_FILE>'
-TMPERR_OH=""
-trap 'rm -f "$TMPERR_OH" "$CODEX_PROMPT_FILE"' EXIT
+_PROMPT_FILE='<PROMPT_FILE>'
+_CX_EFFORT='<EFFORT>'
+TMPERR_CX=""
+trap 'rm -f "$TMPERR_CX" "$_PROMPT_FILE"' EXIT
+case "$_CX_EFFORT" in high|medium) ;; *) echo "ERROR: effort must be high or medium, got: $_CX_EFFORT" >&2; exit 1 ;; esac
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-[ -s "$CODEX_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $CODEX_PROMPT_FILE" >&2; exit 1; }
-TMPERR_OH=$(mktemp /tmp/codex-oh-err-XXXXXXXX) || { echo "ERROR: mktemp failed" >&2; exit 1; }
+[ -s "$_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $_PROMPT_FILE" >&2; exit 1; }
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "$_PROMPT_FILE"
+_REDACT_EXIT=$?
+echo "REDACT_EXIT: $_REDACT_EXIT"
+if [ "$_REDACT_EXIT" -ne 0 ]; then echo "CODEX_SKIPPED: the prompt did not pass the credential scan"; exit 0; fi
+TMPERR_CX=$(mktemp "${TMPDIR:-/tmp}/vibe-oh-cxerr.XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
 # Portable timeout: gtimeout → timeout → a polling watchdog (returns 124 on overrun).
 _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || true)
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
@@ -475,15 +481,19 @@ _cx() {
 }
 _CODEX_EXIT=0
 # 270s sits below the 300s Bash timeout, so a stall ends here as exit 124.
-command -v codex >/dev/null 2>&1 || { echo "CODEX_NOT_INSTALLED"; exit 0; }
-_cx 270 codex exec - -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' -c 'web_search="cached"' < "$CODEX_PROMPT_FILE" 2>"$TMPERR_OH" || _CODEX_EXIT=$?
+_cx 270 codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c "model_reasoning_effort=\"$_CX_EFFORT\"" -c 'web_search="cached"' < "$_PROMPT_FILE" 2>"$TMPERR_CX" || _CODEX_EXIT=$?
 echo "CODEX_EXIT: $_CODEX_EXIT"
 echo "--- codex stderr ---"
-cat "$TMPERR_OH"
+cat "$TMPERR_CX"
 ```
 
 Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT` (124 is the
-270-second stall bound) is a Codex error.
+270-second stall bound) is a Codex error. `CODEX_SKIPPED` (any `REDACT_EXIT` but 0 —
+a finding, or a scan that could not run) means the prompt stayed here: tell the user
+what kind of credential the scan named and where, then use the Claude subagent.
+Under `under_codex` with `claude_cli`, the `claude -p` pass gets the same gate: run
+`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file '<PROMPT_FILE>'; echo "REDACT_EXIT: $?"`
+first and send the prompt only on exit 0, else go to the subagent.
 
 **Error handling:** All errors are non-blocking — second opinion is a quality enhancement, not a prerequisite.
 - **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate." Fall back to Claude subagent.
@@ -492,7 +502,7 @@ Use a 5-minute timeout (`timeout: 300000`). A non-zero `CODEX_EXIT` (124 is the
 
 On any Codex error, fall back to the Claude subagent below.
 
-**If CODEX_NOT_AVAILABLE (or Codex errored):**
+**Claude subagent** (the preflight's subagent path, or Codex errored or was skipped):
 
 Dispatch via the Agent tool. The subagent has fresh context — genuine independence.
 
@@ -500,27 +510,12 @@ Dispatch via the Agent tool. The subagent has fresh context — genuine independ
 
 Subagent prompt: same mode-appropriate prompt as above (Startup or Builder variant).
 
-Present findings under a `SECOND OPINION (Claude subagent):` header.
-
 If the subagent fails or times out: "Second opinion unavailable. Continuing to Phase 4."
 
-4. **Presentation:**
-
-If Codex ran:
-```
-SECOND OPINION (Codex):
-════════════════════════════════════════════════════════════
-<full codex output, verbatim — do not truncate or summarize>
-════════════════════════════════════════════════════════════
-```
-
-If Claude subagent ran:
-```
-SECOND OPINION (Claude subagent):
-════════════════════════════════════════════════════════════
-<full subagent output, verbatim — do not truncate or summarize>
-════════════════════════════════════════════════════════════
-```
+4. **Presentation:** show the output verbatim — do not truncate or summarize — between
+`════` rules under the header of the voice that ran: `SECOND OPINION (Codex):`,
+`SECOND OPINION (Claude subagent):`, or the header the preflight branch names
+under `under_codex`.
 
 5. **Cross-model synthesis:** After presenting the second opinion output, provide 3-5 bullet synthesis:
    - Where Claude agrees with the second opinion

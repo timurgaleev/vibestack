@@ -618,6 +618,28 @@ else
   no "office-hours approve: $(cat "$TMP/err")"
 fi
 
+# Value: protects=the office-hours outside-voice prompt reaches Codex only on stdin, with skill instructions off, and the block's temp files go with it; fails_when=the prompt moves back into a codex argv string or the trap stops removing it; why_new=no row ran office-hours' codex block; seam=none
+echo "/office-hours: the outside-voice prompt reaches codex on stdin"
+fresh_cap
+ln -sf "$HERE/bin/vibe-redact" "$TMP/home/.vibestack/bin/vibe-redact"
+ln -sf "$HERE/bin/vibe-redact-prepush" "$TMP/home/.vibestack/bin/vibe-redact-prepush"
+if block_with "$R/office-hours/SKILL.md" '_CX_EFFORT=' > "$TMP/oh-cx.sh" 2>"$TMP/err"; then
+  git init -q "$TMP" 2>/dev/null
+  cp "$HOSTILE" "$TMP/oh-prompt.txt"
+  subst "$TMP/oh-cx.sh" "<PROMPT_FILE>" "$TMP/oh-prompt.txt" "<EFFORT>" "high"
+  run_block "$TMP/oh-cx.sh" -u _PROMPT_FILE
+  if [ -f "$CAP/codex.stdin" ] && same "$CAP/codex.stdin" "$HOSTILE" && no_sentinel \
+     && grep -q '^exec - ' "$CAP/codex.argv" && grep -q 'skills.include_instructions=false' "$CAP/codex.argv" \
+     && grep -q '^CODEX_EXIT: 0$' "$TMP/run.out" && [ ! -e "$TMP/oh-prompt.txt" ]; then
+    ok "codex reads the prompt verbatim on stdin, skill instructions off, the file is removed and none of it ran"
+  else
+    no "office-hours codex ($(head -5 "$TMP/run.out" | tr '\n' '|')); sentinels: $(ls "$SENT")"
+  fi
+  rm -rf "$TMP/.git"
+else
+  no "office-hours codex block: $(cat "$TMP/err")"
+fi
+
 # The file-based pattern only works when the skill may write: a skill that tells
 # the model to use the Write tool must grant it in allowed-tools.
 echo "Write tool granted where it is required"
