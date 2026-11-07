@@ -801,11 +801,14 @@ Count the signals. You'll use this count in Phase 6 Signal Reflection — quote 
 After counting signals, append a session entry to the builder profile. This is the single
 source of truth for all closing state (tier, journey tracking, resources shown).
 
+Create a private entry file:
+
 ```bash
-mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}"
+umask 077; mktemp "${TMPDIR:-/tmp}/vibe-oh-entry.XXXXXXXX"
 ```
 
-Append one JSON line with these fields (substitute actual values from this session):
+Read the printed file, then write ONE JSON object into it with the Write tool, with
+these fields (substitute actual values from this session):
 - `date`: current ISO 8601 timestamp
 - `mode`: "startup" or "builder" (from Phase 1 mode selection)
 - `project_slug`: the SLUG value from the preamble
@@ -816,9 +819,34 @@ Append one JSON line with these fields (substitute actual values from this sessi
 - `resources_shown`: empty array `[]` for now (populated after resource selection in Phase 6)
 - `topics`: array of 2-3 topic keywords that describe what this session was about
 
+The assignment and topics are the user's words, so they reach the log through that
+file, never through shell source. Append it with this block, replacing `<ENTRY_FILE>`
+with the printed path; it rejects anything that is not one object with list-valued
+`signals`, `resources_shown` and `topics`, and removes the file once appended:
+
 ```bash
-echo '{"date":"TIMESTAMP","mode":"MODE","project_slug":"SLUG","signal_count":N,"signals":SIGNALS_ARRAY,"design_doc":"DOC_PATH","assignment":"ASSIGNMENT_TEXT","resources_shown":[],"topics":TOPICS_ARRAY}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
+_ENTRY='<ENTRY_FILE>'
+python3 -I - "$_ENTRY" "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl" <<'VIBE_PY_EOF'
+import json, os, sys
+src, dst = sys.argv[1:3]
+try:
+    with open(src, encoding="utf-8") as f:
+        entry = json.load(f)
+except (OSError, ValueError) as e:
+    sys.exit("PROFILE_REJECTED: %s is not one JSON object (%s); rewrite it with the Write tool" % (src, e))
+lists = ("signals", "resources_shown", "topics")
+if not isinstance(entry, dict) or entry.get("mode") not in ("startup", "builder", "resources") \
+        or any(not isinstance(entry.get(k, []), list) for k in lists):
+    sys.exit("PROFILE_REJECTED: needs mode startup, builder or resources and list-valued " + ", ".join(lists))
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+with open(dst, "a", encoding="utf-8") as f:
+    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+os.remove(src)
+print("PROFILE_APPENDED:", dst)
+VIBE_PY_EOF
 ```
+
+On `PROFILE_REJECTED`, fix the file with the Write tool and rerun the block.
 
 This entry is append-only. The `resources_shown` field will be updated via a second append
 after resource selection in Phase 6.
@@ -1043,7 +1071,7 @@ entry is already in it, so the counts include the session you are closing.
 
 ```bash
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
-PROFILE=$(python3 - "${SLUG:-unknown}" <<'PY'
+PROFILE=$(python3 -I - "${SLUG:-unknown}" <<'PY'
 import json, os, sys
 home = os.environ.get("VIBESTACK_HOME") or os.path.expanduser("~/.vibestack")
 slug = sys.argv[1]
@@ -1231,11 +1259,11 @@ If WebSearch is unavailable, skip this section entirely.
 
 **After presenting resources — log to builder profile and offer to open:**
 
-1. Log the selected resource URLs to the builder profile:
-```bash
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
-echo '{"date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","mode":"resources","project_slug":"'"${SLUG:-unknown}"'","signal_count":0,"signals":[],"design_doc":"","assignment":"","resources_shown":["URL1","URL2","URL3"],"topics":[]}' >> "${VIBESTACK_HOME:-$HOME/.vibestack}/builder-profile.jsonl"
-```
+1. Log the selected resource URLs to the builder profile the way Phase 4.5 does:
+   a fresh entry file from its `mktemp` block, written with the Write tool as
+   `{"date": "<now, ISO 8601 UTC>", "mode": "resources", "project_slug": "<SLUG>", "signal_count": 0, "signals": [], "design_doc": "", "assignment": "", "resources_shown": ["<url>", ...], "topics": []}`,
+   then appended with the Phase 4.5 append block. URLs come from search results, so
+   they never enter shell source.
 
 2. Log to analytics:
 ```bash

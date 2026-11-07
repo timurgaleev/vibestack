@@ -640,6 +640,38 @@ else
   no "office-hours codex block: $(cat "$TMP/err")"
 fi
 
+# Value: protects=builder-profile entries are model-written JSON appended through a validator, so quotes or shell syntax in an assignment never become shell source or a corrupt line; fails_when=the entry goes back to an echo with spliced text, or invalid JSON is appended anyway; why_new=no row covered the profile log; seam=none
+echo "/office-hours: builder-profile entries are appended from the written file"
+fresh_cap
+if block_with "$R/office-hours/SKILL.md" 'PROFILE_APPENDED' > "$TMP/oh-prof.sh" 2>"$TMP/err"; then
+  python3 -I -c 'import json,sys
+print(json.dumps({"date":"2026-01-01T00:00:00Z","mode":"builder","project_slug":"p","signal_count":1,
+  "signals":["taste"],"design_doc":"/x/d.md","assignment":open(sys.argv[1]).read(),"resources_shown":[],"topics":["t"]}))' \
+    "$HOSTILE" > "$TMP/oh-entry.json"
+  cp "$TMP/oh-prof.sh" "$TMP/oh-prof-bad.sh"
+  subst "$TMP/oh-prof.sh" "<ENTRY_FILE>" "$TMP/oh-entry.json"
+  run_block "$TMP/oh-prof.sh" -u _ENTRY
+  PROF="$TMP/home/.vibestack/builder-profile.jsonl"
+  if [ -f "$PROF" ] && python3 -I -c 'import json,sys
+lines=open(sys.argv[1]).read().splitlines(); e=json.loads(lines[-1])
+sys.exit(not (len(lines)==1 and e["assignment"]==open(sys.argv[2]).read() and e["mode"]=="builder"))' "$PROF" "$HOSTILE" \
+     && no_sentinel && [ ! -e "$TMP/oh-entry.json" ]; then
+    ok "the entry lands in the profile as one JSON line, verbatim, and none of it ran"
+  else
+    no "builder profile ($(head -3 "$TMP/run.out" | tr '\n' '|')); sentinels: $(ls "$SENT")"
+  fi
+  printf '{"mode":"builder","signals":"taste"}\n' > "$TMP/oh-bad.json"
+  subst "$TMP/oh-prof-bad.sh" "<ENTRY_FILE>" "$TMP/oh-bad.json"
+  before="$(wc -l < "$PROF" 2>/dev/null | tr -d ' ')"
+  run_block "$TMP/oh-prof-bad.sh" -u _ENTRY; rc=$?
+  after="$(wc -l < "$PROF" 2>/dev/null | tr -d ' ')"
+  [ "$before" = "$after" ] && grep -q 'PROFILE_REJECTED' "$TMP/run.out" \
+    && ok "an entry with a non-list signals field is rejected and nothing is appended" \
+    || no "malformed entry appended (rc=$rc, $before -> $after lines)"
+else
+  no "office-hours profile block: $(cat "$TMP/err")"
+fi
+
 # The file-based pattern only works when the skill may write: a skill that tells
 # the model to use the Write tool must grant it in allowed-tools.
 echo "Write tool granted where it is required"
