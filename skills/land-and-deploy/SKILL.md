@@ -8,15 +8,14 @@ allowed-tools:
   - Write
   - Glob
   - AskUserQuestion
-triggers:
-  - merge and deploy
-  - land the pr
-  - ship to production
+disable-model-invocation: true
 ---
 
 ## When to invoke
 
-Use when: "merge", "land", "deploy", "merge and verify", "land it", "ship it to production".
+Only when the user types `/land-and-deploy`. A merge to production is a one-way door: a
+passing "merge", "land" or "deploy" in conversation is not a request to run it — point to
+the command instead.
 
 ## Preamble
 
