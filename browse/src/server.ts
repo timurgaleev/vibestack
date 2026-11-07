@@ -1318,7 +1318,13 @@ async function handleCommandInternal(
   // A tabId (--tab-id / BROWSE_TAB) pins this request, and any chain or
   // tab-each subcommands it runs, to that tab without moving the shared
   // active tab: requests overlap while handleCommandInternalImpl awaits.
-  const cr = await browserManager.runPinned(body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts));
+  let cr: CommandResult;
+  try {
+    cr = await browserManager.runPinned(body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts));
+  } catch (err: any) {
+    if (!/^Tab \S+ not found/.test(err?.message ?? '')) throw err;
+    cr = { status: 404, json: true, result: JSON.stringify({ error: err.message }) };
+  }
   return { ...cr, result: sanitizeLoneSurrogates(cr.result) };
 }
 

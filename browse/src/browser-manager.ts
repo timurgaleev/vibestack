@@ -821,9 +821,10 @@ export class BrowserManager {
    */
   runPinned<T>(tabId: number | null | undefined, work: () => Promise<T>): Promise<T> {
     if (tabId === undefined || tabId === null) return work();
+    // Running unpinned would drive whatever tab is shared-active, which is
+    // exactly the cross-lane interference a pin exists to prevent.
     if (!this.tabSessions.has(tabId)) {
-      console.warn('[browse] Failed to pin tab', tabId, ': not found');
-      return work();
+      return Promise.reject(new Error(`Tab ${tabId} not found — it was closed; run tabs, or newtab --json for a fresh one`));
     }
     return this.tabPin.run(tabId, work);
   }

@@ -150,6 +150,12 @@ describe.skipIf(!hasChromium)('daemon tabs (real daemon)', () => {
     }
   }, 60_000);
 
+  test('a pin on a tab that does not exist is refused, not run on the shared tab', async () => {
+    const r = await run('url', [], 987654);
+    expect(r.status).not.toBe(200);
+    expect(r.text).toContain('987654');
+  }, 15_000);
+
   test('after every tab is closed outside browse, status and goto recover', async () => {
     const tabs = (await run('tabs')).text;
     const ids = [...tabs.matchAll(/\[(\d+)\]/g)].map(m => Number(m[1]));
@@ -169,6 +175,15 @@ describe.skipIf(!hasChromium)('daemon tabs (real daemon)', () => {
     const goto = await run('goto', [`http://127.0.0.1:${site.port}/back`]);
     expect(goto.status).toBe(200);
     expect((await run('url')).text).toContain('/back');
+
+    // newtab is exempt from recovery, so it has to work with no tab at all.
+    const left = [...(await run('tabs')).text.matchAll(/\[(\d+)\]/g)].map(m => Number(m[1]));
+    const last = JSON.parse((await run('newtab', ['--json'])).text).tabId;
+    for (const id of left) await run('closetab', [String(id)]);
+    await run('js', ['window.close()'], last);
+    for (let i = 0; i < 50 && (await tabCount()) > 0; i++) await Bun.sleep(100);
+    expect(await tabCount()).toBe(0);
+    expect((await run('newtab', ['--json'])).status).toBe(200);
   }, 30_000);
 
   async function tabCount(): Promise<number> {
