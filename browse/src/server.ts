@@ -33,7 +33,8 @@ import {
   initRegistry, validateToken as validateScopedToken, checkScope, checkDomain,
   checkRate, createToken, createSetupKey, exchangeSetupKey, revokeToken,
   rotateRoot, listTokens, serializeRegistry, restoreRegistry, recordCommand,
-  isRootToken, checkConnectRateLimit, type TokenInfo,
+  isRootToken, checkConnectRateLimit, validateScopes, prepareRepair,
+  listPendingSetupKeys, type TokenInfo,
 } from './token-registry';
 import { validateTempPath } from './path-security';
 import { resolveConfig, ensureStateDir, readVersionHash, resolveChromiumProfile, cleanSingletonLocks, isPairAgentEnabled, PAIR_AGENT_OFF_HINT } from './config';
@@ -2237,15 +2238,32 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
             status: 403, headers: { 'Content-Type': 'application/json' },
           });
         }
-        const clientId = url.pathname.slice('/token/'.length);
-        const revoked = revokeToken(clientId);
-        if (!revoked) {
+        let clientId: string;
+        try {
+          clientId = decodeURIComponent(url.pathname.slice('/token/'.length));
+        } catch {
+          return new Response(JSON.stringify({ error: 'Malformed client name' }), {
+            status: 400, headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const count = revokeToken(clientId);
+        if (count === 0) {
           return new Response(JSON.stringify({ error: `Agent "${clientId}" not found` }), {
             status: 404, headers: { 'Content-Type': 'application/json' },
           });
         }
-        console.log(`[browse] Revoked token for: ${clientId}`);
-        return new Response(JSON.stringify({ revoked: clientId }), {
+        // Tabs are owned by client name. Hand them back to root so a later
+        // pairing that reuses the name does not inherit the revoked agent's tabs.
+        // The tokens are already gone; a page stuck answering its title must
+        // not hold the revoke response hostage, so the release is time-boxed.
+        const releaseTabs = browserManager.getTabListWithTitles().then(tabList => {
+          for (const tab of tabList) {
+            if (browserManager.getTabOwner(tab.id) === clientId) browserManager.transferTab(tab.id, 'root');
+          }
+        }).catch(() => {});
+        await Promise.race([releaseTabs, new Promise(resolve => setTimeout(resolve, 2000))]);
+        console.log(`[browse] Revoked ${count} token(s) for: ${clientId}`);
+        return new Response(JSON.stringify({ revoked: clientId, count }), {
           status: 200, headers: { 'Content-Type': 'application/json' },
         });
       }
@@ -2265,7 +2283,13 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
           commandCount: t.commandCount,
           createdAt: t.createdAt,
         }));
-        return new Response(JSON.stringify({ agents }), {
+        const pending = listPendingSetupKeys().map(t => ({
+          clientId: t.clientId,
+          scopes: t.scopes,
+          domains: t.domains,
+          expiresAt: t.expiresAt,
+        }));
+        return new Response(JSON.stringify({ agents, pending }), {
           status: 200, headers: { 'Content-Type': 'application/json' },
         });
       }
@@ -2285,6 +2309,19 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
           const scopes = pairBody.control || pairBody.admin
             ? ['read', 'write', 'admin', 'meta', 'control'] as const
             : (pairBody.scopes || ['read', 'write', 'admin', 'meta']) as const;
+          try {
+            validateScopes(scopes);
+          } catch (err: any) {
+            return new Response(JSON.stringify({ error: err.message }), {
+              status: 400, headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          if (pairBody.clientId) {
+            const { pendingRevoked, sessionRevoked } = prepareRepair(pairBody.clientId, { scopes, domains: pairBody.domains });
+            if (pendingRevoked || sessionRevoked) {
+              console.log(`[browse] Re-pair ${pairBody.clientId}: revoked ${pendingRevoked} pending key(s)${sessionRevoked ? ' and the live session (narrower grant)' : ''}`);
+            }
+          }
           const setupKey = createSetupKey({
             clientId: pairBody.clientId,
             scopes: [...scopes],
