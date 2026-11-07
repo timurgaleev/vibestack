@@ -88,6 +88,14 @@ done
 find . -maxdepth 1 -name '*.gemspec' 2>/dev/null | grep -q . && echo "PROJECT_TYPE:library"
 ```
 
+When more than one `PLATFORM:` line prints, a repo often carries leftovers from an
+earlier host. Ask which one serves production — one option per detected platform, plus
+"none of these" (go to Custom / Manual) — and configure only that one.
+
+Confirm the project type before going on: a `PROJECT_TYPE:` line is a guess (a web app
+can ship a `bin` for its own tooling), and no line means nothing was detected. Ask web
+app / API / CLI / library, with the detected type as the recommendation.
+
 ### Step 3: Platform-specific setup
 
 Based on what was detected, guide the user through platform-specific configuration.
@@ -101,7 +109,13 @@ If `fly.toml` detected:
 3. If installed, verify: `fly status --app {app} 2>/dev/null`
 4. Infer URL: `https://{app}.fly.dev`
 5. Set deploy status command: `fly status --app {app}`
-6. Set health check: `https://{app}.fly.dev` (or `/health` if the app has one)
+6. Set health check: once the production URL is confirmed (below), probe its `/health`:
+   ```bash
+   _C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 '<PRODUCTION_URL>/health' 2>/dev/null) || _C=000
+   echo "FLY_HEALTH_PROBE: $_C"
+   ```
+   Record `/health` only when the probe answers 2xx; anything else, `000` included,
+   means the app has no such route — record the root URL instead.
 
 Ask the user to confirm the production URL. Some Fly apps use custom domains.
 
@@ -117,8 +131,8 @@ If `render.yaml` detected:
 5. Set health check: the inferred URL
 
 Ask the user to confirm. Render uses auto-deploy from the connected git branch — after
-merge to main, Render picks it up automatically. The "deploy wait" in /land-and-deploy
-should poll the Render URL until it responds with the new version.
+a merge into that branch, Render picks it up automatically. The "deploy wait" in
+/land-and-deploy should poll the Render URL until it responds with the new version.
 
 #### Vercel
 
@@ -126,16 +140,26 @@ If vercel.json or .vercel detected:
 
 1. Check for `vercel` CLI: `which vercel 2>/dev/null`
 2. If installed: `vercel ls --prod 2>/dev/null | head -3`
-3. Vercel deploys automatically on push — preview on PR, production on merge to main
+3. Ask whether the project is connected to the repo (Vercel project settings → Git).
+   Vercel deploys on push — preview on PR, production on merge into the production
+   branch — only when the Vercel project is connected to this Git repository. Not
+   connected: the deploy trigger is the command the user runs (e.g. `vercel --prod`).
 4. Set health check: the production URL from vercel project settings
 
 #### Netlify
 
 If netlify.toml detected:
 
-1. Extract site info from netlify.toml
-2. Netlify deploys automatically on push
-3. Set health check: the production URL
+1. Extract build settings from netlify.toml — it does not name the site's URL
+2. Ask for the production URL and confirm it (the `*.netlify.app` name or a custom domain)
+3. Netlify deploys automatically on push when the site is linked to the repo; confirm that
+4. Set health check: the confirmed production URL
+
+#### Heroku / Railway
+
+A `Procfile` or `railway.json`/`railway.toml` gets no dedicated flow. Continue with
+Custom / Manual below, with the platform prefilled (`heroku` or `railway`) and confirmed
+as the first answer.
 
 #### GitHub Actions only
 
@@ -144,17 +168,25 @@ If deploy workflows detected but no platform config:
 1. Read the workflow file to understand what it does
 2. Extract the deploy target (if mentioned)
 3. Ask the user for the production URL
+4. Set deploy status command, naming that one workflow so other workflows' runs never
+   answer for it: `gh run list --workflow <file> --json headSha,status,conclusion`
 
 #### Custom / Manual
 
 If nothing detected, use AskUserQuestion to gather the information:
 
 1. **How are deploys triggered?**
-   - A) Automatically on push to main (Fly, Render, Vercel, Netlify, etc.)
+   - A) Automatically on push to the default branch (Fly, Render, Vercel, Netlify, etc.)
    - B) Via GitHub Actions workflow
    - C) Via a deploy script or CLI command (describe it)
    - D) Manually (SSH, dashboard, etc.)
-   - E) This project doesn't deploy (library, CLI, tool)
+   - E) Not deployed yet — stop here and write nothing; run /setup-deploy again once
+     production exists
+   - F) Never deploys (library, CLI, tool) — record `none` for the platform, URL,
+     trigger, status and health check, skip questions 2 and 3, and go to Step 4
+
+   On E, stop: no Deploy Configuration is written, because a guessed one is what
+   /land-and-deploy would trust.
 
 2. **What's the production URL?** (Free text — the URL where the app runs)
 
@@ -170,8 +202,38 @@ If nothing detected, use AskUserQuestion to gather the information:
 
 ### Step 4: Write configuration
 
-Read CLAUDE.md (or create it). Find and replace the `## Deploy Configuration` section
-if it exists, or append it at the end.
+**Collect what is missing.** Walk the block below and ask for every field not yet confirmed
+by the user — a detected value is a recommendation, not an answer.
+
+**Default branch and merge method** come from the repo's settings:
+
+```bash
+_RV=$(gh repo view --json defaultBranchRef,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed \
+  --jq '"DEFAULT_BRANCH: " + (.defaultBranchRef.name // ""), "MERGE_METHODS_ALLOWED: " + ([(if .squashMergeAllowed then "squash" else empty end), (if .mergeCommitAllowed then "merge" else empty end), (if .rebaseMergeAllowed then "rebase" else empty end)] | join(" "))' 2>/dev/null) || _RV=""
+if [ -n "$_RV" ]; then
+  printf '%s\n' "$_RV"
+else
+  _DB=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
+  _DB="${_DB#origin/}"
+  echo "DEFAULT_BRANCH: ${_DB:-unknown}"
+  echo "MERGE_METHODS_ALLOWED: unknown"
+fi
+```
+
+Offer only the methods on the `MERGE_METHODS_ALLOWED:` line; with exactly one, confirm
+it instead of asking. `unknown` or an empty list means the settings could not be read:
+say so and ask among `squash`, `merge` and `rebase`. A `DEFAULT_BRANCH:` that is empty
+or `unknown` is asked for, never assumed; the answer fills `{default branch}`.
+
+**Confirm before writing.** Show the complete block exactly as it will be written, every
+placeholder filled, and ask:
+
+- A) Write it
+- B) Change a field (then show the block again)
+- C) Cancel — write nothing
+
+Only on A: read CLAUDE.md (or create it). Find and replace the `## Deploy Configuration`
+section if it exists, or append it at the end.
 
 ```markdown
 ## Deploy Configuration (configured by /setup-deploy)
@@ -185,14 +247,18 @@ if it exists, or append it at the end.
 
 ### Custom deploy hooks
 - Pre-merge: {command or "none"}
-- Deploy trigger: {command or "automatic on push to main"}
+- Deploy trigger: {command or "automatic on push to {default branch}"}
 - Deploy status: {command or "poll production URL"}
 - Health check: {URL or command}
 ```
 
+A project that never deploys (Custom / Manual option F) writes `none` on every line
+from Platform to Health check except Merge method and Project type:
+`- Platform: none`, `- Production URL: none`, `- Deploy trigger: none`, and so on.
+
 ### Step 5: Verify
 
-After writing, verify the configuration works:
+After writing, verify the configuration works (skip a check whose field is `none`):
 
 1. If a health check URL was configured, try it:
 ```bash
