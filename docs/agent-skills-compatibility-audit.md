@@ -58,7 +58,7 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Description ≤ 1024 chars (spec limit) | 61/61 PASS | — |
 | YAML frontmatter parseable | 61/61 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 31 skills | address-pr-review, autoplan, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, plan-ceo-review, plan-devex-review, plan-eng-review, qa, qa-only, scrape, setup-browser-cookies, ship, telegram, vibe. Nineteen carry the token in their own SKILL.md (the plan reviews and `autoplan` read sibling skills through it, `vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 32 skills | address-pr-review, autoplan, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, plan-ceo-review, plan-devex-review, plan-eng-review, qa, qa-only, review, scrape, setup-browser-cookies, ship, telegram, vibe. Twenty carry the token in their own SKILL.md (the plan reviews and `autoplan` read sibling skills through it, `review` its checklists and specialists, `vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
 | Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
@@ -135,7 +135,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | qa | — | yes | — | full / full / full |
 | qa-only | — | yes | — | full / full / full |
 | retro | — | — | — | full / full / full |
-| review | — | — | — | full / full / full |
+| review | — | yes | — | full / full / full |
 | scrape | — | yes | — | full / full / full |
 | setup-browser-cookies | — | yes | — | full / full / full |
 | setup-deploy | — | — | — | full / full / full |
