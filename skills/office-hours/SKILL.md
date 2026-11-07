@@ -69,7 +69,14 @@ eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 ```
 
 1. Read `CLAUDE.md`, `TODOS.md` (if they exist).
-2. Run `git log --oneline -30` and `git diff origin/main --stat 2>/dev/null` to understand recent context.
+2. Run `git log --oneline -30`, find the base branch with the block below, then run
+   `git diff "origin/<BASE_BRANCH>" --stat 2>/dev/null` to understand recent context.
+
+{{include lib/snippets/base-branch-detect.md}}
+
+   Here the diff is background, not a review: a `BASE_CONTAINS_HEAD` line only means
+   there is no branch diff to read — say so in one line and carry on.
+
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    ```bash
@@ -287,6 +294,7 @@ Use this mode when the user is building for fun, learning, hacking on open sourc
 2. **Ship something you can show people.** The best version of anything is the one that exists.
 3. **The best side projects solve your own problem.** If you're building it for yourself, trust that instinct.
 4. **Explore before you optimize.** Try the weird idea first. Polish later.
+5. **Name what it unlocks.** When a capability comes up, say what else it makes possible beyond the task in front of them — the second use is often the more exciting one.
 
 **Wild exemplar:**
 
@@ -306,6 +314,10 @@ Both are outcome-framed. Only one has the 'whoa.' Builder mode's job is to surfa
 ### Questions (generative, not interrogative)
 
 Ask these **ONE AT A TIME** via AskUserQuestion. The goal is to brainstorm and sharpen the idea, not interrogate.
+
+**Ask why first.** If the user has not said why they want this, open with that — an open question, no options. The answer reorders everything below.
+
+**Ask only what changes the build.** Ask a listed question only when its answer changes what gets built. Otherwise state your pick as a proposal ("I'd make it shareable as a live URL — say if not") and move on.
 
 - **What's the coolest version of this?** What would make it genuinely delightful?
 - **Who would you show this to?** What would make them say "whoa"?
@@ -882,6 +894,9 @@ section that re-argues a case already closed. Drop template sections that came
 out empty instead of leaving headings with "TBD" under them. There is no page
 limit; length just has to earn itself, because a doc that reads like a
 transcript is one nobody opens twice.
+Tag each decision bullet with whose call it was: `(yours)` when the user decided
+it, `(my call — <reason>)` when you proposed it and they did not push back — a
+reader must be able to tell a choice from a default nobody examined.
 
 **Repo copy.** When the session runs inside a git repository, also write the doc
 to `docs/designs/{topic-slug}.md` — that is where teammates and the plan-review
@@ -1297,14 +1312,19 @@ silently failed to save is worse than never offering the switch:
 
 ### Next-skill handoff
 
-After resources, don't just list the next step — offer to launch it. Use AskUserQuestion to ask which review to run now (default `/plan-eng-review`), then invoke it with the Skill tool in this same session so the user doesn't retype anything:
+Pick the next review from what the session produced: **`/plan-ceo-review`** when
+the scope is still expanding (EXPANSION — the 10-star version is in question),
+**`/plan-eng-review`** when it is well-scoped and ready for architecture, tests and
+edge cases, **`/plan-design-review`** when the work is UI-heavy.
 
-- **`/plan-eng-review`** (default) — well-scoped implementation planning; lock in architecture, tests, edge cases
-- **`/plan-ceo-review`** — ambitious features (EXPANSION mode); rethink the problem, find the 10-star product
-- **`/plan-design-review`** — visual/UX design review
-- Skip — stop here, I'll run it later
+Offer to launch it only when the preamble printed `PROACTIVE` as anything but
+`false` **and** `SESSION_KIND: interactive`. Then use AskUserQuestion with the
+mapped skill as the recommended option, the other two, and "Skip — I'll run it
+later"; on a pick, invoke it with the Skill tool in this same session so the user
+doesn't retype anything; on Skip, stop. Otherwise print one line —
+`Next: /<skill> — <one-line reason>` — and stop without asking or invoking.
 
-On a pick, invoke the chosen skill via the Skill tool. On Skip, stop. The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they read it during their pre-review system audit.
+The design doc at `~/.vibestack/projects/` is automatically discoverable by downstream skills — they read it during their pre-review system audit.
 
 ---
 
