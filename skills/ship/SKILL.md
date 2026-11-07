@@ -2913,7 +2913,7 @@ NEW_VERSION='<NEW_VERSION>'
 [ -s "$PR_BODY_FILE" ] || { echo "ABORT: $PR_BODY_FILE is empty — write the body with the Write tool first" >&2; exit 1; }
 # NO_VERSION: drop the "v$NEW_VERSION " prefix — the title is "<type>: <summary>".
 # glab has no body-file flag: Python reads the file and passes its bytes as one argument.
-python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","create","-b",sys.argv[2],"-t",sys.argv[3],"-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' \
+python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","create","-b",sys.argv[2],"-t",sys.argv[3],"-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' \
   "$PR_BODY_FILE" "<base>" "v$NEW_VERSION <type>: <summary>"
 rm -f "$PR_BODY_FILE"
 ```
