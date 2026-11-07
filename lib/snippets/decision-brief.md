@@ -114,6 +114,9 @@ Read the brief back against this list before it leaves. A brief is read once and
 answered on the spot, so a defect in it does not get corrected later — it
 becomes the wrong decision.
 
+- If a local, read-only, free check (a command, a file read, a render) could
+  settle it, run it and report the result instead of asking. Only preference
+  calls and state-changing or paid checks reach the user.
 - The title names the decision, not the topic: a reader can tell what changes.
 - ELI10 present, grounded in its first sentence, stakes named.
 - Exactly one option carries `(recommended)`, and `Recommendation:` gives the
