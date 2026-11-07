@@ -86,6 +86,20 @@ grep -q 'TBD — needs validation via' "$TMP/spec.md" \
   && ok "unknowns written 'TBD — needs validation via <method>'" || no "TBD validation template missing"
 grep -q -- '--jira <KEY>' "$TMP/spec.md" && ok "Flag Reference lists --jira <KEY>" || no "--jira flag row missing"
 
+echo "/spec seeded answers"
+# The seed-and-confirm rule covers a prior conversation and a design doc too,
+# with each answer naming where it came from and the gaps asked in one round.
+awk 'BEGIN{RS=""} /seed/ && /conversation/ && /design doc/ && /source/ && /one round/ {f=1} END{exit !f}' "$TMP/spec.md" \
+  && ok "conversation and design doc seed Phase 1/2 with a source, gaps asked in one round" \
+  || no "seed-and-confirm rule does not cover a prior conversation or design doc"
+awk 'BEGIN{RS=""} /seed/ && /conversation/ && /Phase 2/ {f=1} END{exit !f}' "$TMP/spec.md" \
+  && ok "seeding reaches Phase 2 answers" || no "seeding stops at Phase 1"
+if awk 'BEGIN{RS=""} /seed/ && /conversation/ && /--from|--context/ {f=1} END{exit !f}' "$TMP/spec.md"; then
+  no "seeding from context grew a flag"
+else
+  ok "seeding from context needs no flag"
+fi
+
 echo "/ship key detection"
 grep -q 'JIRA_HINT:' "$TMP/ship.md" && ok "ship prints JIRA_HINT:" || no "JIRA_HINT: missing"
 awk 'BEGIN{RS=""} /JIRA_KEY: <key>/ && /--jira/ {f=1} END{exit !f}' "$TMP/ship.md" \

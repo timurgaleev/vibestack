@@ -12,7 +12,10 @@
 #     /office-hours keeps its default auto-fix;
 #   - the outside-voice prompt is read-only and treats the plan as data;
 #   - Section 4 drives async-ordering analysis, Section 6 maps requirements to
-#     assertions, and the review depth selector allows capability-level rows.
+#     assertions, and the review depth selector allows capability-level rows;
+#   - a TODO kept in the plan never adds scope, Section 1 opens with the agreed
+#     scope, completeness means coverage, and 0B ends in a REALITY line the
+#     completion summary reports.
 #
 # Usage: test/test-plan-ceo-review.sh [repo-root]
 set -uo pipefail
@@ -105,6 +108,31 @@ printf '%s' "$sec" | grep -qF "Preserve invariants" && printf '%s' "$sec" | grep
 sec="$(section "$CEO_SRC" "### TODOS.md updates")"
 printf '%s' "$sec" | grep -qF "are expansions even when labeled TODOs" \
   && ok "hold scope filters expansion TODOs" || no "hold scope lets TODOs carry expansions"
+# A TODO answered "build it" may only keep work that is already in scope; it
+# never pulls new work into the plan behind the mode the user chose.
+printf '%s' "$sec" | grep -qF "**C)** Keep in this plan as required work (only when already inside accepted scope)" \
+  && ok "TODO option C keeps only in-scope work" || no "TODO option C can add scope"
+printf '%s' "$sec" | grep -qF "Build it now" && no "TODO option C still builds new work now" \
+                                             || ok "no build-it-now TODO option"
+sec="$(section "$CEO_SRC" "### Section 1: Architecture Review")"
+printf '%s' "$sec" | head -12 | grep -qF "**Current scope first.**" \
+  && ok "section 1 opens by publishing the current scope" || no "section 1 does not publish the current scope"
+for line in 'SCOPE: mode <mode>' 'SCOPE: accepted <item; item | none>' 'SCOPE: deferred <item; item | none> — rejected <item; item | none>'; do
+  printf '%s' "$sec" | grep -qF -- "$line" && ok "scope line: $line" || no "scope line missing: $line"
+done
+
+echo "completeness and reality"
+! has "$CEO_SRC" "Boil the lake." && ok "philosophy drops boil-the-lake" || no "philosophy still says boil the lake"
+! has "$CEO_SRC" "always prefer A" && ok "no blanket prefer-the-bigger-approach rule" || no "still always prefers the bigger approach"
+has "$CEO_SRC" "* COMPLETENESS IS COVERAGE:" && ok "completeness is framed as coverage" || no "completeness not framed as coverage"
+has "$CEO_SRC" "* Data model: storage follows the queries" && ok "data-model preference listed" || no "no data-model preference"
+sec="$(sed -n '/^### 0B\. Existing Code Leverage/,/^### 0C\. /p' "$CEO_SRC")"
+printf '%s' "$sec" | grep -qF "#### Reality check" && ok "0B carries the reality check" || no "0B has no reality check"
+printf '%s' "$sec" | grep -qF '`REALITY: surface-check pass`' && printf '%s' "$sec" | grep -qF '`REALITY: surface-check finding <summary> <file:line|sha>`' \
+  && ok "reality check ends in a REALITY line" || no "reality check has no REALITY line"
+sec="$(section "$CEO_SRC" "### Completion Summary")"
+printf '%s' "$sec" | grep -qE '^  \| Reality +\| pass / finding' && ok "completion summary reports the reality check" \
+                                                                || no "completion summary has no Reality row"
 
 echo "spec review loop"
 # The CEO plan template carries its own headings, so cut by the next step instead.
