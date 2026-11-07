@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.55.18 — 2026-11-07
+
+### Changed
+
+- **`/qa` and `/qa-only` treat wizard steps on a non-local target as
+  mutating.** Multi-step flows often save each step as you leave it, so filling
+  a field in a wizard or dialog step and leaving it (Next, Back, Cancel, close)
+  need the same one-time consent as any other change to a real account. Before
+  an allowed Save or Submit, every filled or selected value is read back without
+  touching the page and compared with what was meant; a mismatch or a value that
+  cannot be read stops the submit. Running a feature end to end is not
+  permission to change a non-local target either.
+
+### Fixed
+
+- **Plan files no longer get literal backslashes in the review report.** The
+  report template and the `/plan-devex-review` hall-of-fame pointer escaped
+  their backticks, and the escapes were copied into the plan file as written.
+
 ## 1.55.17 — 2026-11-07
 
 ### Added
