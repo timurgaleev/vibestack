@@ -2596,8 +2596,7 @@ during Steps 4-6":
 
    Any `MOVED review:` line other than a `DOC_HELD_FILES` path — `unknown` included —
    means code nobody reviewed is about to ship: run Steps 9-11 again on the full diff
-   with a fresh `START_TREE`, then return here. A lane with no `MOVED <lane>:` line may
-   add `package.json,package-lock.json,npm-shrinkwrap.json` to its `--allow-paths` below.
+   with a fresh `START_TREE`, then return here.
 
 1. **Test verification:** For each Step 5 lane, with its exact label and command:
 
@@ -2613,11 +2612,11 @@ during Steps 4-6":
      documentation edits (docs are inputs to doc tests, linters and generators) — or
      there is no proven run. Re-run the lane with the Step 5 wrapper
      (`vibe-evidence run --skill ship --label <lane> -- '<command>'`), paste fresh
-     output, and check again. Stale output from Step 5 is NOT acceptable.
+     output, and check again. Read the runner's count from that output as Step 5
+     does: zero tests ran is a failure here too. Stale output from Step 5 is NOT acceptable.
 
-   Only CHANGELOG.md, VERSION and TODOS.md may be allow-listed, plus the npm manifests when Step 16.0 printed no `MOVED <lane>:` line
-   for this lane (they then differ in nothing but their own version). Never add any
-   other path a test, build or generator reads — a dependency, a fixture, a doc. If any
+   Only CHANGELOG.md, VERSION and TODOS.md may be allow-listed. Never add a path a
+   test, build or generator reads — a `package.json` edit, a fixture, a doc. If any
    test reads one of those three files itself (a version check, a changelog lint),
    drop that file from the list and re-run.
 

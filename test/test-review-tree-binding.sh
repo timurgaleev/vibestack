@@ -208,14 +208,17 @@ chk "a source edit after the review is a moved path" "$(moved review)" "a.txt"
 S16T=$(printf '%s' "$S16")
 printf '%s' "$S16T" | grep -q 'Steps 9-11' && ok "a moved path sends the ship back through Steps 9-11" || no "no re-review rule"
 printf '%s' "$S16T" | grep -q 'DOC_HELD_FILES' && ok "held doc files are not a moved path" || no "DOC_HELD_FILES not excluded"
-# 16.0 lets an unmoved lane allow-list the npm manifests; 16.1 must agree.
-if printf '%s' "$S16T" | grep -qF 'a `package.json` edit'; then
-  no "Step 16.1 forbids the manifest allowance Step 16.0 grants"
-elif printf '%s' "$S16T" | grep -qF 'plus the npm manifests when Step 16.0 printed no `MOVED <lane>:` line'; then
-  ok "Step 16.1 allows the npm manifests only for a lane 16.0 did not move"
+# A version bump in package.json is something a test can read: no lane may
+# allow-list a manifest, and a re-run lane is counted again like Step 5.
+if printf '%s' "$S16T" | grep -qF -- '--allow-paths` below'; then
+  no "Step 16.0 still lets a lane allow-list the npm manifests"
+elif printf '%s' "$S16T" | grep -qF 'a `package.json` edit'; then
+  ok "no lane allow-lists a manifest a test can read"
 else
-  no "Step 16.1 does not state the manifest allowance"
+  no "Step 16.1 no longer forbids allow-listing package.json"
 fi
+printf '%s' "$S16T" | grep -qF 'zero tests ran is a failure here too' \
+  && ok "a re-run stale lane is counted again" || no "a re-run stale lane is not counted again"
 
 DASH=$(section '## Review Readiness Dashboard' '## Step 2:')
 printf '%s' "$DASH" | grep -qF 'compare it with \`TREE_NOW\`' && ok "ship staleness compares trees first" || no "ship staleness still commit-only"
