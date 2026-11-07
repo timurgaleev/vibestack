@@ -479,6 +479,50 @@ test_copilot_claimed_file_updates() {
   fi
 }
 
+# --- P16: Cursor permissions use Cursor's grammar and keep the user's rules ---
+# Cursor reads Shell(...), Read(...), Write(...), WebFetch(...) and Mcp(...);
+# a Bash(...) token is not part of its grammar, so a deny written that way
+# protects nothing. The sync also used to replace `permissions` wholesale.
+test_cursor_permissions() {
+  local sb; sb="$(new_sandbox)" || { _fail "P16: no sandbox"; return; }
+  run_config "$sb" --target=cursor >/dev/null 2>&1
+  local f="$sb/home/.cursor/cli-config.json"
+  if [[ -f "$f" ]] && ! grep -q 'Bash(' "$f"; then
+    _pass "P16: a fresh Cursor install carries no Bash( token"
+  else
+    _fail "P16: a fresh Cursor install is missing or carries a Bash( token"
+  fi
+
+  python3 - "$f" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["permissions"]["allow"].append("Shell(my-own-tool)")
+d["permissions"]["deny"] += ["Read(my-own-secret/**)", "Bash(shutdown:*)", "Bash(chown -R * /:*)"]
+d["authInfo"] = {"email": "someone@example.com"}
+json.dump(d, open(p, "w"), indent=2)
+PY
+  run_config "$sb" --target=cursor >/dev/null 2>&1
+
+  if python3 - "$f" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+perms = d["permissions"]
+assert "Shell(my-own-tool)" in perms["allow"], "user allow entry lost"
+assert "Read(my-own-secret/**)" in perms["deny"], "user deny entry lost"
+assert "Shell(shutdown)" in perms["deny"], "shipped Shell deny missing"
+assert d.get("authInfo") == {"email": "someone@example.com"}, "login lost"
+PY
+  then
+    _pass "P16: a sync keeps the user's Cursor rules and login next to ours"
+  else
+    _fail "P16: a sync dropped the user's Cursor rules or login"
+  fi
+  grep -q 'Bash(' "$f" \
+    && _fail "P16: a withdrawn Bash( token survived the sync" \
+    || _pass "P16: the withdrawn Bash( tokens were dropped on sync"
+}
+
 echo "configuration phase (executable)"
 echo ""
 test_install_and_idempotency
@@ -496,6 +540,7 @@ test_copilot_user_content_survives
 test_copilot_uninstall_round_trip
 test_copilot_foreign_file_kept
 test_copilot_claimed_file_updates
+test_cursor_permissions
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

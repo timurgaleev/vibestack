@@ -63,6 +63,7 @@ jobs:
           - test-document-release.sh
           - test-document-generate-pr-body.sh
           - test-cso-contract.sh
+          - test-investigate-contract.sh
           - test-review-checklist.sh
           - test-ship-doc-contract.sh
           - test-ship-release-gates.sh
@@ -105,6 +106,8 @@ jobs:
           - test-snippet-text.sh
           - test-aws-context.sh
           - test-base-branch-detect.sh
+          - test-qa-rubric.sh
+          - test-office-hours-contract.sh
     steps:
       - uses: actions/checkout@v4
 

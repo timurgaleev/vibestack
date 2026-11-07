@@ -78,6 +78,12 @@ check "'Bash(their-own-tool:*)' in d['permissions']['allow']"      "S4: a machin
 check "'Bash(their-own-danger:*)' in d['permissions']['deny']"     "S5: a machine's own deny entry survives"
 check "not {'Bash(curl * | bash:*)', 'Bash(curl * | sh:*)', 'Bash(chown -R * /:*)'} & {r for r in d['permissions']['deny'] if isinstance(r, str)}" "S5b: deny rules the pack withdrew are dropped"
 check "{'not': 'a string'} in d['permissions']['deny']" "S5c: a non-string deny entry survives the retirement filter"
+check "{'Read(~/.ssh/id_*)', 'Read(~/.ssh/*.pem)', 'Read(~/.aws/credentials)', 'Read(~/.netrc)', 'Read(~/.config/gh/hosts.yml)', 'Read(~/.docker/config.json)'} <= {r for r in d['permissions']['deny'] if isinstance(r, str)} and 'Bash(their-own-danger:*)' in d['permissions']['deny']" \
+                                                                   "S5d: secret-path read denies arrive next to the machine's own denies"
+# Kept narrow on purpose: an Edit deny on ~/.ssh would block a user's own
+# ssh-config edits, and a project .env deny breaks repos that template one.
+check "not any(isinstance(r, str) and (r.startswith('Edit(') or '.env' in r) for r in json.load(open('$SRC'))['permissions']['deny'])" \
+                                                                   "S5e: no Edit deny and no project .env deny is shipped"
 check "d.get('model') == 'some-local-model'"                       "S6: a key the repo does not ship survives"
 
 # Repo-shipped state arrives.
@@ -121,6 +127,56 @@ check "sum('vibe-compact-snapshot' in h.get('command', '') for e in d['hooks']['
 python3 "$MERGE" "$SRC" "$SB/out.json" > "$SB/out2.json" 2>/dev/null
 if cmp -s "$SB/out.json" "$SB/out2.json"; then _pass "S20: the merge is idempotent"
 else _fail "S20: a second merge changed the result"; fi
+
+# --- Cursor cli-config.json --------------------------------------------------
+# The file also holds the user's Cursor login and model choice, so the merge
+# touches only the keys the pack ships, and permissions are a union: an entry
+# the user added survives a sync, and an entry the pack withdrew is dropped.
+CSRC="$HERE/../config/cursor/cli-config.json"
+CMERGE="$SB/cursor-merge.py"
+CSTART=$(grep -n 'merged=\$(python3 .*CURSOR_CLI_CONFIG_SRC' "$INSTALL" | head -1 | cut -d: -f1)
+CEND=$(awk -v s="$CSTART" 'NR>s && /^PYEOF$/{print NR; exit}' "$INSTALL")
+if [[ -z "$CSTART" || -z "$CEND" ]]; then
+  _fail "C0: could not locate the cursor cli-config merge block"
+else
+  sed -n "$((CSTART+1)),$((CEND-1))p" "$INSTALL" > "$CMERGE"
+  # A machine that synced an earlier pack: the old Bash(...) tokens are still
+  # there, next to the user's own rules and personal keys.
+  cat > "$SB/cdst.json" <<'JSON'
+{
+  "version": 1,
+  "permissions": {
+    "allow": ["Bash(*)", "WebFetch", "WebSearch", "Shell(my-own-tool)"],
+    "deny": ["Bash(shutdown:*)", "Bash(chown -R * /:*)", "Bash(rm -rf /)", "Read(my-own-secret/**)"]
+  },
+  "authInfo": {"email": "someone@example.com"},
+  "model": "their-model"
+}
+JSON
+  if python3 "$CMERGE" "$CSRC" "$SB/cdst.json" > "$SB/cout.json" 2>"$SB/cerr.txt" && [[ -s "$SB/cout.json" ]]; then
+    ccheck() {
+      if python3 -c "
+import json,sys
+d=json.load(open('$SB/cout.json'))
+s=json.load(open('$CSRC'))
+sys.exit(0 if ($1) else 1)
+" 2>/dev/null; then _pass "$2"; else _fail "$2"; fi
+    }
+    ccheck "'Shell(my-own-tool)' in d['permissions']['allow']"       "C1: a user's own Cursor allow entry survives a sync"
+    ccheck "'Read(my-own-secret/**)' in d['permissions']['deny']"    "C2: a user's own Cursor deny entry survives a sync"
+    ccheck "set(s['permissions']['deny']) <= set(d['permissions']['deny']) and set(s['permissions']['allow']) <= set(d['permissions']['allow'])" \
+                                                                     "C3: every shipped Cursor rule arrives"
+    ccheck "not any(r.startswith('Bash(') for k in ('allow', 'deny') for r in d['permissions'][k]) and not {'WebFetch', 'WebSearch'} & set(d['permissions']['allow'])" \
+                                                                     "C4: the withdrawn Bash(...) and bare web tokens are dropped"
+    ccheck "d.get('authInfo') == {'email': 'someone@example.com'} and d.get('model') == 'their-model'" \
+                                                                     "C5: the user's login and model are untouched"
+    python3 "$CMERGE" "$CSRC" "$SB/cout.json" > "$SB/cout2.json" 2>/dev/null
+    cmp -s "$SB/cout.json" "$SB/cout2.json" && _pass "C6: the Cursor merge is idempotent" \
+                                            || _fail "C6: a second Cursor merge changed the result"
+  else
+    _fail "C0: cursor merge failed — $(head -1 "$SB/cerr.txt")"
+  fi
+fi
 
 echo "----"
 echo "PASS=$PASS FAIL=$FAIL"

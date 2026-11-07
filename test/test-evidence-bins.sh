@@ -84,7 +84,8 @@ git -C "$REPO" checkout -q -- a.txt
 LEDGER="$VIBESTACK_HOME/projects/repo/evidence.jsonl"
 [ -f "$LEDGER" ] || LEDGER=$(find "$VIBESTACK_HOME" -name evidence.jsonl | head -1)
 BEFORE=$(wc -l < "$LEDGER" | tr -d ' ')
-(cd "$REPO" && "$E" run --skill t --label leak -- echo "AKIAIOSFODNN7EXAMPLE" >/dev/null 2>&1)
+# The AWS documentation key (AKIA...EXAMPLE) is a placeholder to every sink; a live shape is not.
+(cd "$REPO" && "$E" run --skill t --label leak -- echo "AKIA""QWERTYUIOPASDFGH" >/dev/null 2>&1)
 RC=$?; AFTER=$(wc -l < "$LEDGER" | tr -d ' ')
 chk "a secret-bearing command is refused" "$RC" "2"
 chk "and nothing is appended for it" "$AFTER" "$BEFORE"

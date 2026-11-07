@@ -75,12 +75,7 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
+{{include lib/snippets/base-branch-detect.md}}
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -152,58 +147,10 @@ After the user chooses, execute their choice (commit or stash), then continue wi
 
 **Read the project's CLAUDE.md (and TESTING.md if present) FIRST.** If it documents a test command, the project already told you: no detection, no bootstrap.
 
-**Otherwise gather markers. Every marker below is EVIDENCE for the question you ask — never a command to run blind.** A marker tells you which ecosystem you're in and which command to OFFER. It does not tell you the command works. Do not execute a candidate test command to "check" it: a probe on a project that never had that runner fails loudly and teaches you nothing, and installing a second framework over a working one is worse.
+{{include lib/snippets/test-bootstrap.md}}
 
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Definitive ecosystem markers (presence = ecosystem, NOT a command to run)
-[ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django MARKER:manage.py"
-{ [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
-{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
-[ -f package.json ] && echo "RUNTIME:node"
-[ -f go.mod ] && echo "RUNTIME:go"
-[ -f Cargo.toml ] && echo "RUNTIME:rust"
-[ -f composer.json ] && echo "RUNTIME:php"
-[ -f mix.exs ] && echo "RUNTIME:elixir"
-[ -f pom.xml ] && echo "RUNTIME:jvm BUILD:maven"
-{ [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "RUNTIME:jvm BUILD:gradle"
-# Detect sub-frameworks
-[ -f Gemfile ] && grep -q "rails" Gemfile 2>/dev/null && echo "FRAMEWORK:rails"
-[ -f package.json ] && grep -q '"next"' package.json 2>/dev/null && echo "FRAMEWORK:nextjs"
-# Existing test path — config files, declared scripts, AND test FILES.
-# A project with real tests and no config file is the common miss.
-ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini tox.ini phpunit.xml* 2>/dev/null
-[ -f package.json ] && grep -q '"test"[[:space:]]*:' package.json && echo "SCRIPT:package.json test"
-[ -f Makefile ] && grep -qE '^(test|check):' Makefile && echo "TARGET:make test"
-[ -f pyproject.toml ] && grep -q "pytest" pyproject.toml && echo "CONFIG:pyproject pytest"
-git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\.py$|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
-# Rust keeps unit tests inside src/, so file names alone miss them
-[ -f Cargo.toml ] && git grep -lF '#[test]' -- 'src' >/dev/null 2>&1 && echo "TESTS:rust in-source"
-# Check opt-out marker
-[ -f .vibestack/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
-```
-
-Map the markers to the command you will OFFER — never to one you run on a guess:
-
-| Marker | Ecosystem | Candidate command to offer |
-|--------|-----------|----------------------------|
-| `manage.py` | Django | `python manage.py test` (or `pytest` when pytest-django is in the deps) |
-| `pytest.ini` / `tox.ini` / pytest in `pyproject.toml` / `test_*.py` | Python | `pytest` |
-| `go.mod` (+ any `*_test.go`) | Go | `go test ./...` |
-| `Cargo.toml` | Rust | `cargo test` |
-| `pom.xml` | JVM (Maven) | `mvn test` |
-| `build.gradle` / `build.gradle.kts` | JVM (Gradle) | `./gradlew test` |
-| `Gemfile` / `Rakefile` / `.rspec` | Ruby | `bundle exec rspec`, `bin/rails test`, or `rake test` |
-| `mix.exs` | Elixir | `mix test` |
-| `composer.json` | PHP | `composer test` or `./vendor/bin/phpunit` |
-| `package.json` with a `test` script | Node | that script, run with the package manager the lockfile names |
-| `Makefile` with a `test:` target | any | `make test` |
-
-**If ANY existing-test evidence appears** (a config file, a declared test script or make target, a nonzero `TESTFILES:` count, or `TESTS:rust in-source`): the project has tests. **Do NOT bootstrap.** Print "Existing tests detected: {the evidence}." Then get the command from CLAUDE.md/TESTING.md if documented, otherwise via AskUserQuestion offering the candidates from the table above plus "Other", and persist the answer to CLAUDE.md's `## Testing` section so it is never asked again. When the ecosystem ships a runner (Django, Go, Rust, Elixir, Maven/Gradle), that runner is the candidate — never install a second framework beside a working one.
 Read 2-3 existing test files to learn conventions (naming, imports, assertion style, setup patterns).
 Store conventions as prose context for later phases. **Skip the rest of bootstrap.**
-
-Absent config files and absent `tests/` directories are NOT evidence of "no tests": Django keeps tests in `<app>/tests.py`, Go in `*_test.go` beside the source, Rust in `#[test]` blocks inside `src/`. A green `python manage.py test` with no `pytest.ini` is a tested project, not a bootstrap candidate.
 
 **If BOOTSTRAP_DECLINED** appears: Print "Test bootstrap previously declined — skipping." **Skip the rest of bootstrap.**
 
@@ -366,6 +313,8 @@ Before falling back to git diff heuristics, check for richer test plan sources:
 
 ## Phases 1-6: QA Baseline
 
+{{include lib/snippets/qa-scope.md}}
+
 ## Modes
 
 ### Diff-aware (automatic when on a feature branch with no URL)
@@ -386,7 +335,7 @@ This is the **primary mode** for developers verifying their work. When the user 
    - API endpoints → test them directly with `$B js "await fetch('/api/...')"`
    - Static pages (markdown, HTML) → navigate to them directly
 
-   **If no obvious pages/routes are identified from the diff:** Do not skip browser testing. The user invoked /qa because they want browser-based verification. Fall back to Quick mode — navigate to the homepage, follow the top 5 navigation targets, check console for errors, and test any interactive elements found. Backend, config, and infrastructure changes affect app behavior — always verify the app still works.
+   **If no obvious pages/routes are identified from the diff:** the change still gets tested — on the surface "Choosing the surface" selects. A CLI, library, job or API-only change is a functional surface: follow "Functional surface", not a homepage smoke test. When the app has pages that run on the changed backend, config or infrastructure, the surface is mixed: probe the changed behavior functionally, and run Quick mode in the browser (homepage, top 5 navigation targets, console, interactive elements) to verify the app still works.
 
 3. **Detect the running app** — probe common local dev ports for a real HTTP answer (a browse `goto` is not a liveness check: it can exit 0 on a refused connection):
    ```bash
@@ -416,7 +365,7 @@ This is the **primary mode** for developers verifying their work. When the user 
 Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced issues. Produce health score. Takes 5-15 minutes depending on app size.
 
 ### Quick (`--quick`)
-30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce health score. No detailed issue documentation.
+30-second smoke test. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? Produce a health score labelled partial coverage: the accessibility checks do not run, so Accessibility is `not run`. No detailed issue documentation.
 
 ### Regression (`--regression <baseline>`)
 Run full mode, then compare with the prior baseline resolved at setup — `prior-baseline.json` in this run's directory, copied from the `--regression` path or the newest earlier run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
@@ -424,6 +373,8 @@ Run full mode, then compare with the prior baseline resolved at setup — `prior
 ---
 
 {{include lib/snippets/qa-probe-consent.md}}
+
+{{include lib/snippets/qa-functional.md}}
 
 ---
 
@@ -433,7 +384,7 @@ Run full mode, then compare with the prior baseline resolved at setup — `prior
 
 1. Find browse binary (see Setup above)
 2. Create this run's report directory (see Setup above)
-3. Copy report template from `qa/templates/qa-report-template.md` to `$REPORT_DIR`
+3. Copy report template from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa}/templates/qa-report-template.md` to `$REPORT_DIR`
 4. Start timer for duration tracking
 
 ### Phase 2: Authenticate (if needed)
@@ -497,7 +448,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
 $B console --errors
 ```
 
-Then follow the **per-page exploration checklist** (see `qa/references/issue-taxonomy.md`):
+Then follow the **per-page exploration checklist** (see `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa}/references/issue-taxonomy.md`):
 
 1. **Visual scan** — Look at the annotated screenshot for layout issues
 2. **Interactive elements** — Click buttons, links, controls. Do they work? (NON-LOCAL: consent first; never the logout/delete link class)
@@ -513,6 +464,7 @@ Then follow the **per-page exploration checklist** (see `qa/references/issue-tax
    $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
    $B viewport 1280x720
    ```
+8. **Accessibility (manual, mandatory)** — outside quick mode, run the "Accessibility checks" in the Health Score Rubric below on every page.
 
 **Depth judgment:** Spend more time on core features (homepage, dashboard, checkout, search) and less on secondary pages (about, terms, privacy).
 
@@ -550,7 +502,7 @@ REPORT_DIR='<REPORT_DIR>'
 $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 ```
 
-**Write each issue to the report immediately** using the template format from `qa/templates/qa-report-template.md`.
+**Write each issue to the report immediately** using the template format from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa}/templates/qa-report-template.md`.
 
 ### Phase 6: Wrap Up
 
@@ -571,49 +523,14 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
    ```
 
 **Regression mode:** After writing the report, load `$REPORT_DIR/prior-baseline.json` — never the `baseline.json` this run just wrote, so the run never compares with itself. With `PRIOR_BASELINE: none` or `BASELINE_MISSING`, skip the comparison and say why in the report. Compare:
-- Health score delta
+- Health score delta — only when both runs scored the same categories (see "Comparing scores" in the rubric)
 - Issues fixed (in baseline but not current)
 - New issues (in current but not baseline)
 - Append the regression section to the report
 
 ---
 
-## Health Score Rubric
-
-Compute each category score (0-100), then take the weighted average.
-
-### Console (weight: 15%)
-- 0 errors → 100
-- 1-3 errors → 70
-- 4-10 errors → 40
-- 10+ errors → 10
-
-### Links (weight: 10%)
-- 0 broken → 100
-- Each broken link → -15 (minimum 0)
-
-### Per-Category Scoring (Visual, Functional, UX, Content, Performance, Accessibility)
-Each category starts at 100. Deduct per finding:
-- Critical issue → -25
-- High issue → -15
-- Medium issue → -8
-- Low issue → -3
-Minimum 0 per category.
-
-### Weights
-| Category | Weight |
-|----------|--------|
-| Console | 15% |
-| Links | 10% |
-| Visual | 10% |
-| Functional | 20% |
-| UX | 15% |
-| Performance | 10% |
-| Content | 5% |
-| Accessibility | 15% |
-
-### Final Score
-`score = Σ (category_score × weight)`
+{{include lib/snippets/qa-health-rubric.md}}
 
 ---
 
@@ -651,14 +568,14 @@ Minimum 0 per category.
 2. **Verify before documenting.** Retry the issue once to confirm it's reproducible, not a fluke.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Find bugs black-box.** Discovery and probing go through the browser, as a user, not a developer. Read source only to map a diff to pages (diff-aware mode) and inside the Phase 8 fix loop.
+5. **Find bugs black-box.** Discovery and probing go through the browser, as a user, not a developer. Read source only to map a diff to pages (diff-aware mode), to build the contract map on a functional surface, and inside the Phase 8 fix loop.
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
 7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
 9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
 10. **Use `snapshot -C` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
 11. **Show screenshots to the user.** After every `$B screenshot`, `$B snapshot -a -o`, or `$B responsive` command, use the Read tool on the output file(s) so the user can see them inline. For `responsive` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.
-12. **Never refuse to use the browser.** When the user invokes /qa or /qa-only, they are requesting browser-based testing. Never suggest evals, unit tests, or other alternatives as a substitute. Even if the diff appears to have no UI changes, backend changes affect app behavior — always open the browser and test.
+12. **Never refuse to use the browser on a selected browser surface.** When the surface is browser or mixed, open the browser and test — never suggest evals, unit tests, or other alternatives as a substitute, even if the diff appears to have no UI changes. On a functional surface the contract-map probes are the test, and a unit-test run does not replace them either.
 
 Record baseline health score at end of Phase 6.
 
@@ -870,7 +787,7 @@ After all fixes are applied:
 
 1. Re-run QA on all affected pages
 2. Compute final health score
-3. **If final score is WORSE than baseline:** WARN prominently — something regressed
+3. **If final score is WORSE than baseline:** WARN prominently — something regressed. Compare the two scores only when both runs scored the same categories; otherwise compare per category, as "Comparing scores" in the rubric says
 
 ---
 

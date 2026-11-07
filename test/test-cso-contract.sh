@@ -18,7 +18,17 @@
 #   - agent-tooling pin classification and harness-surface rules, with the
 #     wildcard allow judged by its compensating control;
 #   - the blanket exclusions for own skills, UUIDs, env vars, dev dependencies,
-#     removed secrets and pull_request_target are gone.
+#     removed secrets and pull_request_target are gone, and exclusions 3, 12
+#     and 19 no longer contradict the amplification and reachability rules;
+#   - a daily finding names entrypoint, boundary, in-scope impact and controls
+#     checked (template and JSON), verifiers get an invariant, are capped at 3
+#     and record dissent, and the shared confidence-calibration table is used;
+#   - Phase 8 scans every runtime's skill roots, and both /cso and /mcp-review
+#     read every runtime's MCP config through npx/uvx/pipx/docker wrappers;
+#   - host-safe lockfile scanners, optional installed scanners, env hygiene,
+#     webhook depth, --paths, gap lines and learnings without vuln detail;
+#   - the report-save block, run in scratch repos: 0700 directory, 0600 file,
+#     .vibestack/ added to info/exclude once, and only when nothing ignores it.
 #
 # Usage: test/test-cso-contract.sh [repo-root]
 set -euo pipefail
@@ -262,6 +272,137 @@ hasnt "env var precedent narrowed"         '3. Environment variables and CLI fla
 hasnt "pull_request_target precedent"      '11. `pull_request_target` without PR ref checkout is safe.'
 hasnt "removed-secret exclusion"           'removed in the same initial-setup PR'
 has   "dev deps with CI credentials"       'publish credentials'
+has   "path-only SSRF needs a harmless host" 'exposes nothing beyond what the caller can already reach'
+has   "internal path SSRF is A01"          'a path on an internal or metadata host is A01'
+has   "#3 defers to #1"                    'defers to the amplification exception in exclusion 1'
+has   "#19 needs unreachable function"     'and the vulnerable function is unreachable'
+
+echo "supported-finding bar"
+has   "8/10 stays a floor"                 'The 8/10 score is a floor, not proof.'
+has   "entrypoint field"                   '* **Attacker-controlled entrypoint:**'
+has   "boundary field"                     '* **Boundary crossed:**'
+has   "in-scope impact field"              '* **In-scope impact:**'
+has   "controls field"                     '* **Controls checked:**'
+has   "missing element drops daily"        'A daily candidate missing any of the four is dropped'
+# A live-account finding has no request in repository code; the four-part bar
+# must not drop the Phase 5b findings that phase is required to report.
+has   "Phase 5b kept under the finding bar" 'never dropped for lacking a request in repository code'
+before5b() { awk -v a="$1" -v b="$2" 'index($0,a)&&!x{x=NR} index($0,b)&&!y{y=NR} END{exit !(x&&y&&x<=y)}' "$SKILL"; }
+before5b 'A daily candidate missing any of the four is dropped' 'never dropped for lacking a request in repository code' \
+  && ok "the 5b carve-out sits with the bar" || no "the 5b carve-out sits with the bar"
+has   "confidence calibration snippet"     'Force its confidence to exactly one of:'
+hasnt "inline calibration copy gone"       'Force its confidence to 4-5 (suppressed from the main report)'
+
+echo "verifier"
+has   "verifier gets an invariant"         'a one-line invariant'
+has   "verifier never sees the title"      'never the finding title or the scan'"'"'s reasoning'
+has   "verifier checks controls"           'callers, middleware, config and existing mitigations'
+has   "at most three verifiers"            'at most 3 verifier agents'
+has   "dissent recorded"                   '`verifier_dissent`'
+has   "worst variant sets severity"        "parent finding's severity is the worst variant's"
+has   "finding surfaced early"             'FINDING <n> [SEV] file:line — title'
+
+python3 -I - "$SKILL" > "$TMP/schema2.out" 2>&1 <<'PY' && ok "schema carries finding-bar, dissent and paths fields" || { no "schema carries finding-bar, dissent and paths fields"; cat "$TMP/schema2.out"; }
+import json, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+at = text.index("using this schema:")
+start = text.index("```json\n", at) + len("```json\n")
+end = text.index("\n```", start)
+doc = json.loads(text[start:end])
+assert "paths" in doc, "paths"
+f = doc["findings"][0]
+for key in ("entrypoint", "boundary", "impact", "controls_checked", "verifier_dissent"):
+    assert key in f, key
+PY
+
+echo "skill supply chain roots"
+for root in .claude/skills .agents/skills .github/skills .cursor/skills .kiro/skills .claude/plugins; do
+  has "Tier 1 root $root" "\`$root\`"
+done
+has   "Tier 2 copilot root"                '`${COPILOT_HOME:-~/.copilot}/skills`'
+has   "every file, not only SKILL.md"      'every file under those roots'
+has   "download destination question"      'Who controls the download destination'
+has   "hook interpolation question"        'interpolate tool input'
+has   "inherited environment question"     'inherited environment'
+hasnt "SKILL.md-only listing gone"         'ls -la .claude/skills/ 2>/dev/null'
+
+echo "MCP launch-spec discovery"
+MCP="$TMP/mcp-review/SKILL.md"
+VIBESTACK_REPO_ROOT="$SRC" "$HERE/bin/vibe-render-skill" "$SRC/skills/mcp-review/SKILL.md" "$MCP" >/dev/null 2>&1 || : > "$MCP"
+for doc in "$SKILL" "$MCP"; do
+  name="$(basename "$(dirname "$doc")")"
+  for needle in '.cursor/mcp.json' '.vscode/mcp.json' '.kiro/settings/mcp.json' '`[mcp_servers]`' '.github/mcp.json' \
+                'npx --package' 'uvx --from' 'pipx run --spec' 'options before the image' \
+                'never executed' 'the version the team reviewed'; do
+    if grep -qF -- "$needle" "$doc"; then ok "$name: $needle"; else no "$name: $needle (missing)"; fi
+  done
+done
+
+echo "host-safe supply chain and scanners"
+has   "lockfile-only osv"                  'osv-scanner --lockfile'
+has   "npm audit host-safe"                'npm audit --package-lock-only --registry=https://registry.npmjs.org/ --userconfig=/dev/null'
+has   "pip-audit host-safe"                '--require-hashes --no-deps --disable-pip'
+has   "registry redirect is a lead"        'redirects a registry'
+has   "never hydrates node_modules"        'never hydrates `node_modules`'
+has   "gitleaks redacted to a 0600 file"   'gitleaks git --redact'
+has   "zizmor offline"                     'zizmor --offline'
+# trivy config never reads the vulnerability DB; the rules bundle is what it
+# would fetch, so the check-update skip is the one that keeps it offline.
+has   "trivy no rules or db update"        'trivy config --skip-check-update --skip-db-update'
+# `cargo audit` and `bundle audit` dispatch through the audited repo's own
+# cargo aliases and Bundler plugins; the scanner binaries are run directly.
+has   "cargo-audit binary run directly"    '`cargo-audit audit`'
+hasnt "no cargo subcommand dispatch"       '`cargo audit`'
+hasnt "no bundle subcommand dispatch"      '`bundle audit`'
+has   "semgrep local rules"                'semgrep --metrics=off --config'
+has   "scanner output is a candidate"      'Scanner output is a candidate for Phase 12'
+has   "never install a scanner"            'Never install a scanner'
+
+echo "env hygiene, webhooks, paths, gaps, learnings"
+has   "check a variable without its value" '[ -n "${NAME:-}" ]'
+has   "no env dumps"                       'never run `env`, `printenv`'
+has   "webhook raw bytes"                  'raw request bytes'
+has   "webhook timestamp"                  'timestamp tolerance'
+has   "webhook dedupe"                     'deduplicated before any side effect'
+has   "webhook tenant binding"             'bound to the tenant'
+has   "replayable event is HIGH"           'A replayable or forgeable event that moves money, ownership or access is HIGH'
+has   "private network cap needs evidence" 'MEDIUM max only with evidence'
+has   "--paths argument"                   '`/cso --paths <p,q>`'
+has   "--paths caps status"                'outside --paths:'
+# The Grep tool takes a path, not git pathspec syntax; only git gets `-- <p> <q>`.
+has   "--paths reaches Grep as its path"   'through its `path` parameter'
+hasnt "no git pathspecs handed to Grep"    'as pathspecs to every Grep search'
+has   "--paths in resolved rule"           'under `--paths`, only if its file is inside a listed path'
+has   "gap names the command"              '<command> exited <rc>: <stderr tail, redacted>'
+has   "two retries at most"                'at most two retries'
+has   "learnings hold no vuln detail"      "never holds a credential, a redacted excerpt, or an unfixed finding's location or exploit path"
+
+echo "report location and permissions"
+has   "persistence failure line"           'PERSISTENCE_FAILED: report not saved'
+SAVE="$(extract '**Report location and permissions.**' 2>/dev/null || true)"
+printf '%s\n' "$SAVE" > "$TMP/save.sh"
+case "$SAVE" in *'umask 077'*) ok "save block present";; *) no "save block present";; esac
+mode() { ls -ld "$1" | cut -c1-10; }
+SR="$TMP/saverepo"
+git init -q "$SR"
+SOUT="$(cd "$SR" && bash "$TMP/save.sh" 2>&1 || true)"
+EXCL="$(git -C "$SR" rev-parse --git-path info/exclude)"
+case "$EXCL" in /*) ;; *) EXCL="$SR/$EXCL";; esac
+grep -qx '.vibestack/' "$EXCL" 2>/dev/null && ok "uncovered .vibestack/ goes to info/exclude" || no "uncovered .vibestack/ goes to info/exclude (got: $SOUT)"
+[ "$(mode "$SR/.vibestack/security-reports")" = "drwx------" ] && ok "report dir is 0700" || no "report dir is 0700 (got: $(mode "$SR/.vibestack/security-reports" 2>&1))"
+RPT="$(printf '%s\n' "$SOUT" | sed -n 's/^REPORT: //p' | head -n 1)"
+if [ -n "$RPT" ] && [ "$(mode "$SR/$RPT")" = "-rw-------" ]; then ok "report file is 0600"; else no "report file is 0600 (got: $SOUT)"; fi
+(cd "$SR" && bash "$TMP/save.sh" >/dev/null 2>&1 || true)
+[ "$(grep -cx '.vibestack/' "$EXCL" 2>/dev/null)" = "1" ] && ok "exclude line is not duplicated" || no "exclude line is not duplicated"
+GR="$TMP/ignoredrepo"
+git init -q "$GR"
+printf '.vibestack/\n' > "$GR/.gitignore"
+mkdir -p "$GR/.vibestack/security-reports"; chmod 755 "$GR/.vibestack/security-reports"
+(cd "$GR" && bash "$TMP/save.sh" >/dev/null 2>&1 || true)
+GEXCL="$(git -C "$GR" rev-parse --git-path info/exclude)"
+case "$GEXCL" in /*) ;; *) GEXCL="$GR/$GEXCL";; esac
+grep -qx '.vibestack/' "$GEXCL" 2>/dev/null && no "covered repo leaves info/exclude alone" || ok "covered repo leaves info/exclude alone"
+[ "$(mode "$GR/.vibestack/security-reports")" = "drwx------" ] && ok "existing 0755 report dir is tightened" || no "existing 0755 report dir is tightened"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

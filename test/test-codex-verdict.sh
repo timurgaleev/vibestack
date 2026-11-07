@@ -429,6 +429,67 @@ if grep -q 'dirty-edit-marker' "$TMP/stdin" 2>/dev/null; then ok "custom review:
 else no "custom review: the uncommitted edit was left out of the diff"; fi
 git -C "$REPO" checkout -q -- f.txt
 
+# --- /review Step 4.8 and /ship Step 11: probe-backed mode, graded adversarial pass ---
+# block_in FILE NEEDLE -> the bash fence in FILE containing NEEDLE, <base> -> main
+block_in() {
+  python3 -I - "$1" "$2" <<'PY' | sed 's/<base>/main/g'
+import sys
+needle, block, inside = sys.argv[2], [], False
+for line in open(sys.argv[1]).read().split('\n'):
+    if not inside and line.strip() == '```bash':
+        inside, block = True, []
+    elif inside and line.strip() == '```':
+        inside = False
+        if any(needle in b for b in block):
+            print('\n'.join(block)); break
+    elif inside:
+        block.append(line)
+PY
+}
+VH="$TMP/vh"; mkdir -p "$VH/bin"
+mode_of() { # FILE PROBE_LINE|missing [ENV...] -> the CODEX_MODE the block resolves
+  local f="$1" probe="$2"; shift 2
+  rm -f "$VH/bin/vibe-codex-probe"
+  if [ "$probe" != missing ]; then
+    printf '#!/usr/bin/env bash\necho "%s"\n' "$probe" > "$VH/bin/vibe-codex-probe"; chmod +x "$VH/bin/vibe-codex-probe"
+  fi
+  (cd "$REPO" && env -u CODEX_THREAD_ID -u CODEX_SANDBOX -u VIBE_FORCE_CODEX_REVIEW -u CODEX_API_KEY -u OPENAI_API_KEY \
+    CODEX_HOME="$TMP/codex-home" VIBESTACK_HOME="$VH" PATH="$TMP/bin:$PATH" "$@" \
+    bash -c "$(block_in "$f" 'echo "CODEX_MODE: $CODEX_MODE"')" 2>&1 | sed -n 's/^CODEX_MODE: //p') || true
+}
+# grade_of FILE RESPONSE -> the block's ADVERSARIAL: line
+grade_of() {
+  (cd "$REPO" && env -u CODEX_THREAD_ID -u CODEX_SANDBOX STUB_RESP="$2" STUB_EVENTS='' STUB_ARGV="$TMP/argv" \
+    PATH="$TMP/bin:$PATH" bash -c "$(block_in "$1" 'codex exec "IMPORTANT: Do NOT read')" 2>&1 | sed -n 's/^ADVERSARIAL: //p') || true
+}
+mkdir -p "$TMP/codex-home"; printf '{}\n' > "$TMP/codex-home/auth.json"
+for f in "$ROOT/skills/review/SKILL.md" "$ROOT/skills/ship/SKILL.md"; do
+  n=$(basename "$(dirname "$f")")
+  echo "$n: Codex mode comes from the probe"
+  expect "$n: probe usable -> ready" ready "$(mode_of "$f" 'CODEX: usable')"
+  expect "$n: probe unauthenticated -> not_authed" not_authed "$(mode_of "$f" 'CODEX: unauthenticated')"
+  expect "$n: probe quota_exhausted -> quota_exhausted" quota_exhausted "$(mode_of "$f" 'CODEX: quota_exhausted')"
+  expect "$n: auth.json present but no probe -> unavailable" unavailable "$(mode_of "$f" missing)"
+  expect "$n: under a Codex host -> under_codex" under_codex "$(mode_of "$f" 'CODEX: usable' CODEX_THREAD_ID=t1)"
+  echo "$n: the Codex adversarial reply is graded"
+  got="$(grade_of "$f" $'The retry loop never stops on a 500.\nIt also leaks the handle.')"
+  expect "$n: no closing Recommendation line -> missing coverage" MISSING_COVERAGE "${got%% *}"
+  got="$(grade_of "$f" $'[P1] (confidence: 8/10) a.rb:3 — unbounded retry\nRecommendation: FIX FIRST — the retry storms the API')"
+  expect "$n: tagged findings + Recommendation -> covered" COVERED "${got%% *}"
+  got="$(grade_of "$f" $'Checked the parser and the auth path.\nRecommendation: SHIP — nothing reachable fails')"
+  expect "$n: clean reply with the marker -> covered" COVERED "${got%% *}"
+  got="$(grade_of "$f" $'The retry loop never stops.\nRecommendation: FIX FIRST — retries storm')"
+  expect "$n: findings without severity -> missing coverage" MISSING_COVERAGE "${got%% *}"
+  got="$(grade_of "$f" $'Recommendation: SHIP — fine\nActually, wait: [P1] a.rb:3 leaks')"
+  expect "$n: text after the Recommendation line -> missing coverage" MISSING_COVERAGE "${got%% *}"
+  got="$(grade_of "$f" $'1. [P1] a.rb:3 — unbounded retry\n2. **[P2]** b.rb:9 — leaked handle\nRecommendation: FIX FIRST — the retry storms the API')"
+  expect "$n: numbered-list findings + Recommendation -> covered" COVERED "${got%% *}"
+  got="$(grade_of "$f" $'| Severity | Finding |\n|---|---|\n| [P1] | a.rb:3 unbounded retry |\nRecommendation: FIX FIRST — the retry storms the API')"
+  expect "$n: table-row findings + Recommendation -> covered" COVERED "${got%% *}"
+  got="$(grade_of "$f" $'1. The retry loop never stops (see P1 above).\n| a.rb:3 | retry |\nRecommendation: FIX FIRST — retries storm')"
+  expect "$n: numbered and table text without a tag -> missing coverage" MISSING_COVERAGE "${got%% *}"
+done
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
