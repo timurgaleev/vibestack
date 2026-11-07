@@ -160,12 +160,12 @@ failed, relay the fix it printed before attempting any other mode.
 ### 80% case — memo/letter
 
 One command, no flags. Gets a clean PDF with running header, page numbers, and a
-CONFIDENTIAL right-footer.
+CONFIDENTIAL right-footer. Always pass the output path: without one the CLI writes
+to the OS temp directory, whose location varies by platform.
 
 ```bash
 P='<PDF_BIN>'
-"$P" generate letter.md                 # writes /tmp/letter.pdf
-"$P" generate letter.md letter.pdf      # explicit output path
+"$P" generate letter.md letter.pdf
 ```
 
 ### Brand-free — no CONFIDENTIAL footer
@@ -329,15 +329,15 @@ If the user has a `.md` file open and says "make it look nice", propose `"$P" ge
 ## Output contract
 
 ```
-stdout: /tmp/letter.pdf          ← just the path, one line
+stdout: /path/to/letter.pdf      ← just the path, one line
 stderr: Rendering HTML...        ← progress (unless --quiet)
         Generating PDF...
-        Done in 1.5s. 43 words · 22KB · /tmp/letter.pdf
+        Done in 1.5s. 43 words · 22KB · /path/to/letter.pdf
 
 exit code: 0 success / 1 bad args or unknown flag / 2 render error / 3 TOC page numbers failed / 4 binary unavailable
 ```
 
-Capture the path: `PDF=$("$P" generate letter.md)` — then use `$PDF`.
+Capture the path: `PDF=$("$P" generate letter.md letter.pdf)` — then use `$PDF`.
 
 ---
 
