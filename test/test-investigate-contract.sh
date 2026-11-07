@@ -76,6 +76,12 @@ has    "secrets logged only as SET/UNSET"      '`SET`/`UNSET`'
 has    "temporary logs are tagged"             '[DEBUG-<short>]'
 has    "Phase 5 removes the tagged logs"       "git grep -n '\[DEBUG-<short>\]'"
 has    "last edit precedes last run"           'last edit precedes the last run'
+# The scope lock can cover less than the instrumented files and the regression
+# test, so it is released before the tagged lines are removed.
+has    "Phase 5 releases the lock first"       '**Release the scope lock first:**'
+before "lock released before cleanup"          '**Release the scope lock first:**' '**Remove instrumentation:**'
+before "cleanup before fresh verification"     '**Remove instrumentation:**' '**Fresh verification:**'
+hasnt  "lock no longer held through cleanup"   'run the terminal cleanup from **Scope Lock** now, before the report is final.'
 
 echo "hypotheses"
 has    "3-5 ranked falsifiable hypotheses"     '3-5 ranked, falsifiable hypotheses'
@@ -89,6 +95,10 @@ has    "one variable per probe"                'one variable per probe'
 has    "failed probe reverted before the next" 'Revert a failed probe before the next one'
 has    "git diff confirms the revert"          '`git diff` shows none of the probe'
 has    "perf bugs baseline then bisect"        'record a baseline measurement first, then bisect against it with `git bisect run'
+# Bisect checks out other revisions: probes and tagged logs must not ride along,
+# and HEAD must come back before the fix is written.
+has    "bisect starts from a clean tree"       'Bisect only from a clean tree'
+has    "bisect is reset before continuing"     'git bisect reset'
 
 echo "phase 4 order"
 has    "regression test from the minimised repro" 'from the minimised repro'

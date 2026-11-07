@@ -103,6 +103,8 @@ Gather context before forming any hypothesis.
    8. bisection (`git bisect run <loop-command>`) when a known-good revision exists;
    9. differential — the same input through the good and the bad version or environment, outputs diffed.
 
+   Bisection and differential runs drive a loop rather than replace one: the `LOOP:` line names the command they run. Bisect only from a clean tree — stash or revert every probe and tagged log first, so nothing rides across revisions — and run `git bisect reset` as soon as it names the first bad commit, before any other step.
+
    Tighten it until it is fast, sharp and deterministic: seconds, not minutes; red on the reported symptom, not a nearby failure; the same result every run. For a flaky bug, raise the reproduction rate first — loop the command, pin seeds, clocks and ordering, add load or narrow the timing window — and record the rate (`red 7/50`). If no way gives a red run, stop and say exactly what you need (a log, a payload, access, a recording, an environment) and ask for it; a `headless` or `spawned` session reports `BLOCKED` with that list. Never work on a bug you cannot see.
 
    When the loop runs red, print one line: `LOOP: <command> — ran: yes — red on: <symptom>`. No Phase 2 until the `LOOP:` line is printed for a command you actually ran.
@@ -229,7 +231,7 @@ Before writing ANY fix, verify your hypothesis.
 
 1. **Confirm the hypothesis:** Add a temporary log statement, assertion, or debug output at the suspected root cause, tagged `[DEBUG-<short>]`. Run the `LOOP:` command. Does the evidence match what the hypothesis predicts, or its refutation?
 
-   Change one variable per probe — one edit, one flag, one input — then run the loop, so the result names its cause. Revert a failed probe before the next one, and confirm `git diff` shows none of the probe (tagged logs may stay until Phase 5). For a performance bug, record a baseline measurement first, then bisect against it with `git bisect run <script that fails above the threshold>`.
+   Change one variable per probe — one edit, one flag, one input — then run the loop, so the result names its cause. Revert a failed probe before the next one, and confirm `git diff` shows none of the probe (tagged logs may stay until Phase 5). For a performance bug, record a baseline measurement first, then bisect against it with `git bisect run <script that fails above the threshold>` — from a clean tree, and `git bisect reset` before the next step.
 
 2. **If the hypothesis is wrong:** Before forming the next hypothesis, consider searching for the error. **Sanitize first** — strip hostnames, IPs, file paths, SQL fragments, customer identifiers, and any internal/proprietary data from the error message. Search only the generic error type and framework context: "{component} {sanitized error type} {framework version}". If the error message is too specific to sanitize safely, skip the search. If WebSearch is unavailable, skip and proceed. Then take the next ranked hypothesis, or return to Phase 1 when the list is spent. Gather more evidence. Do not guess.
 
@@ -276,6 +278,8 @@ Once root cause is confirmed:
 
 ## Phase 5: Verification & Report
 
+**Release the scope lock first:** If this run acquired a scope lock, run the terminal cleanup from **Scope Lock** now. The tagged lines can sit outside the locked directory, and the remaining steps edit nothing but them.
+
 **Remove instrumentation:** Delete every tagged log line, then confirm none remain — this must print nothing:
 
 ```bash
@@ -307,8 +311,6 @@ Status:               DONE | DONE_WITH_CONCERNS | BLOCKED
 ```
 
 Evidence rungs, weakest first: **said** (someone asserted it), **file:line** (you read the code), **walked** (you traced every caller), **ran** (a command exercised the path), **reproduced** (the loop showed it before and after). Name the rung honestly; a risk cleared only at **said** is not cleared.
-
-If this run acquired a scope lock, run the terminal cleanup from **Scope Lock** now, before the report is final.
 
 Log the investigation as a learning for future sessions. Use `type: "investigation"` and include the affected files so future investigations on the same area can find this. Write the JSON to a file first and run the **Redact** scan on it; log it only on `REDACT_EXIT: 0`:
 
