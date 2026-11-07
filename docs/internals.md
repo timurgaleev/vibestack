@@ -173,10 +173,18 @@ are worth knowing as rules of the pack rather than of any one skill.
   concrete pros and one honest con per option, bullets that say something
   measurable, the non-recommended option written in the same register as the
   recommended one, and a self-check the model runs before sending. An option
-  with no stated downside reads as a decision already made.
-- **Claimed limitations need evidence** (`working-protocols.md`): never assert
-  that something cannot be done without having tried it and being able to name
-  the command and its output.
+  with no stated downside reads as a decision already made. Before asking, a
+  local, read-only, free check that would settle the question is run instead;
+  one-way steps, facts only the user holds and inconclusive checks are still
+  asked.
+- **Claims need evidence** (`working-protocols.md`): never assert that something
+  cannot be done, passes, builds or is fixed without the command and output that
+  show it on this revision. A mock is not the live system, agreeing agents are
+  one datum, and anything not independently verified is `DONE_WITH_CONCERNS`,
+  not `DONE`.
+- **Memory pre-fills, the user confirms** (`brain-preflight.md`): product and
+  persona answers found in memory become the recommendation, never a skipped
+  question.
 - **Three session kinds** (`session-host.md`): `interactive` asks;
   `headless` stops on anything blocking, since nobody can answer; `spawned` —
   driven by another agent — takes the recommended option on a two-way choice and
@@ -292,6 +300,7 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-release-after-merge.sh` | The shared tag-and-release step `/ship` and `/land-and-deploy` run once a PR has merged |
 | `test-land-deploy-gates.sh` | `/land-and-deploy` merges only the approved head over green CI and reverts exactly what landed |
 | `test-test-value-bar.sh` | The test value bar reaches every skill that writes, proposes or reviews tests, without drifting copies |
+| `test-shared-protocols.sh` | The claim, completeness, question and memory rules reach the skills that include them, within a byte budget |
 | `test-context-provenance.sh` | `/context-save` and `/context-restore` keep a resumed session off the wrong context or a guessed step |
 | `test-context-identity.sh` | Checkpoints are stamped with their project and restore never offers another project's |
 | `test-learn-honest-read.sh` | A failed learnings read surfaces as unavailable; `--cross-project` carries only user-stated entries |
