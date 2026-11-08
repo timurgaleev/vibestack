@@ -70,12 +70,7 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
+{{include lib/snippets/base-branch-detect.md}}
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -345,6 +340,7 @@ Calculate and present these metrics in a summary table:
 | Avg raw LOC/session-hour | N |
 | Greptile signal | N% (Y catches, Z FPs) |
 | Test Health | N test files · M test files changed this period · K regression tests |
+| Questions by skill | `ship 12 (3 overridden) · review 5` — from the Questions by skill block; omit when it printed `QUESTIONS: none` |
 
 **Metric order rationale (V1):** features shipped leads — what users got. Commits
 and weighted commits reflect intent-to-ship. Logical SLOC added reflects real
@@ -410,6 +406,50 @@ If moments exist, list them:
 ```
 
 If the JSONL file doesn't exist or has no entries in the window, skip the Eureka Moments row.
+
+#### Questions by skill
+
+Which skills stopped to ask the user this window, from the question log the
+skills append to. Replace `<START_DATE>` with the window's first day
+(`YYYY-MM-DD`):
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+QLOG="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/question-log.jsonl"
+if [ -f "$QLOG" ]; then
+  python3 -I - "$QLOG" '<START_DATE>' <<'PYEOF'
+import json, re, sys
+path, start = sys.argv[1], sys.argv[2]
+if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start):
+    sys.exit("QUESTIONS: bad start date")
+asked, overridden = {}, {}
+for line in open(path, encoding="utf-8", errors="replace"):
+    try:
+        e = json.loads(line)
+    except ValueError:
+        continue
+    skill = e.get("skill") if isinstance(e, dict) else None
+    # The log is free-form JSON; only a plain skill name reaches the report.
+    if not isinstance(skill, str) or not re.fullmatch(r"[a-z0-9-]{1,64}", skill):
+        continue
+    ts = e.get("ts")
+    if not isinstance(ts, str) or ts[:10] < start:
+        continue
+    asked[skill] = asked.get(skill, 0) + 1
+    if e.get("followed_recommendation") is False:
+        overridden[skill] = overridden.get(skill, 0) + 1
+for skill, n in sorted(asked.items(), key=lambda kv: (-kv[1], kv[0])):
+    print(f"QUESTIONS: {skill} {n} overridden={overridden.get(skill, 0)}")
+if not asked:
+    print("QUESTIONS: none")
+PYEOF
+else
+  echo "QUESTIONS: none"
+fi
+```
+
+A skill that asks often, or whose recommendation is often overridden, is a
+candidate for `/plan-tune`.
 
 ### Step 3: Commit Time Distribution
 
@@ -538,12 +578,33 @@ Then judge whether the streak is still live:
 
 ### Step 12: Load History & Compare
 
-Before saving the new snapshot, check for prior retro history:
+#### Retro history store
+
+Retro history lives in the project's state bucket, shared by every worktree and
+clone of the repository. History an older version kept in the checkout's
+`.context/retros/` is copied in once (missing files only; nothing overwritten,
+the old files left in place). Before saving the new snapshot, list the prior
+ones:
 
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-ls -t .context/retros/*.json 2>/dev/null
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+RETRO_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/retros"
+mkdir -p "$RETRO_DIR"
+for f in .context/retros/*.json; do
+  [ -f "$f" ] && [ ! -e "$RETRO_DIR/$(basename "$f")" ] && cp -p "$f" "$RETRO_DIR/"
+done
+echo "RETRO_DIR: $RETRO_DIR"
+# Newest first by the YYYY-MM-DD-N name, N compared as a number; mtime changes on copy.
+find "$RETRO_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | awk -F/ '
+  { n = $(NF) }
+  n ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9]+[.]json$/ {
+    seq = substr(n, 12); sub(/[.]json$/, "", seq)
+    printf "%s\t%09d\t%s\n", substr(n, 1, 10), seq, $(0)
+  }' | sort -r | head -5 | cut -f3 | sed 's/^/PRIOR_RETRO: /'
 ```
+
+The first `PRIOR_RETRO:` line is the most recent prior retro.
 
 **Only compare against a prior retro with the same `window` value** (e.g., 7d vs 7d). Pick the most recent prior retro; if its `window` differs from the current one, skip the Trends section and note: "Prior retro used a different window — skipping comparison."
 
@@ -558,23 +619,33 @@ Commits:            32     →    47          ↑47%
 Deep sessions:      3      →    5           ↑2
 ```
 
+**Recommendation follow-through.** When the prior retro has a `recommendations`
+array, score each item against this window's commits, PRs and CHANGELOG:
+`addressed` (name the commit or PR), `partial` (some evidence, name it) or
+`open` (no evidence found). Print one line under the Trends table —
+`Recommendation follow-through: 2 addressed, 1 partial, 1 open (of 4)` — and
+list each item with its score and evidence. An empty array prints nothing; a
+prior retro without the field prints "Prior retro predates recommendations."
+
 **If no prior retros exist:** Skip the comparison section and append: "First retro recorded — run again next week to see trends."
 
 ### Step 13: Save Retro History
 
-After computing all metrics (including streak) and loading any prior history for comparison, save a JSON snapshot:
+After computing all metrics (including streak) and loading any prior history
+for comparison, draft the "Things to Improve" and "Habits for Next Week" items
+now — they go into the snapshot as `recommendations`, so the next retro can
+score them. Then pick the file name. Replace `<TODAY>` with the `YYYY-MM-DD`
+date you computed from the session reminder (never from `date`):
 
-```bash
-mkdir -p .context/retros
-```
-
-Determine the next unused sequence number for today. Replace `<TODAY>` with the
-`YYYY-MM-DD` date you computed from the session reminder (never from `date`):
 ```bash
 today='<TODAY>'
+case "$today" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) echo "BAD_DATE: $today"; exit 1 ;; esac
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+RETRO_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/retros"
+mkdir -p "$RETRO_DIR"
 # First unused number, so a deleted -1 never makes this run overwrite -2
-next=1; while [ -e ".context/retros/${today}-${next}.json" ]; do next=$((next+1)); done
-echo "SAVE_AS: .context/retros/${today}-${next}.json"
+next=1; while [ -e "$RETRO_DIR/${today}-${next}.json" ]; do next=$((next+1)); done
+echo "SAVE_AS: $RETRO_DIR/${today}-${next}.json"
 ```
 
 Use the Write tool to save the JSON file with this schema:
@@ -608,6 +679,10 @@ Use the Write tool to save the JSON file with this schema:
   "version_range": ["1.16.0.0", "1.16.1.0"],
   "streak_days": 47,
   "tweetable": "Week of Mar 1: 47 commits (3 contributors), 3.2k LOC, 38% tests, 12 PRs, peak: 10pm",
+  "recommendations": [
+    { "kind": "improve", "text": "Split payment changes into reviewable PRs under 400 lines" },
+    { "kind": "habit", "text": "Review each other's PRs the same day" }
+  ],
   "greptile": {
     "fixes": 3,
     "fps": 1,
@@ -616,6 +691,10 @@ Use the Write tool to save the JSON file with this schema:
   }
 }
 ```
+
+`recommendations` is always present: the items as drafted above, `[]` when
+there were none. Never pad it to three with filler — an invented item gets
+scored as "open" next week.
 
 When command 16 printed `PRS_UNAVAILABLE`, write `"prs_merged": null`, never `0`: a zero reads as a window with no merges, and a later trend comparison would count it as a real drop.
 
@@ -754,7 +833,7 @@ Identify the 3 highest-impact things shipped in the window across the whole team
 - Why it matters (product/architecture impact)
 
 ### 3 Things to Improve
-Specific, actionable, anchored in actual commits. Mix personal and team-level suggestions. Phrase as "to get even better, the team could..."
+Up to three, the ones drafted before the save. Specific, actionable, anchored in actual commits. Mix personal and team-level suggestions. Phrase as "to get even better, the team could..."
 
 ### 3 Habits for Next Week
 Small, practical, realistic. Each must be something that takes <5 minutes to adopt. At least one should be team-oriented (e.g., "review each other's PRs same-day").
@@ -772,7 +851,7 @@ When the user runs `/retro compare` (or `/retro compare 14d`):
 2. Compute metrics for the immediately prior same-length window using both `--since` and `--until` with midnight-aligned dates. `--until` is inclusive, so the prior window ends one second before the current start (e.g., for a 7d window starting 2026-03-11: prior window is `--since="2026-03-04T00:00:00" --until="2026-03-10T23:59:59"`). Run command 16 for the prior window with `<start-date>` 2026-03-04 and `<end-date>` 2026-03-10, so its merged PRs/MRs stop where the current window starts. Streaks, the Step 0.5 freshness guard and the history ledger apply to the current window only; where a prior value is zero, the delta shows "N/A" instead of a percentage.
 3. Show a side-by-side comparison table with deltas and arrows
 4. Write a brief narrative highlighting the biggest improvements and regressions
-5. Save only the current-window snapshot to `.context/retros/` (same as a normal retro run); do **not** persist the prior-window metrics.
+5. Save only the current-window snapshot to the retro history store (same as a normal retro run); do **not** persist the prior-window metrics.
 
 ## Tone
 
@@ -785,11 +864,11 @@ When the user runs `/retro compare` (or `/retro compare 14d`):
 - Never compare teammates against each other negatively. Each person's section stands on its own.
 - Keep total output around 3000-4500 words (slightly longer to accommodate team sections)
 - Use markdown tables and code blocks for data, prose for narrative
-- Output directly to the conversation — do NOT write to filesystem (except the `.context/retros/` JSON snapshot)
+- Output directly to the conversation — do NOT write to filesystem (except the JSON snapshot in the retro history store)
 
 ## Important Rules
 
-- ALL narrative output goes directly to the user in the conversation. The ONLY file written is the `.context/retros/` JSON snapshot.
+- ALL narrative output goes directly to the user in the conversation. The ONLY file written is the JSON snapshot in the retro history store.
 - Use `origin/<default>` for all git queries (not local main which may be stale). When Step 1 could not resolve it, use the `RETRO_REF` fallback and disclose which ref was analyzed.
 - Display all timestamps in the user's local timezone (do not override `TZ`)
 - If the window has zero commits, say so and suggest a different window

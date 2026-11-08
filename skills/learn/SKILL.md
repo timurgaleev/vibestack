@@ -176,17 +176,29 @@ For each learning in the output:
    "STALE: [key] references deleted file [path]"
 
 2. **Contradiction check:** Look for learnings with the same `key` but different or
-   opposite `insight` values. Flag: "CONFLICT: [key] has contradicting entries —
-   [insight A] vs [insight B]"
+   opposite `insight` values, of any type: a `pattern` and a `pitfall` under one
+   key can contradict each other just as well. Flag: "CONFLICT: [key] has
+   contradicting entries — [type A: insight A] vs [type B: insight B]"
 
 Present each flagged entry via AskUserQuestion:
 - A) Remove this learning
 - B) Keep it
 - C) Update it (I'll tell you what to change)
 
-For removals, read the learnings.jsonl file and remove the matching line, then write
-back. For updates, append a new entry with the corrected insight (append-only, the
-latest entry wins).
+Never infer approval for removal: only an explicit A for that entry removes it.
+Silence, a "looks fine", or an answer about a different entry is a keep.
+
+For a removal, run the bin with the entry's `key` and `type` exactly as shown — it
+drops every line for that key and type (updates are appended, so there may be
+several) and keeps everything else:
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-log" --forget '<KEY>' '<TYPE>'
+```
+
+Report its `Forgot N entries` line. Never edit learnings.jsonl by hand. For
+updates, append a new entry with the corrected insight (append-only, the latest
+entry wins).
 
 ---
 

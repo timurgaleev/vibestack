@@ -133,6 +133,70 @@ out="$(run_cmd gitlab)"
 echo "$out" | grep -q '^PRS_UNAVAILABLE$' \
   && ok "a failing glab is PRS_UNAVAILABLE, never zero MRs" || no "failing glab printed: $out"
 
+# --- history store, follow-through, questions by skill ----------------------
+
+block_after() { # first ```bash block after the line starting with $(1)
+  awk -v h="$1" 'index($0, h) == 1 { seen=1; next }
+    seen && /^```bash$/ { on=1; next } on && /^```$/ { exit } on { print }' "$SK"
+}
+VSH="$TMP/vs"; mkdir -p "$VSH/bin"
+printf '#!/usr/bin/env bash\necho SLUG=retroproj\n' > "$VSH/bin/vibe-slug"; chmod +x "$VSH/bin/vibe-slug"
+STORE="$VSH/projects/retroproj/retros"
+WORK="$TMP/work"; mkdir -p "$WORK/.context/retros" "$STORE"
+echo '{"date":"2026-03-01","old":true}' > "$WORK/.context/retros/2026-03-01-1.json"
+echo '{"date":"2026-03-08","from":"checkout"}' > "$WORK/.context/retros/2026-03-08-2.json"
+echo '{"date":"2026-03-08","from":"store"}' > "$STORE/2026-03-08-2.json"
+echo '{"date":"2026-03-08"}' > "$STORE/2026-03-08-10.json"
+echo '{"date":"2026-03-08"}' > "$STORE/2026-03-08-9.json"
+
+echo "retro: shared history store"
+block_after '#### Retro history store' > "$TMP/hist.sh"
+if [ -s "$TMP/hist.sh" ]; then
+  out="$(cd "$WORK" && HOME="$TMP" VIBESTACK_HOME="$VSH" bash "$TMP/hist.sh" 2>&1)"
+  [ -f "$STORE/2026-03-01-1.json" ] && ok "history from .context/retros is copied into the store" \
+    || no "old checkout history not migrated: $out"
+  grep -q '"from":"store"' "$STORE/2026-03-08-2.json" && ok "migration never overwrites a stored snapshot" \
+    || no "migration overwrote 2026-03-08-2.json"
+  [ -f "$WORK/.context/retros/2026-03-01-1.json" ] && ok "migration leaves the old files in place" || no "migration moved the old file"
+  first="$(printf '%s\n' "$out" | sed -n 's/^PRIOR_RETRO: //p' | head -1)"
+  case "$first" in */2026-03-08-10.json) ok "newest prior is picked by YYYY-MM-DD-N, N numeric" ;;
+    *) no "newest prior wrong: '$first' ($out)" ;; esac
+else
+  no "retro has no '#### Retro history store' block"
+fi
+
+block_after '### Step 13' | sed "s|<TODAY>|2026-03-08|" > "$TMP/save.sh"
+out="$(cd "$WORK" && HOME="$TMP" VIBESTACK_HOME="$VSH" bash "$TMP/save.sh" 2>&1)"
+echo "$out" | grep -qx "SAVE_AS: $STORE/2026-03-08-1.json" \
+  && ok "the snapshot is saved into the shared store" || no "SAVE_AS not in the store: $out"
+
+echo "retro: questions by skill"
+block_after '#### Questions by skill' | sed "s|<START_DATE>|2026-03-04|" > "$TMP/q.sh"
+if [ -s "$TMP/q.sh" ]; then
+  cat > "$VSH/projects/retroproj/question-log.jsonl" <<'EOF'
+{"skill":"ship","ts":"2026-03-05T10:00:00Z","followed_recommendation":false}
+{"skill":"ship","ts":"2026-03-06T10:00:00Z","followed_recommendation":true}
+{"skill":"review","ts":"2026-03-07T10:00:00Z"}
+{"skill":"ship","ts":"2026-03-01T10:00:00Z"}
+{"skill":"Evil Skill; rm -rf","ts":"2026-03-07T10:00:00Z"}
+not json
+EOF
+  out="$(cd "$WORK" && HOME="$TMP" VIBESTACK_HOME="$VSH" bash "$TMP/q.sh" 2>&1)"
+  echo "$out" | grep -qx 'QUESTIONS: ship 2 overridden=1' && echo "$out" | grep -qx 'QUESTIONS: review 1 overridden=0' \
+    && ok "questions are counted per skill inside the window" || no "question counts wrong: $out"
+  echo "$out" | grep -q 'Evil' && no "a skill name outside the allowlist reached the output" || ok "skill names are allowlisted"
+else
+  no "retro has no '#### Questions by skill' block"
+fi
+
+echo "retro: recommendations"
+grep -q '"recommendations": \[' "$SK" && ok "snapshot schema carries recommendations" || no "schema lacks recommendations"
+tr '\n' ' ' < "$SK" | grep -qE 'always present.{0,80}\[\]' && ok "recommendations is always present, [] when none" \
+  || no "recommendations may be omitted"
+grep -q 'Recommendation follow-through' "$SK" && grep -q 'addressed' "$SK" && grep -q 'partial' "$SK" \
+  && ok "Step 12 scores the last retro's recommendations" || no "no recommendation follow-through"
+grep -q '^echo "BASE_BRANCH: ' "$SK" && ok "Step 0 uses the shared base-branch detection" || no "base-branch-detect not included"
+
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]
