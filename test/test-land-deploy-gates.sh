@@ -49,6 +49,9 @@
 #
 # Usage: test/test-land-deploy-gates.sh   (LAND_SKILL overrides the source)
 set -uo pipefail
+# grep -q exits on the first match; under pipefail the producer then dies
+# of SIGPIPE and a found pattern reads as missing. gq reads to the end.
+gq() { grep "$@" >/dev/null; }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${LAND_SKILL:-$ROOT/skills/land-and-deploy/SKILL.md}"
@@ -527,7 +530,7 @@ NV
   _drift=${_drift//<BASE_BRANCH>/main}; _drift=${_drift//<BASE_SHA>/$(git -C "$d" rev-parse main)}
   { printf '%s\n' "$_drift"; echo 'echo "DRIFT OFFLINE=$OFFLINE NEXT=$NEXT_SLOT"'; } > "$d.dr.sh"
   out=$( cd "$d" && env -u PR_NUMBER -u PR_HEAD -u BASE_BRANCH -u BASE_SHA HOME="$TMP/home-$SH" NV_ARGS="$d.args" "$SH" "$d.dr.sh" 2>&1 )
-  if case "$out" in *"DRIFT OFFLINE=false NEXT=0.0.1"*) true ;; *) false ;; esac && grep -A1 -x -- '--exclude-pr' "$d.args" | tail -1 | grep -qx 12; then
+  if case "$out" in *"DRIFT OFFLINE=false NEXT=0.0.1"*) true ;; *) false ;; esac && grep -A1 -x -- '--exclude-pr' "$d.args" | tail -1 | gq -x 12; then
     ok "[$SH] --exclude-pr and the PR number reach vibe-next-version as two arguments"
   else
     no "[$SH] drift check went offline: $out / args: $(tr '\n' ' ' < "$d.args" 2>/dev/null)"
@@ -609,7 +612,7 @@ MD
     out=$(run "$SH" "$d" "$TMP/$b.sh")
     case "$out" in *"NO_DEPLOY:"*) ok "[$SH] $b: Platform none reads as NO_DEPLOY" ;; *) no "[$SH] $b: Platform none not recognised: $out" ;; esac
   done
-  awk '/^## Step 5:/{on=1} /^## Step 6:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | grep -qF 'On `NO_DEPLOY:`, with no URL argument' \
+  awk '/^## Step 5:/{on=1} /^## Step 6:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | gq -F 'On `NO_DEPLOY:`, with no URL argument' \
     && ok "[$SH] Step 5 routes NO_DEPLOY to the no-deploy verdict" || no "[$SH] Step 5 has no NO_DEPLOY route"
 
   echo "[$SH] deploy fingerprint and pre-approval facts"
@@ -742,7 +745,7 @@ for line in open(sys.argv[1]).read().splitlines():
         print(line)
 PY
 [ -s "$TMP/unbound.txt" ] && no "gh pr commands not bound to the PR number: $(cat "$TMP/unbound.txt")" || ok "every gh pr command is bound to PR_NUMBER"
-grep -E 'gh pr merge ' "$S" | grep -v -- '--match-head-commit' | grep -v -- '--disable-auto' | grep -q 'gh pr merge "\$PR_NUMBER"' \
+grep -E 'gh pr merge ' "$S" | grep -v -- '--match-head-commit' | grep -v -- '--disable-auto' | gq 'gh pr merge "\$PR_NUMBER"' \
   && no "a gh pr merge without --match-head-commit" || ok "every merge carries --match-head-commit"
 grep -q '\.vibestack/deploy-reports' "$S" && no "deploy reports still written into the work tree" || ok "no deploy report path in the work tree"
 grep -q 'vibe-diff-scope <base>' "$S" && no "post-merge scope classification survives" || ok "scope classified once, before the merge"
