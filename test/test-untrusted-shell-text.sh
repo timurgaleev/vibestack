@@ -389,7 +389,7 @@ cat > "$STUB/glab" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CAP/glab.argv"
 prev=""
-for a in "$@"; do [ "$prev" = "-d" ] && printf '%s' "$a" > "$CAP/glab.body"; prev="$a"; done
+for a in "$@"; do [ "$prev" = "-d" ] && printf '%s' "$a" > "$CAP/glab.body"; [ "$prev" = "-t" ] && printf '%s' "$a" > "$CAP/glab.title"; prev="$a"; done
 exit 0
 SH
 cat > "$STUB/codex" <<'SH'
@@ -497,17 +497,19 @@ else
   no "archive: $(cat "$TMP/err")"
 fi
 
-echo "/ship: the PR/MR and issue bodies are published from the written file"
+echo "/ship: the PR/MR title and body, and the issue body, are published from written files"
 SH_="$R/ship/SKILL.md"
 for spec in "gh:gh pr create --base" "glab:\"glab\",\"mr\",\"create\""; do
   cli="${spec%%:*}"; needle="${spec#*:}"
   fresh_cap
   if block_with "$SH_" "$needle" > "$TMP/ship-$cli.sh" 2>"$TMP/err"; then
     cp "$HOSTILE" "$TMP/pr-body.md"
-    subst "$TMP/ship-$cli.sh" "<PR_BODY_FILE>" "$TMP/pr-body.md" "<base>" "main"
-    run_block "$TMP/ship-$cli.sh" NEW_VERSION=1.2.3
-    if same "$CAP/$cli.body" "$HOSTILE" && no_sentinel; then
-      ok "$cli: the PR/MR body arrives verbatim and none of it ran"
+    printf 'v1.2.3 fix: `touch %s/t1` $(touch %s/t2) it'"'"'s\n' "$SENT" "$SENT" > "$TMP/pr-title.txt"
+    printf 'v1.2.3 fix: `touch %s/t1` $(touch %s/t2) it'"'"'s' "$SENT" "$SENT" > "$TMP/pr-title.want"
+    subst "$TMP/ship-$cli.sh" "<PR_BODY_FILE>" "$TMP/pr-body.md" "<TITLE_FILE>" "$TMP/pr-title.txt" "<base>" "main"
+    run_block "$TMP/ship-$cli.sh"
+    if same "$CAP/$cli.body" "$HOSTILE" && same "$CAP/$cli.title" "$TMP/pr-title.want" && no_sentinel; then
+      ok "$cli: the PR/MR title and body arrive verbatim and none of it ran"
     else
       no "$cli publish ($(head -3 "$TMP/run.out")); sentinels: $(ls "$SENT")"
     fi

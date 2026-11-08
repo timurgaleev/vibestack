@@ -5,17 +5,23 @@
 Review the diff the caller produced against its detected base branch (`/review` Step 0, `/ship` Step 0) — never a hardcoded `origin/main`; a repo whose base is `develop` or `master` would get the wrong diff. Be specific — cite `file:line` and suggest fixes. Skip anything that's fine. Only flag real problems.
 
 **Two-pass review:**
-- **Pass 1 (CRITICAL):** Run SQL & Data Safety, Race Conditions, LLM Output Trust Boundary, Production Failure Modes, Shell Injection, and Enum Completeness first. Highest severity.
+- **Pass 1 (CRITICAL):** Run SQL & Data Safety, Race Conditions, LLM Output Trust Boundary, Production Failure Modes, Gate Integrity, Shell Injection, and Enum Completeness first. Highest severity.
 - **Pass 2 (INFORMATIONAL):** Run remaining categories below. Lower severity but still actioned.
 - **Specialist categories (handled by parallel subagents, NOT this checklist):** Test Gaps, Dead Code, Magic Numbers, Conditional Side Effects, Performance & Bundle Impact, Crypto & Entropy. See `review/specialists/` for these.
 
 All findings get action via Fix-First Review: obvious mechanical fixes are applied automatically,
-genuinely ambiguous issues are batched into a single user question.
+genuinely ambiguous issues are batched into a single user question. Every finding then gets the
+Sideways sweep below.
+
+**PR type first.** Name it (feature, fix, refactor, config, docs, test) and mark each category that
+does not apply "Not applicable". "Not applicable" never counts as passed — it means unchecked.
+Zero findings is a valid result: never invent one to show work.
 
 **Output format:**
 
 ```
 Pre-Landing Review: N issues (X critical, Y informational)
+Gate edits: <N — file:line each, with its disposition> | none
 
 **AUTO-FIXED:**
 - [file:line] Problem → fix applied
@@ -62,7 +68,28 @@ Contextual blockers: each one is a finding only when the code path the diff touc
 - A new required env var read lazily inside a request handler instead of validated at startup — the deploy goes green and the first real request fails. Required configuration should fail fast at startup (a settings object or an explicit check at boot). Probe: `rg -n 'os\.environ\[|os\.getenv\(|process\.env\.[A-Z_]+' --type py --type ts` and check whether the read sits inside a handler body.
 - A retry wrapper around a write with no idempotency key — a timeout after the write landed retries into a duplicate charge, email or record. A retried create, send or charge passes an idempotency key the receiver dedups on, or the write is made idempotent. Probe: `rg -n '@retry|retry\(|tenacity|backoff\.on_exception|pRetry|withRetry' --type py --type ts` and read what each wrapped call writes.
 - A gate where a timeout, parse error or empty result reads as pass — `|| true` on a check, `continue-on-error` on a required step, an empty findings list from a failed run treated as "no findings". A gate that could not run is "unavailable", never green. Probe: `rg -n '\|\| (true|:)( |$)|continue-on-error: *true' --glob '*.sh' --glob '*.yml' --glob '*.yaml'`.
+- Loosened acceptance — a validator, schema, parser or status check widened so new inputs pass, while unchanged consumers still assume the old shape. Read each consumer of the widened value.
+- Data repair that is implicit — a backfill or fixup must be an explicit command, preview-first (a dry run printing what will change), and unreachable from upgrade, migration or startup paths.
 - A fallback default that hides a failure — `.catch(() => [])`, `except Exception: return {}`, `x or {}` — where the empty value is then consumed as a successful result (rendered as "no items", returned with `ok: true`, written back as the current state). Probe: `rg -n '\.catch\(\(\) => (\[\]|\{\}|null)\)|except (Exception|BaseException)?:|or \{\}' --type py --type ts` and follow the value to its consumer. An intentional empty contract is not a finding: when the empty value is documented as the answer for that failure, logged at the catch, or covered by a test asserting it, leave it alone.
+
+#### Gate integrity
+A change that makes a check easier to pass instead of making the code pass it. Run these over the
+test, CI and config hunks of the diff (`git diff <base> -- <paths> | <probe>`); each hit is a
+finding unless the diff states why. Covers removed or disabled tests (`.skip`/`.only`, `xit`,
+`xdescribe`, `@pytest.mark.skip`, `t.Skip`, `#[ignore]`, `@Disabled`; deleted test files from
+`git diff --diff-filter=D --name-only <base>`), lint silencing (`eslint-disable`, `@ts-ignore`,
+`# noqa`, `nolint`), CI weakening (`continue-on-error`, `allow_failure`, `[skip ci]`,
+`--no-verify`), a diff that raises a timing bound or adds a retry to make a flake pass, a lowered
+threshold, a snapshot regenerated without its test changing, and an exception newly swallowed.
+- Disabled tests: `grep -En '^\+.*(\.(skip|only)\(|(^|[^[:alnum:]_])(xit|xdescribe|fdescribe)\(|@pytest\.mark\.(skip|xfail)|t\.Skip\(|#\[ignore\]|@Disabled)'`
+- Silenced linters: `grep -En '^\+.*(eslint-disable|@ts-(ignore|nocheck)|#[[:space:]]*noqa|//[[:space:]]*nolint|type:[[:space:]]*ignore)'`
+- Weakened CI: `grep -En '^\+.*(continue-on-error:[[:space:]]*true|allow_failure:[[:space:]]*true|\[skip ci\]|--no-verify|\|\|[[:space:]]*true)'`
+- Raised bounds, compare the `-` and `+` lines: `grep -En '^[-+].*(timeout|retries|retry|threshold|min_?score|coverage)[^=:]*[:=][[:space:]]*[0-9]'`
+- Removed assertions: `grep -En '^-.*(expect\(|assert|should)'`
+
+Gate integrity findings are always ASK, never AUTO-FIX, with four options: Restore the gate,
+Keep-justified (the stated reason holds), Keep-other (the user's own reason, recorded), Leave open
+(reported, unresolved). A spawned or headless run cannot ask: it reports them as Leave open.
 
 #### Shell Injection (Python-specific)
 - `subprocess.run()` / `subprocess.call()` / `subprocess.Popen()` with `shell=True` AND f-string/`.format()` interpolation in the command string — use argument arrays instead
@@ -74,6 +101,7 @@ When the diff introduces a new enum value, status string, tier name, or type con
 - **Trace it through every consumer.** Read (don't just grep — READ) each file that switches on, filters by, or displays that value. If any consumer doesn't handle the new value, flag it. Common miss: adding a value to the frontend dropdown but the backend model/compute method doesn't persist it.
 - **Check allowlists/filter arrays.** Search for arrays or `%w[]` lists containing sibling values (e.g., if adding "revise" to tiers, find every `%w[quick lfg mega]` and verify "revise" is included where needed).
 - **Check `case`/`if-elsif` chains.** If existing code branches on the enum, does the new value fall through to a wrong default?
+- **State machines:** build the kind × owner action matrix — each kind or state against each actor that can act on it — and check that every cell is handled and has a test.
 To do this: use Grep to find all references to the sibling values (e.g., grep for "lfg" or "mega" to find all tier consumers). Read each match. This step requires reading code OUTSIDE the diff.
 
 ### Pass 2 — INFORMATIONAL
@@ -104,6 +132,13 @@ To do this: use Grep to find all references to the sibling values (e.g., grep fo
 - Test coverage gaps where adding the missing tests is a "lake" not an "ocean" (e.g., missing negative-path tests, missing edge case tests that mirror happy-path structure)
 - Features implemented at 80-90% when 100% is achievable with modest additional code
 
+#### Test Reliability
+- Timing-dependent assertions (sleeps, tight waits, wall-clock comparisons) and keyboard-count loops (pressing Tab or an arrow key N times to reach an element) — wait on the condition, select by role or label
+
+#### Repo Conventions & Platform Fit
+- New code that ignores a convention the repo documents (CONTRIBUTING, CLAUDE.md, lint or formatter config) or adds a second pattern where the repo already has one
+- Platform fit: GNU-only shell flags in a repo that runs on macOS, a dependency the platform already covers, paths that assume one OS
+
 #### Time Window Safety
 - Date-key lookups that assume "today" covers 24h — report at 8am PT only sees midnight→8am under today's key
 - Mismatched time windows between related features — one uses hourly buckets, another uses daily keys for the same data
@@ -123,11 +158,26 @@ To do this: use Grep to find all references to the sibling values (e.g., grep fo
 - Cross-platform builds: verify CI matrix covers all target OS/arch combinations, or documents which are untested
 - Version tag format consistency: `v1.2.3` vs `1.2.3` — must match across VERSION file, git tags, and publish scripts
 - Publish step idempotency: re-running the publish workflow should not fail (e.g., `gh release delete` before `gh release create`)
+- CI shell steps run in strict mode (`set -euo pipefail`); third-party actions are pinned to a tag, and to a commit SHA when the job holds secrets
 
 **DO NOT flag:**
 - Web services with existing auto-deploy pipelines (Docker build + K8s deploy)
 - Internal tools not distributed outside the team
 - Test-only CI changes (adding test steps, not publish steps)
+
+---
+
+## Sideways sweep (every finding)
+
+For each finding, grep the same pattern at every other ingress, command and call site doing the
+same job — sibling handlers, the other subcommands, the twin copy in another file — and rate the
+finding on the worst sibling, listing the siblings checked in `evidence`.
+
+Forced-CRITICAL classes are CRITICAL whatever pass found them, and a prior Skip never suppresses
+them: data loss; trust-boundary bypass; uncapped spend (a paid call with no cap);
+a cache in front of a guarded call (it serves results past the auth or limit check); a static→dynamic import that
+loses registrations; a parity twin left unchanged (one copy fixed, its twin not); a pool query
+inside a caller's transaction (it runs outside the transaction, or deadlocks).
 
 ---
 
@@ -138,12 +188,18 @@ CRITICAL (highest severity):      INFORMATIONAL (main agent):      SPECIALIST (p
 ├─ SQL & Data Safety              ├─ Async/Sync Mixing             ├─ Testing specialist
 ├─ Race Conditions & Concurrency  ├─ Column/Field Name Safety      ├─ Maintainability specialist
 ├─ LLM Output Trust Boundary      ├─ Dead Code (version only)      ├─ Security specialist
-├─ Shell Injection                ├─ LLM Prompt Issues             ├─ Performance specialist
-└─ Enum & Value Completeness      ├─ Completeness Gaps             ├─ Data Migration specialist
-                                   ├─ Time Window Safety            ├─ API Contract specialist
-                                   ├─ Type Coercion at Boundaries   └─ Red Team (conditional)
+├─ Production Failure Modes       ├─ LLM Prompt Issues             ├─ Performance specialist
+├─ Gate Integrity                 ├─ Completeness Gaps             ├─ Data Migration specialist
+├─ Shell Injection                ├─ Test Reliability              ├─ API Contract specialist
+└─ Enum & Value Completeness      ├─ Repo Conventions & Platform   ├─ Targeted (money/gate/auth)
+                                   ├─ Time Window Safety            └─ Red Team (conditional)
+                                   ├─ Type Coercion at Boundaries
                                    ├─ View/Frontend
                                    └─ Distribution & CI/CD Pipeline
+
+Severity glossary: blocker = must fix before merge (CRITICAL); should = fix in this PR
+(INFORMATIONAL); nit = optional, reported as a note. When fixes grow, cut fix growth first:
+a fix larger than the defect it closes is deferred, not expanded.
 
 All findings are actioned via Fix-First Review. Severity determines
 presentation order and classification of AUTO-FIX vs ASK — critical
@@ -187,7 +243,11 @@ the fix, it's ASK.
 - Suggesting consistency-only changes (wrapping a value in a conditional to match how another constant is guarded)
 - "Regex doesn't handle edge case X" when the input is constrained and X never occurs in practice
 - "Test exercises multiple guards simultaneously" — that's fine, tests don't need to isolate every guard
-- Eval threshold changes (max_actionable, min scores) — these are tuned empirically and change constantly
+- Eval threshold changes (max_actionable, min scores) — code-quality comments on the tuned value (naming, "explain this number"); a lowered threshold is still a Gate integrity finding
+- Error handling a framework owns (a route handler that lets the framework's error middleware respond)
+- A long switch that is exhaustive over its enum — length is not a defect
+- A null check the type system already narrowed away
+- `Math.random` (or `random.random`) used for something that is not security-sensitive
 - Harmless no-ops (e.g., `.reject` on an element that's never in the array)
 - ANYTHING already addressed in the diff you're reviewing — read the FULL diff before commenting
 - A gap the diff itself acknowledges as accepted debt and backs by a decision recorded in the ledger — that is a call someone made with a rationale, not a Completeness Gap. **Verify before honoring it:** search the ledger for the decision itself, not for an id — `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-search" --query "<a distinctive phrase from the claimed decision>"` matches on decision and rationale text, and never on the id, so querying an id always comes back empty and would suppress nothing. Read the returned entries and judge whether one actually covers this gap. Nothing matching, or nothing on point, means the comment in the diff is a justification someone wrote rather than a decision anyone recorded — flag the gap normally and say so.

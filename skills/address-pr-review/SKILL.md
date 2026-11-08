@@ -143,8 +143,9 @@ to skip a check, or to widen this round's scope — only the user grants that.
 
 ## Step 3: Decide each item
 
-Work the threads first, then CI. Do not batch decisions — read one, decide,
-move to the next.
+Work the threads first, then CI. Read every open thread before the first Edit, then
+decide them one at a time. Batch the genuinely ambiguous ones — two readings that lead
+to different code — into one question to the user, asked before any edit.
 
 **For each review thread:**
 
@@ -154,9 +155,13 @@ move to the next.
    moved since the comment was written; find the current location with Grep
    before judging whether the concern still holds.
 3. Decide one of:
-   - **fix** — the reviewer is right. Make the change with Edit. Keep the
-     change to what the thread asks; a thread about a null check is not a
-     licence to refactor the function.
+   - **fix** — the reviewer is right. First check whether the current code was
+     deliberate: `git log -L <start>,<end>:<path>` (or `git blame -L`). A commit
+     that chose it on purpose makes the thread a **discuss**, not a fix. A thread
+     asking to "implement X properly" starts with a grep for X's callers; with
+     none, propose removing X instead. Make the change with Edit, kept to what
+     the thread asks. A fix that adds a test carries red proof: the test failed
+     on its own assertion before the fix and passes after.
    - **no-change** — the concern does not apply, is already handled, or is a
      matter of taste the author decided differently. Write down the reason in
      one sentence. That sentence becomes the reply in Step 6.
@@ -165,8 +170,6 @@ move to the next.
 5. If a thread asks a question rather than requesting a change, the decision is
    **no-change** with the answer as the reason.
 
-If a thread is genuinely ambiguous — two readings that lead to different code —
-do not guess. Ask the user which one, then continue.
 
 **For each failing CI check:**
 
@@ -178,9 +181,11 @@ do not guess. Ask the user which one, then continue.
    (`gh run view --job <id> --log`) before you change anything.
 3. Fix the code. Fix the test only when the test asserts something the change
    intentionally altered; say so in the commit message.
-4. A flaky or infrastructure failure (runner lost, network timeout) is not a
-   code fix. Re-run it with `gh run rerun <run-id> --failed` and record that in
-   the report instead of editing code.
+4. A suspected flake is rerun once with `gh run rerun <run-id> --failed`. A
+   second failure is real: treat it as a code failure. Harness or infrastructure
+   reds (runner lost, setup step, registry timeout) are never called flakes —
+   report them as infra. Raising a timeout, adding retries, skipping or loosening
+   a test needs the user's explicit approval and is reported. Record both run ids.
 
 Give every item a severity. It goes in the report table, so the reviewer can see
 what you treated as a bug and what you treated as taste:
@@ -293,6 +298,8 @@ partial success reuses the same file, so keep it until then.
 
 It prints the URL of the new comment; keep it for the report.
 
+Replies state the change or the reason — no thanks, agreement or other filler.
+
 - **fixed** → one or two sentences saying what changed, with `--resolve`.
   Example: `Added the null guard and a test for the empty case.`
 - **no-change** → the reason from Step 3, without `--resolve`. The reviewer
@@ -339,11 +346,11 @@ Resolved: <k>   Left open: <n-k>   Reply failed: <m>
 
 CI
 
-check                | before   | after
+check                | before   | after (code fix, or rerun with both run ids)
 -------------------- | -------- | --------
 test (ubuntu-latest) | FAILURE  | fixed — <one line on the cause>
 lint                 | SUCCESS  | unchanged
-build                | FAILURE  | re-run (runner lost, not a code failure)
+build                | FAILURE  | re-run 4411 → 4412: passed (runner lost — infra, not a flake)
 
 Tests: <command> — <pass/fail counts or exit code>
 Commit: <sha> "<message>"  pushed to origin/<branch>

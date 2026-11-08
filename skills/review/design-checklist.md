@@ -69,21 +69,31 @@ If no frontend files changed: skip silently, no output.
 
 ## Categories
 
-### 1. AI Slop Detection (6 items) — highest priority
+### 1. AI Slop Detection (10 items) — highest priority
 
-These are the telltale signs of AI-generated UI that no designer at a respected studio would ship.
+These are the telltale signs of AI-generated UI that no designer at a respected studio would ship. Cite the rule id with each finding.
 
-- **[MEDIUM]** Purple/violet/indigo gradient backgrounds or blue-to-purple color schemes. Look for `linear-gradient` with values in the `#6366f1`–`#8b5cf6` range, or CSS custom properties resolving to purple/violet.
+- **[slop-purple-gradient] [MEDIUM]** Purple/violet/indigo gradient backgrounds or blue-to-purple color schemes. Look for `linear-gradient` with values in the `#6366f1`–`#8b5cf6` range, or CSS custom properties resolving to purple/violet.
 
-- **[LOW]** The 3-column feature grid: icon-in-colored-circle + bold title + 2-line description, repeated 3x symmetrically. Look for a grid/flex container with exactly 3 children that each contain a circular element + heading + paragraph.
+- **[slop-three-column-grid] [LOW]** The 3-column feature grid: icon-in-colored-circle + bold title + 2-line description, repeated 3x symmetrically. Look for a grid/flex container with exactly 3 children that each contain a circular element + heading + paragraph.
 
-- **[LOW]** Icons in colored circles as section decoration. Look for elements with `border-radius: 50%` + a background color used as decorative containers for icons.
+- **[slop-icon-circles] [LOW]** Icons in colored circles as section decoration. Look for elements with `border-radius: 50%` + a background color used as decorative containers for icons.
 
-- **[HIGH]** Centered everything: `text-align: center` on all headings, descriptions, and cards. Grep for `text-align: center` density — if >60% of text containers use center alignment, flag it.
+- **[slop-centered-everything] [HIGH]** `text-align: center` on all headings, descriptions, and cards. Grep for `text-align: center` density — if >60% of text containers use center alignment, flag it.
 
-- **[MEDIUM]** Uniform bubbly border-radius on every element: same large radius (16px+) applied to cards, buttons, inputs, containers uniformly. Aggregate `border-radius` values — if >80% use the same value ≥16px, flag it.
+- **[slop-uniform-radius] [MEDIUM]** Uniform bubbly border-radius on every element: same large radius (16px+) applied to cards, buttons, inputs, containers uniformly. Aggregate `border-radius` values — if >80% use the same value ≥16px, flag it.
 
-- **[MEDIUM]** Generic hero copy: "Welcome to [X]", "Unlock the power of...", "Your all-in-one solution for...", "Revolutionize your...", "Streamline your workflow". Grep HTML/JSX content for these patterns.
+- **[slop-generic-hero] [MEDIUM]** Generic hero copy: "Welcome to [X]", "Unlock the power of...", "Your all-in-one solution for...", "Revolutionize your...", "Streamline your workflow". Grep HTML/JSX content for these patterns.
+
+- **[slop-layout-transition] [HIGH]** Transitions or animations on layout properties (`width`, `height`, `top`, `left`, `margin`, `padding`) or `transition: all` — they reflow every frame. Animate `transform` and `opacity`.
+
+- **[slop-justified-text] [HIGH]** `text-align: justify` on body text without hyphenation — it opens rivers of whitespace, worst on narrow screens.
+
+- **[slop-tiny-text] [HIGH]** Any text below 12px (`font-size` < 12px or < 0.75rem), including captions, labels and legal copy.
+
+- **[slop-all-caps-body] [MEDIUM]** `text-transform: uppercase` (or literal capitals) on body copy or anything longer than a short label — it slows reading.
+
+Everything else the craft floor covers (hierarchy, rhythm, color restraint, motion purpose) is for `/design-review` on the rendered page, not this code-level pass.
 
 ### 2. Typography (4 items)
 

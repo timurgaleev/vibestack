@@ -478,8 +478,10 @@ grade_of() {
     PATH="$TMP/bin:$PATH" bash -c "$(block_in "$1" 'codex exec "IMPORTANT: Do NOT read')" 2>&1 | sed -n 's/^ADVERSARIAL: //p') || true
 }
 mkdir -p "$TMP/codex-home"; printf '{}\n' > "$TMP/codex-home/auth.json"
-for f in "$ROOT/skills/review/SKILL.md" "$ROOT/skills/ship/SKILL.md"; do
-  n=$(basename "$(dirname "$f")")
+# The adversarial pass lives in a shared snippet: grade the rendered skills.
+for n in review ship; do
+  f="$TMP/rendered-$n.md"
+  "$ROOT/bin/vibe-render-skill" "$ROOT/skills/$n/SKILL.md" "$f" >/dev/null 2>&1 || { no "$n renders"; continue; }
   echo "$n: Codex mode comes from the probe"
   expect "$n: probe usable -> ready" ready "$(mode_of "$f" 'CODEX: usable')"
   expect "$n: probe unauthenticated -> not_authed" not_authed "$(mode_of "$f" 'CODEX: unauthenticated')"

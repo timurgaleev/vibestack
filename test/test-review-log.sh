@@ -118,7 +118,9 @@ if printf '%s' "$STEP1" | grep -qF 'git fetch origin <base> --quiet &&'; then
 else ok "Step 1 fetch is separate from the diff"; fi
 printf '%s' "$STEP1" | grep -qF 'BASE_REFRESH: stale' && ok "Step 1 reports a stale base" || no "Step 1 has no stale-base report"
 printf '%s' "$STEP1" | grep -qF 'ls-files --others --exclude-standard' && ok "Step 1 counts untracked files" || no "Step 1 ignores untracked files"
-N=$(grep -cF 'ls-files --others --exclude-standard' "$SK")
+# Reviewer prompts live in shared snippets, so count in the rendered skill.
+"$BIN/vibe-render-skill" "$SK" "$TMP/review-count.md" >/dev/null 2>&1 || : > "$TMP/review-count.md"
+N=$(grep -cF 'ls-files --others --exclude-standard' "$TMP/review-count.md")
 [ "$N" -ge 6 ] && ok "untracked files reach Step 3 and every reviewer ($N)" || no "untracked instruction appears only $N times"
 hasnt "specialist failure no longer 'partial results'" "partial results are better than no results"
 hasnt "red team failure no longer silent" "skip silently and continue"

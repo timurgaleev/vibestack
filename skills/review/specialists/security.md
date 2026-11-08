@@ -56,6 +56,12 @@ This checklist goes deeper than the main CRITICAL pass. The main agent already c
 - Django: |safe, mark_safe() on user input
 - General: innerHTML assignment with unsanitized data
 
+### Redirects, Tokens & Binding
+- Open redirect: a user-controlled `next`/`return_to`/`redirect` URL followed without an allowlist or same-origin check
+- Token signatures not verified, or `alg: none` / any algorithm accepted when decoding a JWT
+- CORS that reflects any `Origin` while allowing credentials
+- Mass assignment: a request body bound straight onto a model, letting a caller set role, owner or price
+
 ### Deserialization
 - Deserializing untrusted data (pickle, Marshal, YAML.load, JSON.parse of executable types)
 - Accepting serialized objects from user input or external APIs without schema validation
