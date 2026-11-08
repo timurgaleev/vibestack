@@ -41,9 +41,46 @@ Read ONLY the section for the current review pass. Do NOT load the entire file.
 
 ## Pass 3: Error Messages & Debugging
 
-**Three tiers of error quality:**
+**Agent-ready error contract (rubric `agent-ready-v1`).** Every error a developer or an AI coding agent can hit carries:
 
-**Tier 1, Elm (Conversational Compiler):**
+1. **What** — what failed, in one sentence, with the actual value that caused it.
+2. **Fix** — the exact next action (command, flag, config key), not "check your setup".
+3. **Recovery** — what state was left behind, and whether re-running is safe.
+4. **Code** — a stable identifier a script can branch on; never prose alone.
+5. **Context** — the inputs that matter (file, line, env, resource id), so nobody re-runs to find out.
+6. **Trace** — for an unexpected failure, an id or log location that leads to the full detail.
+7. **Redaction** — secrets, tokens and personal data masked in every field, context and trace included.
+8. **Channel** — the surface's error channel (below); never a success status carrying an error.
+
+**Failure classes.** Classify each traced path; the class decides what Fix and Recovery must say:
+- *User input* (bad flag, invalid config): Fix names the corrected input.
+- *Environment* (missing dependency, network, permission, quota): Fix names the check or install step; Recovery says whether a later retry is safe.
+- *Product bug / unexpected failure*: the user cannot fix it. Say so, give the Trace, and say what to report.
+
+**Surface rules.**
+- CLI: human text on stderr, a distinct non-zero exit code per class, and a `--json` (or equivalent) form carrying the same code.
+- API: the status matches the class; the body carries code, message and the offending parameter.
+- SDK/library: a typed error per failure class with the code as a field; never a bare string throw.
+- Prompts: a non-interactive run fails fast and names the flag that answers the prompt.
+
+**Caps.**
+- **CAP4**: a traced path lacks What or Fix, reports success on failure (exit 0, 2xx), or leaks an unredacted secret. Pass 3 scores at most 4.
+- **CAP6**: a traced path lacks a stable Code or uses the wrong channel, or the unexpected-failure path has no Trace. Pass 3 scores at most 6.
+
+**Worked example (CLI):**
+```
+$ acme deploy --env prod
+error[E_AUTH_EXPIRED]: the deploy token for "prod" expired on 2026-05-02.
+  fix:      run `acme login --env prod`, then re-run this command
+  recovery: nothing was uploaded; re-running is safe
+  context:  env=prod token=...a91f
+  trace:    run 7f3c2e (`acme logs 7f3c2e` prints the full log)
+```
+Printed on stderr with exit code 3 (the auth class); `acme deploy --env prod --json` prints the same fields with `"code": "E_AUTH_EXPIRED"`.
+
+**Message craft (how the text reads; the contract above is what it must contain):**
+
+**Elm (conversational compiler):**
 ```
 -- TYPE MISMATCH ---- src/Main.elm
 I cannot do addition with String values like this one:
@@ -51,9 +88,9 @@ I cannot do addition with String values like this one:
      ^^^^^^^
 Hint: To put strings together, use the (++) operator instead.
 ```
-First person, complete sentences, exact location, suggested fix, further reading.
+First person, complete sentences, exact location, suggested fix.
 
-**Tier 2, Rust (Annotated Source):**
+**Rust (annotated source):**
 ```
 error[E0308]: mismatched types
  --> src/main.rs:4:20
@@ -62,15 +99,13 @@ help: consider borrowing here
 4 |     let name: &str = &get_name();
   |                       +
 ```
-Error code links to tutorial. Primary + secondary labels. Help section shows exact edit.
+Stable error code, primary + secondary labels, help section shows the exact edit.
 
-**Tier 3, Stripe API (Structured with doc_url):**
+**Stripe API (structured):**
 ```json
-{"error":{"type":"invalid_request_error","code":"resource_missing","message":"No such customer: 'cus_nonexistent'","param":"customer","doc_url":"https://stripe.com/docs/error-codes/resource-missing"}}
+{"error":{"type":"invalid_request_error","code":"resource_missing","message":"No such customer: 'cus_nonexistent'","param":"customer"}}
 ```
-Five fields, zero ambiguity.
-
-**The formula:** What happened + Why + How to fix + Where to learn more + Actual values that caused it.
+Type, code, message and the offending parameter: zero ambiguity.
 
 **Anti-pattern:** TypeScript buries "Did you mean?" at the BOTTOM of long error chains. Most actionable info should appear FIRST.
 

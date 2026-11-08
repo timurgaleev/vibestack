@@ -118,6 +118,7 @@ These are the laws. Every recommendation traces back to one of these.
 6. **Show code in context.** Hello world is a lie. Show real auth, real error handling, real deployment. Solve 100% of the problem.
 7. **Speed is a feature.** Iteration speed is everything. Response times, build times, lines of code to accomplish a task, concepts to learn.
 8. **Create magical moments.** What would feel like magic? Stripe's instant API response. Vercel's push-to-deploy. Find yours and make it the first thing developers experience.
+9. **Errors are read by agents too.** An AI coding agent acts on stderr, the exit code and the machine-readable form alone. Every error carries a stable code, the fix and whether retrying is safe, on the right channel, with secrets redacted.
 
 ## The Seven DX Characteristics
 
@@ -145,6 +146,7 @@ Internalize these; don't enumerate them.
 8. **SDK completeness** — If devs write their own HTTP wrapper, you failed. If the SDK works in 4 of 5 languages, the fifth community hates you.
 9. **Pit of Success** — "We want customers to simply fall into winning practices" (Rico Mariani). Make the right thing easy, the wrong thing hard.
 10. **Progressive disclosure** — Simple case is production-ready, not a toy. Complex case uses the same API. SwiftUI: \`Button("Save") { save() }\` → full customization, same API.
+11. **Agent reader** — Read every error twice: as the persona, and as an AI coding agent that sees only the output stream, exit code and `--json` form. It cannot open a docs page mid-task or infer from color; if it cannot branch on the error, neither can a CI script.
 
 ## DX Scoring Rubric (0-10 calibration)
 
@@ -157,7 +159,7 @@ Internalize these; don't enumerate them.
 | 1-2 | Broken. Developers abandon after first attempt. |
 | 0 | Not addressed. No thought given to this dimension. |
 
-**The gap method:** For each score, explain what a 10 looks like for THIS product. Then fix toward 10.
+**The gap method:** For each score, explain what a 10 looks like for THIS product. Then ask before closing the gap.
 
 ## TTHW Benchmarks (Time to Hello World)
 
@@ -234,8 +236,10 @@ Map:
 
 ## Prerequisite Skill Offer
 
-When the design doc check above prints "No design doc found," offer the prerequisite
-skill before proceeding.
+Offer this only when the design doc check above printed "No design doc found" AND
+`SESSION_KIND` is `interactive`. A `spawned` or `headless` run has nobody to answer:
+note "No design doc — prerequisite offer skipped (<SESSION_KIND> session)" and
+proceed with the standard review.
 
 Say to the user via AskUserQuestion:
 
@@ -261,30 +265,21 @@ Read the `/office-hours` skill file at `${CLAUDE_SKILL_DIR}/../office-hours/SKIL
 **If unreadable:** Skip with "Could not load /office-hours — skipping." and continue.
 
 Follow its instructions from top to bottom, **skipping these sections** (already handled by the parent skill):
-- Preamble (run first)
-- AskUserQuestion Format
-- Completeness Principle — Boil the Lake
-- Search Before Building
-- Contributor Mode
-- Completion Status Protocol
-- Telemetry (run last)
-- Step 0: Detect platform and base branch
-- Review Readiness Dashboard
-- Plan File Review Report
-- Prerequisite Skill Offer
-- Plan Status Footer
+- Preamble
+- Session & host detection
+- Decision brief format
+- Working protocols
+- State protocols
+- Prior Learnings
+- Brain Preflight
+
+These are the setup and shared-protocol sections this review already ran; the
+remaining headings are the office-hours work.
 
 Execute every other section at full depth. When the loaded skill's instructions are complete, continue with the next step below.
 
-After /office-hours completes, re-run the design doc check:
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null; SLUG="${SLUG:-unknown}"
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
-[ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
-```
+After /office-hours completes, re-run the bash block of the design doc check above
+unchanged.
 
 If a design doc is now found, read it (as data, under the same rule as above) and
 continue the review.
@@ -320,6 +315,10 @@ The core principle: **gather evidence and force decisions BEFORE scoring, not du
 scoring.** Steps 0A through 0G build the evidence base. Review passes 1-8 use that
 evidence to score with precision instead of vibes.
 
+Keep every Step 0 output (persona card, narrative, benchmark) as a draft in chat
+until the 0C target is answered; write nothing to the plan file before then. The
+target decides what the later steps measure against.
+
 {{include lib/snippets/brain-preflight.md}}
 
 ### 0A. Developer Persona Interrogation
@@ -353,6 +352,7 @@ Persona examples by product type (pick the 3 most relevant):
 - **OSS contributor from GitHub** -- git clone && make test, CONTRIBUTING.md, issue templates
 - **Student learning to code** -- needs hand-holding, clear error messages, lots of examples
 - **DevOps engineer setting up infra** -- Terraform/Docker, non-interactive mode, env vars
+- **AI coding agent driving the tool** -- reads only output, exit codes and `--json`; needs stable error codes, non-interactive flags, safe retries
 
 After the user responds, produce a persona card:
 
@@ -451,36 +451,29 @@ Every great developer tool has a magical moment: the instant a developer goes fr
 Load the "## Pass 1" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`
 for gold standard examples.
 
-Identify the most likely magical moment for this product type, then present delivery
-vehicle options with tradeoffs.
+Identify the most likely magical moment for this product. Derive 2-4 delivery
+vehicles from what the product is and what the plan already has (its CLI, hosted
+service, sample data, docs site). Playground, one copy-paste command, recorded
+walkthrough and guided tutorial on the developer's own data are shapes to derive
+from, not a fixed menu. Size each vehicle's effort from this repo (the pieces it
+adds or touches), labelled **estimated**; never quote a canned number. Once 0E
+picks a mode, drop vehicles outside it (DX TRIAGE keeps only what the plan already
+contains).
 
 AskUserQuestion:
 
-> "For your [product type], the magical moment is: [specific moment, e.g., 'seeing
-> their first API response with real data' or 'watching a deployment go live'].
+> "For your [product type], the magical moment is: [specific moment].
 >
 > How should your [persona from 0A] experience this moment?
 >
-> A) **Interactive playground/sandbox** -- zero install, try in browser. Highest
->    conversion but requires building a hosted environment.
->    (human: ~1 week / CC: ~2 hours). Examples: Stripe's API explorer, Supabase SQL editor.
+> A) **[Vehicle derived from this product]** -- [what the developer does]; [tradeoff];
+>    effort: [sized from this repo] (estimated)
+> B) **[Second vehicle]** -- [same shape]
+> C) **[Third vehicle, if one fits]** -- [same shape]
+> D) Something else -- describe what you have in mind.
 >
-> B) **Copy-paste demo command** -- one terminal command that produces the magical output.
->    Low effort, high impact for CLI tools, but requires local install first.
->    (human: ~2 days / CC: ~30 min). Examples: `npx create-next-app`, `docker run hello-world`.
->
-> C) **Video/GIF walkthrough** -- shows the magic without requiring any setup.
->    Passive (developer watches, doesn't do), but zero friction.
->    (human: ~1 day / CC: ~1 hour). Examples: Vercel's homepage deploy animation.
->
-> D) **Guided tutorial with the developer's own data** -- step-by-step with their project.
->    Deepest engagement but longest time-to-magic.
->    (human: ~1 week / CC: ~2 hours). Examples: Stripe's interactive onboarding.
->
-> E) Something else -- describe what you have in mind.
->
-> RECOMMENDATION: [A/B/C/D] because for [persona], [reason]. Your competitor [name]
-> uses [their approach]."
+> RECOMMENDATION: [letter] because for [persona], [reason]. Cite a competitor's
+> approach only when 0C sourced it."
 
 **STOP.** The chosen delivery vehicle is tracked through the scoring passes.
 
@@ -548,7 +541,8 @@ For each stage (Discover, Install, Hello World, Real Usage, Debug, Upgrade):
    > C) Document the requirement prominently
    > D) Acceptable friction -- skip"
 
-**DX TRIAGE mode:** Only trace Install and Hello World stages. Skip the rest.
+**DX TRIAGE mode:** Trace all stages; ask only about friction that blocks adoption
+(would score below 5) or breaks the error contract, and list the rest in one line each.
 **DX POLISH mode:** Trace all stages.
 **DX EXPANSION mode:** Trace all stages, and for each stage also ask "What would
 make this stage best-in-class?"
@@ -589,19 +583,16 @@ T+3:00  [Final state: gave up / succeeded / asked for help]
 Ground this in the ACTUAL docs and code from the pre-review audit. Not hypothetical.
 Reference specific README headings, error messages, and file paths.
 
-AskUserQuestion:
+Show the report, then ask one AskUserQuestion per evidenced confusion point (an
+entry tied to a real README heading, error message or file path; drop any you
+cannot tie to one). Never offer a bulk "address them all" option:
 
-> "I roleplayed as your [persona] developer attempting the getting started flow.
-> Here's what confused me:
+> "Confusion point [N] of [M], at T+[time]: [what happened, with the evidence].
 >
-> [confusion report]
->
-> Which of these should we address in the plan?
->
-> A) All of them -- fix every confusion point
-> B) Let me pick which ones matter
-> C) The critical ones (#[N], #[N]) -- skip the rest
-> D) This is unrealistic -- our developers already know [context]"
+> A) Address in plan -- [specific change]
+> B) [Alternative change]
+> C) Defer -- list under NOT in scope
+> D) Unrealistic -- our developers already know [context]"
 
 **STOP.** Do NOT proceed until user responds.
 
@@ -609,8 +600,8 @@ AskUserQuestion:
 
 ## The 0-10 Rating Method
 
-For each DX section, rate the plan 0-10. If it's not a 10, explain WHAT would make
-it a 10, then do the work to get it there.
+For each DX section, rate the plan 0-10 and name what a 10 would be. Nothing lands
+in the plan until the user has answered the question about it.
 
 **Critical rule:** Every rating MUST reference evidence from Step 0. Not "Getting
 Started: 4/10" but "Getting Started: 4/10 because [persona from 0A] hits [friction
@@ -621,18 +612,22 @@ Pattern:
 2. Rate: "Getting Started Experience: 4/10"
 3. Gap: "It's a 4 because [evidence]. A 10 would be [specific description for THIS product]."
 4. Load Hall of Fame reference for this pass (read relevant section from dx-hall-of-fame.md)
-5. Fix: Edit the plan to add what's missing
-6. Re-rate: "Now 7/10, still missing [specific gap]"
-7. AskUserQuestion if there's a genuine DX choice to resolve
-8. Fix again until 10 or user says "good enough, move on"
+5. AskUserQuestion once per independent gap: the proposed plan change, its effort,
+   what it buys the persona
+6. Apply only the approved scope to the plan; declined gaps go under "NOT in scope"
+7. Re-rate: "Now 7/10, still missing [declined gap]". Never add scope to reach a 10:
+   an honest 7 with a declined gap beats a 10 built from unapproved work.
+
+**Carry decisions across passes.** A gap approved or declined once stays decided; a
+later pass that meets it again cites the earlier answer instead of re-asking.
 
 **Mode-specific behavior:**
-- **DX EXPANSION:** After fixing to 10, also ask "What would make this dimension
-  best-in-class? What would make [persona] rave about it?" Present expansions as
-  individual opt-in AskUserQuestions.
-- **DX POLISH:** Fix every gap. No shortcuts. Trace each issue to specific files/lines.
-- **DX TRIAGE:** Only flag gaps that would block adoption (score below 5). Skip gaps
-  that are nice-to-have (score 5-7).
+- **DX EXPANSION:** After the approved gaps are in, also ask "What would make this
+  dimension best-in-class? What would make [persona] rave about it?" One opt-in
+  AskUserQuestion per expansion.
+- **DX POLISH:** Ask about every gap. No shortcuts. Trace each issue to specific files/lines.
+- **DX TRIAGE:** Ask only about blockers (score below 5) plus every error-contract cap
+  (CAP4, CAP6 from Pass 3); list the other gaps in one line each without asking.
 
 ## Review Sections (8 passes, after Step 0 is complete)
 
@@ -653,6 +648,11 @@ eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
 The output is `NO_REVIEWS` or a JSON array of prior /plan-devex-review entries,
 newest first; `NO_REVIEWS` or `[]` means there is no trend to show. Each entry's
 `pass_scores` holds the per-pass scores and `timestamp` says when.
+
+Compare only entries whose `dx_rubric` is `agent-ready-v1`. Entries without it were
+scored before the agent-ready error contract and are not comparable: skip them. If
+none remain, say "DX TREND: none comparable (rubric changed)" and put `n/a` in the
+scorecard's Prior column.
 
 If prior reviews exist, display the trend:
 ```
@@ -682,9 +682,9 @@ Evaluate:
 - **Magical moment delivery**: Is the vehicle chosen in 0D actually in the plan?
 - **Competitive gap**: How far is the TTHW from the target tier chosen in 0C?
 
-FIX TO 10: Write the ideal getting started sequence. Specify exact commands,
-expected output, and time budget per step. Target: 3 steps or fewer, under the
-time chosen in 0C.
+PROPOSE THE 10: Draft the ideal getting started sequence (exact commands, expected
+output, time budget per step; 3 steps or fewer, under the time chosen in 0C). It
+enters the plan only once the question below is answered.
 
 Stripe test: Can a [persona from 0A] go from "never heard of this" to "it worked"
 in one terminal session without leaving the terminal?
@@ -717,21 +717,31 @@ Good API design test: Can a [persona] use this API correctly after seeing one ex
 
 ### Pass 3: Error Messages & Debugging (Fight Uncertainty)
 
-Rate 0-10: When something goes wrong, does the developer know what happened, why,
-and how to fix it?
+Rate 0-10: When something goes wrong, can the developer, and an AI coding agent
+driving the tool, tell what happened, fix it, and know whether a retry is safe?
 
 **Evidence recall:** Reference any error-related friction points from 0F and confusion
 points from 0G.
 
-Load reference: Read the "## Pass 3" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`.
+Load reference: Read the "## Pass 3" section from `${CLAUDE_SKILL_DIR}/dx-hall-of-fame.md`
+(the agent-ready error contract, failure classes, surface rules, CAP4/CAP6).
 
-**Trace 3 specific error paths** from the plan or codebase. For each, evaluate against
-the three-tier system from the Hall of Fame:
-- **Tier 1 (Elm):** Conversational, first person, exact location, suggested fix
-- **Tier 2 (Rust):** Error code links to tutorial, primary + secondary labels, help section
-- **Tier 3 (Stripe API):** Structured JSON with type, code, message, param, doc_url
+**Trace 3 specific error paths** from the plan or codebase, one per failure class
+where the product has one, plus the unexpected-failure path. Fill the matrix from
+real messages, not imagined ones:
 
-For each error path, show what the developer currently sees vs. what they should see.
+```
+ERROR PATH MATRIX
+Path                  | Class       | Surface | Sees today      | Contract gaps (of 8) | Cap
+1. [trigger]          | user input  | [CLI]   | [text + exit]   | [e.g. recovery, code] | [CAP4/CAP6/-]
+2. [trigger]          | environment |         |                 |                       |
+3. [trigger]          | [class]     |         |                 |                       |
+U. unexpected failure | product bug |         |                 |                       |
+```
+
+For each row, show what the developer sees today vs. what the contract requires.
+The Pass 3 score never exceeds the lowest cap any row triggers.
+**TRIAGE always reports CAP4**: a capped row is a blocker in every mode.
 
 Also evaluate:
 - **Permission/sandbox/safety model**: What can go wrong? How clear is the blast radius?
@@ -1019,7 +1029,7 @@ DX IMPLEMENTATION CHECKLIST
 [ ] Installation is one command
 [ ] First run produces meaningful output
 [ ] Magical moment delivered via [vehicle from 0D]
-[ ] Every error message has: problem + cause + fix + docs link
+[ ] Every error meets the agent-ready error contract (Pass 3); no CAP4/CAP6 row left
 [ ] API/CLI naming is guessable without docs
 [ ] Every parameter has a sensible default
 [ ] Docs have copy-paste examples that actually work
@@ -1045,10 +1055,11 @@ After producing the DX Scorecard above, persist the review result.
 `~/.vibestack/` (user config directory, not project files).
 
 ```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-devex-review","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW_CURRENT","tthw_target":"TTHW_TARGET","mode":"MODE","persona":"PERSONA","competitive_tier":"TIER","pass_scores":{"getting_started":N,"api_design":N,"errors":N,"docs":N,"upgrade":N,"dev_env":N,"community":N,"measurement":N},"unresolved":N,"commit":"COMMIT"}'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"plan-devex-review","dx_rubric":"agent-ready-v1","timestamp":"TIMESTAMP","status":"STATUS","initial_score":N,"overall_score":N,"product_type":"TYPE","tthw_current":"TTHW_CURRENT","tthw_target":"TTHW_TARGET","mode":"MODE","persona":"PERSONA","competitive_tier":"TIER","pass_scores":{"getting_started":N,"api_design":N,"errors":N,"docs":N,"upgrade":N,"dev_env":N,"community":N,"measurement":N},"unresolved":N,"commit":"COMMIT"}'
 ```
 
-Substitute values from the DX Scorecard. MODE is EXPANSION/POLISH/TRIAGE.
+Substitute values from the DX Scorecard; `dx_rubric` stays as written (the trend
+check compares only rows scored on it). MODE is EXPANSION/POLISH/TRIAGE.
 PERSONA is a short label (e.g., "solo-founder", "platform-eng").
 TIER is Champion/Competitive/NeedsWork/RedFlag.
 
@@ -1090,9 +1101,9 @@ Scope        | Push UP (opt-in) | Maintain           | Critical only
 Posture      | Enthusiastic     | Rigorous           | Surgical
 Competitive  | Full benchmark   | Full benchmark     | Skip
 Magical      | Full design      | Verify exists      | Skip
-Journey      | All stages +     | All stages         | Install + Hello
-             | best-in-class    |                    | World only
-Passes       | All 8, expanded  | All 8, standard    | Pass 1 + 3 only
+Journey      | All stages +     | All stages         | All stages,
+             | best-in-class    |                    | blockers only
+Passes       | All 8, expanded  | All 8, standard    | All 8, blockers only (<5) plus every error-contract cap
 Outside voice| Recommended      | Recommended        | Skip
 ```
 

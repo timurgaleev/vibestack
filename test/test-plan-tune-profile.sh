@@ -104,6 +104,57 @@ hits="$(grep -rln 'profile already settles' "$ROOT/lib/snippets" "$ROOT/skills" 
 [ -z "$hits" ] && ok "no skill text says the profile skips questions" \
                || no "profile-skips-questions wording in: $hits"
 
+echo "no fabricated observed profile"
+# Nothing in vibestack derives an observed profile from the question log, so the
+# skill must not show one, compare against one, or call a log "calibrated".
+section() { awk -v s="$1" -v e="$2" '$0 ~ s {on=1; print; next} on && $0 ~ e {on=0} on' "$SKILL"; }
+NOT_AVAILABLE='not available: vibestack does not derive an observed profile'
+for sec in '## Inspect profile' '## Show gap'; do
+  section "^$sec" '^## ' | tr '\n' ' ' | tr -s ' ' | grep -qF "$NOT_AVAILABLE" \
+    && ok "$sec says the observed profile is not available" \
+    || no "$sec does not print: $NOT_AVAILABLE"
+done
+for pat in 'inferred column' '↔ observed' 'inferred\.diversity' 'both declared and inferred exist'; do
+  grep -q -- "$pat" "$SKILL" && no "skill still describes an observed profile: $pat" \
+                             || ok "no observed-profile display: $pat"
+done
+placeholders="$(python3 -I - "$SKILL" <<'PY'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+for body in re.findall(r"```bash\n(.*?)\n[ \t]*```", text, re.S):
+    if all(not l.strip() or l.strip().startswith("#") for l in body.splitlines()):
+        print(body.strip().splitlines()[0] if body.strip() else "(empty)")
+PY
+)"
+[ -z "$placeholders" ] && ok "no comment-only placeholder bash blocks" \
+                       || no "placeholder bash blocks: $placeholders"
+
+# Run the Stats block against a log that clears every diversity threshold: it
+# must report enough events to start deriving, and still say not calibrated.
+SLUG="$(cd "$TMP" && VIBESTACK_SLUG_NO_MIGRATE=1 HOME="$TMP/home" VIBESTACK_HOME="$TMP/home/.vibestack" \
+  "$ROOT/bin/vibe-slug" 2>/dev/null | sed -n 's/^SLUG=//p')"
+SLUG="${SLUG:-unknown}"
+mkdir -p "$TMP/home/.vibestack/projects/$SLUG"
+python3 -I - "$TMP/home/.vibestack/projects/$SLUG/question-log.jsonl" <<'PY'
+import json, sys
+with open(sys.argv[1], "w") as fh:
+    for i in range(24):
+        fh.write(json.dumps({"skill": ["ship", "review", "plan-ceo-review"][i % 3],
+                             "question_id": "q%d" % (i % 9),
+                             "ts": "2026-01-%02dT00:00:00Z" % (1 + i % 10),
+                             "followed_recommendation": i % 2 == 0}) + "\n")
+PY
+STATS_SCRIPT="$(block "## Stats" x 0)" || STATS_SCRIPT=""
+STATS_SCRIPT="$(printf '%s\n' "$STATS_SCRIPT" | sed "s|\${VIBESTACK_HOME:-\$HOME/.vibestack}/bin/|$ROOT/bin/|g")"
+STATS="$(cd "$TMP" && VIBESTACK_SLUG_NO_MIGRATE=1 HOME="$TMP/home" VIBESTACK_HOME="$TMP/home/.vibestack" bash -c "$STATS_SCRIPT" 2>&1)"
+printf '%s\n' "$STATS" | grep -q '^TOTAL_LOGGED: 24$' && ok "stats block reads the fixture log" \
+                                                       || no "stats block output: $(printf '%s' "$STATS" | head -3)"
+printf '%s\n' "$STATS" | grep -q '^ENOUGH_EVENTS_TO_START_DERIVING: True$' \
+  && ok "a diverse log reports enough events to start deriving" || no "no ENOUGH_EVENTS_TO_START_DERIVING: True line"
+printf '%s\n' "$STATS" | grep -q '^CALIBRATION: not calibrated: no derivation$' \
+  && ok "stats always says not calibrated: no derivation" || no "no CALIBRATION: not calibrated line"
+printf '%s\n' "$STATS" | grep -q '^CALIBRATED:' && no "stats still prints CALIBRATED" || ok "no CALIBRATED line"
+
 echo
 echo "plan-tune profile: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
