@@ -172,6 +172,11 @@ real_total="$(field TOTAL)"
 [ "$RC" = 0 ] && [ -n "$real_total" ] && [ "$real_total" -le 8000 ] \
   && ok "the pack fits the default codex budget ($real_total <= 8000)" \
   || bad "the pack fits the default codex budget (TOTAL ${real_total:-?}, rc=$RC)" "$(printf '%s\n' "$OUT" | grep -E '^(TOTAL|BUDGET|OVER BUDGET)')"
+# A new skill or a longer description lands without warning; keeping 300 chars
+# free means the next addition is a deliberate trim, not a silent Codex cut.
+[ -n "$real_total" ] && [ "$real_total" -le 7700 ] \
+  && ok "the pack keeps 300 chars of headroom ($real_total <= 7700)" \
+  || bad "the pack keeps 300 chars of headroom (TOTAL ${real_total:-?} > 7700): trim descriptions"
 
 run --config-dir "" --runtime copilot
 [ "$RC" = 0 ] && ok "every pack description fits copilot's 1024-char cap" \
