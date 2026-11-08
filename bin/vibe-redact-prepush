@@ -161,7 +161,7 @@ PATTERNS=(
   'Private key block|-----BEGIN[^-]*PRIVATE KEY-----'
   'AWS secret key|aws_secret_access_key[^A-Za-z0-9]+[A-Za-z0-9/+=]{40}'
   'SecretAccessKey field|"?SecretAccessKey"?[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9/+=]{40}'
-  'env-style secret|^[[:space:]+-]{0,2}[[:space:]]*(-[[:space:]]+)?(export[[:space:]]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+'
+  'env-style secret|^[[:space:]+-]{0,2}[[:space:]]*(-[[:space:]]+)?(export[[:space:]]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)(=..+|[[:space:]]+=[[:space:]]*("[^"]{2,}"|'\''[^'\'']{2,}'\''))'
   'DSN credentials|://[^[:space:]:/@]{0,255}:[^[:space:]@/]{1,255}@'
 )
 
@@ -174,20 +174,38 @@ PATTERNS=(
 # where local dev and test strings (postgres:postgres, user:pass, a password
 # that repeats the user name) are the norm.
 redact_is_placeholder() {
-  local label="$1" span="$2" v u
+  local label="$1" span="$2" v u s
   v="$span"
   case "$label" in
-    "env-style secret") v="${span#*=}" ;;
+    "env-style secret")
+      # Judge the first shell word only, so `KEY=$1  # arg` or `KEY="$1";`
+      # is the expansion it looks like.
+      v="${span#*=}"; v="${v#"${v%%[![:space:]]*}"}"
+      case "$v" in
+        \"*) v="${v#\"}"; v="${v%%\"*}" ;;
+        \'*) v="${v#\'}"; v="${v%%\'*}" ;;
+        *) v="${v%%[[:space:];]*}" ;;
+      esac ;;
     "SecretAccessKey field") v="${span#*[:=]}"; v="${v#"${v%%[![:space:]]*}"}" ;;
     "DSN credentials") v="${span#://}"; v="${v#*:}"; v="${v%@}" ;;
   esac
   v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
   printf '%s' "$v" | grep -qiE '^(your[_-]|<[^>]*>$|[*]+$|x{6,}$|changeme$|redacted|placeholder|dummy|fake)' && return 0
-  printf '%s' "$v" | grep -qE '^[$]([{]?[A-Za-z_][A-Za-z0-9_]*[}]?|[0-9@*#])$' && return 0
+  # A bare $NAME is a reference only in one case ($API_KEY, $token); a
+  # mixed-case run after the "$" ($ecretP4ss) is a value that starts with one.
+  printf '%s' "$v" | grep -qE '^[$]([{]?([[:upper:]_][[:upper:][:digit:]_]*|[[:lower:]_][[:lower:][:digit:]_]*)[}]?|[0-9@*#])$' && return 0
   case "$v" in '$('*|'${'*) return 0 ;; esac
-  # A short stub before "..." (sk-..., ghp_...) is a placeholder; a long value
-  # with dots on the end is still a value.
-  case "$v" in *...) [ "${#v}" -le 11 ] && return 0 ;; esac
+  # A short stub before "..." (sk-..., ghp_..., AKIA...) is a placeholder; a
+  # long value, or a short one that mixes case or carries a digit with no
+  # separator (P4ss..., hunter2...), is still a value.
+  case "$v" in *...)
+    s="${v%...}"
+    u=""
+    case "$s" in *[[:upper:]]*) case "$s" in *[[:lower:]]*) u=mixed ;; esac ;; esac
+    if [ "${#s}" -le 8 ] && [ -z "$u" ]; then
+      case "$s" in *[-_]*) return 0 ;; *[0-9]*) ;; *) return 0 ;; esac
+    fi ;;
+  esac
   if [ "$label" = "DSN credentials" ]; then
     # ${USER:-x}:${PASS}@ splits at the default's colon, so judge the whole
     # span for an expansion; a bare "$" inside a generated password is not one.

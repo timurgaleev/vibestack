@@ -109,7 +109,7 @@ SECRET_PATTERNS = [
     ("Private key block", r"-----BEGIN[^-\n]*PRIVATE KEY-----"),
     ("AWS secret key", r"aws_secret_access_key[^A-Za-z0-9\n]+[A-Za-z0-9/+=]{40}"),
     ("SecretAccessKey field", r"\"?SecretAccessKey\"?[ \t]*[:=][ \t]*\"?[A-Za-z0-9/+=]{40}"),
-    ("env-style secret", r"^[ \t+-]{0,2}[ \t]*(-[ \t]+)?(export[ \t]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)=..+"),
+    ("env-style secret", r"^[ \t+-]{0,2}[ \t]*(-[ \t]+)?(export[ \t]+)?[A-Z][A-Z0-9_]*_(KEY|TOKEN|SECRET|PASSWORD)(=..+|[ \t]+=[ \t]*(\x22[^\x22\n]{2,}\x22|\x27[^\x27\n]{2,}\x27))"),
     ("DSN credentials", r"://[^\s:/@]{0,255}:[^\s@/]{1,255}@"),
 ]
 _SECRET_RES = [(label, re.compile(pat, re.M)) for label, pat in SECRET_PATTERNS]
@@ -119,7 +119,13 @@ _BEARER = re.compile(r"Bearer[ \t]+([A-Za-z0-9._~+/=-]{20,})")
 def _secret_placeholder(label, span):
     v = span
     if label == "env-style secret":
-        v = span.split("=", 1)[1]
+        # Judge the first shell word only, so `KEY=$1  # arg` or
+        # `KEY="$1";` is the expansion it looks like.
+        v = span.split("=", 1)[1].lstrip()
+        if v[:1] in ('"', "'"):
+            v = v[1:].split(v[0], 1)[0]
+        else:
+            v = re.split(r"[\s;]", v, maxsplit=1)[0]
     elif label == "SecretAccessKey field":
         v = re.split(r"[:=]", span, maxsplit=1)[1].lstrip()
     elif label == "DSN credentials":
@@ -129,12 +135,20 @@ def _secret_placeholder(label, span):
         v = v[:-1] if v.endswith(q) else v
     if re.match(r"(your[_-]|<[^>]*>$|[*]+$|x{6,}$|changeme$|redacted|placeholder|dummy|fake)", v, re.I):
         return True
-    if re.fullmatch(r"\$(\{?[A-Za-z_][A-Za-z0-9_]*\}?|[0-9@*#])", v):
+    # A bare $NAME is a reference only in one case ($API_KEY, $token); a
+    # mixed-case run after the "$" ($ecretP4ss) is a value that starts with one.
+    if re.fullmatch(r"\$(\{?([A-Z_][A-Z0-9_]*|[a-z_][a-z0-9_]*)\}?|[0-9@*#])", v):
         return True
-    # A short stub before "..." (sk-..., ghp_...) is a placeholder; a long
-    # value with dots on the end is still a value.
-    if re.match(r"[$][({]", v) or (v.endswith("...") and len(v) <= 11):
+    if re.match(r"[$][({]", v):
         return True
+    # A short stub before "..." (sk-..., ghp_..., AKIA...) is a placeholder; a
+    # long value, or a short one that mixes case or carries a digit with no
+    # separator (P4ss..., hunter2...), is still a value.
+    if v.endswith("..."):
+        s = v[:-3]
+        mixed = re.search(r"[A-Z]", s) and re.search(r"[a-z]", s)
+        if len(s) <= 8 and not mixed and (re.search(r"[-_]", s) or not re.search(r"[0-9]", s)):
+            return True
     if label == "DSN credentials" and ("\x24{" in v or "\x24(" in v or len(v) < 8 or re.fullmatch(
             r"pass|password|postgres|root|test|secret|admin|change-?me|p", v, re.I)
             or v == span[3:].split(":", 1)[0]):
