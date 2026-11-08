@@ -6,32 +6,42 @@
  * the `icns` magic is replaced by a visible note before conversion.
  *
  * The converter entity-decodes and percent-decodes the src before reading the
- * base64, so the check does the same. After the drop the whole document is
- * scanned again, src attributes on any element included; one that slipped
- * through fails the export instead of hanging it.
+ * base64, so the check does the same. After the drop every start tag is
+ * scanned again, the src attribute of any element included; one that slipped
+ * through fails the export instead of hanging it. Only real src attributes
+ * count: text or another attribute's value that merely reads `src=` is not an
+ * image source.
  */
 
 import http from "node:http";
 import https from "node:https";
 
 const IMG_TAG_RE = /<img\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi;
-const SRC_ATTR_RE = /(?:^|[\s\/"'])src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+// An unquoted `<` ends the candidate, so a run of unterminated tags stays linear.
+const START_TAG_RE = /<[a-zA-Z][^\s\/>]*(?:"[^"]*"|'[^']*'|[^'"<>])*>/g;
+const ATTR_RE = /([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?/g;
+
+/** The src values of one start tag, read attribute by attribute. */
+function srcValues(tag: string): string[] {
+  const attrs = tag.slice(1, -1).replace(/^[^\s\/>]+/, "");
+  const out: string[] = [];
+  for (const m of attrs.matchAll(ATTR_RE)) {
+    if (m[1].toLowerCase() === "src") out.push(m[2] ?? m[3] ?? m[4] ?? "");
+  }
+  return out;
+}
 
 export function dropIcnsImages(html: string, warn: (msg: string) => void): string {
   let dropped = 0;
   const out = html.replace(IMG_TAG_RE, (tag) => {
-    for (const m of tag.matchAll(SRC_ATTR_RE)) {
-      if (isIcnsDataUri(m[1] ?? m[2] ?? m[3] ?? "")) {
-        dropped++;
-        return `<span class="image-missing">[image omitted: ICNS icons are not supported in DOCX]</span>`;
-      }
-    }
-    return tag;
+    if (!srcValues(tag).some(isIcnsDataUri)) return tag;
+    dropped++;
+    return `<span class="image-missing">[image omitted: ICNS icons are not supported in DOCX]</span>`;
   });
   if (dropped > 0) warn(`docx: dropped ${dropped} ICNS image${dropped > 1 ? "s" : ""} (unsupported in Word)`);
 
-  for (const m of out.matchAll(SRC_ATTR_RE)) {
-    if (isIcnsDataUri(m[1] ?? m[2] ?? m[3] ?? "")) {
+  for (const m of out.matchAll(START_TAG_RE)) {
+    if (srcValues(m[0]).some(isIcnsDataUri)) {
       throw new Error("docx: an ICNS image survived the image guard; refusing to convert");
     }
   }
