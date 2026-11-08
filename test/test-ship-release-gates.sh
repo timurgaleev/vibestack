@@ -19,6 +19,9 @@
 # Usage: test-ship-release-gates.sh [SKILL.md]   (default: skills/ship/SKILL.md;
 #        REVIEW_SKILL overrides skills/review/SKILL.md)
 set -uo pipefail
+# grep -q exits on the first match; under pipefail the producer then dies
+# of SIGPIPE and a found pattern reads as missing. gq reads to the end.
+gq() { grep "$@" >/dev/null; }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${1:-$ROOT/skills/ship/SKILL.md}"
@@ -172,7 +175,7 @@ S17=$(section '## Step 17:' '## Step 19:')
 S195=$(section '## Step 19.5:' '## Step 20:')
 grep -Eq '^[[:space:]]*git tag -f|&& git tag -f|tag -fa' "$SKILL" && no "a tag is still force-created or moved" || ok "no tag -f anywhere"
 grep -Eq '^[[:space:]]*git push --force' "$SKILL" && no "a tag is still force-pushed" || ok "no tag force-push"
-printf '%s' "$S17" | grep -q -- '--follow-tags' && no "Step 17 still pushes tags" || ok "Step 17 pushes no tags"
+printf '%s' "$S17" | gq -- '--follow-tags' && no "Step 17 still pushes tags" || ok "Step 17 pushes no tags"
 printf '%s' "$S15" | grep -Eq 'git tag( |$)' && no "Step 15.2 still creates a tag" || ok "Step 15.2 creates no tag"
 merged_at=$(printf '%s\n' "$S195" | grep -n 'state,mergeCommit' | head -1 | cut -d: -f1)
 release_at=$(printf '%s\n' "$S195" | grep -n 'gh release create' | head -1 | cut -d: -f1)
@@ -181,12 +184,12 @@ if [ -n "$merged_at" ] && [ -n "$release_at" ] && [ "$merged_at" -lt "$release_a
 else
   no "Step 19.5 creates a release without first checking the PR is merged"
 fi
-printf '%s' "$S195" | grep -q 'Release deferred' && ok "unmerged PR defers the release" || no "no deferral path for an unmerged PR"
-printf '%s' "$S195" | grep -q 'NO_VERSION' && ok "release skipped under NO_VERSION" || no "Step 19.5 ignores NO_VERSION"
+printf '%s' "$S195" | gq 'Release deferred' && ok "unmerged PR defers the release" || no "no deferral path for an unmerged PR"
+printf '%s' "$S195" | gq 'NO_VERSION' && ok "release skipped under NO_VERSION" || no "Step 19.5 ignores NO_VERSION"
 
 echo "push failure protocol"
-printf '%s' "$S17" | grep -q 'Push-failure protocol' && ok "push failure has a protocol" || no "no push-failure protocol"
-printf '%s' "$S17" | grep -q 'non-fast-forward' && ok "non-fast-forward handled" || no "non-fast-forward not handled"
+printf '%s' "$S17" | gq 'Push-failure protocol' && ok "push failure has a protocol" || no "no push-failure protocol"
+printf '%s' "$S17" | gq 'non-fast-forward' && ok "non-fast-forward handled" || no "non-fast-forward not handled"
 printf '%s' "$S17" | grep -Eq 'git fetch origin <branch-name> 2>/dev/null$' && no "Step 17 still trusts a silenced fetch" || ok "no silenced fetch before the comparison"
 
 echo "documentation sync before push"
@@ -209,9 +212,9 @@ grep -q '^WIP:' "$ROOT/lib/snippets/state-protocols.md" && no "state-protocols s
 
 echo "plan binding"
 S8=$(section '## Step 8: Plan Completion Audit' '## Step 8.1:')
-printf '%s' "$S8" | grep -q -- '-mmin' && no "plan discovery still falls back to the newest file" || ok "no newest-file fallback"
-printf '%s' "$S8" | grep -q 'PLAN_BINDING' && ok "PR body Plan: binding read" || no "no Plan: binding"
-printf '%s' "$S8" | grep -q 'Plan completion audit: not run' && ok "honest not-run line" || no "no not-run line"
+printf '%s' "$S8" | gq -- '-mmin' && no "plan discovery still falls back to the newest file" || ok "no newest-file fallback"
+printf '%s' "$S8" | gq 'PLAN_BINDING' && ok "PR body Plan: binding read" || no "no Plan: binding"
+printf '%s' "$S8" | gq 'Plan completion audit: not run' && ok "honest not-run line" || no "no not-run line"
 
 echo "re-run on a merged PR"
 mkdir -p "$TMP/stub"
@@ -268,14 +271,14 @@ else
   no "jq is required for the Step 19 idempotency check"
 fi
 S19=$(section '## Step 19: Create PR/MR' '## Step 19.5:')
-printf '%s' "$S19" | grep -q 'PR_MERGED.*go straight to Step 19.5\|go straight to Step 19.5' \
+printf '%s' "$S19" | gq 'PR_MERGED.*go straight to Step 19.5\|go straight to Step 19.5' \
   && ok "merged PR goes to the release step" || no "Step 19 does not route a merged PR to Step 19.5"
 S1=$(section '## Step 1: Pre-flight' '## Step 2:')
-printf '%s' "$S1" | grep -q 'MERGED' && printf '%s' "$S1" | grep -q 'Step 19.5' \
+printf '%s' "$S1" | gq 'MERGED' && printf '%s' "$S1" | gq 'Step 19.5' \
   && ok "pre-flight short-circuits a merged PR to the release" || no "pre-flight re-ships a merged PR (bump + new PR)"
-printf '%s' "$S195" | grep -q 'gh release create "$TAG_NAME" --verify-tag' \
+printf '%s' "$S195" | gq 'gh release create "$TAG_NAME" --verify-tag' \
   && ok "Step 19.5 renders the shared release block" || no "Step 19.5 does not use the shared release block"
-printf '%s' "$S195" | grep -q '/land-and-deploy does not tag or release' \
+printf '%s' "$S195" | gq '/land-and-deploy does not tag or release' \
   && no "Step 19.5 still says /land-and-deploy never releases" || ok "deferral points at /land-and-deploy"
 
 echo "review plan binding"
@@ -284,10 +287,10 @@ RSKILL="$TMP/review.md"
 if "$ROOT/bin/vibe-render-skill" "$REVIEW_SRC" "$RSKILL" >/dev/null 2>&1; then
   RPD=$(awk 'index($0,"### Plan File Discovery")==1 {on=1} on && index($0,"### Actionable Item Extraction")==1 {exit} on' "$RSKILL")
   printf '%s' "$RPD" | grep -Eq -- '-mmin|ls -t' && no "review still falls back to the newest plan file" || ok "review has no newest-modified fallback"
-  printf '%s' "$RPD" | grep -q 'PLAN=\$(' && no "review still picks a content-search hit silently" || ok "review never picks a candidate silently"
-  printf '%s' "$RPD" | grep -q 'PLAN_BINDING' && ok "review reads the PR body Plan: binding" || no "review has no Plan: binding"
-  printf '%s' "$RPD" | grep -q 'PLAN_CANDIDATE' && ok "review lists candidates for the user" || no "review lists no candidates"
-  printf '%s' "$RPD" | grep -q 'Plan completion audit: not run' && ok "review prints the honest not-run line" || no "review has no not-run line"
+  printf '%s' "$RPD" | gq 'PLAN=\$(' && no "review still picks a content-search hit silently" || ok "review never picks a candidate silently"
+  printf '%s' "$RPD" | gq 'PLAN_BINDING' && ok "review reads the PR body Plan: binding" || no "review has no Plan: binding"
+  printf '%s' "$RPD" | gq 'PLAN_CANDIDATE' && ok "review lists candidates for the user" || no "review lists no candidates"
+  printf '%s' "$RPD" | gq 'Plan completion audit: not run' && ok "review prints the honest not-run line" || no "review has no not-run line"
   block '**Content-based search (candidates only)' > "$TMP/ship-plan.sh" 2>/dev/null
   SKILL="$RSKILL" block '**Content-based search (candidates only)' > "$TMP/review-plan.sh" 2>/dev/null
   [ -s "$TMP/ship-plan.sh" ] && cmp -s "$TMP/ship-plan.sh" "$TMP/review-plan.sh" \
@@ -298,17 +301,17 @@ fi
 
 echo "test value bar"
 S7=$(section '## Step 7: Test Coverage Audit' '## Step 8:')
-printf '%s' "$S7" | grep -q 'Value card' && ok "value bar snippet rendered into Step 7" || no "value bar not included in Step 7"
-printf '%s' "$S7" | grep -q '20 tests generated max' && no "Step 7 still caps at 20 generated tests" || ok "20-test cap gone"
-printf '%s' "$S7" | grep -q '5 tests written per pass' && ok "5-per-pass cap" || no "no 5-per-pass cap"
-printf '%s' "$S7" | grep -q 'Extend first' && ok "extend-first rule" || no "no extend-first rule"
-printf '%s' "$S7" | grep -q 'fail on its own' && ok "regression proof required" || no "no regression proof"
+printf '%s' "$S7" | gq 'Value card' && ok "value bar snippet rendered into Step 7" || no "value bar not included in Step 7"
+printf '%s' "$S7" | gq '20 tests generated max' && no "Step 7 still caps at 20 generated tests" || ok "20-test cap gone"
+printf '%s' "$S7" | gq '5 tests written per pass' && ok "5-per-pass cap" || no "no 5-per-pass cap"
+printf '%s' "$S7" | gq 'Extend first' && ok "extend-first rule" || no "no extend-first rule"
+printf '%s' "$S7" | gq 'fail on its own' && ok "regression proof required" || no "no regression proof"
 printf '%s' "$S7" | grep -Eq 'commit as `test: coverage|Passes → commit' && no "subagent still told to commit" || ok "subagent never told to commit"
 
 echo "eval selection"
 S6=$(section '## Step 6: Eval Suites' '## Step 7:')
-printf '%s' "$S6" | grep -q 'Example only' && ok "app layout is an example, not the selector" || no "Step 6 still hard-codes one app layout"
-printf '%s' "$S6" | grep -q 'none declared' && ok "prompt changes without evals are a named gap" || no "no named gap for prompt changes without evals"
+printf '%s' "$S6" | gq 'Example only' && ok "app layout is an example, not the selector" || no "Step 6 still hard-codes one app layout"
+printf '%s' "$S6" | gq 'none declared' && ok "prompt changes without evals are a named gap" || no "no named gap for prompt changes without evals"
 
 # The skills' blocks resolve helpers as ${VIBESTACK_HOME:-$HOME/.vibestack}/bin.
 VH="$TMP/vh"; mkdir -p "$VH"; ln -s "$ROOT/bin" "$VH/bin"
@@ -359,19 +362,19 @@ for f in gomixed custom; do
 done
 S5=$(section '## Step 5: Run tests' '## Test Failure Ownership Triage')
 S16=$(section '## Step 16: Verification Gate' '## Step 17:')
-printf '%s' "$S5" | grep -q 'tests_ran=0' && printf '%s' "$S5" | grep -q 'Step T2' \
+printf '%s' "$S5" | gq 'tests_ran=0' && printf '%s' "$S5" | gq 'Step T2' \
   && ok "tests_ran=0 goes to in-branch triage" || no "Step 5 does not route tests_ran=0 to Step T2"
-printf '%s' "$S5" | grep -q 'count unavailable' && ok "unknown count passes as 'count unavailable'" || no "no 'count unavailable' rule"
-printf '%s' "$S16" | grep -q 'tests_ran' && ok "Step 16 refuses a zero-test lane as FRESH" || no "Step 16 ignores tests_ran"
+printf '%s' "$S5" | gq 'count unavailable' && ok "unknown count passes as 'count unavailable'" || no "no 'count unavailable' rule"
+printf '%s' "$S16" | gq 'tests_ran' && ok "Step 16 refuses a zero-test lane as FRESH" || no "Step 16 ignores tests_ran"
 S19T=$(section '## Test plan' '<If SHIP_ATTRIBUTION')
-printf '%s' "$S19T" | grep -q 'tests_ran' && ok "PR Test plan prints per-lane counts" || no "PR Test plan has no per-lane count"
+printf '%s' "$S19T" | gq 'tests_ran' && ok "PR Test plan prints per-lane counts" || no "PR Test plan has no per-lane count"
 
 echo "Steps 5-6: logs in a private directory"
 grep -q '/tmp/vibestack-ship-$(git branch' "$SKILL" && no "lane/eval logs still go to a predictable /tmp path" || ok "no predictable /tmp log path"
-printf '%s' "$S5" | grep -q 'mktemp -d' && ok "Step 5 logs to a private mktemp -d" || no "Step 5 has no private log dir"
-printf '%s' "$S6" | grep -q 'vibe-detach" start' && printf '%s' "$S6" | grep -q 'vibe-detach" status' \
+printf '%s' "$S5" | gq 'mktemp -d' && ok "Step 5 logs to a private mktemp -d" || no "Step 5 has no private log dir"
+printf '%s' "$S6" | gq 'vibe-detach" start' && printf '%s' "$S6" | gq 'vibe-detach" status' \
   && ok "long eval suites run detached and are polled" || no "Step 6 has no detached eval path"
-printf '%s' "$S6" | grep -qi 'silence is not success' && ok "a silent job is not a pass" || no "no 'silence is not success' rule"
+printf '%s' "$S6" | gq -i 'silence is not success' && ok "a silent job is not a pass" || no "no 'silence is not success' rule"
 
 echo "Step 12: version files move through vibe-version-bump"
 grep -q 'JSON.stringify' "$SKILL" && no "ship still rewrites package.json with JSON.stringify" || ok "no hand-rolled package.json write"
@@ -396,7 +399,7 @@ out=$( cd "$d" && VIBESTACK_HOME="$VH" bash "$WBLOCK" 2>&1 ); rc=$?
 [ "$rc" != 0 ] && ok "an unwritable lockfile stops the bump" || no "malformed lockfile still exited 0"
 [ "$(cat "$d/VERSION")" = 1.2.3 ] && ok "and nothing was written" || no "VERSION moved although the bump failed"
 S12=$(section '## Step 12: Version bump' '## Step 13:')
-printf '%s' "$S12" | grep -q 'DRIFT_STALE_PKG repair' && printf '%s' "$S12" | grep -q 'vibe-version-bump" "$REPAIR_VERSION"' \
+printf '%s' "$S12" | gq 'DRIFT_STALE_PKG repair' && printf '%s' "$S12" | gq 'vibe-version-bump" "$REPAIR_VERSION"' \
   && ok "drift repair goes through vibe-version-bump" || no "drift repair does not use vibe-version-bump"
 
 echo "Step 12: own PR excluded from the queue"
@@ -418,19 +421,19 @@ for sh in bash zsh; do
   ( cd "$TMP" && PATH="$TMP/stub:$PATH" STUB_PR="$TMP/none.json" VIBESTACK_HOME="$QH" ARGS_OUT="$TMP/args0.$sh" "$sh" "$QBLOCK" >/dev/null 2>&1 )
   grep -q 'exclude-pr' "$TMP/args0.$sh" 2>/dev/null && no "$sh: --exclude-pr sent with no PR" || ok "$sh: no PR -> no --exclude-pr"
 done
-printf '%s' "$S12" | grep -q "ALREADY_BUMPED.*step 3's block" && ok "ALREADY_BUMPED drift check reuses the excluding block" || no "ALREADY_BUMPED drift check does not exclude its own PR"
+printf '%s' "$S12" | gq "ALREADY_BUMPED.*step 3's block" && ok "ALREADY_BUMPED drift check reuses the excluding block" || no "ALREADY_BUMPED drift check does not exclude its own PR"
 
 echo "Step 13: CHANGELOG follows the file"
 S13=$(section '## Step 13: CHANGELOG' '## Step 14:')
-printf '%s' "$S13" | grep -qF '## [X.Y.Z.W]' && no "Step 13 still hard-codes a header format" || ok "no hard-coded header format"
-printf '%s' "$S13" | grep -q 'first release entry' && ok "entry goes before the first release entry" || no "no placement rule"
-printf '%s' "$S13" | grep -q 'CHANGELOG: skipped' && ok "missing CHANGELOG is skipped" || no "no CHANGELOG: skipped path"
-printf '%s' "$S13" | grep -qi 'never create' && ok "never creates a CHANGELOG" || no "no never-create rule"
-printf '%s' "$S13" | grep -qi 'no bullet' && ok "merges and bumps need no bullet" || no "no bookkeeping-commit rule"
+printf '%s' "$S13" | gq -F '## [X.Y.Z.W]' && no "Step 13 still hard-codes a header format" || ok "no hard-coded header format"
+printf '%s' "$S13" | gq 'first release entry' && ok "entry goes before the first release entry" || no "no placement rule"
+printf '%s' "$S13" | gq 'CHANGELOG: skipped' && ok "missing CHANGELOG is skipped" || no "no CHANGELOG: skipped path"
+printf '%s' "$S13" | gq -i 'never create' && ok "never creates a CHANGELOG" || no "no never-create rule"
+printf '%s' "$S13" | gq -i 'no bullet' && ok "merges and bumps need no bullet" || no "no bookkeeping-commit rule"
 
 echo "Step T: pre-existing is proven at base, not guessed"
 ST=$(section '## Test Failure Ownership Triage' '## Step 6:')
-printf '%s' "$ST" | grep -q 'heuristic' && no "triage still classifies by heuristic" || ok "no heuristic classification"
+printf '%s' "$ST" | gq 'heuristic' && no "triage still classifies by heuristic" || ok "no heuristic classification"
 BBLOCK="$TMP/base.sh"
 block 'Prove it at base' > "$BBLOCK" && ok "base proof block extracted" || { no "base proof block not found"; : > "$BBLOCK"; }
 sed -i.bak -e "s/<base>/main/g" -e "s|<failing test command>|sh t.sh|g" "$BBLOCK"
@@ -450,45 +453,45 @@ case "$out" in *"BASE_EXIT: 0"*) ok "green at base -> BASE_EXIT: 0" ;; *) no "gr
 d=$(base_fixture nobase 1); git -C "$d" update-ref -d refs/remotes/origin/main
 out=$( cd "$d" && bash "$BBLOCK" 2>&1 )
 case "$out" in *"BASE_EXIT: unavailable"*) ok "no base ref -> unavailable" ;; *) no "missing base: $out" ;; esac
-printf '%s' "$ST" | grep -qi 'green at base' && printf '%s' "$ST" | grep -q 'in-branch' \
+printf '%s' "$ST" | gq -i 'green at base' && printf '%s' "$ST" | gq 'in-branch' \
   && ok "green at base is in-branch" || no "no green-at-base rule"
-printf '%s' "$ST" | grep -qi 'unavailable.*in-branch' && ok "unavailable defaults to in-branch" || no "no unavailable rule"
-printf '%s' "$ST" | grep -qi 'waiver' && printf '%s' "$ST" | grep -q 'never FRESH' \
+printf '%s' "$ST" | gq -i 'unavailable.*in-branch' && ok "unavailable defaults to in-branch" || no "no unavailable rule"
+printf '%s' "$ST" | gq -i 'waiver' && printf '%s' "$ST" | gq 'never FRESH' \
   && ok "a waiver never reads as FRESH" || no "no waiver rule"
 
 echo "Step 4: bootstrap never clobbers the tree"
 S4=$(section '## Step 4: Test Framework Bootstrap' '## Step 5:')
-printf '%s' "$S4" | grep -q 'git checkout -- package.json' && no "bootstrap still reverts with git checkout -- package.json" || ok "no whole-file checkout revert"
-printf '%s' "$S4" | grep -q 'delete silently' && no "B4.5 still deletes failing tests silently" || ok "no silent test deletion"
-printf '%s' "$S4" | grep -q 'git status --porcelain' && printf '%s' "$S4" | grep -qi 'before install' \
+printf '%s' "$S4" | gq 'git checkout -- package.json' && no "bootstrap still reverts with git checkout -- package.json" || ok "no whole-file checkout revert"
+printf '%s' "$S4" | gq 'delete silently' && no "B4.5 still deletes failing tests silently" || ok "no silent test deletion"
+printf '%s' "$S4" | gq 'git status --porcelain' && printf '%s' "$S4" | gq -i 'before install' \
   && ok "tree snapshotted before installing" || no "no pre-install snapshot"
-printf '%s' "$S4" | grep -q 'git add -- ' && printf '%s' "$S4" | grep -q 'git diff --cached --name-only' \
+printf '%s' "$S4" | gq 'git add -- ' && printf '%s' "$S4" | gq 'git diff --cached --name-only' \
   && ok "B8 stages by name and checks the index" || no "B8 does not stage by name"
 
 echo "Steps 9-11: in-session fix loop with a ceiling"
 FL=$(section '## Step 9: Pre-Landing Review' '## Step 12:')
 LOOP=$(section '## Step 11.1:' '## Step 12:')
-printf '%s' "$FL" | grep -qF 'tell the user to run `/ship` again to re-test' \
+printf '%s' "$FL" | gq -F 'tell the user to run `/ship` again to re-test' \
   && no "review fixes still end the run with an unconditional STOP" || ok "no unconditional rerun-/ship STOP"
 [ -n "$LOOP" ] && ok "Step 11.1 fix loop exists" || no "no Step 11.1 fix loop"
-printf '%s' "$LOOP" | grep -q 'CYCLES' && printf '%s' "$LOOP" | grep -q 'reaches 3' \
+printf '%s' "$LOOP" | gq 'CYCLES' && printf '%s' "$LOOP" | gq 'reaches 3' \
   && ok "the loop is capped at 3 cycles" || no "no cycle cap"
-printf '%s' "$LOOP" | grep -qF '1,500 changed lines' && printf '%s' "$LOOP" | grep -q 'quota_exhausted' \
-  && printf '%s' "$LOOP" | grep -q 'rate_limited' && ok "ceiling: diff size and Codex quota degrade to a rerun" \
+printf '%s' "$LOOP" | gq -F '1,500 changed lines' && printf '%s' "$LOOP" | gq 'quota_exhausted' \
+  && printf '%s' "$LOOP" | gq 'rate_limited' && ok "ceiling: diff size and Codex quota degrade to a rerun" \
   || no "no loop ceiling"
-printf '%s' "$FL" | grep -qi 'codex passes run once' && ok "Codex runs once, on the final cycle" || no "Codex not limited to the final cycle"
-printf '%s' "$LOOP" | grep -qF 'carried as `skipped`' && ok "Skips are carried between cycles" || no "Skips not carried"
+printf '%s' "$FL" | gq -i 'codex passes run once' && ok "Codex runs once, on the final cycle" || no "Codex not limited to the final cycle"
+printf '%s' "$LOOP" | gq -F 'carried as `skipped`' && ok "Skips are carried between cycles" || no "Skips not carried"
 S10=$(section '## Step 10: Address Greptile' '## Step 10b:')
-printf '%s' "$S10" | grep -qF 'git commit -m "fix: address Greptile' \
+printf '%s' "$S10" | gq -F 'git commit -m "fix: address Greptile' \
   && no "Step 10 still edits and commits inside the triage" || ok "Step 10 commits nothing itself"
-printf '%s' "$S10" | grep -qi 'queue' && ok "Step 10 queues approved fixes" || no "Step 10 does not queue fixes"
+printf '%s' "$S10" | gq -i 'queue' && ok "Step 10 queues approved fixes" || no "Step 10 does not queue fixes"
 grep -qF '## Deferred findings' "$SKILL" && grep -qF '## Review notes' "$SKILL" \
   && ok "PR body carries deferred findings and review notes" || no "no Deferred findings / Review notes sections"
 
 echo "Step 7: generated tests prove themselves"
 S7=$(section '## Step 7: Test Coverage Audit' '## Step 8:')
-printf '%s' "$S7" | grep -q 'product_failures' && ok "a test red on its own assertion is a product failure" || no "no product_failures route"
-printf '%s' "$S7" | grep -q 'mutation proof' && printf '%s' "$S7" | grep -q 'cmp' \
+printf '%s' "$S7" | gq 'product_failures' && ok "a test red on its own assertion is a product failure" || no "no product_failures route"
+printf '%s' "$S7" | gq 'mutation proof' && printf '%s' "$S7" | gq 'cmp' \
   && ok "each kept test carries a mutation proof restored with cmp" || no "no mutation proof"
 printf '%s' "$S7" | grep -Eq 'git (checkout|restore)' \
   && no "Step 7 restores files through git" || ok "Step 7 never restores through git"

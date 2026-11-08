@@ -19,6 +19,9 @@
 #
 # Usage: test/test-review-checklist.sh [repo-root]
 set -uo pipefail
+# grep -q exits on the first match; under pipefail the producer then dies
+# of SIGPIPE and a found pattern reads as missing. gq reads to the end.
+gq() { grep "$@" >/dev/null; }
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${1:-$HERE}"
@@ -62,27 +65,27 @@ for doc in "$GT" "$TF"; do
   done
 done
 grep -q 'Step 5.5' "$SHIP" && no "ship still cites its old Step 5.5" || ok "ship cites no stale Step 5.5"
-sed -n '/^## Step 14:/,/^## Step 15:/p' "$SHIP" | grep -q "Step 2's distribution" \
+sed -n '/^## Step 14:/,/^## Step 15:/p' "$SHIP" | gq "Step 2's distribution" \
   && ok "ship Step 14 records a deferred release pipeline" || no "ship Step 14 drops the distribution deferral"
 
 echo "LLM Output Trust Boundary"
 TB="$(section "$CL" '#### LLM Output Trust Boundary')"
 for want in 'required only by prompt text' 'Hidden second LLM pass' 'Memory poisoning'; do
-  printf '%s\n' "$TB" | grep -q "$want" && ok "CRITICAL section has: $want" || no "CRITICAL section missing: $want"
+  printf '%s\n' "$TB" | gq "$want" && ok "CRITICAL section has: $want" || no "CRITICAL section missing: $want"
 done
 PI="$(section "$CL" '#### LLM Prompt Issues')"
-printf '%s\n' "$PI" | grep -q 'more than one channel' && ok "prompt issues has duplicated context" \
+printf '%s\n' "$PI" | gq 'more than one channel' && ok "prompt issues has duplicated context" \
   || no "prompt issues missing duplicated context"
 
 echo "Production Failure Modes"
 PF="$(section "$CL" '#### Production Failure Modes')"
 P1="$(awk '/^### Pass 1/{on=1;next} on && /^### /{exit} on{print}' "$CL")"
-printf '%s\n' "$P1" | grep -qx '#### Production Failure Modes' \
+printf '%s\n' "$P1" | gq -x '#### Production Failure Modes' \
   && ok "section sits in Pass 1" || no "Production Failure Modes not in Pass 1"
 grep -q '^- \*\*Pass 1 (CRITICAL):\*\*.*Production Failure Modes' "$CL" \
   && ok "Instructions Pass 1 list names it" || no "Instructions Pass 1 list omits it"
 for want in 'idempoten' 'fail fast at startup' 'idempotency key' 'reads as pass' 'intentional empty contract' 'file:line'; do
-  printf '%s\n' "$PF" | grep -q "$want" && ok "section has: $want" || no "section missing: $want"
+  printf '%s\n' "$PF" | gq "$want" && ok "section has: $want" || no "section missing: $want"
 done
 
 echo "rg probes"
@@ -213,9 +216,9 @@ hp="$("$SRC/bin/vibe-lint-sources" "$SRC" 2>&1 | grep -E 'skills/(review|ship)/S
 [ -z "$hp" ] && ok "no hard-coded host path in review or ship" || no "host-only paths remain: $(printf '%s' "$hp" | sed 's/^warn: //; s/: [^0-9].*//' | tr '\n' ' ')"
 # A missing design checklist must stop, not read as "nothing to flag".
 DR="$(sed -n '/^## Design Review (conditional/,/^## Step 9.1:/p' "$SHIP")"
-printf '%s\n' "$DR" | grep -q 'skipping design review' && no "ship skips design review silently when the checklist is missing" \
+printf '%s\n' "$DR" | gq 'skipping design review' && no "ship skips design review silently when the checklist is missing" \
   || ok "ship has no silent design-checklist skip"
-printf '%s\n' "$DR" | grep -q '\.\./review/design-checklist\.md`.*\*\*STOP\*\*' \
+printf '%s\n' "$DR" | gq '\.\./review/design-checklist\.md`.*\*\*STOP\*\*' \
   && ok "ship stops when the design checklist cannot be read" || no "ship design checklist read is not fail-closed"
 
 echo "SCOPE_UNAVAILABLE consumers"
@@ -237,24 +240,24 @@ run_scope() { # FILE STUB_OUTPUT STUB_EXIT -> block output, with a stale SCOPE_A
 for n in review ship; do
   f="$TMP/$n.md"
   out="$(run_scope "$f" "SCOPE_UNAVAILABLE=true" 2)"
-  printf '%s\n' "$out" | grep -q 'SCOPE_UNAVAILABLE=true' && ok "$n prints SCOPE_UNAVAILABLE=true on a failed scope" \
+  printf '%s\n' "$out" | gq 'SCOPE_UNAVAILABLE=true' && ok "$n prints SCOPE_UNAVAILABLE=true on a failed scope" \
     || no "$n hides a failed scope ($(printf '%s' "$out" | head -1))"
   out="$(run_scope "$f" "SCOPE_BACKEND=true SCOPE_FRONTEND=false" 0)"
-  printf '%s\n' "$out" | grep -q 'SCOPE_BACKEND=true' && printf '%s\n' "$out" | grep -q 'SCOPE_UNAVAILABLE=false' \
+  printf '%s\n' "$out" | gq 'SCOPE_BACKEND=true' && printf '%s\n' "$out" | gq 'SCOPE_UNAVAILABLE=false' \
     && ok "$n keeps normal flags and reports scope available" || no "$n mangles normal flags ($(printf '%s' "$out" | head -1))"
-  printf '%s\n' "$out" | grep -q 'SCOPE_AUTH=false' && ok "$n drops a stale SCOPE_AUTH from the environment" \
+  printf '%s\n' "$out" | gq 'SCOPE_AUTH=false' && ok "$n drops a stale SCOPE_AUTH from the environment" \
     || no "$n carries a stale SCOPE_AUTH into the selection"
   sel="$(awk '/^### Select specialists/{on=1;next} on && /^### /{exit} on{print}' "$f")"
-  printf '%s\n' "$sel" | grep -q 'SCOPE_UNAVAILABLE=true.*every specialist' \
+  printf '%s\n' "$sel" | gq 'SCOPE_UNAVAILABLE=true.*every specialist' \
     && ok "$n selection runs every specialist when the scope is unavailable" || no "$n selection has no unavailable-scope branch"
 done
 DR="$(sed -n '/^## Design Review (conditional/,/^## Step 9.1:/p' "$SHIP")"
-printf '%s\n' "$DR" | grep -q 'SCOPE_UNAVAILABLE=true' && ok "ship design review runs on an unavailable scope" \
+printf '%s\n' "$DR" | gq 'SCOPE_UNAVAILABLE=true' && ok "ship design review runs on an unavailable scope" \
   || no "ship design review skips on an unavailable scope"
 
 echo "Gate integrity"
 GI="$(section "$CL" '#### Gate integrity')"
-printf '%s\n' "$P1" | grep -qx '#### Gate integrity' && ok "Gate integrity sits in Pass 1" || no "Gate integrity not a CRITICAL category"
+printf '%s\n' "$P1" | gq -x '#### Gate integrity' && ok "Gate integrity sits in Pass 1" || no "Gate integrity not a CRITICAL category"
 grep -q '^- \*\*Pass 1 (CRITICAL):\*\*.*Gate Integrity' "$CL" && ok "Pass 1 list names Gate Integrity" || no "Pass 1 list omits Gate Integrity"
 # Every backticked `grep -E…` probe runs over a diff hunk that holds each weakened gate.
 cat > "$TMP/gate.diff" <<'DIFF'
@@ -286,9 +289,9 @@ done <<< "$gprobes"
 [ "$g" -ge 3 ] && ok "found $g gate probes" || no "expected at least 3 gate probes, found $g"
 for marker in '@pytest.mark.skip' 't.Skip' '#\[ignore\]' '@Disabled' 'eslint-disable' '@ts-ignore' 'noqa' 'nolint' \
               'continue-on-error' 'allow_failure' 'skip ci' 'no-verify'; do
-  printf '%s\n' "$GI" | grep -q -- "$marker" && ok "gate integrity names $marker" || no "gate integrity misses $marker"
+  printf '%s\n' "$GI" | gq -- "$marker" && ok "gate integrity names $marker" || no "gate integrity misses $marker"
 done
-grep -E '^- Eval threshold changes' "$CL" | grep -q 'code-quality' \
+grep -E '^- Eval threshold changes' "$CL" | gq 'code-quality' \
   && ok "eval-threshold suppression covers code-quality comments only" || no "eval-threshold suppression still blanket"
 grep -q 'Gate edits:' "$CL" && grep -q 'Gate edits:' "$TMP/review.md" \
   && ok "checklist and review output carry a Gate edits: line" || no "no Gate edits: line"
@@ -296,17 +299,17 @@ for opt in 'Restore' 'Keep-justified' 'Keep-other' 'Leave open'; do
   grep -q "$opt" "$TMP/review.md" && ok "review gate disposition: $opt" || no "review gate disposition missing: $opt"
 done
 grep -q 'Gate integrity' "$SRC/skills/review/specialists/testing.md" && ok "testing specialist has Gate integrity" || no "testing specialist lacks Gate integrity"
-sed -n '/^## Step 9:/,/^## Step 10:/p' "$TMP/ship.md" | grep -q 'Gate integrity findings take' && ok "ship Step 9 points at the gate disposition" || no "ship Step 9 has no gate-integrity pointer"
+sed -n '/^## Step 9:/,/^## Step 10:/p' "$TMP/ship.md" | gq 'Gate integrity findings take' && ok "ship Step 9 points at the gate disposition" || no "ship Step 9 has no gate-integrity pointer"
 
 echo "Sideways sweep"
 SW="$(awk '/^## Sideways sweep \(every finding\)/{on=1;next} on && /^## /{exit} on{print}' "$CL")"
 [ -n "$SW" ] && ok "checklist has the sideways sweep" || no "no sideways sweep section"
 for c in 'data loss' 'trust-boundary bypass' 'uncapped spend' 'cache in front of a guarded call' 'dynamic import' 'parity twin' 'transaction'; do
-  printf '%s\n' "$SW" | grep -qi "$c" && ok "forced-CRITICAL class: $c" || no "forced-CRITICAL class missing: $c"
+  printf '%s\n' "$SW" | gq -i "$c" && ok "forced-CRITICAL class: $c" || no "forced-CRITICAL class missing: $c"
 done
-awk '/^### Step 5.0:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" | grep -qi 'forced-CRITICAL' \
+awk '/^### Step 5.0:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" | gq -i 'forced-CRITICAL' \
   && ok "Step 5.0 never suppresses a forced-CRITICAL finding" || no "Step 5.0 lacks the forced-CRITICAL exemption"
-step "$TMP/review.md" '## Step 4:' | grep -q 'Sideways sweep' && ok "Step 4 points at the sweep" || no "Step 4 has no sweep pointer"
+step "$TMP/review.md" '## Step 4:' | gq 'Sideways sweep' && ok "Step 4 points at the sweep" || no "Step 4 has no sweep pointer"
 
 echo "Checklist additions"
 for want in 'Not applicable' 'Loosened acceptance' 'preview-first' 'keyboard' 'raises a timing bound' 'strict mode' 'pinned' \
@@ -341,16 +344,16 @@ for s in review ship; do
 done
 
 echo "Review red proof, validator safety, scope fields, smoke probes"
-grep -q 'Regression proof' "$TMP/review.md" && awk '/^### Step 5a:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" | grep -qi 'against the unfixed code' \
+grep -q 'Regression proof' "$TMP/review.md" && awk '/^### Step 5a:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" | gq -i 'against the unfixed code' \
   && ok "test-stub fixes are proven red first" || no "test-stub fix has no red proof"
 grep -qi 'read-only' "$TMP/review.md" && grep -q 'never in plan mode\|never run it in plan mode' "$TMP/review.md" \
   && ok "validators are inspected before running" || no "no validator safety rule"
 grep -q 'Diff read: full|partial' "$TMP/review.md" && grep -q 'Undeclared behavior changes:' "$TMP/review.md" \
   && ok "Scope Check reports diff coverage and undeclared changes" || no "Scope Check fields missing"
-step "$TMP/review.md" '## Step 4:' | grep -qi 'strip hostnames' && ok "WebSearch queries are sanitized" || no "no search sanitize rule"
+step "$TMP/review.md" '## Step 4:' | gq -i 'strip hostnames' && ok "WebSearch queries are sanitized" || no "no search sanitize rule"
 S47="$(step "$TMP/review.md" '## Step 4.7:')"
-printf '%s\n' "$S47" | grep -qi 'riskiest' && printf '%s\n' "$S47" | grep -qi 'timeout' && printf '%s\n' "$S47" | grep -q 'test_stub' \
-  && printf '%s\n' "$S47" | grep -qi 'pending execution' && ok "Step 4.7 runs bounded smoke probes" || no "no Step 4.7 smoke probes"
+printf '%s\n' "$S47" | gq -i 'riskiest' && printf '%s\n' "$S47" | gq -i 'timeout' && printf '%s\n' "$S47" | gq 'test_stub' \
+  && printf '%s\n' "$S47" | gq -i 'pending execution' && ok "Step 4.7 runs bounded smoke probes" || no "no Step 4.7 smoke probes"
 grep -q '9.2.1' "$TMP/ship.md" && ok "ship points at the smoke probes" || no "ship has no smoke-probe pointer"
 grep -qi 'validator.*read-only\|read-only.*validator' "$TMP/ship.md" && ok "ship Step 8 inspects validators" || no "ship Step 8 runs validators blind"
 
@@ -390,19 +393,19 @@ fi
 grep -qi 'fixing commit SHA' "$GT" && no "greptile triage still asks for a fixing commit SHA" || ok "already-fixed cites the current diff"
 grep -qF '<commit-sha>' "$GT" && no "reply templates still cite a commit SHA" || ok "reply templates cite file:line in the current diff"
 GR="$(awk '/^### Greptile comment resolution/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md")"
-printf '%s\n' "$GR" | grep -q 'A: Fix it now, B: Acknowledge' && no "review gives VALID comments two dispositions" || ok "VALID comments have one disposition"
-printf '%s\n' "$GR" | grep -qi 'back through Step 5c' && ok "FP fix-anyway goes back through ASK" || no "FP fix-anyway skips ASK"
+printf '%s\n' "$GR" | gq 'A: Fix it now, B: Acknowledge' && no "review gives VALID comments two dispositions" || ok "VALID comments have one disposition"
+printf '%s\n' "$GR" | gq -i 'back through Step 5c' && ok "FP fix-anyway goes back through ASK" || no "FP fix-anyway skips ASK"
 
 echo "Documented standards"
 grep -q '^### Documented standards' "$SP/maintainability.md" && grep -q 'CONTRIBUTING' "$SP/maintainability.md" \
   && grep -q '6' "$SP/maintainability.md" && ok "maintainability checks documented standards" || no "no Documented standards section"
-step "$TMP/review.md" '## Step 4:' | grep -q 'Documented standards' && ok "review main pass checks standards" || no "review main pass skips standards"
+step "$TMP/review.md" '## Step 4:' | gq 'Documented standards' && ok "review main pass checks standards" || no "review main pass skips standards"
 
 echo "connect-review Step 3"
 S3="$(awk '/^## Step 3:/{on=1;next} on && /^## /{exit} on{print}' "$CR")"
-printf '%s\n' "$S3" | grep -q '^| Conversation state and memory admission |' \
+printf '%s\n' "$S3" | gq '^| Conversation state and memory admission |' \
   && ok "Step 3 has memory admission row" || no "Step 3 missing memory admission row"
-printf '%s\n' "$S3" | grep -q 'Model output written back as a fact' \
+printf '%s\n' "$S3" | gq 'Model output written back as a fact' \
   && ok "row grades model output admitted as fact" || no "row lacks the finding grade"
 
 echo
