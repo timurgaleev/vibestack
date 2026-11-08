@@ -35,7 +35,7 @@ field() { python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1])); print(
 echo "isolation"
 SENTINEL="hostile-$$-value"
 OUT="$TMP/env.json"
-HOSTILE_TOKEN="$SENTINEL" "$CAP" -- sh -c 'echo "[$HOSTILE_TOKEN]"; env' > "$OUT" 2>"$TMP/env.err"; rc=$?
+HOSTILE_VAR="$SENTINEL" "$CAP" -- sh -c 'echo "[$HOSTILE_VAR]"; env' > "$OUT" 2>"$TMP/env.err"; rc=$?
 [ "$rc" -eq 0 ] && ok "a captured run exits 0" || no "capture exit $rc: $(cat "$TMP/env.err")"
 grep -qF "$SENTINEL" "$OUT" && no "a caller env var reached the command's output" \
   || ok "a caller env var never appears in the output"
@@ -65,10 +65,10 @@ elapsed=$(( $(date +%s) - start ))
   && ok "a timed-out run reports timed_out and no exit code" || no "timeout fields: $(cat "$TMP/slow.json")"
 
 echo "approval"
-"$CAP" --pass-env HOSTILE_TOKEN -- sh -c "touch '$TMP/ran'" > "$TMP/unapproved.json" 2>"$TMP/unapproved.err"; rc=$?
+"$CAP" --pass-env HOSTILE_VAR -- sh -c "touch '$TMP/ran'" > "$TMP/unapproved.json" 2>"$TMP/unapproved.err"; rc=$?
 { [ "$rc" -eq 2 ] && [ ! -e "$TMP/ran" ]; } && ok "--pass-env without --approved is refused before running" \
   || no "unapproved --pass-env: rc=$rc ran=$([ -e "$TMP/ran" ] && echo yes || echo no)"
-HOSTILE_TOKEN="$SENTINEL" "$CAP" --approved --pass-env HOSTILE_TOKEN -- sh -c 'echo "[$HOSTILE_TOKEN]"' > "$TMP/approved.json"
+HOSTILE_VAR="$SENTINEL" "$CAP" --approved --pass-env HOSTILE_VAR -- sh -c 'echo "[$HOSTILE_VAR]"' > "$TMP/approved.json"
 grep -qF "[$SENTINEL]" "$TMP/approved.json" && ok "an approved --pass-env name reaches the command" \
   || no "approved pass-env missing: $(cat "$TMP/approved.json")"
 
@@ -78,9 +78,9 @@ echo "error output"
   && [ "$(field "$TMP/err.json" 'r["stderr_head"].strip()')" = "error: missing <file>" ]; } \
   && ok "stderr and a non-zero exit are captured" || no "error capture: $(cat "$TMP/err.json")"
 # Built at run time so no key-shaped literal sits in the tree.
-FAKE_KEY="AKIA$(printf 'Q7%.0s' 1 2 3 4 5 6 7 8)"
-"$CAP" -- sh -c "echo 'auth failed for $FAKE_KEY' >&2; exit 1" > "$TMP/secret.json"
-grep -qF "$FAKE_KEY" "$TMP/secret.json" && no "a credential in stderr reached the output" \
+FAKE_AKID="AKIA$(printf 'Q7%.0s' 1 2 3 4 5 6 7 8)"
+"$CAP" -- sh -c "echo 'auth failed for $FAKE_AKID' >&2; exit 1" > "$TMP/secret.json"
+grep -qF "$FAKE_AKID" "$TMP/secret.json" && no "a credential in stderr reached the output" \
   || ok "a credential in stderr is masked"
 [ "$(field "$TMP/secret.json" '[(f["stream"], f["label"]) for f in r["secret_findings"]]')" = "[('stderr', 'AWS access key')]" ] \
   && ok "secret_findings names the stream and pattern" || no "secret_findings: $(field "$TMP/secret.json" 'r["secret_findings"]')"
