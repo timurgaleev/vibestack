@@ -1325,7 +1325,11 @@ async function handleCommandInternal(
     // stop, restart, ... ignore a pin. newtab and tabs keep it (so they do not
     // move or mark the shared active tab) but never fail on a stale one, so
     // BROWSE_TAB never blocks the recovery the not-found error suggests.
-    const unpinned = META_COMMANDS_WITHOUT_PAGE.has(body.command);
+    // status and tabs only report, so under a stale pin they read the shared
+    // state instead of naming no tab active.
+    const reportOnly = body.command === 'status' || body.command === 'tabs';
+    const unpinned = META_COMMANDS_WITHOUT_PAGE.has(body.command)
+      || (reportOnly && body.tabId != null && !browserManager.hasTab(body.tabId));
     const lenient = body.command === 'newtab' || body.command === 'tabs';
     cr = await browserManager.runPinned(unpinned ? undefined : body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts), { lenient });
   } catch (err: any) {

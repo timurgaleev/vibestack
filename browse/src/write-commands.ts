@@ -1197,7 +1197,7 @@ export async function handleWriteCommand(
         if (!scrolled) {
           // Restore viewport before throwing
           if (viewportWidth && originalViewport) {
-            await page.setViewportSize(originalViewport);
+            await bm.restoreViewport(page, originalViewport);
           }
           throw new Error(`Could not find element or text to scroll to: ${scrollTo}`);
         }
@@ -1214,7 +1214,7 @@ export async function handleWriteCommand(
 
       // Restore viewport
       if (viewportWidth && originalViewport) {
-        await page.setViewportSize(originalViewport);
+        await bm.restoreViewport(page, originalViewport);
       }
 
       const parts = ['Screenshot saved'];

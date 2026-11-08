@@ -201,6 +201,9 @@ export class BrowserManager {
   // track the latest so context recreation restores it instead of hardcoding 1280x720.
   private deviceScaleFactor: number = 1;
   private currentViewport: { width: number; height: number } = { ...DEFAULT_VIEWPORT };
+  // Pages whose override `viewport auto` dropped; Playwright still reports
+  // their old size, so a temporary resize must restore through the fit.
+  private fitPages = new WeakSet<Page>();
   // Playwright devices[] profile applied to the context (`device <name>`), or null.
   private deviceName: string | null = null;
 
@@ -868,6 +871,10 @@ export class BrowserManager {
     return this.tabPin.run({ id: tabId }, work);
   }
 
+  hasTab(tabId: number): boolean {
+    return this.tabSessions.has(tabId);
+  }
+
   private get currentTabId(): number {
     return this.tabPin.getStore()?.id ?? this.activeTabId;
   }
@@ -1384,7 +1391,9 @@ export class BrowserManager {
   // ─── Viewport ──────────────────────────────────────────────
   async setViewport(width: number, height: number) {
     this.currentViewport = { width, height };
-    await this.getPage().setViewportSize({ width, height });
+    const page = this.getPage();
+    this.fitPages.delete(page);
+    await page.setViewportSize({ width, height });
   }
 
   /**
@@ -1392,8 +1401,7 @@ export class BrowserManager {
    * the way a headed session starts (viewport: null). Returns the size the
    * page now has.
    */
-  async fitViewportToWindow(): Promise<{ width: number; height: number }> {
-    const page = this.getPage();
+  async fitViewportToWindow(page: Page = this.getPage()): Promise<{ width: number; height: number }> {
     const cdp = await page.context().newCDPSession(page);
     try {
       await cdp.send('Emulation.clearDeviceMetricsOverride');
@@ -1401,7 +1409,18 @@ export class BrowserManager {
       await cdp.detach().catch(() => {});
     }
     this.currentViewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    this.fitPages.add(page);
     return { ...this.currentViewport };
+  }
+
+  /**
+   * Undo a temporary resize (responsive, prettyscreenshot). After
+   * `viewport auto` Playwright still reports the old override as the page's
+   * size, so restoring that would undo the window fit.
+   */
+  async restoreViewport(page: Page, size: { width: number; height: number } | null): Promise<void> {
+    if (this.fitPages.has(page)) { await this.fitViewportToWindow(page); return; }
+    if (size) await page.setViewportSize(size);
   }
 
   // ─── Extra Headers ─────────────────────────────────────────

@@ -585,10 +585,7 @@ export async function handleMetaCommand(
         results.push(`${vp.name} (${vp.width}x${vp.height}): ${screenshotPath}`);
       }
 
-      // Restore original viewport
-      if (originalViewport) {
-        await page.setViewportSize(originalViewport);
-      }
+      await bm.restoreViewport(page, originalViewport);
 
       return results.join('\n');
     }

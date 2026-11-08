@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.58.1 — 2026-11-08
+
+### Fixed
+
+- browse: `status` and `tabs` under a `BROWSE_TAB` / `--tab-id` pin on a closed
+  tab report the shared state. `status` answered 404 before it could say what
+  the browser was doing, and `tabs` marked no tab active.
+- browse: after `viewport auto` in a headed session, `responsive` and
+  `prettyscreenshot --width` return the page to the window fit. They restored
+  the size the old override had, because Playwright still reports it.
+
 ## 1.58.0 — 2026-11-08
 
 ### Fixed
