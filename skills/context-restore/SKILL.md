@@ -191,6 +191,52 @@ snapshot's git state as the only record.
 - Otherwise: load the **first path printed by Step 1** — the newest
   `YYYYMMDD-HHMMSS` save on the current branch or, when Step 1 printed
   `NO_CURRENT_BRANCH_CHECKPOINT`, the newest across all branches.
+- **No usable branch** (`NO_CURRENT_BRANCH_CHECKPOINT`, or `CURRENT_BRANCH` is
+  `HEAD` or `unknown`): when the newest candidates' titles differ, they are
+  different pieces of work and "newest" is a guess, so ask with AskUserQuestion
+  which one to load (newest first, up to four). When the titles
+  match, it is one task handed across branches; load the newest.
+
+#### Head check
+
+Run this against the chosen file, replacing `<CHECKPOINT_FILE>` with its path
+from Step 1. It compares the commit the save recorded with the commit checked
+out now:
+
+```bash
+CK_FILE='<CHECKPOINT_FILE>'
+fm() { awk -v k="${1}" 'NR == 1 && $(0) != "---" { exit } NR > 1 && $(0) == "---" { exit }
+  NR > 1 && index($(0), k ":") == 1 { v = substr($(0), length(k) + 2); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit }' "$CK_FILE"; }
+SAVED=$(fm head); SAVED_WT=$(fm worktree)
+NOW=$(git rev-parse --verify -q HEAD 2>/dev/null)
+if [ -z "$SAVED" ]; then
+  echo "HEAD_UNTRACKED"
+elif ! printf '%s' "$SAVED" | grep -qE '^[0-9a-f]{7,64}$' || [ -z "$NOW" ] \
+     || ! git cat-file -e "$SAVED^{commit}" 2>/dev/null; then
+  echo "HEAD_UNKNOWN"
+elif [ "$SAVED" = "$NOW" ]; then
+  echo "HEAD_UNCHANGED"
+elif git merge-base --is-ancestor "$SAVED" HEAD 2>/dev/null; then
+  echo "HEAD_MOVED $(git rev-list --count "$SAVED..HEAD")"
+  git log --oneline -20 "$SAVED..HEAD"
+else
+  echo "HEAD_DIVERGED"
+  git log --oneline -20 "$SAVED..HEAD"
+fi
+if [ -n "$SAVED_WT" ] && [ "$SAVED_WT" != "$(git rev-parse --show-toplevel 2>/dev/null)" ]; then
+  echo "SAVED_IN_WORKTREE: $SAVED_WT"
+fi
+```
+
+- `HEAD_UNCHANGED` — the tree is where the save left it; sort normally.
+- `HEAD_MOVED <n>`, `HEAD_DIVERGED` (a rebase, reset or other branch: the
+  saved commit is not behind this one) and `HEAD_UNKNOWN` (the saved commit is
+  not in this clone): show the listed commits under the header box and put
+  every Remaining Work item under **Verify first** — anything the save called
+  done or safe may since have been done, undone or changed.
+- `HEAD_UNTRACKED` — saved before head stamps existed; sort normally.
+- `SAVED_IN_WORKTREE: <path>` — the save came from another worktree of this
+  repository; name it.
 
 **Sort Remaining Work by provenance.** `/context-save` ends each item with a
 marker saying how that session knew it. Keep every item's original text and
@@ -198,7 +244,10 @@ saved order, and drop nothing. An item's marker is the last provenance marker in
 it, and it counts as the ending even when an outcome follows it: older saves
 wrote `Open. Run the suite. (path run) exit 0`, current ones write
 `Open. Run the suite, exit 0. (path run)`, and both are `(path run)` with a
-successful outcome. Put an item under **Verify first** when it:
+successful outcome. Markers are English literals; a parenthesised token in
+their place that is none of the five (misspelled, or translated into the
+session's language) reads as `(path assumed)`. Put an item under **Verify
+first** when it:
 - ends in `(path assumed)` or `(code read)`;
 - ends in `(path run)` but its text reports a failure;
 - has no marker and is a writing step (migration, sync, insert, import, deploy,
@@ -224,10 +273,14 @@ Branch:      {branch from frontmatter}
 Saved:       {timestamp, human-readable}
 Duration:    Last session was {formatted duration} (if available)
 Status:      {status}
+Head:        {head check result}
 ════════════════════════════════════════
 
 ### Summary
 {summary from saved file}
+
+### Next Focus
+{Next Focus from the saved file, when present}
 
 ### Remaining Work
 {legacy banner line, if it applies}
@@ -240,6 +293,9 @@ Verify first (inspect read-only before executing anything)
 
 ### Notes
 {notes}
+
+### Suggested skills / References
+{as saved, when present}
 ```
 
 If the loaded file has no `remote:` field, add one line under the header box:

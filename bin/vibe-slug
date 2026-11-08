@@ -3,7 +3,8 @@
 # Usage:
 #   eval "$(vibe-slug)"                  sets SLUG
 #   vibe-slug --identity                 prints SLUG, PROJECT_REMOTE, PROJECT_ROOT, LEGACY_SLUG (eval-safe)
-#   vibe-slug --stamp-checkpoint <file>  writes remote:/project_root: into a checkpoint's frontmatter
+#   vibe-slug --stamp-checkpoint <file>  writes remote:/project_root:/head: (and worktree: in a
+#                                        linked worktree) into a checkpoint's frontmatter
 #   vibe-slug --classify-checkpoints     reads checkpoint paths on stdin, prints "<match|unstamped|foreign>\t<path>"
 #   vibe-slug --migrate [--include-unstamped]
 #                                        copies the old bucket on request (see below), prints SLUG
@@ -361,12 +362,26 @@ case "${1:-}" in
     [ -n "$f" ] && [ -f "$f" ] || { echo "usage: vibe-slug --stamp-checkpoint <file>" >&2; exit 2; }
     [ "$(head -1 "$f")" = "---" ] || { echo "vibe-slug: $f has no frontmatter" >&2; exit 1; }
     tmp="$f.stamp.$$"
+    # head: lets restore tell how far the repository moved since the save.
+    # worktree: only in a linked worktree, where it differs from the main
+    # checkout that every worktree's checkpoints share a bucket with.
+    head=$(git rev-parse --verify -q HEAD 2>/dev/null || true)
+    worktree=""
+    _gd=$(git rev-parse --git-dir 2>/dev/null) && _gd=$(cd "$_gd" && pwd -P) || _gd=""
+    if [ -n "$_gd" ] && [ "$_gd" != "$(_common_dir)" ]; then
+      worktree="$PROJECT_ROOT"
+    fi
     # Values go through ENVIRON: awk -v would turn the backslashes in a
     # Windows-style root into escape sequences.
-    if VS_REMOTE="${CANON:-none}" VS_ROOT="$PROJECT_ROOT" awk '
+    if VS_REMOTE="${CANON:-none}" VS_ROOT="$PROJECT_ROOT" VS_HEAD="$head" VS_WT="$worktree" awk '
       NR == 1 { print; next }
-      !done && /^(remote|project_root):/ { next }
-      !done && $0 == "---" { print "remote: " ENVIRON["VS_REMOTE"]; print "project_root: " ENVIRON["VS_ROOT"]; done = 1 }
+      !done && /^(remote|project_root|head|worktree):/ { next }
+      !done && $0 == "---" {
+        print "remote: " ENVIRON["VS_REMOTE"]; print "project_root: " ENVIRON["VS_ROOT"]
+        if (ENVIRON["VS_HEAD"] != "") print "head: " ENVIRON["VS_HEAD"]
+        if (ENVIRON["VS_WT"] != "") print "worktree: " ENVIRON["VS_WT"]
+        done = 1
+      }
       { print }
       END { exit done ? 0 : 3 }
     ' "$f" > "$tmp"; then

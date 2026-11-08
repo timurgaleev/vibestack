@@ -59,11 +59,13 @@ can resume without losing a beat via `/context-restore`.
 
 Parse the user's input to determine the mode:
 
-- `/context-save` or `/context-save <title>` → **Save**
+- `/context-save`, `/context-save <title>` or
+  `/context-save <title> -- <next focus>` → **Save**
 - `/context-save list` → **List**
 
 If the user provides a title after the command (e.g., `/context-save auth refactor`),
-use it as the title. Otherwise, infer a title from the current work.
+use it as the title. Otherwise, infer a title from the current work. Text after
+` -- ` is what the next session should start on; save it as the Next Focus.
 
 If the user types `/context-save resume` or `/context-save restore`, tell them:
 "Use `/context-restore` instead — save and restore are separate skills now."
@@ -123,6 +125,15 @@ Writing steps get their own markers because whether a write is safe to repeat
 depends on the target's state, not on the code that performs it. Examples:
 `Open. Run the suite with CONFIG=staging, exit 0. (path run)` and
 `Open. Switch B reads config key Y. (path assumed)`.
+
+Markers are English literals, whatever language the session used: restore
+matches them by exact text. Before writing, check every item's final
+parenthesised token, and rewrite any that is not one of the five as
+`(path assumed)`; the Marker scan below catches what slips through.
+
+**Decisions Made claims are backed.** A decision that states what a file
+contains ("the config sets X", "only two callers") must rest on a grep, wc or
+Read of that file in this session; otherwise end it with `(path assumed)`.
 
 If the user provided a title, use it. Otherwise, infer a concise title (3-6 words)
 from the work being done.
@@ -211,6 +222,10 @@ files_modified:
 
 {Bulleted list of architectural choices, trade-offs, and reasoning}
 
+### Next Focus
+
+{The text after ` -- `, verbatim; omit the section when none was given}
+
 ### Remaining Work
 
 {Numbered list of concrete next steps, in priority order. Each item starts with `Open.` and ends with its provenance marker from Step 2, or no marker under row 3.}
@@ -218,24 +233,61 @@ files_modified:
 ### Notes
 
 {Gotchas, blocked items, open questions, things tried that didn't work}
+
+### Suggested skills
+
+{Slash commands that fit the next step (`/investigate`, `/review`, `/ship`), one line each with why; omit when none fits}
+
+### References
+
+{Paths or URLs of plans, specs, PRs and logs this work relies on: link them, never restate their content}
 ```
 
 The `files_modified` list comes from `git status --short` (both staged and unstaged
 modified files). Use relative paths from the repo root.
 
-Then stamp the project identity into the frontmatter. Do not write these two
+Then stamp the project identity into the frontmatter. Do not write these
 fields yourself: the bin writes `remote:` (the origin with any credentials
 removed, or `none`) and `project_root:` (the repository root), which
-`/context-restore` uses to refuse another project's checkpoint. Substitute the
+`/context-restore` uses to refuse another project's checkpoint, plus `head:`
+(the commit checked out) and, in a linked worktree, `worktree:`, which it uses
+to tell how far the repository moved since the save. Substitute the
 exact `FILE=` path printed in Step 4:
 
 ```bash
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" --stamp-checkpoint "{FILE}" \
-  && grep -E '^(remote|project_root):' "{FILE}"
+  && grep -E '^(remote|project_root|head|worktree):' "{FILE}"
 ```
 
 If the stamp fails, say so in the confirmation below — the save still stands,
 but restore will treat it as an unstamped checkpoint.
+
+#### Marker scan
+
+Every Remaining Work item that ends in a parenthesised token not among the five
+markers is printed (substitute the `FILE=` path):
+
+```bash
+awk '/^### / { inrw = ($(0) == "### Remaining Work"); next }
+  inrw && /^([0-9]+\.|[-*]) / && match($(0), /\([^()]*\)[[:space:]]*$/) {
+    t = substr($(0), RSTART, RLENGTH); sub(/[[:space:]]+$/, "", t)
+    if (t !~ /^\((target state checked|code read|path run|path read|path assumed)\)$/) print "UNKNOWN_MARKER: " $(0)
+  }' "{FILE}"
+```
+
+For each `UNKNOWN_MARKER:` line, rewrite that item's marker as `(path assumed)`
+(Write the whole file again) and re-run the scan until it prints nothing.
+
+Then scan the file for credentials — a session's notes quote commands, configs
+and logs:
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "{FILE}"; echo "REDACT_EXIT: $?"
+```
+
+`REDACT_EXIT: 1` lists masked findings with line numbers: replace each value
+with `[REDACTED]`, write the file again and re-scan until exit 0. `2` means the
+scan could not run — say so in the confirmation.
 
 After writing, confirm to the user:
 

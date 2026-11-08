@@ -189,6 +189,34 @@ has 'counts as the ending even when an outcome follows it' "$RESTORE" \
   && ok "restore states the marker is found despite a trailing outcome" \
   || no "restore only recognizes items ending exactly in the marker"
 
+# Markers are parsed by literal text, so a translated one must never be saved,
+# and a Decisions Made claim about file contents needs evidence from this turn.
+echo "literal markers and backed claims"
+tr '\n' ' ' < "$SAVE" | grep -qiE 'English literals.{0,200}rewrite.{0,80}\(path assumed\)' \
+  && ok "save rewrites an unknown parenthesised marker to (path assumed)" || no "save lacks the literal-marker rewrite"
+tr '\n' ' ' < "$SAVE" | grep -qE 'Decisions Made.{0,250}(grep|wc|Read).{0,200}\(path assumed\)' \
+  && ok "save backs file-content decisions or marks them (path assumed)" || no "save lacks backed decision claims"
+
+# The marker scan is a real block: run it over a saved file with a translated marker.
+block_after '#### Marker scan' "$SAVE" > "$TMP/scan.sh"
+if [ -s "$TMP/scan.sh" ]; then
+  printf -- '---\nstatus: in-progress\n---\n\n### Remaining Work\n\n1. Open. Run make. (path run)\n2. Open. Run deploy. (путь предположен)\n3. Open. Think.\n\n### Notes\n\n(not an item)\n' > "$TMP/m.md"
+  OUT=$(sed "s|{FILE}|$TMP/m.md|g" "$TMP/scan.sh" | bash 2>/dev/null)
+  printf '%s\n' "$OUT" | grep -q '^UNKNOWN_MARKER: 2\. Open\. Run deploy' \
+    && ok "marker scan flags the translated marker" || no "marker scan missed it: $OUT"
+  printf '%s\n' "$OUT" | grep -qE 'make|not an item' \
+    && no "marker scan flagged a valid marker or a non-item: $OUT" || ok "marker scan leaves valid markers and other sections alone"
+else
+  no "save has no '#### Marker scan' block"
+fi
+
+echo "handoff fields"
+has '/context-save <title> -- <next focus>' "$SAVE" && ok "save takes a next focus after --" || no "save lacks -- <next focus>"
+has '### Suggested skills' "$SAVE" && ok "save writes Suggested skills" || no "save lacks Suggested skills"
+has '### References' "$SAVE" && ok "save writes References" || no "save lacks References"
+grep -q 'vibe-redact" scan --file "' "$SAVE" \
+  && ok "save scans the written file for credentials" || no "save does not run vibe-redact scan"
+
 echo
 echo "context provenance: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
