@@ -508,8 +508,7 @@ Run the test command(s) Step 4 settled on: the one documented in CLAUDE.md's
 persisted there. Run every suite the project declares (a repo can have more than
 one — for example a unit lane and a browser lane). **Never assume a stack:** do
 not run `bin/test-lane`, `npm run test` or any other command the project did not
-name. A command that does not exist "fails" with exit 127 and the triage below
-then chases a failure the branch never caused.
+name.
 
 **If no test command exists** (Step 4 recorded `BOOTSTRAP_DECLINED`, or the user
 picked "This project doesn't need tests"): name the untested scope and use
@@ -531,6 +530,8 @@ it — do not offer B for it.
 `RAILS_ENV=test bin/rails db:migrate` — `bin/test-lane` already calls
 `db:test:prepare` internally, which loads the schema into the correct lane database.
 Running bare test migrations without INSTANCE hits an orphan DB and corrupts structure.sql.
+
+A lane needs no run when `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence" check --skill health --expect-cmd '<lane command>'` prints `FRESH` (`/health --fix` passed it at this tree): cite it as `exit=0 tests_ran=unknown` under its health label.
 
 Run independent suites in parallel, one lane per suite. Substitute each lane's
 label and exact command; a single-suite project has one lane:
@@ -562,8 +563,7 @@ done
 ```
 
 Keep the braces: `{ …; echo $? > exit; } &` backgrounds the run and the status
-write together. Without them, `a; b &` runs the suite in the foreground and only
-the `echo` in the background, so the lanes stop running in parallel. Pass each
+write together (`a; b &` would background only the `echo`). Pass each
 lane's command as ONE single-quoted string after `--`: the ledger records that
 string verbatim, and Step 16 asks for it byte for byte. If a lane log shows
 `vibe-evidence` itself was not found, run the lane commands bare instead (same
@@ -574,9 +574,8 @@ After all lanes complete, read each `LANE:` line. **A lane passes only when its
 failure, whatever the log text says. **`tests_ran=0` is a failure too:** the runner
 collected nothing, so nothing was verified — treat it as in-branch (Step T2).
 `tests_ran=unknown` (a runner whose summary is not recognized) passes, and that
-lane's Test plan line says `count unavailable`. Read the log files for failure
-detail. Use the same lane labels and exact commands again in Step 16; keep the
-printed `SHIP_LOG:` path for Step 6.
+lane's Test plan line says `count unavailable`. Reuse the lane labels and exact
+commands in Step 16; keep `SHIP_LOG:` for Step 6.
 
 **If any test fails, do NOT immediately stop.** Determine ownership first:
 
@@ -2267,6 +2266,8 @@ during Steps 4-6":
    - **FRESH** (exit 0): the lane passed on this exact content (release bookkeeping
      aside). Cite the printed line and the Step 5 log; do not re-run it. A lane whose
      last `tests_ran` was `0` is never FRESH: re-run it and read the count again.
+     A lane Step 5 took from the health ledger is checked with `--skill health` in
+     place of `--label <lane>`.
    - **STALE** (exit 1), or the helper is missing: something a test can read changed
      since the run — fixes from review findings, Step 7's generated tests, Step 14.5's
      documentation edits (docs are inputs to doc tests, linters and generators) — or

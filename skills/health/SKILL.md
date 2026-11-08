@@ -46,7 +46,8 @@ fi
 
 ## User-invocable
 When the user types `/health`, run this skill. `/health skills` runs
-[Target: skills](#target-skills) instead of Steps 1-6.
+[Target: skills](#target-skills) instead of Steps 1-6. `/health --fix` runs
+[Mode: --fix](#mode---fix) instead of Steps 2-6.
 
 ---
 
@@ -433,6 +434,75 @@ Rank by `weight * (10 - score)` descending. Only show categories below 10.
 
 ---
 
+## Mode: --fix
+
+`/health --fix` runs the checks Step 1 found, fixes the source until they pass, and
+proves the result from the evidence ledger. It writes no score and no history row.
+
+**Checks.** Run Step 1 (a `## Health Stack` section, or auto-detection). Each
+detected command is one check, labelled by its category (`typecheck`, `lint`,
+`test`, `deadcode`, `shell`; `lint-2` for a second command in one category). With
+no check at all, print `CHECKS: none` and stop: there is nothing to make green,
+and saying it passed would be a lie.
+
+**Consent.** The commands come from the repo and run its code. Interactive: print
+every command, and before the first run in a repo with no earlier health record
+(`"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence" read --skill health --limit 1`
+prints `no evidence recorded`) ask with AskUserQuestion: A) run them, B) stop.
+`SESSION_KIND: spawned` or `headless`: run only when invoked as `/health --fix --yes`;
+otherwise print `FIX: needs --yes in a spawned or headless session` and stop.
+
+**Run the checks.** One block per run; one `fix_check` line per check, with its
+label and its exact command as ONE single-quoted string:
+
+```bash
+_EV=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence
+_FIX_LOG=$(mktemp -d "${TMPDIR:-/tmp}/vibe-health-fix-XXXXXXXX") || { echo "FIX: cannot create a log directory"; exit 125; }
+fix_check() {
+  "$_EV" run --skill health --label "${1}" -- "${2}" > "$_FIX_LOG/${1}.txt" 2>&1
+  _rc=$?
+  printf 'CHECK: %s exit=%s log=%s\n' "${1}" "$_rc" "$_FIX_LOG/${1}.txt"
+  if [ "$_rc" -ne 0 ]; then tail -50 "$_FIX_LOG/${1}.txt"; fi
+}
+fix_check '<check>' '<command>'
+```
+
+If a log says `vibe-evidence` itself was not found, stop: this mode proves its
+result from the ledger, and without it there is nothing to prove.
+
+Rules for every run:
+
+- **Only exit 0 is green.** Any other `exit=`, a missing line or "mostly passed"
+  is red, whatever the log says.
+- **Pre-existing** means red on the first run this session, before any edit. A
+  check that turns red after your edit is yours, including a test you never
+  touched that your changed source now breaks.
+- **ENV, TIMEOUT or a missing secret** is reported with the log line that shows it.
+  Never stub, mock or skip around it.
+- **Never edit a test, a checker config or a script** (`package.json` scripts,
+  lint rules, CI files, `## Health Stack`) to get green. Fix the source the check
+  exercises; a wrong test is reported, not rewritten.
+- **Stop after 5 runs**, or on the same failure twice after an attempted fix. Report what is still red and hand it to `/investigate`.
+
+**Finish from the ledger.** Do not re-run anything; ask the ledger whether each
+check's exact command passed at the tree as it is now. One `fix_ready` line per
+check, same label and command as the last run:
+
+```bash
+_EV=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence
+TREE_NOW=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-tree-hash" 2>/dev/null || echo unknown)
+_fix_bad=""
+fix_ready() { "$_EV" check --skill health --label "${1}" --expect-cmd "${2}" || _fix_bad="$_fix_bad ${1}"; }
+fix_ready '<check>' '<command>'
+if [ -z "$_fix_bad" ]; then echo "READY at tree $TREE_NOW"; else echo "NOT READY:$_fix_bad"; fi
+```
+
+Report the `READY` or `NOT READY` line as printed, with each check's `FRESH` or
+`STALE` line, the pre-existing failures, and the files you changed. An edit after
+the last run makes it `NOT READY`: run the checks again rather than claiming it.
+
+---
+
 ## Target: skills
 
 `/health skills` reports on the installed skills instead of the codebase: how often
@@ -489,7 +559,7 @@ on a quick pass.
 ## Important Rules
 
 1. **Wrap, don't replace.** Run the project's own tools. Never substitute your own analysis for what the tool reports.
-2. **Read-only.** Never fix issues. Present the dashboard and let the user decide.
+2. **Read-only outside `--fix`.** Never fix issues unless the user ran `/health --fix`. Present the dashboard and let the user decide.
 3. **Respect CLAUDE.md.** If `## Health Stack` is configured, use those exact commands. Do not second-guess.
 4. **Skipped is not failed.** Skip only a tool whose absence was established before running, show coverage, and redistribute weight among scored categories only. A command that ran and failed — including exit 127 — is FAILED, never SKIPPED.
 5. **Show raw output for failures.** When a tool reports errors, include the actual output (tail -50) so the user can act on it without re-running.
