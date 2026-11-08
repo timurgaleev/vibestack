@@ -98,7 +98,8 @@ any documentation. This prevents the "documentation that describes half the feat
 An architecture decision record captures one decision: what was decided, why, and
 what it costs. It is a separate mode, not a fifth Diataxis quadrant, and replaces
 Steps 0a-8 when the user says "ADR this", "record this decision" or passes `--adr`.
-Nothing else creates an ADR: a plan review may suggest one, but never writes it.
+Nothing else creates an ADR: a plan review or `/improve-arch` may suggest one and
+hand off here with `--adr`, but never writes it itself.
 
 1. **Find the repo's convention first.** Look for an existing ADR home —
    `docs/adr/`, `docs/decisions/`, `adr/`, `architecture/decisions/` — and for

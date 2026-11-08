@@ -75,7 +75,7 @@ printf '%s' "$step85" | grep -q 'codex exec "' && no "prompt still spliced into 
 printf '%s' "$step85" | grep -q 'codex exec - .*< "\$_PROMPT_FILE"' && ok "prompt goes in on stdin" || no "prompt not on stdin"
 printf '%s' "$step85" | grep -q 'vibe-codex-probe' && ok "preflight uses the probe" || no "preflight skips the probe"
 printf '%s' "$step85" | grep -q '! codex --version' && no "--version still decides auth" || ok "--version no longer decides auth"
-for s in '"unavailable"' '"disabled"' 'Write the' 'run_in_background: false'; do
+for s in 'OUTSIDE_GRADE' '"disabled"' 'Write the' 'run_in_background: false'; do
   printf '%s' "$step85" | grep -qF "$s" && ok "review step has: $s" || no "review step lacks: $s"
 done
 
@@ -103,7 +103,7 @@ else
 fi
 
 echo "title sync"
-TS=$(fenced "$SKILL" '^V=.*tr -d')
+TS=$(fenced "$SKILL" '^\[ -f VERSION \] .*title sync skipped')
 [ -n "$TS" ] && ok "title sync is one block" || no "title sync block missing"
 cat > "$TMP/bin/gh" <<'STUB'
 #!/usr/bin/env bash
@@ -168,6 +168,44 @@ head -20 "$SKILL" | grep -q 'docs after merge' && no "after-merge trigger remain
 echo "sell test"
 sed -n '/^## Step 5/,/^## Step 6/p' "$SKILL" | grep -qiE 'need a rewrite|flag and rewrite' \
   && no "sell test still rewrites entries" || ok "sell test flags, never rewrites"
+
+echo "version state"
+VS=$(fenced "$SKILL" '^_VER_RE=')
+[ -n "$VS" ] && ok "Step 8 classifies the version state in one block" || no "Step 8 version-state block missing"
+vstate() {  # setup-fn expected-state expected-line label
+  local d="$TMP/v.$RANDOM"; mkdir -p "$d"
+  (cd "$d" && git init -q -b main && git config user.email t@t && git config user.name t \
+     && "$1" base && git add -A && git commit -q --allow-empty -m base && git checkout -q -b feat \
+     && "$1" branch && git add -A && git commit -q --allow-empty -m branch) >/dev/null 2>&1
+  local out; out=$(cd "$d" && bash -c "${VS//<base>/main}" 2>&1)
+  if printf '%s\n' "$out" | grep -qx "VERSION_STATE: $2" \
+     && { [ -z "$3" ] || printf '%s\n' "$out" | grep -qF "$3"; }; then ok "version state: $4"
+  else no "version state: $4 (got: $(printf '%s' "$out" | tr '\n' '|'))"; fi
+}
+v_none()    { :; }
+v_fresh()   { echo 1.2.3 > VERSION; }
+v_bumped()  { if [ "$1" = base ]; then echo 1.2.3 > VERSION; else echo 1.2.4 > VERSION; fi; }
+v_stale()   { v_bumped "$1"; echo '{"version":"1.2.3"}' > package.json; }
+v_bad()     { if [ "$1" = base ]; then echo 1.2.3 > VERSION; else echo 'oops' > VERSION; fi; }
+vstate v_none   NO_VERSION      'VERSION: not applicable (no VERSION file on this branch or on main)' "no VERSION anywhere is not applicable, said aloud"
+vstate v_fresh  FRESH           '' "VERSION equal to the base is FRESH"
+vstate v_bumped ALREADY_BUMPED  '' "a bumped VERSION is ALREADY_BUMPED"
+vstate v_stale  DRIFT_STALE_PKG '' "package.json behind a bumped VERSION is DRIFT_STALE_PKG"
+vstate v_bad    MALFORMED       'VERSION: not applicable (VERSION is malformed' "a malformed VERSION is reported, never read as 0.0.0"
+sed -n '/^## Step 8:/,/^## Step 8.5/p' "$SKILL" | grep -q 'Skip silently' \
+  && no "Step 8 still skips silently" || ok "Step 8 never skips silently"
+d="$TMP/tsv"; mkdir -p "$d"
+out=$(cd "$d" && PATH="$TMP/bin:$PATH" STUB_TITLE="feat: x" STUB_OUT="$TMP/edited" bash -c "${TS//<platform>/github}" 2>&1)
+printf '%s' "$out" | grep -q '^VERSION: not applicable (no VERSION file)' \
+  && ok "title sync says VERSION is not applicable" || no "title sync skip message: $out"
+
+echo "outside voice and paths"
+step85=$(sed -n '/^## Step 8.5/,/^## Step 9/p' "$SKILL")
+printf '%s' "$step85" | grep -q 'OUTSIDE_GRADE: ' && ok "Step 8.5 runs the shared outside-voice body" || no "Step 8.5 has no shared body"
+grep -q 'TMPERR_DOC' "$SRC" && no "Step 8.5 still carries its own Codex run" || ok "no inlined Codex run"
+grep -q 'CLAUDE_SKILL_DIR:-$HOME/.claude/skills/document-release}/../review/TODOS-format.md' "$SKILL" \
+  && ok "TODOS-format resolves from the skill directory" || no "TODOS-format path is cwd-relative"
+grep -q '^echo "BASE_BRANCH: ' "$SKILL" && ok "Step 0 uses the shared base-branch detection" || no "base-branch-detect not included"
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
