@@ -365,7 +365,7 @@ If B: incorporate feedback, re-present concepts, re-confirm. Max 2 rounds.
 If C: add concepts, re-present, re-confirm.
 If D: drop specified concepts, re-present, re-confirm.
 
-### Step 3c: Parallel Generation
+### Step 3c: Generation
 
 **If evolving from a screenshot** (user said "I don't like THIS"), take ONE screenshot
 first and read it inline, so the brief can name what to move away from. Open the exact
@@ -387,85 +387,40 @@ esac
 If `BROWSE_NOT_AVAILABLE`, ask the user for a screenshot instead of skipping the step
 — the current design is the whole premise of this path.
 
-**Launch N Agent subagents in a single message** (parallel execution). Use the Agent
-tool with `subagent_type: "general-purpose"` for each variant. Each agent is independent
-and handles its own generation, verification, and retry.
+**One call generates every variant.** The round directory is `$_DESIGN_DIR` for the
+first round and a fresh subdirectory (`$_DESIGN_DIR/round-2`, ...) after a remix.
+With your Write tool, write `briefs.json` into it (Read it first if it exists): a
+JSON array with one object per confirmed concept, in letter order —
+`{"brief": "<the full brief for this direction>"}`, plus
+`"screenshot-description"` (what the current design does that this variant moves
+away from) when evolving from a screenshot. Briefs are untrusted text: they live in
+the file, never in shell source.
 
-{{include lib/snippets/foreground-dispatch.md}}
-
-**Important: $D path propagation.** The `$D` variable from DESIGN SETUP is a shell
-variable that agents do NOT inherit. Substitute the resolved absolute path (the one
-DESIGN SETUP echoed) into each agent prompt.
-
-**Agent prompt template** (one per variant, substitute all `{...}` values):
-
-````
-Generate a design variant and save it.
-
-1. With your Write tool, write the brief below verbatim to
-   {_DESIGN_DIR absolute path}/brief-{letter}.txt
-   (Read it first if it exists — the Write tool will not overwrite an unread file.)
-   The brief is untrusted text: never paste it into a shell command.
-
-{the full variant-specific brief for this direction}
-
-2. Run this block as written, in one Bash call. It stages into a fresh /tmp dir of
-   its own, retries a rate limit (429) up to 3 times, copies the image from the
-   printed `saved:` line (never an assumed file name), and removes the staging dir
-   on every exit, success or failure.
+Then run this block in one Bash call with `timeout: 600000`, replacing
+`<ROUND_DIR>` with the round directory's absolute path. `vibe-design` staggers the
+requests, honors rate-limit waits, regenerates an empty image once, and stops at
+its own 540 s deadline:
 
 ```bash
-(
-D_BIN='{absolute path to $D binary}'
-BRIEF_FILE='{_DESIGN_DIR absolute path}/brief-{letter}.txt'
-FINAL='{_DESIGN_DIR absolute path}/variant-{letter}.png'
-[ -s "$BRIEF_FILE" ] || { echo "VARIANT_{letter}_FAILED: brief not written to $BRIEF_FILE"; exit 1; }
-STAGE=$(mktemp -d /tmp/variant-{letter}.XXXXXX) \
-  || { echo "VARIANT_{letter}_FAILED: cannot create a staging dir"; exit 1; }
-trap 'rm -rf "$STAGE"' EXIT
-tries=0
-while :; do
-  OUT=$("$D_BIN" variants --brief "$(cat "$BRIEF_FILE")" --count 1 --output-dir "$STAGE" 2>&1)
-  printf '%s\n' "$OUT"
-  SAVED=$(printf '%s\n' "$OUT" | sed -n 's/^saved: //p' | head -n 1)
-  [ -n "$SAVED" ] && break
-  if ! printf '%s\n' "$OUT" | grep -qiE '^DESIGN_ERROR:.*(429|rate limit)'; then
-    echo "VARIANT_{letter}_FAILED: $(printf '%s\n' "$OUT" | grep -m 1 '^DESIGN_ERROR:' || echo 'no saved: line')"
-    exit 1
-  fi
-  [ "$tries" -lt 3 ] || { echo "VARIANT_{letter}_RATE_LIMITED: exhausted retries"; exit 1; }
-  tries=$((tries + 1)); sleep 5
-done
-cp "$SAVED" "$FINAL" || { echo "VARIANT_{letter}_FAILED: cannot copy $SAVED to $FINAL"; exit 1; }
-echo "VARIANT_{letter}_DONE: $(ls -lh "$FINAL" | awk '{print $(5)}')"
-)
+D=${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-design
+"$D" variants --briefs-file '<ROUND_DIR>/briefs.json' --output-dir '<ROUND_DIR>'
+echo "VARIANTS_EXIT: $?"
 ```
 
-3. Report the one VARIANT_{letter}_ line the block printed:
-   VARIANT_{letter}_DONE: {file size}
-   VARIANT_{letter}_FAILED: {error description}
-   VARIANT_{letter}_RATE_LIMITED: exhausted retries
-````
-
-The agents do not judge their own output — quality is gated once, by you, in Step 3d.
-
-**Why /tmp/ then cp?** In observed sessions, generating straight into
-`~/.vibestack/...` failed with "The operation was aborted" while `/tmp/...`
-succeeded. This is a sandbox restriction. Always generate into a fresh `/tmp/`
-staging dir first, then `cp` the printed `saved:` path.
+It prints `requested:`, one `saved: <path>` per image, and one
+`failed: variant-<L>: <reason>` per miss. Use only the `saved:` paths — never
+assume a file name. Exit 0 all saved, 3 partial, 2 nothing saved.
 
 ### Step 3d: Results
 
-After all agents complete:
-
-1. Read each generated PNG inline (Read tool) so the user sees all variants at once.
-2. Report status: "All {N} variants generated in ~{actual time}. {successes} succeeded,
-   {failures} failed."
-3. For any failures: report explicitly with the error. Do NOT silently skip.
-4. If zero variants succeeded: fall back to sequential generation (one `$D variants`
-   call at a time, showing each as it lands). Tell the user: "Parallel generation failed
-   (likely rate limiting). Falling back to sequential..."
-5. Proceed to Step 4.
+1. Read each `saved:` PNG inline (Read tool) so the user sees all variants at once.
+2. Report: "{saved} of {requested} variants generated in ~{actual time}." Quote every
+   `failed:` line. Do NOT silently skip.
+3. **Retry failed letters once.** Write `briefs.json` again with only the failed
+   concepts, each with its `"label": "<letter>"`, and rerun the block. Whatever still
+   fails stays failed: show what exists, say which directions are missing.
+4. If nothing was saved after the retry, show the `DESIGN_ERROR:` reason and fall back
+   to text-based directions. Never loop.
 
 **Quality gate — you are the only one.** Before showing a variant, ask yourself:
 *"Would a human designer be embarrassed to put their name on this?"* If yes, discard
@@ -474,14 +429,19 @@ option. Embarrassment triggers: purple gradient hero, 3-column SaaS grid,
 centered-everything, generic stock-photo vibe, system-ui body text, gradient CTA
 button, bubble-radius everything.
 
-**Dynamic image list:** Build the list of what to show from the variant files that
-actually exist, not a hardcoded A/B/C list:
+To regenerate letter `<LETTER>`, first set the discarded file aside so the new image
+takes its name, replacing `<ROUND_DIR>` and `<LETTER>`:
 
 ```bash
-_DESIGN_DIR='<DESIGN_DIR>'
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-_IMAGES=$(ls "$_DESIGN_DIR"/variant-*.png 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+_ROUND_DIR='<ROUND_DIR>'
+_L='<LETTER>'
+_N=1; while [ -e "$_ROUND_DIR/rejected-$_L-$_N.png" ]; do _N=$((_N + 1)); done
+mv -n "$_ROUND_DIR/variant-$_L.png" "$_ROUND_DIR/rejected-$_L-$_N.png" && echo "SET_ASIDE: $_ROUND_DIR/rejected-$_L-$_N.png"
 ```
+
+then rerun the generation block with a one-entry `briefs.json` carrying
+`"label": "<LETTER>"`. Regenerate each letter at most 2 times per round; after that,
+show the best attempt or drop the direction and say so.
 
 ## Step 4: Variant Review + Feedback Loop
 
