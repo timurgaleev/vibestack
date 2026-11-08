@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.57.1 — 2026-11-08
+
+### Fixed
+
+- CI is green on Linux again. The Codex probe rows in `test-evidence-bins.sh`
+  now give the fake `codex` a passing sandbox preflight, so each row reaches
+  the verdict it checks. The contract greps in `test-review-checklist.sh`,
+  `test-ship-release-gates.sh` and `test-land-deploy-gates.sh` read piped input
+  to the end, so a match no longer reads as missing when the producer is killed
+  by SIGPIPE under `pipefail`.
+
 ## 1.57.0 — 2026-11-08
 
 ### Added
