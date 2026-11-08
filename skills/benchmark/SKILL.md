@@ -1,7 +1,7 @@
 ---
 name: benchmark
 description: |
-  Detect page performance regressions: baseline load times, Core Web Vitals and bundle sizes, compare per PR.
+  Web performance benchmark: median page timings, Web Vitals and bundle sizes vs a baseline.
 triggers:
   - performance benchmark
   - check page speed
@@ -19,6 +19,8 @@ allowed-tools:
 Use when: "performance", "benchmark", "page speed", "lighthouse", "web vitals", "bundle size", "load time".
 
 Voice triggers (speech-to-text aliases): "speed test", "check performance".
+
+Not for comparing models or prompts (use /agent-eval or /deliberation:ask-all), nor for API latency or build timing (use the performance-benchmarker agent).
 
 ## Preamble
 
@@ -58,7 +60,7 @@ When the user types `/benchmark`, run this skill.
 ## Arguments
 - `/benchmark <url>` — full performance audit with baseline comparison
 - `/benchmark <url> --baseline` — capture baseline (run before making changes)
-- `/benchmark <url> --quick` — single-pass timing check (no baseline needed)
+- `/benchmark <url> --quick` — one run, no verdict: absolute timings and the budget check only
 - `/benchmark <url> --pages /,/dashboard,/api/health` — specify pages
 - `/benchmark --diff` — benchmark only pages affected by current branch
 - `/benchmark --trend` — show performance trends from historical data
@@ -71,6 +73,8 @@ When the user types `/benchmark`, run this skill.
 eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null || echo "SLUG=unknown")"
 mkdir -p .vibestack/benchmark-reports
 mkdir -p .vibestack/benchmark-reports/baselines
+# Refresh stat info so --diff sees only real content changes.
+git update-index --refresh >/dev/null 2>&1 || true
 ```
 
 ### Phase 2: Page Discovery
@@ -84,57 +88,26 @@ git diff $(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || gh repo 
 
 ### Phase 3: Performance Data Collection
 
-For each page, collect comprehensive performance metrics:
+Every metric for one run comes from **one page load**: a fresh `goto`, then a single `js` call that waits for the load event, watches LCP for 3 s, and returns everything at once.
 
 ```bash
 B='<BROWSE_BIN>'
 $B goto <page-url>
-$B perf
+$B js "(async()=>{document.readyState==='complete'||await new Promise(r=>addEventListener('load',r,{once:true}));await new Promise(r=>setTimeout(r,0));const nav=performance.getEntriesByType('navigation')[0]?.toJSON()??null;const fcp=performance.getEntriesByType('paint').find(e=>e.name==='first-contentful-paint')?.startTime??null;const lcp=await new Promise(r=>{let v=null;new PerformanceObserver(l=>{const e=l.getEntries();if(e.length)v=e[e.length-1].startTime}).observe({type:'largest-contentful-paint',buffered:true});setTimeout(()=>r(v),3000)});const all=performance.getEntriesByType('resource');const brief=e=>({name:e.name.split('/').pop().split('?')[0],type:e.initiatorType,size:e.transferSize,duration:Math.round(e.duration)});const resources=all.map(brief).sort((a,b)=>b.duration-a.duration).slice(0,15);const scripts=all.filter(e=>e.initiatorType==='script').map(brief);const css=all.filter(e=>e.initiatorType==='css'||e.name.split('?')[0].endsWith('.css')).map(brief);const summary={total_requests:all.length,total_transfer:all.reduce((t,e)=>t+(e.transferSize||0),0),by_type:Object.entries(all.reduce((a,e)=>{a[e.initiatorType]=(a[e.initiatorType]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1])};return JSON.stringify({nav,fcp,lcp,resources,scripts,css,summary})})()"
 ```
 
-Then gather detailed metrics via JavaScript:
+**A failed load is not a measurement.** When the status is not 2xx — `nav.responseStatus`, or the code `goto` printed when that field is 0 or missing — or the `goto` itself errors, the run fails: record it as a failed load, keep no metrics from it, and count it in the report. A page with no successful run has no numbers.
 
-```bash
-B='<BROWSE_BIN>'
-$B js "JSON.stringify(performance.getEntriesByType('navigation')[0])"
-```
+**Repeat runs.** Do 5 runs per page (each a fresh `goto` plus the one `js` call). For every metric keep the per-metric median and its `[min,max]` across the successful runs. `--quick` does a single run. Every table shows medians; the range is what the comparison judges against.
 
-Paint timings (the `js` verb awaits a returned Promise, so the LCP observer resolves before the command returns):
+Metrics, from the returned JSON (the navigation entry's `startTime` is 0, so its fields are already relative to navigation start):
+- **TTFB**: `nav.responseStart - nav.requestStart`
+- **FCP**: `fcp`
+- **LCP**: `lcp` (the last entry seen within 3 s)
+- **DOM Interactive** / **DOM Complete** / **Full Load**: `nav.domInteractive` / `nav.domComplete` / `nav.loadEventEnd`
+- **Requests / transfer**: `summary`; **JS / CSS bundle**: the sum of `size` over `scripts` / `css`; slowest resources: `resources`
 
-```bash
-B='<BROWSE_BIN>'
-$B js "performance.getEntriesByType('paint').find(e=>e.name==='first-contentful-paint')?.startTime ?? null"
-$B js "new Promise(r=>{let v=null;new PerformanceObserver(l=>{const e=l.getEntries();if(e.length)v=e[e.length-1].startTime}).observe({type:'largest-contentful-paint',buffered:true});setTimeout(()=>r(v),3000)})"
-```
-
-Extract key metrics (the navigation entry's `startTime` is 0, so its fields are already relative to navigation start):
-- **TTFB** (Time to First Byte): `responseStart - requestStart`
-- **FCP** (First Contentful Paint): the `first-contentful-paint` paint entry's `startTime`
-- **LCP** (Largest Contentful Paint): the last `largest-contentful-paint` entry's `startTime` seen within 3 s
-- **DOM Interactive**: `domInteractive`
-- **DOM Complete**: `domComplete`
-- **Full Load**: `loadEventEnd`
-
-A missing FCP or LCP (the command printed `null`) is recorded as `null` and shown as `missing` in every table — never 0, and never a PASS in the budget table.
-
-Resource analysis:
-```bash
-B='<BROWSE_BIN>'
-$B js "JSON.stringify(performance.getEntriesByType('resource').map(r => ({name: r.name.split('/').pop().split('?')[0], type: r.initiatorType, size: r.transferSize, duration: Math.round(r.duration)})).sort((a,b) => b.duration - a.duration).slice(0,15))"
-```
-
-Bundle size check:
-```bash
-B='<BROWSE_BIN>'
-$B js "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
-$B js "JSON.stringify(performance.getEntriesByType('resource').filter(r => r.initiatorType === 'css').map(r => ({name: r.name.split('/').pop().split('?')[0], size: r.transferSize})))"
-```
-
-Network summary:
-```bash
-B='<BROWSE_BIN>'
-$B js "(() => { const r = performance.getEntriesByType('resource'); return JSON.stringify({total_requests: r.length, total_transfer: r.reduce((s,e) => s + (e.transferSize||0), 0), by_type: Object.entries(r.reduce((a,e) => { a[e.initiatorType] = (a[e.initiatorType]||0) + 1; return a; }, {})).sort((a,b) => b[1]-a[1])})})()"
-```
+A missing FCP or LCP (`null`) is recorded as `null` and shown as `missing` in every table — never 0, and never a PASS in the budget table.
 
 ### Phase 4: Baseline Capture (--baseline mode)
 
@@ -145,8 +118,10 @@ Save metrics to baseline file:
   "url": "<url>",
   "timestamp": "<ISO>",
   "branch": "<branch>",
+  "runs": 5,
   "pages": {
     "/": {
+      "failed_loads": 0,
       "ttfb_ms": 120,
       "fcp_ms": 450,
       "lcp_ms": 800,
@@ -157,6 +132,14 @@ Save metrics to baseline file:
       "total_transfer_bytes": 1250000,
       "js_bundle_bytes": 450000,
       "css_bundle_bytes": 85000,
+      "range_ms": {
+        "ttfb_ms": [110, 140],
+        "fcp_ms": [420, 490],
+        "lcp_ms": [760, 870],
+        "dom_interactive_ms": [570, 640],
+        "dom_complete_ms": [1150, 1260],
+        "full_load_ms": [1350, 1480]
+      },
       "largest_resources": [
         {"name": "main.js", "size": 320000, "duration": 180},
         {"name": "vendor.js", "size": 130000, "duration": 90}
@@ -166,27 +149,28 @@ Save metrics to baseline file:
 }
 ```
 
-Write to `.vibestack/benchmark-reports/baselines/baseline.json`. Only `--baseline` mode writes this file; it is the comparison baseline.
+Metric values are the medians; `range_ms` holds each timing's `[min,max]`; `runs` is the number of runs per page. Write to `.vibestack/benchmark-reports/baselines/baseline.json`. Only `--baseline` mode writes this file; it is the comparison baseline. A baseline without `runs` (written before repeat runs existed) counts as 1 run with no range.
 
 ### Phase 5: Comparison
 
-If baseline exists, compare current metrics against it:
+If baseline exists, compare current medians against it:
 
 ```
 PERFORMANCE REPORT — [url]
 ══════════════════════════
+VERDICT: slower — LCP and Full Load regressed outside the baseline range (5 runs each, 0 failed or non-2xx loads)
 Branch: [current-branch] vs baseline ([baseline-branch])
 
 Page: /
 ─────────────────────────────────────────────────────
-Metric              Baseline    Current     Delta    Status
-────────            ────────    ───────     ─────    ──────
-TTFB                120ms       135ms       +15ms    OK
-FCP                 450ms       480ms       +30ms    OK
-LCP                 800ms       1600ms      +800ms   REGRESSION
-DOM Interactive     600ms       650ms       +50ms    OK
-DOM Complete        1200ms      1350ms      +150ms   OK
-Full Load           1400ms      2100ms      +700ms   REGRESSION
+Metric              Baseline    Range         Current     Delta    Status
+────────            ────────    ─────         ───────     ─────    ──────
+TTFB                120ms       110-140ms     135ms       +15ms    OK
+FCP                 450ms       420-490ms     480ms       +30ms    OK
+LCP                 800ms       760-870ms     1600ms      +800ms   REGRESSION
+DOM Interactive     600ms       570-640ms     650ms       +50ms    OK
+DOM Complete        1200ms      1150-1260ms   1350ms      +150ms   OK
+Full Load           1400ms      1350-1480ms   2100ms      +700ms   REGRESSION
 Total Requests      42          58          +16      WARNING
 Transfer Size       1.2MB       1.8MB       +0.6MB   REGRESSION
 JS Bundle           450KB       720KB       +270KB   REGRESSION
@@ -207,6 +191,12 @@ REGRESSIONS DETECTED: 4
 - Request count: >30% increase = WARNING
 - Bundle-size thresholds also apply to total transfer size.
 - When a metric matches both, REGRESSION takes precedence over WARNING.
+
+**Noise and edge rules** (applied before the thresholds above):
+- A timing whose current median sits inside the baseline range (`range_ms`) is OK whatever its delta — that difference is run-to-run noise.
+- When either side has only one run (a legacy baseline, or `--quick`), timing rows are INCONCLUSIVE: one load cannot separate a change from noise. Byte and request counts are deterministic and are still judged.
+- No baseline: report the absolute medians and the budget check, give the verdict as inconclusive, and suggest `--baseline`.
+- A baseline value of 0 or `null` has no percentage: show the absolute delta, apply only the absolute 500ms rule to timings, and mark size rows N/A rather than dividing by zero.
 
 ### Phase 6: Slowest Resources
 
@@ -229,7 +219,7 @@ RECOMMENDATIONS:
 
 ### Phase 7: Performance Budget
 
-Check against industry budgets:
+Check the medians against industry budgets. Per row: under 90% of budget = PASS; 90-100% of budget = WARNING (below the budget itself); at or over budget = FAIL; a missing metric = N/A. The grade is the share of metrics under budget (PASS + WARNING), N/A rows left out of the count: A = all, B ≥ 80%, C ≥ 60%, D ≥ 40%, F below.
 
 ```
 PERFORMANCE BUDGET CHECK
@@ -243,8 +233,20 @@ Total CSS           < 100KB     88KB        PASS
 Total Transfer      < 2MB       1.8MB       WARNING (90%)
 HTTP Requests       < 50        58          FAIL
 
-Grade: B (4/6 passing)
+Grade: C (4/6 under budget)
 ```
+
+### Vet the number
+
+Before writing the report, decide what the numbers actually say, and put that first. The report opens with one line:
+
+`VERDICT: <faster | slower | no difference | inconclusive> — <one-clause reason> (<runs> runs each, <n> failed or non-2xx loads)`
+
+- **faster** / **slower**: the timings that left the baseline range all moved one way (any size REGRESSION also means slower).
+- **no difference**: every timing median sits inside its baseline range and no size row is a REGRESSION.
+- **inconclusive**: no baseline, a one-run side, timings that moved both ways, or a page whose loads failed. Say which.
+
+Then name the limiter: the slowest first-party resource from Phase 6, or the metric furthest over budget — the one thing most worth fixing. A verdict built on failed or non-2xx loads is not a verdict; report the count instead of averaging around it.
 
 ### Phase 8: Trend Analysis (--trend mode)
 
@@ -266,9 +268,9 @@ TREND: Performance degrading. LCP doubled in 8 days.
 
 ### Phase 9: Save Report
 
-Write to `.vibestack/benchmark-reports/{date}-benchmark.md` and `.vibestack/benchmark-reports/{date}-benchmark.json`.
+Take one UTC timestamp for the run (`date -u +%Y%m%dT%H%M%SZ`) and write `.vibestack/benchmark-reports/<UTC timestamp>-benchmark.md` and `.vibestack/benchmark-reports/<UTC timestamp>-benchmark.json`.
 
-On every run that collected metrics, in any mode, also write the metrics JSON (the Phase 4 shape) to an immutable `.vibestack/benchmark-reports/baselines/<UTC timestamp YYYYMMDDTHHMMSSZ>-benchmark.json` (timestamp from `date -u +%Y%m%dT%H%M%SZ`). Never overwrite an existing timestamped file; `--trend` reads these.
+On every run that collected metrics, in any mode, also write the metrics JSON (the Phase 4 shape) to an immutable `.vibestack/benchmark-reports/baselines/<UTC timestamp>-benchmark.json` with the same timestamp. Never overwrite an existing timestamped file; `--trend` reads these.
 
 ## Important Rules
 
