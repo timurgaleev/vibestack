@@ -108,7 +108,7 @@ Gather context before forming any hypothesis.
 
    Bisection and differential runs drive a loop rather than replace one: the `LOOP:` line names the command they run. Bisect only from a clean tree — stash or revert every probe and tagged log first, so nothing rides across revisions — and run `git bisect reset` as soon as it names the first bad commit, before any other step.
 
-   Tighten it until it is fast, sharp and deterministic: seconds, not minutes; red on the reported symptom, not a nearby failure; the same result every run. For a flaky bug, raise the reproduction rate first — loop the command, pin seeds, clocks and ordering, add load or narrow the timing window — and record the rate (`red 7/50`). A failure that is red only in CI, or too rare to catch locally, is not a stop: its `LOOP:` line is the rate loop in `flake.md` section 1 (path in Phase 2; CI-only: the environment diff there), and its symptom is the CI log. If no way gives a red run, stop and say exactly what you need (a log, a payload, access, a recording, an environment) and ask for it; a `headless` or `spawned` session reports `BLOCKED` with that list. Never work on a bug you cannot see.
+   Tighten it until it is fast, sharp and deterministic: seconds, not minutes; red on the reported symptom, not a nearby failure; the same result every run. For a flaky bug, raise the reproduction rate first — loop the command, pin seeds, clocks and ordering, add load or narrow the timing window — and record the rate (`red 7/50`). A failure that is red only in CI, or too rare to catch locally, is not a stop: its `LOOP:` line is the rate loop in `flake.md` section 1 (path in Phase 2; CI-only: the environment diff there), and its symptom is the CI log. If no way gives a red run, stop and say exactly what you need (a log, a payload, access, a recording, an environment) and ask for it; a `headless` or `spawned` session reports `BLOCKED` with that list. Never work on a bug you cannot see. The only outcomes without a red loop are `BLOCKED` with that list, the 3-strike rule's B or C, and — when the user chooses to ship a fix anyway — `DONE_WITH_CONCERNS` naming the missing loop.
 
    When the loop runs red, print one line: `LOOP: <command> — ran: yes — red on: <symptom>`. For a CI-only failure whose local rate loop stays `0/N`, the line names the loop you ran and the CI run that went red: `LOOP: <rate command> — ran: yes — red on: <symptom> in CI run <run id>`. No Phase 2 until the `LOOP:` line is printed for a command you actually ran.
 
@@ -120,7 +120,7 @@ Gather context before forming any hypothesis.
 
 {{include lib/snippets/prior-learnings.md}}
 
-**Redact:** repro commands reference secrets through an environment variable (`-H "Authorization: Bearer $API_TOKEN"`), never a literal. Pasted output is signal lines only — the error, the failing assertion, the boundary lines — with any token, password, cookie or key shown as `<REDACTED>`. Before an artifact leaves this session (a repro script, a report file, the learnings JSON), write it with the Write tool and scan it; any non-zero exit means redact and re-scan before using it:
+**Redact:** repro commands reference secrets through an environment variable (`-H "Authorization: Bearer $API_TOKEN"`), never a literal. Pasted output is signal lines only — the error, the failing assertion, the boundary lines — with any token, password, cookie or key shown as `<REDACTED>`. Before an artifact leaves this session (a repro script, a report file, the learnings JSON), write it with the Write tool and scan it; only exit 1 means redact and re-scan before using it. Exit 2 (the scan could not run) or 127 (no scanner) means the artifact stays in this session — say so:
 
 ```bash
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "<artifact-path>"; echo "REDACT_EXIT: $?"
@@ -140,7 +140,7 @@ Also check for a requirement that exists only in the prompt and nowhere in code 
 
 The list orders the search; it is not a verdict. Assign the fault only to the layer the evidence names, and if the evidence names none, keep gathering.
 
-When bisecting prompt or config revisions, first collapse revisions whose rendered prompt bytes are identical — they cannot differ in behavior. Bisect with the cheapest deterministic scorer (an exact match, a schema check, a regex on the output) and spend paid model judging only on the boundary pair it finds.
+When bisecting prompt or config revisions, first collapse revisions whose rendered prompt bytes are identical and whose model, tool and sampling settings match — only those cannot differ in behavior. Bisect with the cheapest deterministic scorer (an exact match, a schema check, a regex on the output) and spend paid model judging only on the boundary pair it finds.
 
 Output: 3-5 ranked, falsifiable hypotheses, most likely first. Each names what is wrong, why, and the observation that would refute it:
 
@@ -261,7 +261,7 @@ Before writing ANY fix, verify your hypothesis.
 
 Once root cause is confirmed:
 
-1. **Write the regression test first**, from the minimised repro, at a correct seam: the public boundary that owns the broken behavior, through the interface real callers use. If no such seam exists without adding a test-only hook, that is a finding — record it in the report and suggest `/improve-arch`; test at the nearest real boundary meanwhile.
+1. **Write the regression test first**, from the minimised repro, at a correct seam: the public boundary that owns the broken behavior, through the interface real callers use. If no such seam exists without adding a test-only hook, that is a finding — record it in the report and suggest `/improve-arch`; test at the nearest real boundary meanwhile. When the regression test belongs outside the locked directory, the freeze hook denies the write: ask before releasing the lock and re-acquiring it on the common parent. The value card goes in the regression test's header comment.
 
 2. **Run it red on its own assertion**, against the unfixed code, and paste the failing line. An import, fixture or setup error is not red; correct the test and re-run.
 
@@ -285,10 +285,11 @@ Once root cause is confirmed:
 
 **Release the scope lock first:** If this run acquired a scope lock, run the terminal cleanup from **Scope Lock** now. The tagged lines can sit outside the locked directory, and the remaining steps edit nothing but them.
 
-**Remove instrumentation:** Delete every tagged log line, then confirm none remain — this must print nothing:
+**Remove instrumentation:** Delete every tagged log line. Delete the throwaway harness from Phase 1 too, if one was written. Then confirm none remain, with `<short>` replaced by this run's tag — this must print nothing:
 
 ```bash
-git grep -n '\[DEBUG-<short>\]'
+TAG='<short>'
+git grep -n --untracked -F "[DEBUG-$TAG]"
 ```
 
 **Fresh verification:** Run the `LOOP:` command and confirm it is green, reproduce the original bug scenario, then run the test suite and paste the output. This is not optional. The last edit precedes the last run: any edit after the suite ran — including removing instrumentation — means run it again.

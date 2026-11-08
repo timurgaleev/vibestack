@@ -64,6 +64,28 @@ elapsed=$(( $(date +%s) - start ))
 [ "$(field "$TMP/slow.json" 'r["timed_out"]')" = True ] && [ "$(field "$TMP/slow.json" 'r["exit_code"]')" = None ] \
   && ok "a timed-out run reports timed_out and no exit code" || no "timeout fields: $(cat "$TMP/slow.json")"
 
+# Value: protects=a timed-out run leaves nothing running; fails_when=a grandchild that called setsid outlives the process-group kill; why_new=the row above only kills a same-group child; seam=none (a real double-forked child)
+ESC="$TMP/escaped.pid"
+"$CAP" --timeout 1 -- python3 -c '
+import os, sys, time
+if os.fork() == 0:
+    os.setsid()
+    if os.fork() == 0:
+        open(sys.argv[1], "w").write(str(os.getpid()))
+        os.execvp("sleep", ["sleep", "60"])
+    os._exit(0)
+time.sleep(60)' "$ESC" > "$TMP/esc.json" 2>&1
+sleep 1
+epid="$(cat "$ESC" 2>/dev/null)"
+if [ -z "$epid" ]; then
+  no "escaped grandchild never started: $(cat "$TMP/esc.json")"
+elif kill -0 "$epid" 2>/dev/null; then
+  kill -KILL "$epid" 2>/dev/null
+  no "a setsid grandchild (pid $epid) survived the timeout"
+else
+  ok "a setsid grandchild in the scratch cwd is killed on timeout"
+fi
+
 echo "approval"
 "$CAP" --pass-env HOSTILE_VAR -- sh -c "touch '$TMP/ran'" > "$TMP/unapproved.json" 2>"$TMP/unapproved.err"; rc=$?
 { [ "$rc" -eq 2 ] && [ ! -e "$TMP/ran" ]; } && ok "--pass-env without --approved is refused before running" \

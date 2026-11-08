@@ -2,7 +2,7 @@
 name: plan-ceo-review
 interactive: true
 description: |
-  Founder-mode plan review: challenge premises, rethink the problem, and expand or cut scope for a better product.
+  Founder-mode plan review: challenge premises and expand or cut scope for a better product.
 allowed-tools:
   - Read
   - Write
@@ -97,6 +97,9 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
 {{include lib/snippets/base-branch-detect.md}}
+
+When the material under review is a plan file rather than the branch diff, a `BASE_CONTAINS_HEAD` line is not a stop:
+say in one line that there is no branch diff and review the plan.
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -215,8 +218,12 @@ eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 _REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
-_REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
+if [ -n "$DESIGN" ]; then  # another feature's docs/designs/*.md never displaces this branch's doc
+  _REPO_DESIGN=$(ls "$_REPOTOP"/DESIGN.md 2>/dev/null)
+else
+  DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
+  _REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
+fi
 if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
   DESIGN="$_REPO_DESIGN"
 fi
@@ -224,7 +231,8 @@ fi
 ```
 A repo-local `DESIGN.md` or `docs/designs/*.md` wins on a tie, because it is the copy
 the team can see — this review promotes accepted plans there itself, and a teammate's
-committed design doc never lands in the per-user store at all.
+committed design doc never lands in the per-user store at all. A doc filed for this
+branch yields only to `DESIGN.md`, never to another feature's `docs/designs/` file.
 
 If a design doc exists (from `/office-hours`), read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design.
 
@@ -897,7 +905,7 @@ survived the review scrutiny, overcomplexity (is there a fundamentally simpler
 approach the review was too deep in the weeds to see?), feasibility risks the review
 took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
-compliments. Just the problems."
+compliments. Just the problems, then the closing Recommendation line."
 
 **Material:** the plan file being reviewed (the file the user pointed this review at,
 or the branch diff scope). If a CEO plan document was written in Step 0D-POST, add it
@@ -1099,9 +1107,15 @@ Then record the accepted scope as a durable cross-session decision, so the next
 session inherits what was settled and why instead of re-litigating it — the review
 log carries only counts, which is not enough to stop a re-argument:
 
+The text is free prose, so it reaches the log through a file, never through shell
+source: run `mktemp "${TMPDIR:-/tmp}/vibe-decision.XXXXXX"`, write the JSON object
+`{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill"}` with the Write tool to the printed path, then run this with `<DECISION_FILE>` replaced:
+
 ```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log" '{"decision":"CEO review (MODE): SCOPE_SUMMARY","rationale":"VERDICT","scope":"branch","source":"skill"}' \
+_DEC='<DECISION_FILE>'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log" "$(cat "$_DEC")" \
   || echo "DECISION_LOG_NOT_PERSISTED (exit $?)"
+rm -f "$_DEC"
 ```
 
 - **SCOPE_SUMMARY**: one line naming what the plan now covers after the scope decisions

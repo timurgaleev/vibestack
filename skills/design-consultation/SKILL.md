@@ -126,7 +126,7 @@ fi
 
 If `DESIGN_NOT_AVAILABLE`: skip visual mockup generation and fall back to text-based design review.
 
-**CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards, `approved.json`) MUST be saved under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/`, NEVER to `.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled directory. Design artifacts are USER data, not project files — they persist across branches, conversations, and workspaces. (Path B's `/tmp/…preview.html` is a deliberately ephemeral preview, not a persisted artifact, so it does not violate this rule.)
+**CRITICAL PATH RULE:** All design artifacts (mockups, `approved.json`) MUST be saved under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/`, NEVER to `.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled directory. Design artifacts are USER data, not project files — they persist across branches, conversations, and workspaces. (Path B's `/tmp/…preview.html` is a deliberately ephemeral preview, not a persisted artifact, so it does not violate this rule.)
 
 {{include lib/snippets/prior-learnings.md}}
 ## Phase 1: Product Context
@@ -300,7 +300,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 270" would reach execve as one argument (exit 127).
 _cx() {
-  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" -k 10 "$@"; return; fi
   _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
@@ -583,13 +583,16 @@ then use AskUserQuestion as the chooser:
 - C) Variant C — [one-line description]
 - D) None of these — regenerate with different directions
 
+Offer only the variants that passed the self-gate; name each discarded one and the
+trigger that discarded it.
+
 Add: "Tell me what you'd change about your pick, or which elements you'd take from
 the others — I'll fold that into the next round."
 
 **If the user picks D, or asks for a remix:** rebuild the brief from what they said
 (which variant's layout, which one's color, what to drop) and run `$D variants`
 again into the same `$_DESIGN_DIR` with a fresh `--output-dir` subdirectory so the
-earlier round stays readable. Show the new set inline and ask again. After a second
+earlier round stays readable. Show the new set inline and ask again. A remix counts as a round: after three rounds of `$D variants` in all, or a second
 round with every variant rejected, stop regenerating: offer to settle on the closest
 one, switch to Path B, or skip the preview.
 

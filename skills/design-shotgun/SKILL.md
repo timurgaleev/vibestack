@@ -336,7 +336,7 @@ Draw on DESIGN.md, taste memory, and the user's request to make each concept dis
 **Persuade screens (landing, pricing, campaign) vary the archetype first:** give each
 concept a different page archetype from
 classic-hero, long-form-story, minimal-conversion, comparison —
-keep the same primary action in every variant, and caption each concept with its
+keep the same primary action in every variant (with more than four concepts, every archetype is used once before any repeats, and a repeat varies its section outline), and caption each concept with its
 archetype and its section outline (e.g. `hero, proof, pricing, faq`). Palette and type
 variation come second on these screens.
 
@@ -355,8 +355,8 @@ different design teams, not the same team at three different coffee levels.
 
 Use AskUserQuestion to confirm before spending API credits:
 
-> "These are the {N} directions I'll generate. Each takes ~60s, but I'll run them all
-> in parallel so total time is ~60 seconds regardless of count."
+> "These are the {N} directions I'll generate. They run as one batch, started 1.5 s
+> apart, so the set takes about a minute plus 1.5 s per variant."
 
 Options:
 - A) Generate all {N} — looks good

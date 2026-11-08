@@ -318,6 +318,16 @@ MSG="persuade gaps are deferred High, never invented";            check has "$R"
 MSG="the fix loop has a fix order";                               check has "$R" 'type, color, states, layout, motion, components, empty and error states, copy'
 MSG="fixes stay inside the installed Tailwind major";             check has "$R" 'the installed Tailwind major'
 
+echo "deferred-cleanup rules"
+# Value: protects=design-review fixes what code can fix, asks when it guessed the base, measures what browse can measure, never leaves CLAUDE.md dirty, and reports the ship list; fails_when=any of these rules is dropped; why_new=new rules; seam=none
+MSG="a code-fixable Persuade miss is an ordinary finding";          check has "$R" 'A code-fixable miss'
+MSG="a guessed base branch is asked about";                       check has "$R" 'the block guessed: ask which base to compare against'
+MSG="below-the-fold reveal is read from CSS and scripts";         check has "$R" 'read the stylesheet and scripts for an initial `opacity: 0`'
+MSG="no browse check asks for JS to be disabled";                 check hasnt "$R" 'With JS disabled and under reduced motion'
+MSG="a dropped test still commits the CLAUDE.md entry";           check has "$R" 'commit the CLAUDE.md entry on its own'
+P10="$(awk '/^## Phase 10: Report/ {f=1} f && /^## Phase 11/ {exit} f' "$R")"
+case "$P10" in *'Before this can ship'*) ok "Phase 10 report carries the Before this can ship list" ;; *) no "Phase 10 report has no place for Before this can ship" ;; esac
+
 echo
 echo "design-review-contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

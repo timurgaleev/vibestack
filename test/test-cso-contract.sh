@@ -354,7 +354,7 @@ has   "trivy no rules or db update"        'trivy config --skip-check-update --s
 has   "cargo-audit binary run directly"    '`cargo-audit audit`'
 hasnt "no cargo subcommand dispatch"       '`cargo audit`'
 hasnt "no bundle subcommand dispatch"      '`bundle audit`'
-has   "semgrep local rules"                'semgrep --metrics=off --config'
+has   "semgrep local rules"                'semgrep --metrics=off --disable-version-check --config <a rules file in the repo>'
 has   "scanner output is a candidate"      'Scanner output is a candidate for Phase 12'
 has   "never install a scanner"            'Never install a scanner'
 
@@ -403,6 +403,38 @@ GEXCL="$(git -C "$GR" rev-parse --git-path info/exclude)"
 case "$GEXCL" in /*) ;; *) GEXCL="$GR/$GEXCL";; esac
 grep -qx '.vibestack/' "$GEXCL" 2>/dev/null && no "covered repo leaves info/exclude alone" || ok "covered repo leaves info/exclude alone"
 [ "$(mode "$GR/.vibestack/security-reports")" = "drwx------" ] && ok "existing 0755 report dir is tightened" || no "existing 0755 report dir is tightened"
+
+# Value: protects=two audits in the same second keep two reports; fails_when=the save block truncates an existing report of the same name; why_new=runs above used distinct seconds; seam=a fake date on PATH
+FB="$TMP/fakedate"; mkdir -p "$FB"; printf '#!/bin/sh\necho 2026-01-01-000000\n' > "$FB/date"; chmod +x "$FB/date"
+SS="$TMP/samesec"; git init -q "$SS"
+R1="$(cd "$SS" && PATH="$FB:$PATH" bash "$TMP/save.sh" 2>&1 | sed -n 's/^REPORT: //p' | head -n 1)"
+[ -n "$R1" ] && echo '{"first":true}' > "$SS/$R1"
+R2="$(cd "$SS" && PATH="$FB:$PATH" bash "$TMP/save.sh" 2>&1 | sed -n 's/^REPORT: //p' | head -n 1)"
+if [ -n "$R1" ] && [ -n "$R2" ] && [ "$R1" != "$R2" ] && grep -q first "$SS/$R1"; then
+  ok "a second audit in the same second gets its own report file"
+else
+  no "same-second audits collide: R1=$R1 R2=$R2 first=$(cat "$SS/$R1" 2>&1)"
+fi
+# Value: protects=a report is never saved where git could commit it; fails_when=nothing ignores .vibestack/, info/exclude cannot be written, and the report is still created; why_new=new fail-closed rule; seam=none
+NI="$TMP/noignore"; git init -q "$NI"; rm -rf "$NI/.git/info"; : > "$NI/.git/info"
+NOUT="$(cd "$NI" && bash "$TMP/save.sh" 2>&1 || true)"
+if printf '%s\n' "$NOUT" | grep -q '^PERSISTENCE_FAILED' && ! printf '%s\n' "$NOUT" | grep -q '^REPORT: '; then
+  ok "no ignore rule and no writable exclude → PERSISTENCE_FAILED, no report path"
+else
+  no "unignored report still created: $(printf '%s' "$NOUT" | tr '\n' '|')"
+fi
+
+echo "scanner and scope hygiene"
+GLB="$(awk '/^```bash$/ {on=1; buf=""; next} on && /^```$/ {on=0; if (index(buf, "gitleaks git")) {printf "%s", buf; exit}; next} on {buf = buf $0 "\n"}' "$SKILL")"
+case "$GLB" in *'umask 077'*) ok "gitleaks report is written under umask 077" ;; *) no "gitleaks block has no umask 077" ;; esac
+has   "a repo .gitleaks.toml is recorded"  'a repo `.gitleaks.toml`'
+has   "semgrep skips its version check"    'semgrep --metrics=off --disable-version-check --config'
+has   "scanners honour --diff and --paths" 'Under `--diff` or `--paths`'
+has   "--paths intersects a call's own patterns" "prefix each of the call's own file patterns with each path"
+has   "Phase 5b under --paths is disclosed" '**Under `--paths`:**'
+P5B="$(awk '/^### Phase 5b/ {f=1} f && /^### Phase 6/ {exit} f' "$SKILL")"
+idl="$(printf '%s\n' "$P5B" | grep 'aws sts get-caller-identity' | grep -v -- '--cli-connect-timeout' | grep -v '^\*\*Gate' | grep -v '^\[' | grep -v '\\$' || true)"
+[ -z "$idl" ] && ok "Phase 5b identity calls carry a connect timeout" || no "Phase 5b identity call without a timeout: $idl"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -2,7 +2,7 @@
 name: plan-devex-review
 interactive: true
 description: |
-  Developer experience plan review: personas, onboarding and friction points, scored before you build.
+  DX plan review: personas, onboarding and friction points, scored before you build.
 allowed-tools:
   - Read
   - Write
@@ -81,6 +81,9 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 
 {{include lib/snippets/base-branch-detect.md}}
 
+When the material under review is a plan file rather than the branch diff, a `BASE_CONTAINS_HEAD` line is not a stop:
+say in one line that there is no branch diff and review the plan.
+
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
 branch name wherever the instructions say "the base branch" or `<default>`.
@@ -148,7 +151,7 @@ Internalize these; don't enumerate them.
 7. **Upgrade fear** — Will this break my production app? Clear changelogs, migration guides, codemods, deprecation warnings. Upgrades should be boring.
 8. **SDK completeness** — If devs write their own HTTP wrapper, you failed. If the SDK works in 4 of 5 languages, the fifth community hates you.
 9. **Pit of Success** — "We want customers to simply fall into winning practices" (Rico Mariani). Make the right thing easy, the wrong thing hard.
-10. **Progressive disclosure** — Simple case is production-ready, not a toy. Complex case uses the same API. SwiftUI: \`Button("Save") { save() }\` → full customization, same API.
+10. **Progressive disclosure** — Simple case is production-ready, not a toy. Complex case uses the same API. SwiftUI: `Button("Save") { save() }` → full customization, same API.
 11. **Agent reader** — Read every error twice: as the persona, and as an AI coding agent that sees only the output stream, exit code and `--json` form. It cannot open a docs page mid-task or infer from color; if it cannot branch on the error, neither can a CI script.
 
 ## DX Scoring Rubric (0-10 calibration)
@@ -181,14 +184,11 @@ During each review pass, load the relevant section from:
 Read ONLY the section for the current pass (e.g., "## Pass 1" for Getting Started).
 Do NOT read the entire file at once. This keeps context focused.
 
-## Priority Hierarchy Under Context Pressure
+## Under Context Pressure
 
-Step 0 > Developer Persona > Empathy Narrative > Competitive Benchmark >
-Magical Moment Design > TTHW Assessment > Error quality > Getting started >
-API/CLI ergonomics > Everything else.
-
-Never skip Step 0, the persona interrogation, or the empathy narrative. These are
-the highest-leverage outputs.
+Complete every stage; shorten only optional commentary. Step 0 (persona, empathy
+narrative, benchmark, magical moment, target) and every review pass run in full
+whatever the context budget — trim explanations, quotations and recaps instead.
 
 ## PRE-REVIEW SYSTEM AUDIT (before Step 0)
 
@@ -875,7 +875,7 @@ survived the review scrutiny, overcomplexity (is there a fundamentally simpler
 approach the review was too deep in the weeds to see?), feasibility risks the review
 took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
-compliments. Just the problems."
+compliments. Just the problems, then the closing Recommendation line."
 
 **Material:** the plan file being reviewed (the file the user pointed this review at,
 or the branch diff scope), followed by the Developer Persona from Step 0A and the

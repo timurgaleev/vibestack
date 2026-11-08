@@ -50,9 +50,13 @@ ok "runner skeleton extracted"
 cat > "$TMP/stubs.py" <<'PY'
 import os
 
-async def call_unit(inp, seed, temperature, max_tokens_out):
+async def call_unit(inp, seed, temperature, max_tokens_out, retry_prompt=None):
     with open(os.environ["CALL_LOG"], "a") as f:
-        f.write(json.dumps(inp, sort_keys=True) + "\n")
+        f.write(json.dumps({"inp": inp, "retry": retry_prompt}, sort_keys=True) + "\n")
+    flag = os.environ.get("STUB_EMPTY_ONCE")
+    if flag and retry_prompt is None and not os.path.exists(flag):
+        open(flag, "w").close()
+        return "", {"in": 10, "out": max_tokens_out}
     return inp.get("answer", ""), {"in": 10, "out": 5}
 
 def count_tokens(text):
@@ -67,7 +71,7 @@ async def run_judge(case, out, max_tokens_in, max_tokens_out):
     raise AssertionError("no judged cases in this fixture")
 
 def write_summary(results, path, incomplete=None, spent_usd=0.0, **extra):
-    path.write_text((incomplete or "complete") + "\n")
+    path.write_text((incomplete or "complete") + "\n" + "head=%s\n" % extra.get("head"))
 PY
 
 # runner <dir> <config-json> — a scratch eval dir with the fixture cases.
@@ -138,6 +142,31 @@ runner "$D" "$(printf '%s' "$CFG" | sed 's/"max_tokens_out":512/"max_tokens_out"
 (cd "$D" && CALL_LOG="$D/calls.log" python3 -I run.py >/dev/null 2>"$D/err"); rc=$?
 [ "$rc" -eq 0 ] && ok "reasoning model at 8192 runs" || no "8192 refused (exit $rc): $(tail -2 "$D/err")"
 
+echo "retry, decoys and head"
+# Value: protects=the one permitted retry on an empty or cut-off reasoning answer exists in the skeleton; fails_when=the runner scores the empty answer instead; why_new=Step 1 promised a retry the skeleton never made; seam=the stubbed call_unit
+D="$TMP/retry"
+runner "$D" "$(printf '%s' "$CFG" | sed 's/"max_tokens_out":512/"max_tokens_out":8192,"reasoning":true/')"
+mkdir -p "$D/prompts"; printf 'Your answer was empty or cut off. Answer again, briefly.\n' > "$D/prompts/retry-v1.md"
+(cd "$D" && CALL_LOG="$D/calls.log" STUB_EMPTY_ONCE="$D/emptied" python3 -I run.py >/dev/null 2>"$D/err"); rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'Answer again' "$D/calls.log" 2>/dev/null; then
+  ok "an empty reasoning answer is retried once with the versioned retry prompt"
+else
+  no "no retry on an empty reasoning answer (exit $rc): $(tail -2 "$D/err")"
+fi
+# Value: protects=a run with no decoys cannot pass as a proven scorer; fails_when=DECOYS: 0/0 exits 0; why_new=fixtures above all carry three decoys; seam=none
+D="$TMP/nodecoy"; runner "$D" "$CFG"; grep -v '"decoy"' "$D/cases.jsonl" > "$D/c2" && mv "$D/c2" "$D/cases.jsonl"
+(cd "$D" && CALL_LOG="$D/calls.log" python3 -I run.py >/dev/null 2>"$D/err"); rc=$?
+[ "$rc" -ne 0 ] && grep -qi 'decoy' "$D/err" && ok "a run with no decoy cases fails, naming the missing decoys" \
+  || no "zero decoys passed (exit $rc): $(tail -1 "$D/err")"
+# Value: protects=a summary names the commit it ran on so /land-and-deploy can tie it to a head; fails_when=the head is not passed to write_summary; why_new=summaries carried no head; seam=none
+D="$TMP/headrun"; runner "$D" "$CFG"
+printf 'runs/\n' > "$D/.gitignore"
+git -C "$D" init -q 2>/dev/null; git -C "$D" add -A; git -C "$D" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -qm x
+(cd "$D" && CALL_LOG="$TMP/head-calls.log" python3 -I run.py >/dev/null 2>"$TMP/head-err")
+want="$(git -C "$D" rev-parse HEAD)"
+sum="$(ls "$D"/runs/summary-*.md 2>/dev/null | head -1)"
+grep -qx "head=$want" "$sum" 2>/dev/null && ok "the summary carries the head commit" || no "summary head: $(cat "$sum" 2>/dev/null | tr '\n' '|')"
+
 echo "dry-run projection"
 awk '/^```bash$/ {on=1; buf=""; next}
      on && /^```$/ {on=0; if (buf ~ /PROJECTION/) {printf "%s", buf; exit}; next}
@@ -166,6 +195,13 @@ else
   printf '%s\n' "$out" | grep -qi 'over cap' && ok "a band whose high end passes the cap is flagged" || no "over-cap band not flagged: $out"
   out="$(proj empty.jsonl config.json)"
   printf '%s\n' "$out" | grep -q 'PROJECTION: N-A' && ok "empty dry run -> PROJECTION: N-A" || no "empty dry run projected: $out"
+  # Value: protects=an unattended chain can stop on the projection gate; fails_when=N-A or over-cap exits 0; why_new=only the printed lines were checked; seam=none
+  proj empty.jsonl config.json >/dev/null; rc=$?
+  [ "$rc" -ne 0 ] && ok "PROJECTION: N-A exits non-zero" || no "PROJECTION: N-A exits 0"
+  proj dry.jsonl lowcap.json >/dev/null; rc=$?
+  [ "$rc" -ne 0 ] && ok "an over-cap projection exits non-zero" || no "over-cap projection exits 0"
+  proj dry.jsonl config.json >/dev/null; rc=$?
+  [ "$rc" -eq 0 ] && ok "a projection under the cap exits 0" || no "under-cap projection exit $rc"
 fi
 
 echo "skill text"

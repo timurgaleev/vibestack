@@ -82,6 +82,8 @@ else
   [ -z "$bad" ] && ok "every codex exec turns skill instructions off" || no "codex exec without skills.include_instructions=false: $bad"
 fi
 present "the sketch voices re-run the preflight" 'run the Phase 3.5 preflight block again'
+# Value: protects=a prompt that fails the scan under under_codex does not linger in TMPDIR; fails_when=the claude -p gate stops naming the removal; why_new=the ready block's EXIT trap covers only the Codex path; seam=none
+present "the under_codex gate removes the prompt file either way" 'remove the prompt file in either case'
 
 echo "diff base"
 # Value: protects=Phase 1 diffs against the detected base, not a hard-coded origin/main; fails_when=the include is dropped or the copy drifts from the snippet; why_new=test-base-branch-detect.sh tests the snippet, not its consumers; seam=none
@@ -131,6 +133,15 @@ PY
     no "save block output: $(tr '\n' '|' < "$TMP/save.out"); files: $(ls -R "$VH" | tr '\n' ' ')"
   fi
   [ ! -e "$SD" ] && ok "save block removes the private sketch dir" || no "save block left the sketch dir behind"
+  # Value: protects=the only copy of an approved sketch survives a failed save; fails_when=the block removes the temp dir after cp failed; why_new=the run above only covers a writable project dir; seam=none
+  SD2="$(mktemp -d "$TMP/vibe-sketch.XXXXXX")"
+  echo '<html>keep</html>' > "$SD2/sketch.html"
+  sed "s|$SD/sketch.html|$SD2/sketch.html|" "$TMP/save.sh" > "$TMP/save2.sh"
+  VH2="$TMP/vh2"; mkdir -p "$VH2"; : > "$VH2/projects"
+  (cd "$W" && VIBESTACK_HOME="$VH2" bash "$TMP/save2.sh") > "$TMP/save2.out" 2>&1; rc=$?
+  [ "$rc" -ne 0 ] && [ -s "$SD2/sketch.html" ] \
+    && ok "a failed save keeps the sketch and exits non-zero" \
+    || no "failed save: exit $rc, sketch dir $( [ -e "$SD2" ] && echo kept || echo deleted ); $(tr '\n' '|' < "$TMP/save2.out")"
 else
   no "sketch save block: $(cat "$TMP/err")"
 fi
@@ -169,6 +180,28 @@ done
 
 echo "builder profile"
 absent "no hand-built JSON echoed into the profile" "echo '{\"date\""
+# Value: protects=the Phase 6 reader survives legacy or hand-edited profile lines; fails_when=a non-object line or a non-list signals/resources_shown crashes the reader and every count falls back to an introduction; why_new=the append validator only guards new entries; seam=none
+if block_with 'RESOURCES_SHOWN_COUNT' > "$TMP/prof.sh" 2>"$TMP/err"; then
+  VH3="$TMP/vh3"; mkdir -p "$VH3/bin"
+  printf '#!/bin/sh\necho SLUG=demo\n' > "$VH3/bin/vibe-slug"; chmod +x "$VH3/bin/vibe-slug"
+  {
+    echo '{"mode":"builder","project_slug":"demo","signals":["taste"],"assignment":"first","resources_shown":["u1"]}'
+    echo '[1, 2]'
+    echo '"just a string"'
+    echo '{"mode":"builder","project_slug":"demo","signals":"taste","resources_shown":5,"design_doc":7,"assignment":"second"}'
+    echo '{"mode":"resources","resources_shown":{"u":1}}'
+    echo '{"mode":"builder","project_slug":"demo","signals":[["x"], "taste"],"assignment":"third"}'
+  } > "$VH3/builder-profile.jsonl"
+  out="$(cd "$TMP" && VIBESTACK_HOME="$VH3" bash "$TMP/prof.sh" 2>&1)"
+  printf '%s\n' "$out" | grep -qx 'SESSION_COUNT: 3' \
+    && printf '%s\n' "$out" | grep -qx 'LAST_ASSIGNMENT: second' \
+    && printf '%s\n' "$out" | grep -qx 'ACCUMULATED_SIGNALS: taste=2' \
+    && printf '%s\n' "$out" | grep -qx 'RESOURCES_SHOWN_COUNT: 1' \
+    && ok "profile reader skips non-object lines and non-list fields" \
+    || no "profile reader on legacy lines: $(printf '%s' "$out" | tr '\n' '|')"
+else
+  no "profile reader block: $(cat "$TMP/err")"
+fi
 
 echo
 echo "office-hours-contract: $pass passed, $fail failed"

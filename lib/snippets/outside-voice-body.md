@@ -155,8 +155,9 @@ echo "OUTSIDE_GRADE: $(_ov_grade "$_OV_OUT")"
   skill's cross-model step.
 - `unavailable` — no closing `Recommendation:` line, a refusal, or nothing at all.
   It is missing coverage, not zero findings. Fall back as above; when no pass is left,
-  print "Outside voice unavailable (<cause>)." and record `Cross-model consensus: N/A`
-  — skip the cross-model step, since there is no second opinion to compare.
+  print "Outside voice unavailable (<cause>)." and record `Cross-model consensus: unavailable (<cause>)`
+  — skip the cross-model step, since there is no second opinion to compare. A
+  summary line for the voice reads ran, unavailable (<cause>) or skipped.
 
 **Persist the result:**
 

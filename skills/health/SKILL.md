@@ -76,7 +76,7 @@ health_found=$(
 ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | sed -n '1p' | xargs -I{} echo "LINT: $(node_tool eslint) ."
 [ -f .pylintrc ] || [ -f pyproject.toml ] && grep -q "pylint\|ruff" pyproject.toml 2>/dev/null && echo "LINT: ruff check ."
 command -v terraform >/dev/null 2>&1 && [ -n "$(find . -maxdepth 3 -name '*.tf' -not -path '*/.terraform/*' 2>/dev/null | sed -n '1p')" ] && echo "LINT: terraform fmt -check -recursive"
-command -v cfn-lint >/dev/null 2>&1 && cfn_files=$(find . -maxdepth 3 \( -name node_modules -o -name .git \) -prune -o -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' -o -name '*.template' \) -exec grep -l 'AWSTemplateFormatVersion' {} + 2>/dev/null | sort | tr '\n' ' ') && [ -n "$cfn_files" ] && echo "LINT: cfn-lint ${cfn_files% }"
+command -v cfn-lint >/dev/null 2>&1 && cfn_files=$(find . -maxdepth 3 \( -name node_modules -o -name .git \) -prune -o -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' -o -name '*.template' \) -exec grep -l 'AWSTemplateFormatVersion' {} + 2>/dev/null | sort | awk -v q="'" '{gsub(q, q "\\" q q); printf "%s%s%s ", q, $(0), q}') && [ -n "$cfn_files" ] && echo "LINT: cfn-lint ${cfn_files% }"
 command -v actionlint >/dev/null 2>&1 && [ -d .github/workflows ] && echo "LINT: actionlint"
 
 # Test runner: only a non-empty, single-line scripts.test is a command.
@@ -88,7 +88,12 @@ except Exception:
     sys.exit(0)
 if isinstance(t, str) and t.strip():
     t = t.strip()
-    print("TEST: none (multi-line test script; add it to a ## Health Stack section)" if "\n" in t else "TEST: " + t)
+    if "\n" in t:
+        print("TEST: none (multi-line test script; add it to a ## Health Stack section)")
+    elif "no test specified" in t:
+        print("TEST: none (npm init placeholder test script)")
+    else:
+        print("TEST: " + t)
 ' package.json
 [ -f pyproject.toml ] && grep -q "pytest" pyproject.toml 2>/dev/null && echo "TEST: pytest"
 [ -f Cargo.toml ] && echo "TEST: cargo test"

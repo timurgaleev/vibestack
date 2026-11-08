@@ -1,7 +1,7 @@
 ---
 name: bedrock-guardrails
 description: |
-  Read-only audit of Amazon Bedrock guardrails, IAM, logging and data residency before shipping an LLM feature.
+  Read-only audit of Bedrock guardrails, IAM, logging and data residency before an LLM feature ships.
 triggers:
   - bedrock guardrails
   - bedrock security review
@@ -288,7 +288,7 @@ Finding shape: `FAIL HIGH: agent/tools.py:130 model output is passed to subproce
 Skip with `N-A (no AgentCore resources)` when Step 1 found no `aws_bedrockagentcore_*`, `AWS::BedrockAgentCore::*` or `bedrock-agentcore` hit. An AgentCore gateway or runtime is an endpoint other callers reach, so the questions are who can call it and where its outbound secrets live.
 
 - **A1 Inbound authorization.** A gateway's `authorizerType` names its inbound check — `CUSTOM_JWT`, `AWS_IAM`, or `NONE` for none at all; a runtime takes IAM (SigV4) or a JWT authorizer. `NONE` on a gateway that anything outside the account can reach is HIGH: every tool behind it is callable without an identity. `NONE` is only defensible on a development gateway nothing routes to, and that has to be visible in the config.
-- **A2 Resource policy.** Read the resource policy on every IAM-authorized gateway and runtime. An `Allow` with Principal `*` and neither an `aws:SourceVpc` nor an `aws:SourceVpce` condition is HIGH: any AWS principal anywhere can sign the call. On a JWT (OAuth) resource Principal `*` is expected — the token authorizer is what authenticates the caller, and the policy cannot name the token's subject — so it is not a finding there; say so in the row, so `/cso` does not report the same policy as public.
+- **A2 Resource policy.** Read the resource policy on every IAM-authorized gateway and runtime. An `Allow` with Principal `*` and neither an `aws:SourceVpc` nor an `aws:SourceVpce` condition is HIGH: any AWS principal anywhere can sign the call. A condition on `aws:PrincipalOrgID` or `aws:PrincipalArn` limits it to the organisation or the named roles, so it is MEDIUM at most — name the scope in the row. On a JWT (OAuth) resource Principal `*` is expected — the token authorizer is what authenticates the caller, and the policy cannot name the token's subject — so it is not a finding there; say so in the row, so `/cso` does not report the same policy as public.
 - **A3 Target credentials.** Outbound API keys and OAuth clients a gateway target uses belong in AgentCore Identity credential providers, referenced by ARN. A key in the target's environment, in Lambda environment variables or in the IaC that defines the target is MEDIUM: it is readable by anyone who can read the function configuration and never rotates with the provider.
 
 ```bash

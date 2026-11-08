@@ -289,6 +289,13 @@ for item in '- Gradient buttons as the primary CTA pattern' '- A colored left bo
   fi
 done
 
+echo "deferred-cleanup rules"
+# Value: protects=deck mode keeps only the floor lines a deck can meet, archetypes use design-shotgun's ids, and form states are required only where data is submitted; fails_when=those rules drop; why_new=new rules; seam=none
+present "deck mode names which floor lines apply" 'Of the craft floor, a deck keeps'
+present "archetypes are named by the ids design-shotgun writes" '`classic-hero`'
+present "invalid/pending/failure states only for actions that submit data" 'when the action submits data'
+absent "no stale comparison-board wording" 'comparison boards'
+
 echo
 echo "design-html: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

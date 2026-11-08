@@ -67,16 +67,19 @@ For a file path, run the input check before reading anything:
 
 ```bash
 # Input check: secret stores are never read; type and size are checked first
-P="<path>"
-R=$(readlink -f -- "$P" 2>/dev/null) || R=""
+P='<path>'
+case "$P" in "~/"*) P="$HOME/${P#\~/}" ;; esac
+# No readlink -f (macOS before 12.3): resolve the directory only, and never follow a final symlink.
+R=$(readlink -f -- "$P" 2>/dev/null) || { [ -L "$P" ] && R="" \
+  || R=$(cd "$(dirname -- "$P")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename -- "$P")"); }
 V=OK
 # Judge both the given path and where it resolves, so a link cannot launder a key
 for X in "$P" "$R"; do
   B=$(basename -- "${X:-.}" | tr '[:upper:]' '[:lower:]')
   case "$B" in *.md|*.mdx|*.markdown|*.txt|*.rst|*.adoc|*.html|readme|changelog|news) T=prose ;; *) T=other ;; esac
-  case "$B" in .env*|*.pem|*.key|credentials|.git-credentials) V="REFUSE (secret store)" ;; esac
+  case "$B" in .env*|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|credentials|.git-credentials|.netrc|.npmrc|.pypirc|.htpasswd|id_rsa*|id_dsa*|id_ecdsa*|id_ed25519*) V="REFUSE (secret store)" ;; esac
   case "$T:$B" in other:*credentials*) V="REFUSE (secret store)" ;; esac
-  case "/$X/" in */.ssh/*|*/.aws/*) V="REFUSE (secret store)" ;; esac
+  case "/$X/" in */.ssh/*|*/.aws/*|*/.kube/*|*/.gnupg/*|*/.docker/*) V="REFUSE (secret store)" ;; esac
   [ "$X" = "$P" ] && PT=$T PB=$B
 done
 if [ "$V" = OK ]; then
@@ -225,11 +228,11 @@ If the mode is `--report`, go to Step 5.
 
 Rewrite the text top to bottom, not hit by hit. Fixing hits one at a time leaves the shape of the original, and the shape is usually the problem.
 
-The exception: if Step 2 found no high hits, the draft already reads as written by a person. A Step 2b failure counts as a high hit, so a README whose opening fails the reader test gets the full rewrite. Make a light edit instead: fix the listed medium and low hits in place and leave everything else as it stands.
+The exception: if Step 2 found no high hits, the draft already reads as written by a person, so make a light edit instead: fix the listed medium and low hits in place and leave everything else as it stands. A Step 2b failure counts as a high hit, so a README whose opening fails the reader test gets the full rewrite, not the light edit.
 
 Keep, exactly:
 
-- every number, date, version, percentage, name, URL, path, command and code block
+- every number, date, version, percentage, name, URL, path, command, code block and link text
 - security warnings, legal or compliance wording, and numbered destructive procedures (migration, deletion, rollback steps): word for word, even when they trip a pattern
 - every claim the author makes, including ones you would not make yourself
 - data tables and enumerable lists (a list of the platforms the tool runs on is a list, not a rule-of-three hit)
@@ -289,6 +292,7 @@ RUN="<run>"
 # so a ``` block nested in a ```` block, or a ~~~ line inside ```, stays code.
 FENCES='
 function run(l,   t, c, n) {
+  if (l ~ /^(    |\t)/) return ""
   t = l; sub(/^[[:space:]]*/, "", t); c = substr(t, 1, 1)
   if (c != "`" && c != "~") return ""
   n = 0; while (substr(t, n + 1, 1) == c) n++
@@ -307,14 +311,14 @@ for side in orig new; do
   awk -v mode=prose "$FENCES" "$SRC" > "$RUN/prose-$side.txt"
   { grep -oE '`[^`]+`' "$RUN/prose-$side.txt"
     echo "headings: $(grep -cE '^#{1,6}[[:space:]]' "$RUN/prose-$side.txt")"
-    grep -oE '\]\([^)]*\)|^\[[^]]+\]:[[:space:]]*[^[:space:]]+' "$RUN/prose-$side.txt"
+    grep -oE '\[[^]]*\]\([^)]*\)|^\[[^]]+\]:[[:space:]]*[^[:space:]]+' "$RUN/prose-$side.txt"
   } | sort | uniq -c | sed -E 's/^ *//' > "$RUN/marks-$side.txt"
 done
 cmp -s "$RUN/code-orig.txt" "$RUN/code-new.txt" && echo "CODE: identical" || echo "CODE: CHANGED"
 diff "$RUN/marks-orig.txt" "$RUN/marks-new.txt" && echo "MARKS: identical"
 ```
 
-`CODE: CHANGED` fails the rewrite outright: copy every fenced block from the original back over its rewritten version and run the check again. No reason makes a changed block acceptable. If the original leaves a fence unclosed, the check treats everything after it as code; say so in the report and leave that tail untouched. Each line the `MARKS` diff prints is an inline code span, a link target or the heading count that the rewrite lost (`<`) or added (`>`): put it back as it was.
+It checks fenced blocks only: compare indented (four-space) code blocks and fences inside `>` quotes by eye, line for line. `CODE: CHANGED` fails the rewrite outright: copy every fenced block from the original back over its rewritten version and run the check again. No reason makes a changed block acceptable. If the original leaves a fence unclosed, the check treats everything after it as code; say so in the report and leave that tail untouched. Each line the `MARKS` diff prints is an inline code span, a link (its text with its target) or the heading count that the rewrite lost (`<`) or added (`>`): put it back as it was.
 
 If the second scan still finds high-severity hits, fix them and scan a third time. Stop when a scan returns no high hits; leftover low hits go in the report and are not chased.
 

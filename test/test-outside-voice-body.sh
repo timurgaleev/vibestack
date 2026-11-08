@@ -196,6 +196,13 @@ printf '%s' "$sec" | grep -qF 'subagent_type: "Plan"' \
   && ok "plan-eng-review fallback asks for a read-only subagent type" \
   || no "plan-eng-review fallback subagent type is unrestricted"
 
+# Value: protects=an outside voice that did not run is reported as unavailable with its cause, the way the plan summaries state it, never a bare N/A that reads like "not applicable"; fails_when=the body goes back to recording N/A; why_new=nothing checked the wording of the record for a missing voice; seam=none
+grep -qF 'Cross-model consensus: N/A' "$BODY" \
+  && no "the body records a missing outside voice as N/A" || ok "the body never records a missing outside voice as N/A"
+grep -qF 'record `Cross-model consensus: unavailable (<cause>)`' "$BODY" \
+  && ok "the body records a missing outside voice as unavailable (<cause>)" \
+  || no "the body does not record a missing outside voice as unavailable (<cause>)"
+
 echo
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]

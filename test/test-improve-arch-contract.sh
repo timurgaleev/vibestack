@@ -45,7 +45,11 @@ fi
 # has/hasnt take the file as the first argument so the sub-docs are checked
 # in their own right, not through the rendered skill.
 has()   { if grep -qF -- "$3" "$1"; then ok "$2"; else no "$2 (missing: $3)"; fi; }
-hasnt() { if grep -qF -- "$3" "$1"; then no "$2 (still present: $3)"; else ok "$2"; fi; }
+# An empty section (its heading was renamed or dropped) proves nothing, so hasnt fails on it.
+hasnt() {
+  if [ ! -s "$1" ]; then no "$2 (nothing to check: section or file is empty)"
+  elif grep -qF -- "$3" "$1"; then no "$2 (still present: $3)"; else ok "$2"; fi
+}
 
 line_of() { awk -v n="$2" 'index($0, n) { print NR; exit }' "$1"; }
 before() {

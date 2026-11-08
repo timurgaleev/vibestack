@@ -132,13 +132,17 @@ EOF
     grep -qx -- '--max-budget-usd' "$TMP/rec/argv" && grep -qx '5' "$TMP/rec/argv" \
       && ok "default budget 5 reaches the child" || no "budget flag missing from argv"
     grep -qx '200' "$TMP/rec/argv" && ok "default turn cap 200 reaches the child" || no "turn cap missing from argv"
+    # Value: protects=the child's unredacted output stays out of the specs archive dir, a sink other tools read; fails_when=the log goes back beside the archive; why_new=the old row pinned the archive dir; seam=none
     log=$(printf '%s\n' "$out" | sed -n 's/^SPAWN_LOG: //p')
-    [ "$log" = "$TMP/arch/s.execute.log" ] && grep -q 'child ran' "$log" \
-      && ok "child output lands in the printed log beside the archive" || no "log path/content wrong: '$log'"
+    [ "$log" = "$(cd "$TMP/real/wt" && pwd -P)/.vibestack-execute.log" ] && grep -q 'child ran' "$log" \
+      && [ ! -e "$TMP/arch/s.execute.log" ] \
+      && ok "child output lands in the worktree's log, not the specs dir" || no "log path/content wrong: '$log'"
     excl=$(git -C "$REPO" rev-parse --git-common-dir)/info/exclude
     case "$excl" in /*) ;; *) excl="$REPO/$excl" ;; esac
     grep -qxF '.vibestack-progress.md' "$excl" 2>/dev/null \
       && ok "progress file is excluded from git" || no "progress file not in info/exclude"
+    grep -qxF '.vibestack-execute.log' "$excl" 2>/dev/null \
+      && ok "execute log is excluded from git" || no "execute log not in info/exclude"
   else
     no "spawn through a symlinked worktree path did not start the child: $(printf '%s' "$out" | tail -1)"
   fi
@@ -182,9 +186,14 @@ if [ -s "$TMP/gate.sh" ]; then
     (cd "$repo" && env -u CI -u VIBESTACK_HEADLESS -u VIBE_SPAWNED -u OPENCLAW_SESSION \
        VIBESTACK_HOME="$VH" "$@" bash "$TMP/gate.sh" 2>&1)
   }
-  G1="$TMP/g-trusted"; git_repo "$G1"; printf '# x\n' > "$G1/CLAUDE.md"
+  commit_all() { git -C "$1" add -A && git -C "$1" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -qm setup; }
+  G1="$TMP/g-trusted"; git_repo "$G1"; printf '# x\n' > "$G1/CLAUDE.md"; commit_all "$G1"
   G2="$TMP/g-bare"; git_repo "$G2"
-  G3="$TMP/g-dotclaude"; git_repo "$G3"; mkdir -p "$G3/.claude"
+  G3="$TMP/g-dotclaude"; git_repo "$G3"; mkdir -p "$G3/.claude"; printf '{}\n' > "$G3/.claude/settings.json"; commit_all "$G3"
+  # Value: protects=the gate checks what the pinned worktree will see; fails_when=an untracked CLAUDE.md passes the gate though the child's worktree lacks it; why_new=fixtures above were untracked; seam=none
+  G4="$TMP/g-untracked"; git_repo "$G4"; printf '# x\n' > "$G4/CLAUDE.md"
+  out=$(run_gate "$G4"); printf '%s' "$out" | grep -q '^NOT_SPAWNED:.*untrusted' \
+    && ok "untracked CLAUDE.md → NOT_SPAWNED (the worktree would not have it)" || no "untracked CLAUDE.md passed the gate: $out"
   run_gate "$G1" | grep -qx 'SPAWN_GATE: ok' && ok "CLAUDE.md + interactive → ok" || no "trusted interactive repo refused"
   run_gate "$G3" | grep -qx 'SPAWN_GATE: ok' && ok ".claude/ + interactive → ok" || no ".claude/ repo refused"
   out=$(run_gate "$G2"); printf '%s' "$out" | grep -q '^NOT_SPAWNED:.*untrusted' \

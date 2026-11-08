@@ -219,7 +219,7 @@ A Python skeleton the user can start from; keep the same shape in TypeScript:
 
 ```python
 #!/usr/bin/env python3
-import json, time, sys, asyncio
+import json, time, sys, asyncio, subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -230,6 +230,12 @@ if CFG.get("reasoning"):
     assert CFG["max_tokens_out"] >= 8192, (
         f"reasoning model: max_tokens_out is {CFG['max_tokens_out']}, the floor is 8192")
 HOLDOUT = "--holdout" in sys.argv[1:]
+
+def head_commit():
+    # The summary names the commit it ran on; a dirty tree names none, so it never ties to a head.
+    git = lambda *a: subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True)
+    sha = git("rev-parse", "HEAD").stdout.strip()
+    return "dirty tree" if sha and git("status", "--porcelain").stdout.strip() else sha or "unknown"
 
 def usd(price, tokens_in, tokens_out):
     return (tokens_in * price["in_per_mtok"] + tokens_out * price["out_per_mtok"]) / 1_000_000
@@ -297,8 +303,18 @@ async def run_case(case, run, sem, ledger):
             out, usage = await call_unit(case["input"], seed=CFG["seed"] + run,
                                          temperature=CFG["temperature"],
                                          max_tokens_out=CFG["max_tokens_out"])
-            latency_ms = int((time.monotonic() - t0) * 1000)
             await ledger.settle(WORST_CASE["generator"], usd(CFG["price"], usage["in"], usage["out"]))
+            if CFG.get("reasoning") and (not out or usage["out"] >= CFG["max_tokens_out"]):
+                # The one permitted retry for an answer that came back empty or cut at the ceiling.
+                await ledger.reserve(WORST_CASE["generator"])
+                out, retry_usage = await call_unit(
+                    case["input"], seed=CFG["seed"] + run, temperature=CFG["temperature"],
+                    max_tokens_out=CFG["max_tokens_out"],
+                    retry_prompt=(ROOT / "prompts" / "retry-v1.md").read_text())
+                await ledger.settle(WORST_CASE["generator"],
+                                    usd(CFG["price"], retry_usage["in"], retry_usage["out"]))
+                usage = {k: usage[k] + retry_usage[k] for k in ("in", "out")}
+            latency_ms = int((time.monotonic() - t0) * 1000)
         cost = usd(CFG["price"], usage["in"], usage["out"])
 
         checks = run_scorers(case, out)
@@ -355,20 +371,23 @@ async def main():
     decoy_line = f"DECOYS: {sum(r['passed'] for r in decoys)}/{len(decoys)} passed"
     print(decoy_line)
     write_summary(results, ROOT / "runs" / f"summary-{stamp}.md",
-                  incomplete=incomplete, spent_usd=ledger.spent, decoy_line=decoy_line)
+                  incomplete=incomplete, spent_usd=ledger.spent, decoy_line=decoy_line,
+                  head=head_commit())
     if errors:
         for e in errors:
             print(f"error: {e!r}", file=sys.stderr)
         print(incomplete, file=sys.stderr)
     if leaked:
         print(f"SCORER BROKEN: decoys passed: {', '.join(leaked)}", file=sys.stderr)
-    if errors or leaked:
+    if not decoys:
+        print("SCORER UNPROVEN: no decoy cases ran; add at least three (Step 2)", file=sys.stderr)
+    if errors or leaked or not decoys:
         sys.exit(1)
 
 asyncio.run(main())
 ```
 
-`call_unit`, `count_tokens`, `run_scorers`, `run_judge`, and `write_summary` are the five functions to fill in against the real project. `call_unit` must pass `max_tokens_out` through as the API call's output limit; one that accepts the argument and drops it is what lets a run spend past the cap. `count_tokens` returns the provider's own count for a string — the tokenizer the model uses, not a word count, since it is what the input half of the reservation rests on. `run_judge` returns `(score, judge_version, usage)`: the score on the rubric's scale, the version from the `judge/prompt-v1.md` filename, and the judge call's own token counts, which is what puts the judge on the same ledger as the generator. It applies both ceilings to its own call the way `run_case` does for the generator — it is the only place that renders the judge prompt, so it is the only place that can check it. `write_summary` prints the `incomplete` line as the summary's first line when it is set, and the `decoy_line` beside the Step 4 table. Do a dry run with `concurrency: 1` and a cost cap of a few cents before the first full run, then project the full run from the lines it completed:
+`call_unit`, `count_tokens`, `run_scorers`, `run_judge`, and `write_summary` are the five functions to fill in against the real project. `call_unit` must pass `max_tokens_out` through as the API call's output limit; one that accepts the argument and drops it is what lets a run spend past the cap. On the retry it also gets `retry_prompt`, sent as a follow-up turn after the input. `count_tokens` returns the provider's own count for a string — the tokenizer the model uses, not a word count, since it is what the input half of the reservation rests on. `run_judge` returns `(score, judge_version, usage)`: the score on the rubric's scale, the version from the `judge/prompt-v1.md` filename, and the judge call's own token counts, which is what puts the judge on the same ledger as the generator. It applies both ceilings to its own call the way `run_case` does for the generator — it is the only place that renders the judge prompt, so it is the only place that can check it. `write_summary` prints the `incomplete` line as the summary's first line when it is set, a `Head: <head>` line — what `/land-and-deploy` matches against the head it merges — and the `decoy_line` beside the Step 4 table. Do a dry run with `concurrency: 1` and a cost cap of a few cents before the first full run, then project the full run from the lines it completed:
 
 ```bash
 DRY_RESULTS='<results file of the dry run>'
@@ -384,15 +403,17 @@ skip = ("holdout", "decoy")
 runs = sum(k if "golden" in c["tags"] else 1 for c in cases if not any(t in c["tags"] for t in skip))
 costs = [r["cost_usd"] for r in dry if not any(t in r.get("tags", []) for t in skip)]
 if not costs:
-    sys.exit(print("PROJECTION: N-A (no completed dry-run lines)"))
+    print("PROJECTION: N-A (no completed dry-run lines)")
+    sys.exit(2)
 lo, hi, mean, cap = min(costs) * runs, max(costs) * runs, sum(costs) / len(costs) * runs, cfg["cost_cap_usd"]
 print(f"PROJECTION: {runs} runs, USD {lo:.2f}-{hi:.2f} (mean {mean:.2f}) from {len(costs)} dry-run lines; cap USD {cap}")
 if hi > cap:
     print("PROJECTION: over cap, so the full run would stop INCOMPLETE before covering the case set")
+    sys.exit(3)
 ' "$DRY_RESULTS" "$CASES" "$CONFIG"
 ```
 
-Show the `PROJECTION:` lines and wait for a go-ahead before the full run. An unattended run — CI, a scheduled job, nobody to ask — stops at this gate and reports the projection instead of starting the full run. A band over the cap means raising the cap or cutting cases first, not finding out at the cap.
+Show the `PROJECTION:` lines and wait for a go-ahead before the full run. The block exits 2 on N-A and 3 over the cap, so a chained script stops there too. An unattended run — CI, a scheduled job, nobody to ask — stops at this gate and reports the projection instead of starting the full run. A band over the cap means raising the cap or cutting cases first, not finding out at the cap.
 
 Findings:
 

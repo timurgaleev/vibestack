@@ -1,7 +1,7 @@
 ---
 name: setup-deploy
 description: |
-  Configure deploys for /land-and-deploy: detect the platform, production URL and health checks, save to CLAUDE.md.
+  Configure /land-and-deploy: detect the platform, production URL and health checks; save to CLAUDE.md.
 triggers:
   - configure deploy
   - setup deployment
@@ -117,8 +117,10 @@ If `fly.toml` detected:
    _C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 '<PRODUCTION_URL>/health' 2>/dev/null) || _C=000
    echo "FLY_HEALTH_PROBE: $_C"
    ```
-   Record `/health` only when the probe answers 2xx; anything else, `000` included,
-   means the app has no such route — record the root URL instead.
+   Record `/health` only when the probe answers 2xx. A 404 means the app has no such
+   route — record the root URL instead. A 5xx or `000` is a failing or unreachable route,
+   not a missing one: report the code and ask whether to record `/health` anyway, record
+   the root URL, or fix the app first.
 
 Ask the user to confirm the production URL. Some Fly apps use custom domains.
 
@@ -155,7 +157,9 @@ If netlify.toml detected:
 
 1. Extract build settings from netlify.toml — it does not name the site's URL
 2. Ask for the production URL and confirm it (the `*.netlify.app` name or a custom domain)
-3. Netlify deploys automatically on push when the site is linked to the repo; confirm that
+3. Netlify deploys automatically on push when the site is linked to the repo; confirm that.
+   If the user says it is not linked, the deploy trigger is manual: ask for the command
+   (e.g. `netlify deploy --prod`) and record it, or record `manual` when there is none
 4. Set health check: the confirmed production URL
 
 #### Heroku / Railway
@@ -189,7 +193,8 @@ If nothing detected, use AskUserQuestion to gather the information:
      trigger, status and health check, skip questions 2 and 3, and go to Step 4
 
    On E, stop: no Deploy Configuration is written, because a guessed one is what
-   /land-and-deploy would trust.
+   /land-and-deploy would trust. When this run is reconfiguring, offer to remove the existing `## Deploy Configuration` section
+   too — it no longer describes production — and keep it only if the user says so.
 
 2. **What's the production URL?** (Free text — the URL where the app runs)
 
@@ -216,8 +221,10 @@ _RV=$(gh repo view --json defaultBranchRef,squashMergeAllowed,mergeCommitAllowed
 if [ -n "$_RV" ]; then
   printf '%s\n' "$_RV"
 else
-  _DB=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
-  _DB="${_DB#origin/}"
+  # Ask the remote first: a cached origin/HEAD does not follow a renamed default branch.
+  _DB=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=5' \
+    git ls-remote --symref origin HEAD 2>/dev/null | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]].*|\1|p')
+  [ -n "$_DB" ] || { _DB=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null); _DB="${_DB#origin/}"; }
   echo "DEFAULT_BRANCH: ${_DB:-unknown}"
   echo "MERGE_METHODS_ALLOWED: unknown"
 fi
@@ -256,7 +263,8 @@ section if it exists, or append it at the end.
 ```
 
 A project that never deploys (Custom / Manual option F) writes `none` on every line
-from Platform to Health check except Merge method and Project type:
+from Platform to Health check except Merge method, Project type and Pre-merge (a library
+can still have a pre-merge build or test):
 `- Platform: none`, `- Production URL: none`, `- Deploy trigger: none`, and so on.
 
 ### Step 5: Verify

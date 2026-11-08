@@ -63,7 +63,8 @@ uses: `cost-explorer`, `cost-comparison`, `cost-anomaly`, `cost-optimization`,
 `compute-optimizer`, `sp-performance`, `ri-performance`, `budgets`, `free-tier-usage`.
 Prefer this path when it exists: it returns structured JSON and handles pagination.
 
-**CLI path.** If no billing MCP tool is present, the aws CLI must work. The block
+**CLI path.** If no billing MCP tool is present, the aws CLI must work. On the MCP path, skip this block:
+the billing tools need no CLI, and an unavailable CLI context there is not a stop. The block
 below uses `$AWS_PROFILE` when it is set and the `default` profile otherwise; when it
 succeeds, do not ask about profiles, even when others exist.
 
@@ -578,10 +579,11 @@ fi
 ```
 
 Price none of them from a list. The account's own usage-type rows carry the rate it
-actually pays: run the Step 2 usage-type query against `EC2 - Other` and
-`AmazonCloudWatch` for the report month with `--metrics UnblendedCost UsageQuantity`,
-and read the rows ending `PublicIPv4:IdleAddress` (idle public IPv4 hours),
-`EBS:VolumeUsage.<type>` (volume GB-months) and `TimedStorage-ByteHrs` (log storage).
+actually pays: run the Step 2 usage-type query against `EC2 - Other`, `Amazon Virtual
+Private Cloud` and `AmazonCloudWatch` for the report month with `--metrics UnblendedCost
+UsageQuantity`, and read the rows ending `PublicIPv4:IdleAddress` (idle public IPv4 hours,
+billed under Amazon Virtual Private Cloud), `EBS:VolumeUsage.<type>` (volume GB-months) and
+`TimedStorage-ByteHrs` (log storage, priced per GB-month: convert `storedBytes` to GB).
 
 - **Unattached Elastic IPs.** The `PublicIPv4:IdleAddress` row is already the month's
   idle-address spend for that region; quote it as the saving. No such row, or a failed
@@ -783,7 +785,11 @@ aws pricing get-products --region us-east-1 --service-code "$SVC" \
 ```
 
 The `--region` picks the Price List endpoint; the `regionCode` filter picks the priced
-region. A rate enters the table only from a query that returned one.
+region. A rate enters the table only from a query that returned one. When a query
+returns more than one product, add `TERM_MATCH` filters (`operatingSystem`, `tenancy`, `preInstalledSw`,
+`capacitystatus=Used`, `deploymentOption`) until one remains; a rate picked from several
+candidates is N-A. For an update, price both `change.before` and `change.after` from the
+plan and enter after minus before — a resize is a difference, not a new resource.
 
 Write the monthly delta table: resource, action, priced component, usage assumption (hours
 per month, GB, requests — stated, since the plan does not say how busy anything will be),

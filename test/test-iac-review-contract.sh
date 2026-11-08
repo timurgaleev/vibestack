@@ -92,6 +92,44 @@ kbad="$(grep -oE 'kubectl[[:space:]]+[a-z-]+([[:space:]]+[a-z-]+)?' "$TMP/all-bl
 ebad="$(grep -oE 'aws[[:space:]]+eks[[:space:]]+[a-z-]+' "$TMP/all-blocks.sh" | grep -vE 'eks[[:space:]]+(describe|list)-' | sort -u)"
 [ -z "$ebad" ] && ok "aws eks calls are describe-/list- only" || no "non-read aws eks call: $ebad"
 
+echo "generated plan cleanup"
+# Value: protects=a generated plan (secrets in clear text) never outlives a failed or interrupted run in TMPDIR; fails_when=the Step 1 block keeps the plan dir on failure, keeps the binary plan, or never sweeps an aborted run's dir; why_new=only Step 6 deleted the plan; seam=a fake terraform on PATH
+block "$IR" 'PLAN_DIR="$(mktemp -d' > "$TMP/step1.tpl"
+if [ -s "$TMP/step1.tpl" ]; then
+  FT="$TMP/faketf"; mkdir -p "$FT" "$TMP/root/.terraform"
+  for t in find touch mkdir sleep; do p="$(command -v "$t")" && ln -sf "$p" "$FT/$t"; done
+  cat > "$FT/terraform" <<'SH'
+#!/bin/sh
+for a in "$@"; do
+  case "$a" in
+    plan) [ "$TF_MODE" = fail ] && { echo "Error: boom" >&2; exit 1; }
+          [ "$TF_MODE" = term ] && { kill -TERM "$PPID"; sleep 1; exit 1; }
+          for b in "$@"; do case "$b" in -out=*) echo bin > "${b#-out=}" ;; esac; done; exit 0 ;;
+    show) echo '{"format_version":"1.2","password":"hunter2"}'; exit 0 ;;
+  esac
+done
+exit 0
+SH
+  chmod +x "$FT/terraform"
+  sed "s|<TF_DIR>|$TMP/root|" "$TMP/step1.tpl" > "$TMP/step1.sh"
+  stale="$TMP/iac-review.OLDOLD"; mkdir -p "$stale"; echo secret > "$stale/plan.json"; touch -t 202001010000 "$stale"
+  BASH_BIN="$(command -v bash)"
+  out="$(env -i HOME="$TMP" TMPDIR="$TMP" TF_MODE=ok PATH="$FT:$TOOLS" "$BASH_BIN" "$TMP/step1.sh" 2>&1)"
+  pd="$(printf '%s\n' "$out" | sed -n 's/^PLAN_DIR: //p')"
+  [ -n "$pd" ] && [ -s "$pd/plan.json" ] && [ ! -e "$pd/plan.bin" ] \
+    && ok "a generated plan keeps plan.json for Step 2 and drops the binary plan" || no "ok run: $(printf '%s' "$out" | tr '\n' '|'); $(ls "$pd" 2>&1 | tr '\n' ' ')"
+  [ ! -e "$stale" ] && ok "an aborted run's plan dir older than an hour is swept" || no "stale iac-review dir left in TMPDIR"
+  rm -rf "$pd"
+  for mode in fail term; do
+    out="$(env -i HOME="$TMP" TMPDIR="$TMP" TF_MODE=$mode PATH="$FT:$TOOLS" "$BASH_BIN" "$TMP/step1.sh" 2>&1)"
+    pd="$(printf '%s\n' "$out" | sed -n 's/^PLAN_DIR: //p')"
+    [ -n "$pd" ] && [ ! -e "$pd" ] && ok "terraform plan $mode: the plan dir is removed" \
+      || no "terraform plan $mode: plan dir ${pd:-?} left behind: $(printf '%s' "$out" | tr '\n' '|')"
+  done
+else
+  no "no Step 1 plan block found"
+fi
+
 echo "plan ranker"
 block "$IR" 'RANKED:' > "$TMP/rank.sh"
 if [ -s "$TMP/rank.sh" ] && grep -q "PLAN_JSON='<PLAN_JSON>'" "$TMP/rank.sh"; then
