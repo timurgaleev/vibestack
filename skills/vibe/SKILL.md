@@ -64,7 +64,9 @@ implementing, investigate before fixing, review before shipping.
 | Update docs after shipping | `document-release`, `document-generate` |
 | Strip machine-sounding prose | `unslop` |
 | Check code-quality health or find refactors | `health`, `improve-arch` |
-| Review AWS spend | `aws-cost` |
+| Make the build, lint and tests pass without editing a test | `health` as `/health --fix` |
+| Review AWS spend, or price a change before it deploys | `aws-cost` (`--estimate <plan>`) |
+| Review a Terraform plan, `cdk diff` or EKS config before apply | `iac-review` |
 | Cap paid-inference spend | `ai-cost-guard` |
 | Audit Bedrock guardrails, region and tenant isolation | `bedrock-guardrails` |
 | Review a knowledge base or RAG pipeline | `kb-review` |

@@ -38,6 +38,7 @@ investigate before fixing. Then run the implementation and review skills.
 | Update docs after shipping | `/document-release`, `/document-generate` |
 | Render a diagram or a PDF; strip machine-sounding prose | `/diagram`, `/make-pdf`, `/unslop` |
 | Review AWS spend, Bedrock guardrails, or a Connect solution | `/aws-cost`, `/bedrock-guardrails`, `/connect-review` |
+| Review a Terraform plan or CDK diff before apply | `/iac-review` |
 | Review AI cost caps, a RAG pipeline, an agent eval, an MCP server | `/ai-cost-guard`, `/kb-review`, `/agent-eval`, `/mcp-review` |
 | Save or restore context; record learnings; run a retro | `/context-save`, `/context-restore`, `/learn`, `/retro` |
 | Read or send Telegram messages as yourself | `/telegram` |
