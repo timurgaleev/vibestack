@@ -3,6 +3,9 @@ import * as fs from 'node:fs';
 import { chromium } from 'playwright';
 import { BrowserManager } from '../src/browser-manager';
 import { handleWriteCommand } from '../src/write-commands';
+import { handleMetaCommand } from '../src/meta-commands';
+import { TEMP_DIR } from '../src/platform';
+import * as path from 'node:path';
 
 // A headed browser starts with no viewport override: the page fills the
 // window. `viewport auto` has to return there, not to the headless default.
@@ -56,4 +59,48 @@ describe.skipIf(!hasChromium)('viewport auto in a headed session (real Chromium)
     await run(['375x812']);
     expect(await inner()).toEqual({ width: 375, height: 812 });
   }, 30_000);
+
+  test('responsive after auto restores the window fit, not the old override', async () => {
+    const run = (args: string[]) => handleWriteCommand('viewport', args, bm.getActiveSession(), bm);
+    await run(['375x812']);
+    await run(['auto']);
+    // Headless keeps the last size when the override drops, so pixels cannot
+    // tell a stale restore from a fit; the restore has to go back through the fit.
+    let fits = 0;
+    const fit = bm.fitViewportToWindow.bind(bm);
+    bm.fitViewportToWindow = async (p?: any) => { fits++; return fit(p); };
+    const dir = fs.mkdtempSync(path.join(TEMP_DIR, 'vp-resp-'));
+    try {
+      await handleMetaCommand('responsive', [path.join(dir, 'shot')], bm, async () => {});
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    expect(fits).toBe(1);
+    await run(['1280x720']);
+    fits = 0;
+    const dir2 = fs.mkdtempSync(path.join(TEMP_DIR, 'vp-resp-'));
+    try {
+      await handleMetaCommand('responsive', [path.join(dir2, 'shot')], bm, async () => {});
+    } finally {
+      fs.rmSync(dir2, { recursive: true, force: true });
+    }
+    expect(fits).toBe(0);
+
+    // The fit belongs to the tab it was set on: sizing another tab leaves it.
+    await run(['auto']);
+    const a = bm.getActiveTabId();
+    const b = await bm.newTab();
+    bm.switchTab(b);
+    await run(['375x812']);
+    bm.switchTab(a);
+    fits = 0;
+    const dir3 = fs.mkdtempSync(path.join(TEMP_DIR, 'vp-resp-'));
+    try {
+      await handleMetaCommand('responsive', [path.join(dir3, 'shot')], bm, async () => {});
+    } finally {
+      fs.rmSync(dir3, { recursive: true, force: true });
+    }
+    expect(fits).toBe(1);
+    await bm.closeTab(b);
+  }, 60_000);
 });

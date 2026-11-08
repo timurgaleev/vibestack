@@ -187,7 +187,11 @@ describe.skipIf(!hasChromium)('daemon tabs (real daemon)', () => {
     // The recovery the error suggests has to get past the same stale pin.
     const fresh = await run('newtab', ['--json'], 987654);
     expect(fresh.status).toBe(200);
-    expect((await run('tabs', [], 987654)).status).toBe(200);
+    const tabs = await run('tabs', [], 987654);
+    expect(tabs.status).toBe(200);
+    // Reporting commands read the shared state under a stale pin.
+    expect(tabs.text).toContain('→ ');
+    expect((await run('status', [], 987654)).status).toBe(200);
     await run('closetab', [String(JSON.parse(fresh.text).tabId)]);
   }, 15_000);
 
