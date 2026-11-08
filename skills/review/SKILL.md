@@ -599,8 +599,8 @@ echo "CODEX_MODE: $CODEX_MODE"
 echo "TIMEOUT_BIN: $(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || echo none)"
 ```
 
-Branch on `CODEX_MODE`. In every case except `ready`, the Claude adversarial
-subagent still runs — it is free, fast, and independent of Codex.
+Branch on `CODEX_MODE`. The Claude adversarial subagent runs in every case,
+`ready` included — it is free, fast, and independent of Codex.
 
 - **`disabled`** — the user turned Codex passes off. Skip them without comment.
 - **`under_codex`** — this session already runs inside a Codex host. Spawning `codex`

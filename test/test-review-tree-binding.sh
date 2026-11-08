@@ -196,6 +196,10 @@ chk "an unchanged tree needs no re-review" "$(moved review)" ""
   sed -i.bak 's/"version": "1.0.0"/"version": "1.0.1"/' package.json package-lock.json && rm -f ./*.bak)
 chk "version, CHANGELOG and version-only manifest edits need no re-review" "$(moved review)" ""
 chk "nor make the lane stale" "$(moved unit)" ""
+# Lane trees are tracked content only; an untracked scratch file is no lane input.
+(cd "$BREPO" && printf 'x\n' > scratch.txt)
+chk "an untracked file does not make a lane stale" "$(moved unit)" ""
+rm -f "$BREPO/scratch.txt"
 (cd "$BREPO" && sed -i.bak 's/"version": "2.0.0"/"version": "2.0.1"/' package-lock.json && rm -f ./*.bak)
 chk "a dependency's version-only lockfile edit is a moved path" "$(moved review)" "package-lock.json"
 (cd "$BREPO" && sed -i.bak 's/"version": "2.0.1"/"version": "2.0.0"/' package-lock.json && rm -f ./*.bak)
@@ -208,6 +212,9 @@ chk "a source edit after the review is a moved path" "$(moved review)" "a.txt"
 S16T=$(printf '%s' "$S16")
 printf '%s' "$S16T" | grep -q 'Steps 9-11' && ok "a moved path sends the ship back through Steps 9-11" || no "no re-review rule"
 printf '%s' "$S16T" | grep -q 'DOC_HELD_FILES' && ok "held doc files are not a moved path" || no "DOC_HELD_FILES not excluded"
+grep 'MOVED review:' <<<"$S16T" | grep -F '`DOC_FILES`' >/dev/null && ok "Step 14.5's committed doc sync is not a moved path for the review" || no "a doc sync sends the ship back through Steps 9-11"
+grep -Eq '`unknown` (still )?(survives|after) .{0,80}STOP' <<<"$(printf '%s' "$S16T" | tr '\n' ' ')" \
+  && ok "an unknown review binding that survives a re-review stops the ship" || no "a persistent MOVED review: unknown loops Steps 9-11 forever"
 # A version bump in package.json is something a test can read: no lane may
 # allow-list a manifest, and a re-run lane is counted again like Step 5.
 if printf '%s' "$S16T" | grep -qF -- '--allow-paths` below'; then

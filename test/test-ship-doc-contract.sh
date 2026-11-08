@@ -124,6 +124,29 @@ case "$out" in *NO_PR*) no "a failed lookup reads as NO_PR (a duplicate PR would
   *PR_LOOKUP_FAILED*) [ "$rc" -ne 0 ] && ok "any other gh error -> PR_LOOKUP_FAILED, non-zero" || no "lookup failure exits 0" ;;
   *) no "auth failure reads as: $out" ;; esac
 out=$(look ''); case "$out" in "PR #7"*) ok "an open PR still reads as open" ;; *) no "open PR reads as: $out" ;; esac
+GB="$TMP/lookup-gl.sh"
+awk '/^## Step 19: Create PR\/MR/{s=1} s&&/^\*\*If GitLab:\*\*/{g=1} g&&/^```bash$/{on=1;next} on&&/^```$/{exit} on' "$SKILL" > "$GB"
+cat > "$TMP/stub/glab" <<'SH'
+#!/usr/bin/env bash
+[ "$1 $2" = "mr view" ] || exit 1
+[ -n "${STUB_ERR:-}" ] && { printf '%s\n' "$STUB_ERR" >&2; exit 1; }
+echo '{"state":"opened","iid":7,"web_url":"https://x/-/merge_requests/7","sha":"abc"}'
+SH
+chmod +x "$TMP/stub/glab"
+glook() { ( cd "$TMP" && PATH="$TMP/stub:$PATH" STUB_ERR="$1" bash "$GB" 2>&1 ); }
+out=$(glook 'no open merge request available for "feat/x"')
+case "$out" in *NO_MR*) ok "glab 'no open merge request' -> NO_MR" ;; *) no "glab no-MR stderr reads as: $out" ;; esac
+out=$(glook 'ERROR: 401 Unauthorized'); rc=$?
+case "$out" in *NO_MR*) no "a failed glab lookup reads as NO_MR (a duplicate MR would be opened): $out" ;;
+  *PR_LOOKUP_FAILED*) [ "$rc" -ne 0 ] && ok "any other glab error -> PR_LOOKUP_FAILED, non-zero" || no "glab lookup failure exits 0" ;;
+  *) no "glab auth failure reads as: $out" ;; esac
+out=$(glook ''); case "$out" in *MR_EXISTS*) ok "an open MR still reads as open" ;; *) no "open MR reads as: $out" ;; esac
+
+echo "Step 11: a pass with no coverage is never a clean record"
+PERSIST=$(awk '/^### Persist the review result/{on=1;next} on&&/^### /{exit} on' "$SKILL")
+grep -qF 'MISSING_COVERAGE' <<<"$PERSIST" && grep -qF 'Recommendation:' <<<"$PERSIST" \
+  && ok "COMPLETED is false for MISSING_COVERAGE or a reply with no closing Recommendation line" \
+  || no "the adversarial record can log a MISSING_COVERAGE pass as complete"
 
 echo "Step 19: title and body"
 S19=$(sec '## Step 19: Create PR/MR' '## Step 19.5')

@@ -94,10 +94,30 @@ expect "consult intent stub -> unavailable (intent_stub)" consult 1 "CLAUDE_STAT
   "$(success "I'll start by exploring the repository structure to understand the retry logic.")"
 expect "consult answer of 400+ chars opening with 'I'll look' -> answered" consult 0 "CLAUDE_STATUS: answered" \
   "$(success "$LONG_ANSWER")"
+expect "short consult answer that opens with an announcement -> answered" consult 0 "CLAUDE_STATUS: answered" \
+  "$(success "Let me check the retry path. It caps at five attempts and backs off from 200 ms, so an outage surfaces in about six seconds.")"
+expect "two announcements and nothing else -> unavailable (intent_stub)" consult 1 "CLAUDE_STATUS: unavailable (intent_stub" \
+  "$(success "First I'll read the client module. Then I'll check the tests.")"
 expect "footer names the models from modelUsage" consult 0 "Models: claude-test-model" \
   "$(success 'An answer.')"
 expect "footer prints the run's cost" review 0 "Cost: USD 0.0123" \
   "$(success 'NO_FINDINGS')"
+
+echo "parser: grading rules equal to /codex's"
+# Both outside voices claim the same verdict on the same text; a rule edited in
+# one copy only would split them.
+CODEX_SRC="${CODEX_SKILL:-$ROOT/skills/codex/SKILL.md}"
+for rule in REFUSAL INTENT_STUB STUB_NEXT; do
+  if python3 -I - "$PARSER" "$CODEX_SRC" "$rule" <<'RULE'
+import re, sys
+def rule(path):
+    m = re.search(r"^" + sys.argv[3] + r" = re\.compile\(.*?\)\n", open(path).read(), re.M | re.S)
+    return m.group(0) if m else None
+a, b = rule(sys.argv[1]), rule(sys.argv[2])
+sys.exit(0 if a and a == b else 1)
+RULE
+  then ok "$rule matches /codex byte for byte"; else no "$rule differs from /codex (or is missing)"; fi
+done
 
 echo "skill text"
 calls=$(grep -c 'claude -p' "$SKILL" || true)
@@ -222,6 +242,17 @@ if block_with 'mktemp -d "${TMPDIR:-/tmp}/vibe-claude.' > "$TMP/setup.sh" 2>"$TM
   else no "review: no --model=opus in argv"; fi
   if argv_has '--permission-mode' && argv_has 'default' && argv_has '--tools'; then ok "review: argv carries --tools and --permission-mode default"
   else no "review: argv lacks --tools / --permission-mode default"; fi
+
+  # A claude that ignores SIGTERM must still die before the Bash tool's limit.
+  TOS="$TMP/tostub"; mkdir -p "$TOS"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "$CAP/to-argv"\nwhile case "$1" in -k) shift 2 ;; -*) shift ;; *) false ;; esac; do :; done\nshift; exec "$@"\n' > "$TOS/timeout"
+  chmod +x "$TOS/timeout"; cp "$TOS/timeout" "$STUB/timeout"; cp "$TOS/timeout" "$STUB/gtimeout"
+  run_mode "$REVIEW_RUN" ''
+  rm -f "$STUB/timeout" "$STUB/gtimeout"
+  if [ -f "$CAP/to-argv" ] && grep -qx -- '-k' "$CAP/to-argv"; then ok "the timeout wrapper sends SIGKILL after a grace period (-k)"
+  else no "timeout runs without -k, so a claude ignoring SIGTERM outlives the bound ($(tr '\n' ' ' < "$CAP/to-argv" 2>/dev/null))"; fi
+  calls=$(grep -c '"$_CL_TO"' "$SKILL" || true); killed=$(grep '"$_CL_TO"' "$SKILL" | grep -c -- '-k ' || true)
+  [ "$calls" -ge 3 ] && [ "$calls" = "$killed" ] && ok "every _cl copy passes -k" || no "-k on $killed of $calls _cl copies"
 
   run_mode "$CHALLENGE_RUN" '' VIBE_CLAUDE_MODEL=sonnet
   if argv_has '--model=sonnet'; then ok "challenge: VIBE_CLAUDE_MODEL is the fallback model"

@@ -2,8 +2,8 @@
 # test-test-bootstrap.sh — lib/snippets/test-bootstrap.md stays the one wording
 # of test-framework detection that /ship and /qa render.
 #
-# Until each skill includes the snippet, it carries an inline copy; the checks
-# run on rendered output, so they keep holding after the switch to the include.
+# Both include it, and the checks run on rendered output, so an inline copy that
+# drifts from the snippet fails here.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,8 +26,6 @@ detection_block() {
     inb && /^```$/ { inb=0; done=1 }
   ' "$1"
 }
-
-RULE_PREFIX='**If ANY existing-test evidence appears**'
 
 echo "snippet"
 if [ ! -f "$SNIPPET" ]; then
@@ -68,13 +66,6 @@ for skill in ship qa; do
   missing=0
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    # /ship's inline copy names its own Step 5 in this rule; the include drops
-    # that. Only that clause may differ — the rest of the line is checked whole.
-    if [ "$skill" = ship ] && [ "${line#"$RULE_PREFIX"}" != "$line" ]; then
-      want="$(printf '%s' "$line" | python3 -I -c 'import sys; sys.stdout.write(sys.stdin.read().replace("Then get the command from", "Then settle the command Step 5 will run —", 1).replace("otherwise via AskUserQuestion", "otherwise AskUserQuestion", 1))')"
-      grep -Fxq -- "$want" "$out" || { no "$skill: existing-tests rule drifted beyond its Step 5 clause"; missing=1; }
-      continue
-    fi
     grep -Fxq -- "$line" "$out" || { no "$skill: lacks snippet line: ${line:0:60}"; missing=1; }
   done < "$SNIPPET"
   [ "$missing" -eq 0 ] && ok "$skill: renders every snippet line"

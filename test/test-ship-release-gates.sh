@@ -310,6 +310,13 @@ printf '%s' "$S7" | grep -Eq 'commit as `test: coverage|Passes → commit' && no
 
 echo "eval selection"
 S6=$(section '## Step 6: Eval Suites' '## Step 7:')
+EBLOCK="$TMP/eval.sh"
+block '**3. Run the selected command and keep its exit status**' > "$EBLOCK" || : > "$EBLOCK"
+mkdir -p "$TMP/elog"
+sed -e "s|<project eval command>|exit 3|" -e "s|<SHIP_LOG>|$TMP/elog|g" "$EBLOCK" > "$EBLOCK.red"
+out=$(bash "$EBLOCK.red" 2>&1); rc=$?
+case "$out" in *"EVAL_EXIT: 3"*) [ "$rc" -ne 0 ] && ok "a failing eval block exits non-zero" || no "a failing eval block exits 0 after EVAL_EXIT: 3" ;;
+  *) no "eval block output: $out" ;; esac
 printf '%s' "$S6" | gq 'Example only' && ok "app layout is an example, not the selector" || no "Step 6 still hard-codes one app layout"
 printf '%s' "$S6" | gq 'none declared' && ok "prompt changes without evals are a named gap" || no "no named gap for prompt changes without evals"
 
@@ -336,6 +343,11 @@ printf '\342\204\271 tests 0\n\342\204\271 pass 0\n' > "$TMP/logs/nodespec0"
 printf '# tests 4\n# pass 4\n' > "$TMP/logs/nodetap4"
 printf 'running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n' > "$TMP/logs/cargo0"
 printf 'test result: ok. 2 passed; 0 failed; 0 ignored\ntest result: FAILED. 1 passed; 1 failed; 0 ignored\n' > "$TMP/logs/cargo4"
+printf 'Tests:       2 skipped, 1 todo, 3 total\n' > "$TMP/logs/jestskip0"
+printf 'No test files found, exiting with code 0\n' > "$TMP/logs/vitest0"
+printf ' Test Files  1 passed (1)\n      Tests  1 failed | 2 passed (3)\n' > "$TMP/logs/vitest3"
+printf '  0 passing (2ms)\n' > "$TMP/logs/mocha0"
+printf '  2 passing (5ms)\n  1 pending\n  1 failing\n' > "$TMP/logs/mocha3"
 # ran FIXTURE -> the tests_ran value the lane block reports for a lane whose
 # output is that fixture (the lane itself exits 0 every time).
 ran() {
@@ -348,11 +360,11 @@ open(sys.argv[2], "w").write(t)
 PY
   ( cd "$TMP" && VIBESTACK_HOME="$VH" bash "$TMP/lanes.$1.sh" 2>&1 ) | sed -n 's/^LANE: a exit=0 tests_ran=\([^ ]*\) .*/\1/p'
 }
-for f in jest0 pytest0 rspec0 go0 bun0 nodetap0 nodespec0 cargo0; do
+for f in jest0 pytest0 rspec0 go0 bun0 nodetap0 nodespec0 cargo0 jestskip0 vitest0 mocha0; do
   got=$(ran "$f")
   [ "$got" = 0 ] && ok "$f: zero-test run reports tests_ran=0" || no "$f: zero-test run reports tests_ran='$got'"
 done
-for pair in bun12:12 jest3:3 pytest5:5 rspec7:7 nodetap4:4 cargo4:4; do
+for pair in bun12:12 jest3:3 pytest5:5 rspec7:7 nodetap4:4 cargo4:4 vitest3:3 mocha3:3; do
   got=$(ran "${pair%%:*}")
   [ "$got" = "${pair#*:}" ] && ok "${pair%%:*}: counted ${pair#*:} tests" || no "${pair%%:*}: tests_ran='$got', want ${pair#*:}"
 done
@@ -360,7 +372,12 @@ for f in gomixed custom; do
   got=$(ran "$f")
   [ "$got" = unknown ] && ok "$f: no runner count -> tests_ran=unknown" || no "$f: tests_ran='$got', want unknown"
 done
+# A counter that dies prints nothing; nothing counted is not a pass.
+mkdir -p "$TMP/deadawk"; printf '#!/bin/sh\nexit 2\n' > "$TMP/deadawk/awk"; chmod +x "$TMP/deadawk/awk"
+got=$(PATH="$TMP/deadawk:$PATH" ran bun12)
+[ "$got" = 0 ] && ok "a counter that fails reports tests_ran=0, not unknown" || no "dead counter reports tests_ran='$got'"
 S5=$(section '## Step 5: Run tests' '## Test Failure Ownership Triage')
+printf '%s' "$S5" | gq -- '--skill health' && no "Step 5 reuses a health-ledger pass, which has no test count" || ok "every lane runs with its own count"
 S16=$(section '## Step 16: Verification Gate' '## Step 17:')
 printf '%s' "$S5" | gq 'tests_ran=0' && printf '%s' "$S5" | gq 'Step T2' \
   && ok "tests_ran=0 goes to in-branch triage" || no "Step 5 does not route tests_ran=0 to Step T2"
@@ -420,8 +437,16 @@ for sh in bash zsh; do
   grep -q '|--exclude-pr|7|' "$TMP/args.$sh" 2>/dev/null && ok "$sh: own PR passed as --exclude-pr 7 (two arguments)" || no "$sh: queue call args: $(cat "$TMP/args.$sh" 2>/dev/null)"
   ( cd "$TMP" && PATH="$TMP/stub:$PATH" STUB_PR="$TMP/none.json" VIBESTACK_HOME="$QH" ARGS_OUT="$TMP/args0.$sh" "$sh" "$QBLOCK" >/dev/null 2>&1 )
   grep -q 'exclude-pr' "$TMP/args0.$sh" 2>/dev/null && no "$sh: --exclude-pr sent with no PR" || ok "$sh: no PR -> no --exclude-pr"
+  # The branch-head fallback and a GitLab MR need their own exclusion.
+  QR=$(fixture "q-$sh" 1.2.3)
+  mkdir -p "$TMP/glstub-$sh"; printf '#!/bin/sh\necho "{\\"iid\\":9}"\n' > "$TMP/glstub-$sh/glab"; chmod +x "$TMP/glstub-$sh/glab"
+  ( cd "$QR" && PATH="$TMP/glstub-$sh:$TMP/stub:$PATH" STUB_PR="$TMP/none.json" VIBESTACK_HOME="$QH" ARGS_OUT="$TMP/argsg.$sh" "$sh" "$QBLOCK" >/dev/null 2>&1 )
+  grep -q '|--exclude-branch|feature|' "$TMP/argsg.$sh" 2>/dev/null && ok "$sh: own branch passed as --exclude-branch" || no "$sh: no --exclude-branch: $(cat "$TMP/argsg.$sh" 2>/dev/null)"
+  grep -q '|--exclude-pr|9|' "$TMP/argsg.$sh" 2>/dev/null && ok "$sh: own GitLab MR passed as --exclude-pr" || no "$sh: GitLab MR not excluded: $(cat "$TMP/argsg.$sh" 2>/dev/null)"
 done
 printf '%s' "$S12" | gq "ALREADY_BUMPED.*step 3's block" && ok "ALREADY_BUMPED drift check reuses the excluding block" || no "ALREADY_BUMPED drift check does not exclude its own PR"
+printf '%s' "$S12" | gq '`.complete` is `false`' && ok "an incomplete queue read is reported whatever the claim count" || no "Step 12 ignores complete:false (a missed claim reads as a free slot)"
+printf '%s' "$S12" | gq 'OFFLINE=true` with `.host` `git`' && ok "an offline branch-head pick is used, not thrown away for a local bump" || no "the branch-head fallback is discarded as offline"
 
 echo "Step 13: CHANGELOG follows the file"
 S13=$(section '## Step 13: CHANGELOG' '## Step 14:')
@@ -450,6 +475,13 @@ case "$out" in *"BASE_EXIT: 1"*) ok "red at base -> BASE_EXIT: 1" ;; *) no "red 
 d=$(base_fixture greenbase 0)
 out=$( cd "$d" && bash "$BBLOCK" 2>&1 )
 case "$out" in *"BASE_EXIT: 0"*) ok "green at base -> BASE_EXIT: 0" ;; *) no "green base: $out" ;; esac
+# A test that needs the checkout's ignored dependencies (node_modules) runs at base too.
+d=$(base_fixture depbase 0)
+( cd "$d" && printf 'node_modules/\n' > .gitignore && mkdir -p node_modules && : > node_modules/dep \
+  && git checkout -q main && printf 'test -f node_modules/dep\n' > t.sh && git add t.sh && git commit -q -m dep && git push -q origin main && git checkout -q feature )
+out=$( cd "$d" && bash "$BBLOCK" 2>&1 )
+case "$out" in *"BASE_EXIT: 0"*) ok "the base worktree sees the checkout's ignored node_modules" ;; *) no "base proof without dependencies: $out" ;; esac
+[ ! -L "$d/node_modules" ] && [ -f "$d/node_modules/dep" ] && ok "the checkout's node_modules survives the worktree removal" || no "the checkout's node_modules was changed"
 d=$(base_fixture nobase 1); git -C "$d" update-ref -d refs/remotes/origin/main
 out=$( cd "$d" && bash "$BBLOCK" 2>&1 )
 case "$out" in *"BASE_EXIT: unavailable"*) ok "no base ref -> unavailable" ;; *) no "missing base: $out" ;; esac
@@ -467,6 +499,8 @@ printf '%s' "$S4" | gq 'git status --porcelain' && printf '%s' "$S4" | gq -i 'be
   && ok "tree snapshotted before installing" || no "no pre-install snapshot"
 printf '%s' "$S4" | gq 'git add -- ' && printf '%s' "$S4" | gq 'git diff --cached --name-only' \
   && ok "B8 stages by name and checks the index" || no "B8 does not stage by name"
+awk '/^### B8\. Commit/{on=1} /^## Step 5:/{on=0} on' "$SKILL" | gq 'B4 step 0' \
+  && ok "B8 leaves out a file that held uncommitted branch work before the bootstrap" || no "B8 folds the branch's own uncommitted manifest hunks into the bootstrap commit"
 
 echo "Steps 9-11: in-session fix loop with a ceiling"
 FL=$(section '## Step 9: Pre-Landing Review' '## Step 12:')

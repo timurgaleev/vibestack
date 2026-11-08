@@ -87,8 +87,8 @@ echo "branch HEAD VERSION: $CURRENT_VERSION"
 ## Step 3: Query the queue
 
 Call the util once per bump level so the user sees what they'd claim for
-patch/minor/major. Versions are `MAJOR.MINOR.PATCH`; there is no separate micro
-level (the util treats `micro` as `patch`).
+patch/minor/major. Versions are `MAJOR.MINOR.PATCH` with an optional fourth
+`MICRO` part; the pick keeps the base version's shape.
 
 ```bash
 BASE_BRANCH='<BASE_BRANCH>'
@@ -115,9 +115,10 @@ as canonical for the queue (it is identical across bump levels; only `.version`
 differs).
 
 `vibe-next-version` emits exactly these fields — render only what they contain:
-- `.host` — `github` | `gitlab` | `unknown`
+- `.host` — `github` | `gitlab` | `git` (no PR host answered; claims are the VERSION
+  at each fetched branch head) | `unknown`
 - `.base` — the base branch the queue was filtered to
-- `.offline` — `true` when no PR host was reachable
+- `.offline` — `true` when no PR host was reachable (also with `"host":"git"`)
 - `.reason` — one-line explanation of the pick (or of the offline fallback)
 - `.claimed` — array of `{pr, branch, version, url}`: open PRs against `.base`
   whose head `VERSION` is ahead of the base version. Read from each PR's head
@@ -161,10 +162,15 @@ When `.complete` is `false`, the Status line reads `ONLINE — queue may be inco
 Step 5 gives suggestion 2: a slot that looks free may already be claimed by a PR the read
 missed. When `.complete` is `true`, the output is unchanged.
 
-A collision is two entries in `.claimed` with the same `version`. When
+A collision is two entries in `.claimed` with the same version, compared with any
+trailing `.0` parts dropped: `1.2.4` and `1.2.4.0` are one slot. When
 `.claimed` is empty, print `Open PRs claiming versions on <.base>: none`.
 
-For offline output (`.offline` is `true`), print a shorter block:
+When `.host` is `git`, render the full table with the Status line
+`OFFLINE — branch heads, not the PR queue` and suggestion 2 in Step 5: a branch without
+a PR still counts, and an unfetched head is a warning.
+
+For any other offline output (`.offline` is `true`), print a shorter block:
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗

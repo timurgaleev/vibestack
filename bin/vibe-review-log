@@ -246,6 +246,13 @@ def main() -> int:
     if body.get("commit") in (None, "", "COMMIT"):
         body["commit"] = _run(["git", "rev-parse", "--short", "HEAD"]) or "unknown"
     body.setdefault("branch", branch())
+    # The entry's own branch picks the file: a caller that logs from another
+    # checkout (land-and-deploy after --delete-branch) names the branch it means.
+    br = body["branch"]
+    if (not isinstance(br, str) or len(br) > 255 or "\0" in br or "\\" in br
+            or any(p in ("", ".", "..") for p in br.split("/"))):
+        print(f"error: branch {br!r} is not a usable branch name", file=sys.stderr)
+        return 1
 
     # The logger computes the tree itself; a caller-supplied value is not trusted.
     body["tree"] = snapshot()
@@ -276,7 +283,7 @@ def main() -> int:
             print("warning: the working tree cannot be snapshotted, so this review is logged "
                   "as unverified, not clean — freshness cannot be proven.", file=sys.stderr)
 
-    path = os.path.join(HOME, "projects", slug(), f"{branch()}-reviews.jsonl")
+    path = os.path.join(HOME, "projects", slug(), f"{br}-reviews.jsonl")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(body, ensure_ascii=False) + "\n")

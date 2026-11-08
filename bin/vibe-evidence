@@ -270,10 +270,16 @@ def cmd_run(argv):
         return 2
 
     command = " ".join(rest)
-    # Each argument on its own line as well: an env-style KEY=value argument is
-    # judged at a line start, the way the other sinks see it.
-    if find_secret("\n".join([command] + rest)):
-        print("vibe-evidence: command line carries a high-confidence secret; refusing to record", file=sys.stderr)
+    meta = {
+        "skill": skill or "unknown",
+        "label": label or (rest[0] if rest else "unknown"),
+        "command": command,
+    }
+    # Every field that reaches the ledger is scanned, and each argument on its
+    # own line as well: an env-style KEY=value argument is judged at a line
+    # start, the way the other sinks see it.
+    if find_secret("\n".join(rest)) or secret_in_payload(json.dumps(meta), meta):
+        print("vibe-evidence: the entry carries a high-confidence secret; refusing to record", file=sys.stderr)
         return 2
     # One argument is a command line, recorded verbatim so `--expect-cmd` can
     # ask for exactly the string a skill documents.
@@ -292,9 +298,7 @@ def cmd_run(argv):
 
     entry = {
         "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "skill": skill or "unknown",
-        "label": label or (rest[0] if rest else "unknown"),
-        "command": command,
+        **meta,
         "exit": code,
         "tree": full[:12],
         "tree_full": full,

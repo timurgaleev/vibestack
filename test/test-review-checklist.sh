@@ -192,9 +192,19 @@ done
 step "$TMP/ship.md" '## Step 7:' > "$TMP/ship-s7"
 contains "$TMP/ship-s7" "$SRC/lib/snippets/implementer-dispatch-rules.md" \
   && ok "ship Step 7 child prompt carries the implementer rules" || no "ship Step 7 lacks the implementer rules"
+grep '^> ' "$TMP/ship-s7" | gq 'Rules for the implementing agent' \
+  && ok "the quoted Step 7 prompt hands the child the implementer rules" || no "the implementer rules sit outside the quoted Step 7 prompt"
 awk '/^### Step 5d:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" > "$TMP/review-5d"
 contains "$TMP/review-5d" "$SRC/lib/snippets/test-value-bar.md" \
   && ok "review Step 5d carries the test value bar" || no "review Step 5d lacks the test value bar"
+
+echo "bump-level derivation shared by /review and /land-and-deploy"
+# Both query the version queue at the level the PR releases; a fix in one copy
+# only would make the two disagree on whether the slot is free.
+bump_of() { awk '/^_BUMP=patch$/{on=1} on{print} on&&/^fi$/{exit}' "$1"; }
+RB=$(bump_of "$SRC/skills/review/SKILL.md"); LB=$(bump_of "$SRC/skills/land-and-deploy/SKILL.md")
+[ -n "$RB" ] && [ "$RB" = "$LB" ] && ok "review and land-and-deploy derive the bump level with the same lines" \
+  || no "the bump-level blocks in review and land-and-deploy differ (or are missing)"
 
 echo "review/ship army and adversarial bodies"
 # One copy of the specialist dispatch/merge and the adversarial passes: a fix
@@ -247,6 +257,13 @@ for n in review ship; do
     && ok "$n keeps normal flags and reports scope available" || no "$n mangles normal flags ($(printf '%s' "$out" | head -1))"
   printf '%s\n' "$out" | gq 'SCOPE_AUTH=false' && ok "$n drops a stale SCOPE_AUTH from the environment" \
     || no "$n carries a stale SCOPE_AUTH into the selection"
+  mkdir -p "$TMP/no-scope-vh"
+  out="$(cd "$SR" && SCOPE_UNAVAILABLE=false VIBESTACK_HOME="$TMP/no-scope-vh" bash -c "$(scope_block "$f")" 2>&1)"
+  printf '%s\n' "$out" | gq 'SCOPE_UNAVAILABLE=true' && ok "$n reads a missing vibe-diff-scope as SCOPE_UNAVAILABLE=true" \
+    || no "$n reads a missing scope helper as a known scope ($(printf '%s' "$out" | head -1))"
+  grep -qF 'In every case except `ready`, the Claude adversarial' "$f" \
+    && no "$n reads as if the Claude adversarial pass skips when Codex is ready" \
+    || ok "$n runs the Claude adversarial pass whatever CODEX_MODE says"
   sel="$(awk '/^### Select specialists/{on=1;next} on && /^### /{exit} on{print}' "$f")"
   printf '%s\n' "$sel" | gq 'SCOPE_UNAVAILABLE=true.*every specialist' \
     && ok "$n selection runs every specialist when the scope is unavailable" || no "$n selection has no unavailable-scope branch"
@@ -322,9 +339,11 @@ grep -q '^### Negative Assertions' "$SP/testing.md" && ok "testing: Negative Ass
 grep -q 'recomputed the way the code computes it' "$SP/testing.md" && ok "testing: recomputed expectation is a self-comparison" || no "testing: no recomputed-expectation rule"
 grep -q 'demonstrated defect' "$SP/maintainability.md" && grep -q 'guard changed' "$SP/maintainability.md" \
   && ok "maintainability: DRY needs a demonstrated defect; guarded strings" || no "maintainability DRY rule not updated"
-grep -q 'lines_removable' "$SP/simplification.md" && grep -q 'net: -N lines' "$SP/simplification.md" \
-  && grep -qi 'never.*delet.*test' "$SP/simplification.md" && ok "simplification: removable lines, net footer, tests kept" \
-  || no "simplification reporting not updated"
+# Specialists print JSON lines only ("Do not output anything else"); a footer
+# line breaks that contract.
+grep -q 'lines_removable' "$SP/simplification.md" && ! grep -q 'net: -N lines' "$SP/simplification.md" \
+  && grep -qi 'never.*delet.*test' "$SP/simplification.md" && ok "simplification: removable lines in evidence, no non-JSON footer, tests kept" \
+  || no "simplification reporting asks for a non-JSON footer or lost its rules"
 [ "$(grep -c '^### ' "$SP/security.md")" -ge 8 ] && grep -q 'Open redirect' "$SP/security.md" \
   && ok "security specialist gained its bullets" || no "security specialist bullets missing"
 DC="$SRC/skills/review/design-checklist.md"

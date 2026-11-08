@@ -111,6 +111,11 @@ expect "genuine answer of 400+ chars opening with 'I'll look' -> answered" answe
   "$(verdict answer 0 "$LONG_ANSWER" '' "$OK_CMD")"
 expect "short direct answer -> answered" answered \
   "$(verdict answer 0 'Yes: the retry loop caps at five attempts.' '' "$OK_CMD")"
+SHORT_ANNOUNCED="Let me check the retry path. It caps at five attempts and backs off from 200 ms, so an outage surfaces in about six seconds."
+expect "short answer that opens with an announcement -> answered" answered \
+  "$(verdict answer 0 "$SHORT_ANNOUNCED" '' "$OK_CMD")"
+expect "two announcements and nothing else -> unavailable" unavailable \
+  "$(verdict answer 0 "First I'll read the client module. Then I'll check the tests." '' "$OK_CMD")"
 
 echo "validator: review grading"
 expect "untagged prose is unverified, never clean" unverified \
@@ -148,6 +153,11 @@ if grep -q 'checks 1, 2, 4' "$SKILL"; then no "unavailable label still names che
 else ok "unavailable label names the right checks"; fi
 if grep -q 'GATE: UNVERIFIED' "$SKILL"; then ok "gate has an UNVERIFIED state"
 else no "gate has no UNVERIFIED state"; fi
+cxto=$(grep -c '"$_CX_TO"' "$SKILL" || true); cxk=$(grep '"$_CX_TO"' "$SKILL" | grep -c -- '-k ' || true)
+if [ "$cxto" -ge 4 ] && [ "$cxto" = "$cxk" ]; then ok "every _cx timeout sends SIGKILL after a grace period (-k)"
+else no "-k on $cxk of $cxto _cx timeout calls: a codex ignoring SIGTERM outlives the bound"; fi
+if grep -qF '~$X' "$SKILL"; then no "an output template still prints money as ~\$X.XX"
+else ok "money in output templates reads 'about USD'"; fi
 fixed=$(grep -E '^[[:space:]]*_cx [0-9]+ codex (review|exec)' "$SKILL" | grep -cE 'model_reasoning_effort="(high|medium|low|xhigh)"' || true)
 if [ "$calls" -ge 5 ] && [ "$fixed" = 0 ]; then ok "no codex call hardcodes its reasoning effort"
 else no "$fixed codex calls still hardcode model_reasoning_effort"; fi
@@ -170,6 +180,10 @@ PB="$TMP/pbin"; mkdir -p "$PB" "$TMP/cxhome"
 cat > "$PB/codex" <<'STUB'
 #!/usr/bin/env bash
 printf '[%s]' "$@" >> "$PSTUB_ARGV"; echo >> "$PSTUB_ARGV"
+if [ "$1 $2" = "sandbox linux" ]; then
+  [ -n "${PSTUB_LEGACY_ERR:-}" ] && { printf '%s\n' "$PSTUB_LEGACY_ERR" >&2; exit 1; }
+  exit 0
+fi
 if [ "$1" = sandbox ]; then
   [ -n "${PSTUB_SANDBOX_ERR:-}" ] && { printf '%s\n' "$PSTUB_SANDBOX_ERR" >&2; exit 1; }
   exit 0
@@ -218,6 +232,10 @@ out=$(PSTUB_ERR='unexpected status 401 Unauthorized: this token is not supported
 expect "a 401 that says 'not supported' is still unauthenticated" "CODEX: unauthenticated" "$(pfirst "$out")"
 out=$(PSTUB_ERR='stream error: status 400 Bad Request: context_length_exceeded' probe "$TMP/ph3" --refresh) || true
 expect "a bare 'status 400' is not a refused model" "CODEX: error" "$(pfirst "$out")"
+out=$(PSTUB_ERR='Error: config key `tools.foo` is not supported' probe "$TMP/ph3" --refresh) || true
+expect "a 'not supported' that names no model is not a refused model" "CODEX: error" "$(pfirst "$out")"
+out=$(PSTUB_ERR='ERROR: {"detail":"context window exceeded","status":400}' probe "$TMP/ph3" --refresh) || true
+expect "a JSON status 400 that names no model is not a refused model" "CODEX: error" "$(pfirst "$out")"
 # A flag with its value missing is a usage error, not an endless loop.
 for flag in --model --ttl; do
   # The probe itself is the background job, so the kill reaches it, not a subshell.
@@ -255,11 +273,18 @@ expect "Linux: a working sandbox continues to the round trip" "CODEX: usable" "$
 if grep -q '^\[sandbox\]\[-c\]\[sandbox_mode="read-only"\]\[true\]' "$TMP/pargv"; then ok "the sandbox rung runs codex sandbox read-only true"
 else no "sandbox rung argv wrong"; sed 's/^/    /' "$TMP/pargv"; fi
 # A CLI that predates this sandbox form rejects the command line itself; the
-# fix is an upgrade, not a sysctl, and the hint must say so.
+# older `codex sandbox linux -- <cmd>` form is tried before anything is decided.
+: > "$TMP/pargv"
 out=$(PSTUB_OS=Linux PSTUB_SANDBOX_ERR="error: unrecognized subcommand 'true'" probe "$TMP/ph9") || true
-expect "Linux: a CLI that rejects the sandbox command -> sandbox_unavailable" "CODEX: sandbox_unavailable" "$(pfirst "$out")"
-if printf '%s\n' "$out" | grep -qi '^DETAIL: .*upgrade' && ! printf '%s\n' "$out" | grep -qi 'namespace'; then ok "a rejected sandbox command hints an upgrade, not user namespaces"
-else no "rejected sandbox command gets the wrong hint: $out"; fi
+expect "Linux: old CLI, working legacy sandbox -> usable" "CODEX: usable" "$(pfirst "$out")"
+if grep -q '^\[sandbox\]\[linux\]\[--\]\[true\]' "$TMP/pargv"; then ok "the legacy form is codex sandbox linux -- true"
+else no "legacy sandbox argv wrong"; sed 's/^/    /' "$TMP/pargv"; fi
+out=$(PSTUB_OS=Linux PSTUB_SANDBOX_ERR="error: unrecognized subcommand 'true'" PSTUB_LEGACY_ERR='bwrap: No permissions to create new namespace' probe "$TMP/ph10") || true
+expect "Linux: old CLI whose legacy sandbox fails -> sandbox_unavailable" "CODEX: sandbox_unavailable" "$(pfirst "$out")"
+if printf '%s\n' "$out" | grep -qi '^DETAIL: .*namespace'; then ok "a failing legacy sandbox gets the user-namespace hint"
+else no "failing legacy sandbox gets the wrong hint: $out"; fi
+out=$(PSTUB_OS=Linux PSTUB_SANDBOX_ERR="error: unrecognized subcommand 'true'" PSTUB_LEGACY_ERR="error: unrecognized subcommand 'linux'" probe "$TMP/ph11") || true
+expect "Linux: a CLI that knows neither form falls through to the round trip" "CODEX: usable" "$(pfirst "$out")"
 
 # Step 0.5's own block hands the model to the probe as two arguments, in bash
 # and in zsh (which does not word-split an unquoted ${x:+...}). printf "[%s]"
@@ -283,14 +308,29 @@ echo "grounding"
 GSNIP="$ROOT/lib/snippets/second-opinion-grounding.md"
 if [ -f "$GSNIP" ]; then
   awk '/^```bash$/{f=1;next} /^```$/{if(f)exit} f' "$GSNIP" > "$TMP/ground.sh"
+  # ground <dir> <name>: fill the block's slot for a prompt file at <dir>/<name>
+  # and run it with TMPDIR=<dir>, outside any repo.
+  ground() {
+    python3 -I -c 'import sys; p,d,n=sys.argv[1:4]; s=open(p).read().replace("<prompt-file-path>", d+"/"+n).replace("<prompt-file-name>", n); open(p+".run","w").write(s)' "$TMP/ground.sh" "$1" "$2"
+    (cd "$TMP/norepo" && TMPDIR="$1" bash "$TMP/ground.sh.run" 2>&1)
+  }
+  mkdir -p "$TMP/norepo"
   printf 'the question\n' > "$TMP/gprompt"
-  sed -i.bak "s|<prompt-file-path>|$TMP/gprompt|g" "$TMP/ground.sh"
-  gout=$(bash "$TMP/ground.sh" 2>&1)
+  gout=$(ground "$TMP" gprompt)
   today=$(date -u +%F)
   if grep -qxF "Current date (UTC): $today" "$TMP/gprompt" && printf '%s' "$gout" | grep -qF "Current date (UTC): $today"; then ok "the block prints the UTC date and writes it into the prompt file"
   else no "date line missing from the prompt file or the output"; fi
   if grep -q '\[unverified\]' "$TMP/gprompt" && head -1 "$TMP/gprompt" | grep -qx 'the question'; then ok "the unrecognised-name rule is appended after the prompt"
   else no "the [unverified] rule is missing, or the prompt was overwritten"; fi
+  # Value: protects=the grounding never pastes a full path into shell source, so a quote in the temp or repo path neither breaks the block nor runs as code; fails_when=the block goes back to a quoted full path; why_new=the case above uses a plain path; seam=none
+  QD="$TMP/it's a dir"; mkdir -p "$QD/vibe-claude.abc"
+  printf 'q\n' > "$QD/vibe-claude.abc/prompt.txt"
+  qout=$(ground "$QD" vibe-claude.abc/prompt.txt) || true
+  if grep -qxF "Current date (UTC): $today" "$QD/vibe-claude.abc/prompt.txt"; then ok "a prompt file under a path with a quote in it is grounded"
+  else no "a quote in the prompt path broke the grounding block: $qout"; fi
+  printf 'q\n' > "$TMP/gprompt2"
+  if ground "$TMP" "../gprompt2" >/dev/null; then no "the grounding block accepted a name that climbs out of its directory"
+  else ok "the grounding block refuses a name that climbs out of its directory"; fi
 else
   no "lib/snippets/second-opinion-grounding.md missing"
 fi
@@ -377,6 +417,14 @@ if printf '%s' "$out" | grep -q 'CODEX_RESULT: OK'; then ok "challenge: healthy 
 else no "challenge: healthy run not OK"; printf '%s\n' "$out" | sed 's/^/    /'; fi
 if grep -q 'skills.include_instructions=false' "$TMP/argv" && grep -q -- '-o ' "$TMP/argv"; then ok "challenge: argv carries the isolation flag and -o"
 else no "challenge: argv missing isolation flag or -o"; fi
+# The event reader runs inline Python from the repo root; a json.py there must
+# never be imported in place of the standard library.
+printf 'raise SystemExit("PLANTED json.py imported")\n' > "$REPO/json.py"
+for needle in "$CHALLENGE" 'codex exec resume "$_SID"'; do
+  out=$(STUB_RESP='An answer.' STUB_EVENTS="$OK_CMD"$'\n{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}' run_block "$needle" 'p')
+  case "$out" in *PLANTED*) no "a json.py in the repo is imported by the event reader ($needle)" ;; *) ok "the event reader ignores a json.py in the repo ($needle)" ;; esac
+done
+rm -f "$REPO/json.py"
 
 # Reasoning effort: the --effort request wins, then VIBE_CODEX_EFFORT, then the
 # mode default; anything outside low|medium|high|xhigh stops before Codex runs.

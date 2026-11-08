@@ -184,19 +184,21 @@ _bounded() { # CMD... -> its exit status, or 124 after $TIMEOUT seconds; output 
 if [ "$(uname -s 2>/dev/null)" = Linux ]; then
   _bounded codex sandbox -c 'sandbox_mode="read-only"' true
   _RC=$?
+  # A CLI that predates this command form rejects the arguments before any
+  # sandbox starts; it is asked in its older `codex sandbox linux -- <cmd>` form.
+  # One that knows neither form cannot be asked, and the round trip decides.
+  _rejected() { grep -qiE 'unrecognized subcommand|unexpected argument' "$_OUT" 2>/dev/null; }
+  if [ "$_RC" -ne 0 ] && _rejected; then
+    _bounded codex sandbox linux -- true
+    _RC=$?
+    _rejected && _RC=0
+  fi
   if [ "$_RC" -ne 0 ]; then
     _detail=$(grep -v '^[[:space:]]*$' "$_OUT" 2>/dev/null | head -3 | cut -c1-300)
     [ "$_RC" -eq 124 ] && _detail="codex sandbox did not finish within ${TIMEOUT}s${_detail:+
 $_detail}"
-    # A CLI that predates this command form rejects the arguments before any
-    # sandbox starts; that is fixed by an upgrade, not by the kernel.
-    if grep -qiE 'unrecognized subcommand|unexpected argument' "$_OUT" 2>/dev/null; then
-      _hint="hint: this Codex CLI does not accept 'codex sandbox -c ... true'; upgrade the Codex CLI"
-    else
-      _hint="hint: allow unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, or kernel.apparmor_restrict_unprivileged_userns=0 on Ubuntu 24.04+), or run outside the container"
-    fi
     emit sandbox_unavailable "" "${_detail:-codex sandbox exited $_RC}
-$_hint"
+hint: allow unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, or kernel.apparmor_restrict_unprivileged_userns=0 on Ubuntu 24.04+), or run outside the container"
   fi
 fi
 
@@ -237,7 +239,9 @@ fi
 # A refused model fails every run identically, and its fix (drop or change the
 # `model =` pin, or upgrade the CLI) differs from an auth or network fault. It
 # is checked after auth because a refused token can also say "not supported".
-_detail=$(grep -iE 'not supported|status":40[04]|does not exist or you do not have access|requires a newer version of codex' "$_OUT" 2>/dev/null | head -3 | cut -c1-300)
+# The line has to name the model: "not supported" and a 400 also come from a
+# config key or an oversized context.
+_detail=$(grep -iE 'not supported|status":40[04]|does not exist or you do not have access|requires a newer version of codex' "$_OUT" 2>/dev/null | grep -i 'model' | head -3 | cut -c1-300)
 if [ -n "$_detail" ]; then
   emit model_unusable "" "$_detail"
 fi

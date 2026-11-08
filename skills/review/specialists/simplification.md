@@ -63,7 +63,7 @@ finding. When the extra structure is load-bearing for something already in the d
 that is not a finding at all.
 
 Put `lines_removable: N` (your estimate of lines the simpler shape deletes) in each finding's
-`evidence`, and end the output with one footer line, `net: -N lines`, summing them.
+`evidence`. The output stays JSON finding lines only: no footer or total.
 
 Never propose deleting, merging or weakening tests, fixtures or assertions — test volume is the
 testing specialist's call, not a simplification.
