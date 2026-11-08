@@ -56,3 +56,15 @@ export function isProcessAlive(pid: number): boolean {
     return false;
   }
 }
+
+// ─── Chromium launch ───────────────────────────────────────────
+
+/**
+ * macOS can SIGKILL a freshly downloaded Chromium at spawn (quarantine or
+ * XProtect); Playwright then reports only a closed browser. Name the fix.
+ */
+export function launchKillHint(err: unknown, platform: string = process.platform): string | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (platform !== 'darwin' || !/signal=SIGKILL/.test(msg)) return null;
+  return '[browse] hint: macOS killed Chromium at launch — clear quarantine with `xattr -dr com.apple.quarantine ~/Library/Caches/ms-playwright`, or reinstall it with `npx playwright install chromium` from the vibestack checkout.';
+}

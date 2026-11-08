@@ -7,7 +7,7 @@
 
 import type { Page, Route } from 'playwright';
 import type { TabSession } from './tab-session';
-import type { BrowserManager } from './browser-manager';
+import { DEFAULT_VIEWPORT, type BrowserManager } from './browser-manager';
 import { findInstalledBrowsers, importCookies, importCookiesViaCdp, hasV20Cookies, listSupportedBrowserNames } from './cookie-import-browser';
 import { generatePickerCode } from './cookie-picker-routes';
 import { validateNavigationUrl } from './url-validation';
@@ -440,10 +440,53 @@ export async function handleWriteCommand(
     }
 
     case 'type': {
-      const text = args.join(' ');
-      if (!text) throw new Error('Usage: browse type <text>');
+      let rest = args;
+      let selector: string | undefined;
+      if (rest[0] === '--selector') {
+        selector = rest[1];
+        if (!selector) throw new Error('Usage: browse type [--selector <sel|@ref>] [--] <text>');
+        rest = rest.slice(2);
+      }
+      if (rest[0] === '--') rest = rest.slice(1);
+      const text = rest.join(' ');
+      if (!text) throw new Error('Usage: browse type [--selector <sel|@ref>] [--] <text>');
+      if (selector) {
+        const resolved = await session.resolveRef(selector);
+        const locator = 'locator' in resolved ? resolved.locator : target.locator(resolved.selector);
+        await locator.pressSequentially(text, { timeout: 5000 });
+        return `Typed ${text.length} characters into ${selector}`;
+      }
       await page.keyboard.type(text);
       return `Typed ${text.length} characters`;
+    }
+
+    case 'tap': {
+      if (!bm.getDeviceName()) {
+        throw new Error('tap needs touch emulation — run `device <name>` first (`device --list` for names).');
+      }
+      if (args.length === 2 && args.every(a => /^\d+(\.\d+)?$/.test(a))) {
+        await page.touchscreen.tap(Number(args[0]), Number(args[1]));
+        return `Tapped at ${args[0]},${args[1]}`;
+      }
+      const selector = args[0];
+      if (!selector || args.length > 1) throw new Error('Usage: browse tap <sel|@ref> | tap <x> <y>');
+      const resolved = await session.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : target.locator(resolved.selector);
+      await locator.tap({ timeout: 5000 });
+      return `Tapped ${selector}`;
+    }
+
+    case 'device': {
+      const arg = args.join(' ').trim();
+      if (!arg) throw new Error('Usage: browse device <name>|off|--list');
+      if (arg === '--list') return bm.listDevices().join('\n');
+      const name = arg === 'off' ? null : arg;
+      const err = await bm.setDevice(name);
+      if (err) return `Device ${name ?? 'off'} partially applied: ${err}`;
+      const vp = bm.getCurrentViewport();
+      return name
+        ? `Emulating ${bm.getDeviceName()} (${vp.width}x${vp.height} @ ${bm.getDeviceScaleFactor()}x, touch); context recreated`
+        : `Device emulation off (${vp.width}x${vp.height}); context recreated`;
     }
 
     case 'press': {
@@ -524,6 +567,14 @@ export async function handleWriteCommand(
     }
 
     case 'viewport': {
+      const device = bm.getDeviceName();
+      if (device) {
+        throw new Error(`viewport is refused while device ${device} is emulated — run \`device off\` first.`);
+      }
+      if (args.length === 1 && args[0] === 'auto') {
+        await bm.setViewport(DEFAULT_VIEWPORT.width, DEFAULT_VIEWPORT.height);
+        return `Viewport set to ${DEFAULT_VIEWPORT.width}x${DEFAULT_VIEWPORT.height} (default)`;
+      }
       // Parse args: [<WxH>] [--scale <n>]. Either may be omitted, but NOT both.
       let sizeArg: string | undefined;
       let scaleArg: number | undefined;

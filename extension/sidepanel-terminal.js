@@ -105,6 +105,47 @@
   let keepaliveInterval = null;
   const KEEPALIVE_INTERVAL_MS = 25000;
 
+  // Terminal text size, picked in the toolbar and kept in chrome.storage.local.
+  const FONT_SIZES = { xs: 11, sm: 12, md: 13, lg: 15, xl: 17 };
+  const FONT_SIZE_KEY = 'terminalFontSize';
+  let fontSizeKey = 'md';
+
+  /** Refit after two frames, once the new glyph metrics are in the layout. */
+  function refitSoon() {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      try {
+        fitAddon && fitAddon.fit();
+        if (term && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        }
+      } catch {}
+    }));
+  }
+
+  function applyFontSize(key) {
+    if (!FONT_SIZES[key]) return;
+    fontSizeKey = key;
+    const select = document.getElementById('terminal-fontsize');
+    if (select) select.value = key;
+    if (term) {
+      term.options.fontSize = FONT_SIZES[key];
+      refitSoon();
+    }
+  }
+
+  (function initFontSize() {
+    const select = document.getElementById('terminal-fontsize');
+    if (select) {
+      select.addEventListener('change', () => {
+        applyFontSize(select.value);
+        try { chrome.storage.local.set({ [FONT_SIZE_KEY]: select.value }); } catch {}
+      });
+    }
+    try {
+      chrome.storage.local.get(FONT_SIZE_KEY).then((stored) => applyFontSize(stored && stored[FONT_SIZE_KEY]));
+    } catch {}
+  })();
+
   function show(el) { el.style.display = ''; }
   function hide(el) { el.style.display = 'none'; }
 
@@ -391,8 +432,10 @@
   function ensureXterm() {
     if (term) return;
     term = new Terminal({
-      fontFamily: '"JetBrains Mono", "SF Mono", Menlo, "Noto Sans Mono CJK KR", "Malgun Gothic", monospace',
-      fontSize: 13,
+      // Latin monospace faces (Consolas/Cascadia on Windows) come before the
+      // CJK fallbacks, so a CJK font never sets the cell width for Latin text.
+      fontFamily: '"JetBrains Mono", "SF Mono", Menlo, Consolas, "Cascadia Mono", "Noto Sans Mono CJK KR", "Malgun Gothic", monospace',
+      fontSize: FONT_SIZES[fontSizeKey],
       theme: { background: '#0a0a0a', foreground: '#e5e5e5' },
       cursorBlink: true,
       scrollback: 5000,

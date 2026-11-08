@@ -48,7 +48,7 @@ export const SCOPE_WRITE = new Set([
   'goto', 'back', 'forward', 'reload',
   'load-html',
   'click', 'fill', 'select', 'hover', 'type', 'press', 'scroll', 'wait',
-  'upload', 'viewport', 'newtab', 'closetab',
+  'upload', 'viewport', 'tap', 'newtab', 'closetab',
   'dialog-accept', 'dialog-dismiss',
   'download', 'scrape', 'archive',
 ]);
@@ -57,7 +57,7 @@ export const SCOPE_WRITE = new Set([
 export const SCOPE_ADMIN = new Set([
   'eval', 'js', 'cookies', 'storage',
   'cookie', 'cookie-import', 'cookie-import-browser',
-  'header', 'useragent',
+  'header', 'useragent', 'device',
   'style', 'cleanup', 'prettyscreenshot',
 ]);
 

@@ -63,8 +63,19 @@ Every Bash call starts a fresh shell, so `$B` is unset in every later block.
 A block that runs a browse command starts with `B='<BROWSE_BIN>'`: replace
 `<BROWSE_BIN>` with the path printed on the `BROWSE_BIN:` line.
 
-If `NEEDS_SETUP`, stop and tell the user:
-"The browse daemon is required for this skill but is not installed. **vibestack does not bundle the browse daemon** — it's a separate dependency. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon) for current options."
+If `NEEDS_SETUP`, or a later `$B connect` prints `BROWSE_NOT_AVAILABLE`, stop
+and name the cause it printed. The browse daemon ships with vibestack under
+`browse/`; what can be missing is its runtime:
+
+- `bun not found` — the headed browser needs the full daemon, which runs on bun.
+  Install bun, then re-run.
+- `dependencies not installed` — run `bun install` in the vibestack checkout
+  (the path it printed); that also fetches Playwright's Chromium on first use.
+- the launcher itself is missing — the install skipped the browse skill; re-run
+  `./install`.
+
+The stateless fallback shim (node + npm) cannot open a headed window, so it is
+no workaround here. See [`docs/external-tools.md`](../../docs/external-tools.md#browse-daemon).
 
 ---
 
@@ -140,7 +151,8 @@ This launches vibestack Browser (rebranded Chromium) in headed mode with:
 - The sidebar extension auto-loaded via `launchPersistentContext`
 - Anti-bot stealth patches (sites like Google and NYTimes work without captchas)
 - Custom user agent in Dock/menu bar
-- A sidebar agent process for chat commands
+- A Side Panel whose main surface is a real `claude` terminal (a PTY on this
+  machine), with browser quick-action buttons above it
 
 The `connect` command auto-discovers the extension from the install directory.
 It always uses port **34567** so the extension can auto-connect.
@@ -195,7 +207,7 @@ Use AskUserQuestion:
 > 1. Look for the **puzzle piece icon** (Extensions) in the toolbar
 > 2. Click the **puzzle piece** → find **vibestack browse** → click the **pin icon**
 > 3. Click the pinned icon in the toolbar
-> 4. The Side Panel should open on the right showing a live activity feed
+> 4. The Side Panel opens on the right with a terminal running `claude`
 >
 > **Port:** 34567 (auto-detected — the extension connects automatically in the
 > Playwright-controlled Chrome).
@@ -248,49 +260,47 @@ B='<BROWSE_BIN>'
 $B snapshot -i
 ```
 
-Tell the user: "Check the Side Panel — you should see the `goto` and `snapshot`
-commands appear in the activity feed. Every command Claude runs shows up here
-in real time."
+Tell the user: "Click **debug** in the Side Panel footer and open the
+**Activity** tab — the `goto` and `snapshot` commands are listed there. Every
+command Claude runs shows up in real time."
 
-## Step 5: Sidebar chat
+## Step 5: The Side Panel terminal
 
-After the activity feed demo, tell the user about the sidebar chat:
+Tell the user what the Side Panel holds:
 
-> The Side Panel also has a **chat tab**. Try typing a message like "take a
-> snapshot and describe this page." A sidebar agent (a child Claude instance)
-> executes your request in the browser — you'll see the commands appear in
-> the activity feed as they happen.
+> The Side Panel runs a real **Claude Code terminal** (`claude` in a PTY on this
+> machine, working in the browser you see). Type to it like any terminal.
+> If it shows "Claude Code not found", install the `claude` CLI and click
+> "I installed it — try again". **↻ Restart** starts a fresh session; the size
+> picker next to it changes the text size.
 >
-> The sidebar agent can navigate pages, click buttons, fill forms, and read
-> content. Each task gets up to 5 minutes. It runs in an isolated session, so
-> it won't interfere with this Claude Code window.
+> Buttons above the terminal act on the current page:
+> - **Cleanup** removes ads, cookie banners and pop-ups
+> - **Screenshot** captures the page
+> - **Cookies** opens the cookie picker to import a signed-in session from your
+>   own browser (the same flow as /setup-browser-cookies)
+>
+> The **debug** toggle in the footer opens three more tabs: **Activity** (every
+> browse command as it runs), **Refs** (the `@e` refs from the last snapshot)
+> and **Inspector** (pick an element to see its box model and CSS rules).
 
 ## Step 6: What's next
 
 Tell the user:
 
-> You're all set! Here's what you can do with the connected Chrome:
+> You're all set. With the connected browser you can:
 >
-> **Watch Claude work in real time:**
 > - Run any vibestack skill (`/qa`, `/design-review`, `/benchmark`) and watch
->   every action happen in the visible Chrome window + Side Panel feed
-> - No cookie import needed — the Playwright browser shares its own session
+>   every page load and click in the visible window; the Activity tab logs each
+>   command
+> - Drive it directly: `$B goto <url>`, `$B click <sel>`, `$B fill <sel> <val>`,
+>   `$B snapshot -i`
+> - `$B focus` brings the window to the front; `$B disconnect` closes it and
+>   returns to headless mode
 >
-> **Control the browser directly:**
-> - **Sidebar chat** — type natural language in the Side Panel and the sidebar
->   agent executes it (e.g., "fill in the login form and submit")
-> - **Browse commands** — `$B goto <url>`, `$B click <sel>`, `$B fill <sel> <val>`,
->   `$B snapshot -i` — all visible in Chrome + Side Panel
->
-> **Window management:**
-> - `$B focus` — bring Chrome to the foreground anytime
-> - `$B disconnect` — close headed Chrome and return to headless mode
->
-> **What skills look like in headed mode:**
-> - `/qa` runs its full test suite in the visible browser — you see every page
->   load, every click, every assertion
-> - `/design-review` takes screenshots in the real browser — same pixels you see
-> - `/benchmark` measures performance in the headed browser
+> The browser keeps its own profile, separate from your regular Chrome. Import
+> a signed-in session with **Cookies** or /setup-browser-cookies when a test
+> needs one.
 
 Then proceed with whatever the user asked to do. If they didn't specify a task,
 ask what they'd like to test or browse.

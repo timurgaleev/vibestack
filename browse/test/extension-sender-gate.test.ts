@@ -78,7 +78,7 @@ describe('extension background sender gate', () => {
   });
 
   test('a content script cannot repoint the token at its own port', async () => {
-    for (const msg of [{ type: 'setPort', port: 45678 }, { type: 'fetchRefs' }, { type: 'sidebar-command', message: 'x' }]) {
+    for (const msg of [{ type: 'setPort', port: 45678 }, { type: 'fetchRefs' }]) {
       const before = bg.fetched.length;
       const resp = await send(bg.onMessage, msg, page);
       await new Promise(r => setTimeout(r, 20));
@@ -87,6 +87,13 @@ describe('extension background sender gate', () => {
     }
     const port = await send(bg.onMessage, { type: 'getPort' }, sidepanel);
     expect(port.port).toBe(34567);
+  });
+
+  test('the removed sidebar-command route is never called, even from the side panel', async () => {
+    const before = bg.fetched.length;
+    await send(bg.onMessage, { type: 'sidebar-command', message: 'x' }, sidepanel);
+    await new Promise(r => setTimeout(r, 20));
+    expect(bg.fetched.slice(before).some(u => u.includes('/sidebar-command'))).toBe(false);
   });
 
   test('the side panel still gets the token and the command proxy', async () => {

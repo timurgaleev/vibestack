@@ -40,7 +40,16 @@
         <button id="chat-screenshot-btn" class="terminal-toolbar-btn" title="Take a screenshot">📸 Screenshot</button>
         <button id="chat-cookies-btn" class="terminal-toolbar-btn" title="Import cookies from your browser">🍪 Cookies</button>
       </div>
-      <button class="terminal-toolbar-btn" id="terminal-restart-now" title="Restart Claude Code session">↻ Restart</button>
+      <div class="terminal-toolbar-actions">
+        <select id="terminal-fontsize" class="terminal-toolbar-btn" title="Terminal text size" aria-label="Terminal text size">
+          <option value="xs">XS</option>
+          <option value="sm">S</option>
+          <option value="md" selected>M</option>
+          <option value="lg">L</option>
+          <option value="xl">XL</option>
+        </select>
+        <button class="terminal-toolbar-btn" id="terminal-restart-now" title="Restart Claude Code session">↻ Restart</button>
+      </div>
     </div>
     <div class="terminal-bootstrap" id="terminal-bootstrap">
       <div class="terminal-bootstrap-icon">▸</div>
