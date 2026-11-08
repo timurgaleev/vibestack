@@ -53,25 +53,39 @@ When the user types `/health`, run this skill. `/health skills` runs
 ## Step 1: Detect Health Stack
 
 Read CLAUDE.md and look for a `## Health Stack` section. If found, parse the tools
-listed there and skip auto-detection.
+listed there and skip auto-detection. Then print `MISSING: <category> (not listed in
+## Health Stack)` for each of the five categories (typecheck, lint, test, deadcode,
+shell) the section omits.
 
 If no `## Health Stack` section exists, auto-detect available tools:
 
 ```bash
 # A Node tool installed as a devDependency is not on PATH; run it from node_modules/.bin.
 node_tool() { if [ -x "node_modules/.bin/${1}" ]; then echo "./node_modules/.bin/${1}"; else echo "${1}"; fi; }
-
+setopt +o nomatch 2>/dev/null || true
+health_found=$(
 # Type checker
 [ -f tsconfig.json ] && echo "TYPECHECK: $(node_tool tsc) --noEmit"
 
 # Linter
 [ -f biome.json ] || [ -f biome.jsonc ] && echo "LINT: $(node_tool biome) check ."
-setopt +o nomatch 2>/dev/null || true
 ls eslint.config.* .eslintrc.* .eslintrc 2>/dev/null | sed -n '1p' | xargs -I{} echo "LINT: $(node_tool eslint) ."
 [ -f .pylintrc ] || [ -f pyproject.toml ] && grep -q "pylint\|ruff" pyproject.toml 2>/dev/null && echo "LINT: ruff check ."
+command -v terraform >/dev/null 2>&1 && [ -n "$(find . -maxdepth 3 -name '*.tf' -not -path '*/.terraform/*' 2>/dev/null | sed -n '1p')" ] && echo "LINT: terraform fmt -check -recursive"
+command -v cfn-lint >/dev/null 2>&1 && cfn_files=$(find . -maxdepth 3 \( -name node_modules -o -name .git \) -prune -o -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' -o -name '*.template' \) -exec grep -l 'AWSTemplateFormatVersion' {} + 2>/dev/null | sort | tr '\n' ' ') && [ -n "$cfn_files" ] && echo "LINT: cfn-lint ${cfn_files% }"
+command -v actionlint >/dev/null 2>&1 && [ -d .github/workflows ] && echo "LINT: actionlint"
 
-# Test runner
-[ -f package.json ] && grep -q '"test"' package.json 2>/dev/null && echo "TEST: $(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).scripts.test)" 2>/dev/null)"
+# Test runner: only a non-empty, single-line scripts.test is a command.
+[ -f package.json ] && python3 -I -c '
+import json, sys
+try:
+    t = json.load(open(sys.argv[1])).get("scripts", {}).get("test")
+except Exception:
+    sys.exit(0)
+if isinstance(t, str) and t.strip():
+    t = t.strip()
+    print("TEST: none (multi-line test script; add it to a ## Health Stack section)" if "\n" in t else "TEST: " + t)
+' package.json
 [ -f pyproject.toml ] && grep -q "pytest" pyproject.toml 2>/dev/null && echo "TEST: pytest"
 [ -f Cargo.toml ] && echo "TEST: cargo test"
 [ -f go.mod ] && echo "TEST: go test ./..."
@@ -82,7 +96,24 @@ command -v knip >/dev/null 2>&1 && echo "DEADCODE: knip"
 
 # Shell linting
 command -v shellcheck >/dev/null 2>&1 && ls *.sh scripts/*.sh bin/*.sh 2>/dev/null | sed -n '1p' | xargs -I{} echo "SHELL: shellcheck"
+)
+[ -n "$health_found" ] && printf '%s\n' "$health_found"
+
+# One MISSING line, with its reason, per category nothing was detected for.
+health_missing() { printf 'MISSING: %s (%s)\n' "${1}" "${2}"; }
+printf '%s\n' "$health_found" | grep -q '^TYPECHECK: ' || health_missing typecheck "no tsconfig.json"
+printf '%s\n' "$health_found" | grep -q '^LINT: ' || health_missing lint "no biome, eslint or ruff config; no terraform, cfn-lint or actionlint target with its binary on PATH"
+if ! printf '%s\n' "$health_found" | grep '^TEST: ' | grep -vq '^TEST: none ('; then
+  test_reason=$(printf '%s\n' "$health_found" | sed -n 's/^TEST: none (\(.*\))$/\1/p' | sed -n '1p')
+  health_missing test "${test_reason:-no scripts.test, pytest, Cargo.toml or go.mod}"
+fi
+printf '%s\n' "$health_found" | grep -q '^DEADCODE: ' || health_missing deadcode "knip neither on PATH nor in package.json"
+printf '%s\n' "$health_found" | grep -q '^SHELL: ' || health_missing shell "shellcheck not on PATH, or no *.sh in ., scripts/ or bin/"
 ```
+
+A `TEST: none (...)` line is not a command: the test category is missing, for the
+reason in parentheses. Every `MISSING:` category is unavailable (`null` in Step 3)
+and its reason goes into the dashboard's Unavailable line.
 
 Use Glob to search for shell scripts:
 - `**/*.sh` (shell scripts in the repo)
@@ -294,8 +325,9 @@ Use these status labels:
 
 Always show the coverage lines. With skipped categories, label the score
 `— partial coverage` (e.g. `COMPOSITE SCORE: 8.0 / 10 — partial coverage`,
-`Coverage: 2/5 categories checked`) and list each unavailable category with its
-reason. When no check ran, show `COMPOSITE SCORE: N/A — no checks ran` and say which
+`Coverage: 2/5 categories checked`) and list each unavailable category with the
+reason from its Step 1 `MISSING:` line (or its SKIPPED reason), e.g.
+`Unavailable: deadcode (knip neither on PATH nor in package.json)`. When no check ran, show `COMPOSITE SCORE: N/A — no checks ran` and say which
 tools need installing or configuring; never show 10/10 for an empty run.
 
 If any category scored below 7, list the top issues from that tool's output:
