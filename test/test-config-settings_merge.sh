@@ -122,6 +122,11 @@ check "any(h.get('command') == 'my-own-precompact' for e in d['hooks']['PreCompa
                                                                    "S18: a machine's own PreCompact hook survives next to ours"
 check "sum('vibe-compact-snapshot' in h.get('command', '') for e in d['hooks']['PreCompact'] for h in e.get('hooks', [])) == 1" \
                                                                    "S19: a previous version of our PreCompact hook is replaced, not duplicated"
+check "any('vibe-compact-reanchor' in h.get('command', '') for e in d.get('hooks', {}).get('SessionStart', []) if e.get('matcher') == 'compact' for h in e.get('hooks', []))" \
+                                                                   "S19a: repo SessionStart compact re-anchor hook arrives"
+# git's credential store holds plaintext tokens, the same class of file as
+# ~/.netrc, which the deny list already names.
+check "'Read(~/.git-credentials)' in d['permissions']['deny']"   "S19b: the deny list covers ~/.git-credentials"
 
 # Re-running the merge on its own output changes nothing.
 python3 "$MERGE" "$SRC" "$SB/out.json" > "$SB/out2.json" 2>/dev/null

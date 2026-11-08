@@ -177,6 +177,12 @@ jobs:
       - name: Run make-pdf/test/*.test.ts
         run: bun test make-pdf/test/*.test.ts
 
+      # The committed diagram-render bundle: one DOMPurify at the pinned
+      # override, one mermaid, a dist that matches its recorded sha256. Reads
+      # files only, so it needs none of the bundle's own dependencies.
+      - name: Run lib/diagram-render/test/*.test.ts
+        run: bun test lib/diagram-render/test/
+
   browse:
     name: browse daemon unit tests
     runs-on: ubuntu-latest

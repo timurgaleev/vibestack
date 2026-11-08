@@ -153,7 +153,7 @@ Triggers: `update pr description`, `pr summary`, `summarize pr`
 ### `/improve-arch`
 Find deepening opportunities in an existing codebase — refactor shallow modules into deep ones (small interface, deep implementation) for testability and AI-navigability.
 
-Glossary-first approach: uses precise terms (module, interface, depth, seam, adapter, leverage, locality) and avoids drifting into "component/service/boundary." Three phases: explore (deletion test, friction notes), present numbered candidates, grilling loop on the chosen candidate. Optional integration with project `CONTEXT.md` domain glossary and `docs/adr/`. Sub-docs: `DEEPENING.md`, `INTERFACE-DESIGN.md`, `LANGUAGE.md`.
+Glossary-first approach: uses precise terms (module, interface, depth, seam, adapter, leverage, locality) and avoids drifting into "component/service/boundary." Four steps: scope first (a named direction, or the files that change most in git history), explore (deletion test, friction notes), present numbered candidates rated Strong, Worth exploring or Speculative with one top recommendation, and a grilling loop on the chosen candidate (one open decision at a time, each with a recommended answer). A load-bearing decision is handed to `/document-generate --adr`. Optional integration with project `CONTEXT.md` domain glossary and `docs/adr/`. Sub-docs: `DEEPENING.md`, `INTERFACE-DESIGN.md`, `LANGUAGE.md`.
 
 Triggers: `improve architecture`, `find refactoring opportunities`, `deepen modules`, `architecture review`, `make this more testable`
 
@@ -252,7 +252,7 @@ Triggers: `design shotgun`, `three designs`, `design variants`
 ### `/retro`
 Weekly engineering retrospective.
 
-Four sections: shipped (what landed), broke (incidents, regressions), blocked (what slowed the team), action items (concrete changes for next week). Pulls from git history and recent CI. Takes ~5 minutes.
+Four sections: shipped (what landed), broke (incidents, regressions), blocked (what slowed the team), action items (concrete changes for next week). Pulls from git history and recent CI. Takes ~5 minutes. Each retro is saved to the shared project store (`~/.vibestack/projects/<slug>/retros/`) with its recommendations, and the next retro scores each one as addressed, partial or open.
 
 Triggers: `retro`, `weekly retro`, `retrospective`
 
@@ -321,7 +321,7 @@ Triggers: `health check`, `project health`, `code quality dashboard`
 ### `/benchmark`
 Performance benchmarking.
 
-Collects Navigation Timing, FCP/LCP and resource data for each page via `$B js`, and writes a timestamped history file per run. `--baseline` captures a baseline file; later runs compare against it and flag regressions.
+Collects Navigation Timing, FCP/LCP and resource data for each page via `$B js` over 5 runs, and reports per-metric medians with their min-max range. `--baseline` captures a baseline; later runs compare against it, treat a median inside the baseline range as noise, and end with one `VERDICT:` line (faster, slower, no difference or inconclusive). `--quick` does a single run with no verdict. Reports and the immutable per-run metrics files are named by UTC timestamp under `.vibestack/benchmark-reports/`.
 
 Triggers: `benchmark`, `performance check`, `measure performance`
 
@@ -341,7 +341,7 @@ Triggers: `landing report`, `version queue`, `ship queue`, `what version comes n
 ### `/context-save`
 Save working context to resume later.
 
-Captures: current branch, uncommitted changes summary, decisions made, work remaining, open questions. Writes to a context file you can restore in a future session.
+Captures: current branch and HEAD commit, uncommitted changes summary, decisions made, work remaining, open questions. Writes to a context file you can restore in a future session. `/context-save <title> -- <next focus>` records what the next session should start on as its Next Focus.
 
 In Claude Code a PreCompact hook also writes a git-state snapshot before every compaction; `/context-restore` lists them. A snapshot is not a save — it holds git state and the transcript path only.
 
@@ -352,7 +352,7 @@ Triggers: `save context`, `context save`, `save my place`
 ### `/context-restore`
 Restore saved context and pick up where you left off.
 
-Reads the context file, summarizes the state, and picks up the active task. Use at the start of a session after `/context-save`.
+Reads the context file, summarizes the state, and picks up the active task. Use at the start of a session after `/context-save`. It compares the saved HEAD with the current one; when the branch moved or diverged since the save, it lists the commits and puts every remaining item under **Verify first**.
 
 Triggers: `restore context`, `context restore`, `pick up where I left off`
 
@@ -431,7 +431,7 @@ Triggers: `full safety mode`, `guard against mistakes`, `maximum safety`, `guard
 ### `/vibe`
 Router for the suite — name the task, get pointed at the right skill. Mostly for Codex and other hosts with no slash-command picker, where a skill is referenced as `$vibe` inside an ordinary message; `agents/openai.yaml` names it as the pack's entry point. Routes on intent rather than listing every skill, and hands off to this file for the full index.
 
-For a failure it makes one read-only check of the cause you named (or one triage pass over the evidence when the cause is unknown) and fixes it only when that alone proves the root cause; otherwise it hands off to `/investigate`. Typed-only skills (`/land-and-deploy`, `/vibe-upgrade`) are named for you to type, never invoked.
+For a failure it makes one read-only check of the cause you named (or one triage pass over the evidence when the cause is unknown) and fixes it only when that alone proves the root cause; otherwise it hands off to `/investigate`. An approved multi-step plan goes to an installed plan-execution skill, or else to the `/plan-eng-review` cold-start briefs lane by lane, then `/review` and `/ship`. Typed-only skills (`/land-and-deploy`, `/vibe-upgrade`) are named for you to type, never invoked.
 
 Triggers: `which vibestack skill`, `list vibestack skills`, `vibe help`
 
@@ -546,7 +546,7 @@ Triggers: `skillify this`, `make this a skill`, `save this flow as a skill`
 ---
 
 ### `/diagram`
-Render a Mermaid diagram offline — the renderer is vendored in the repo, so nothing is fetched at render time or afterwards. Emits four artifacts: `.mmd` (the source to edit), `.svg` (vector), `.html` (the SVG inlined, opens anywhere), and `.png` (for chat and READMEs).
+Render a Mermaid diagram offline — the renderer is vendored in the repo, so nothing is fetched at render time or afterwards. Emits five artifacts: `.mmd` (the source to edit), `.svg` (vector), `.html` (the SVG inlined, opens anywhere), `.png` (for chat and READMEs), and `.excalidraw` (an editable scene for excalidraw.com or the VS Code extension; an edited scene can be rendered back to SVG).
 
 Triggers: `draw a diagram`, `make a mermaid diagram`, `render this flowchart`
 
@@ -569,7 +569,7 @@ Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`
 ---
 
 ### `/vibe-gc`
-Audit what is installed around the agent and retire what the owner confirms. `vibe-gc scan` ranks at most 20 candidates across all five runtime roots: skill directories no `.vibestack-manifest` claims (missing or empty `SKILL.md`, duplicate names), hook scripts nothing in the user settings or another hook references, duplicate or `Bash(*)`-shadowed permission entries, configured MCP servers, and old caches. Pack-owned skills are never candidates, unmeasured usage never counts as unused, and a server that fails to connect is evidence, not a verdict. Each item is confirmed on its own; a confirmed item moves to `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, and `vibe-gc undo <date>` moves it back. Inside a repository, a log over 1 MB under its `.vibestack/` is a `repo` candidate: `vibe-gc trim` keeps the last 256 KB and keeps the original in the trash (undo does not restore a trim; the log line names the original), and refuses while that repository's browse daemon may run. Settings, `~/.claude.json`, `.mcp.json` and transcripts are refused, and MCP, cron and launchd state is never changed. Headless runs audit only.
+Audit what is installed around the agent and retire what the owner confirms. `vibe-gc scan` ranks at most 20 candidates across all five runtime roots: skill directories no `.vibestack-manifest` claims (missing or empty `SKILL.md`, duplicate names), hook scripts nothing in the user settings or another hook references, duplicate or `Bash(*)`-shadowed permission entries, configured MCP servers, and old caches. Pack-owned skills are never candidates, unmeasured usage never counts as unused, and a server that fails to connect is evidence, not a verdict. Each item is confirmed on its own; a confirmed item moves to `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, and `vibe-gc undo <date>` moves it back. Inside a repository, a log over 1 MB under its `.vibestack/` is a `repo` candidate: `vibe-gc trim` keeps the last 256 KB and keeps the original in the trash (undo puts the original back and keeps the records appended since the trim), and refuses while that repository's browse daemon may run. Settings, `~/.claude.json`, `.mcp.json` and transcripts are refused, and MCP, cron and launchd state is never changed. Headless runs audit only.
 
 Triggers: `vibe gc`, `clean up skills`, `garbage collect config`, `prune unused skills`
 

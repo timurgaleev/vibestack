@@ -42,6 +42,7 @@
       "Read(~/.aws/credentials)",
       "Read(~/.config/gh/hosts.yml)",
       "Read(~/.docker/config.json)",
+      "Read(~/.git-credentials)",
       "Read(~/.netrc)",
       "Read(~/.ssh/*.pem)",
       "Read(~/.ssh/id_*)"
@@ -72,6 +73,18 @@
           {
             "type": "command",
             "command": "f=\"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-compact-snapshot\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-compact-reanchor\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
             "timeout": 10
           }
         ]

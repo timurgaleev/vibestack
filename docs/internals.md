@@ -96,6 +96,8 @@ new.
 | `vibe-skill-usage` | Read-only skill-usage counts from the analytics log and Claude transcripts; other runtimes are reported unmeasured |
 | `vibe-gc` | Audit-only configuration scan for `/vibe-gc` (unclaimed skills, orphan hooks, duplicate or shadowed permissions, configured MCP servers, old caches across all five runtime roots); `trash` soft-deletes into `~/.vibestack/gc-trash/<date>/` with an undo line in `gc-log.md`, `undo <date>` moves items back; a `repo` row is a log over 1 MB under the current repository's `.vibestack/`, and `trim` keeps its last 256 KB with the original kept in the trash (refused while that repository's browse daemon may run). Refuses settings, `~/.claude.json`, `.mcp.json`, transcripts, project state and manifest-claimed skills |
 | `vibe-compact-snapshot` | Claude PreCompact hook: a git-state snapshot per project before compaction, never transcript content |
+| `vibe-compact-reanchor` | Claude SessionStart hook (matcher `compact`): an `additionalContext` reminder to re-read the running skill's `SKILL.md` and any file before editing it, encoded with the careful skill's `vibe_hook_json_string` (plain text when that helper is not installed) |
+| `vibe-error-capture` | Run one CLI invocation in isolation for `/devex-review`: `env -i` plus PATH and a scratch HOME and cwd, stdin from `/dev/null`, a timeout that kills the process group; `--pass-env NAME` only with `--approved`. Prints one JSON object (exit code, timeout, redacted stdout/stderr heads) |
 | `vibe-session-kind` | Classify the session: spawned / headless / interactive. `spawned` needs `OPENCLAW_SESSION` or an affirmative `VIBE_SPAWNED` (`0`/`false`/`no`/`off` do not count); the dispatching agent sets `VIBE_SPAWNED=1`, since an agent-tool child inherits no environment |
 | `vibe-repo-mode` | Emit `REPO_MODE=solo\|collaborative` from git history |
 | `vibe-telemetry-log` | Append a telemetry event — opt-in, no-op unless enabled |
@@ -114,7 +116,7 @@ new.
 | `vibe-next-version` | Next free VERSION slot, skipping versions claimed by open PRs against the same base — each PR's claim is the VERSION file at its head (`--exclude-pr` drops your own); `complete:false` when any claim could not be read; four-part versions take a `micro` level |
 | `vibe-diff-scope` | Print `SCOPE_FRONTEND` / `BACKEND` / `PROMPTS` / `TESTS` / `DOCS` / `CONFIG` / `MIGRATIONS` / `API` / `AUTH` for the branch's own change: the merge-base with `origin/<base>` (or `<base>` when there is no such remote ref) to the working tree, untracked files and a renamed file's old path included. Every path is checked against every category, ignoring case, so one file can set several flags. When git cannot produce the diff it prints only `SCOPE_UNAVAILABLE=true` and exits 2. Drives specialist dispatch in `/review` and `/ship` and canary depth in `/land-and-deploy` |
 | `vibe-redact` / `vibe-redact-prepush` | Secret redaction for text about to leave the machine, and the pre-push guard that enforces it. `vibe-redact scan --file <path> [--file …]` is the deterministic, fail-closed scan the publishing skills (`/spec`, `/document-generate`, `/document-release`, `/ship`) run before any external write: exit 0 clean, 1 finding (`HIGH  <label>  <path>:<line>  <masked>`), 2 could not run — the same matcher and patterns as the pre-push guard. Both skip documentation placeholders judged on the matched value alone (the AWS docs keys, `<token>`, `xxxxxx`, a value starting or ending in `example`, a whole-value expansion, a short stub like `sk-...`, a common dev password in a connection string), and the guard blocks a push when the matcher itself fails or when it adds an unresolved merge-conflict marker outside a `text`/`diff` fence of a Markdown file |
-| `vibe-design` | Design-asset generation; reports `DESIGN_NOT_AVAILABLE` without an API key. `variants` never overwrites (an existing `variant-A.png` makes the next image `variant-A-2.png`) and prints `requested:`, one `saved: <path>` per image written, `failures:` and one `failed: <variant>: <reason>` per image not saved — callers use only the `saved:` paths. `--brief-file <path>` reads the brief from a file, so skills never put brief text in shell source. Exit 0 all saved, 3 partial, 2 nothing saved (with a `DESIGN_ERROR:` line), 1 usage error |
+| `vibe-design` | Design-asset generation; reports `DESIGN_NOT_AVAILABLE` without an API key. `variants` never overwrites (an existing `variant-A.png` makes the next image `variant-A-2.png`) and prints `requested:`, one `saved: <path>` per image written, `failures:` and one `failed: <variant>: <reason>` per image not saved — callers use only the `saved:` paths. `--brief-file <path>` reads the brief from a file, so skills never put brief text in shell source; `variants --briefs-file <path>` generates a whole set in one call, one image per brief under its own letter. `OPENAI_API_KEY` selects OpenAI (`VIBE_DESIGN_MODEL`, default `gpt-image-1`); with no OpenAI key, `GEMINI_API_KEY` selects Gemini (`VIBE_DESIGN_GEMINI_MODEL`); `status` prints the provider in use. Exit 0 all saved, 3 partial, 2 nothing saved (with a `DESIGN_ERROR:` line), 1 usage error |
 | `vibe-specialist-stats` | Aggregate specialist-reviewer findings across runs |
 | `vibe-tree-hash` | Content fingerprint of the tracked working tree — a git tree id, so a commit or rebase that changes no bytes changes no hash |
 | `vibe-evidence` | Record command + exit status + tree hash, and answer "did THIS tree pass?" from the ledger instead of from prose. A single argument after `--` runs as a shell command line and is recorded verbatim. `check` narrows with `--expect-cmd C` (the recorded line must equal C), `--max-age H` (older passes are STALE) and `--allow-paths P` (a run at another tree still counts when only release bookkeeping such as `CHANGELOG.md,VERSION` differs); a recorded tree the object store no longer has never matches |
@@ -260,7 +262,7 @@ touches real state. Run one directly with `bash test/<name>`.
 
 | Suite | Covers |
 |-------|--------|
-| `test-hooks.sh` | The `/careful` and `/freeze` PreToolUse hooks — decision wire format, both fail-closed polarities, the escaped-quote extractor, boundary escapes, force-push tiers |
+| `test-hooks.sh` | The `/careful` and `/freeze` PreToolUse hooks — decision wire format, both fail-closed polarities, the escaped-quote extractor, boundary escapes, force-push tiers — plus the Copilot user hook file and the Claude SessionStart `compact` re-anchor envelope |
 | `test-brand-audit.sh` | `vibe-brand-audit` — what it must reject, and equally what it must NOT fire on |
 | `test-render-skill.sh` | `vibe-render-skill`: include expansion, nested-include rejection, infra-error handling |
 | `test-install-integration.sh` | `./install` / `./uninstall` across targets: byte-identical renders, atomic swap, recovery, PTY-driven prompts (`PTY_TIMEOUT` raises the 60s default for slow machines) |
@@ -335,6 +337,26 @@ touches real state. Run one directly with `bash test/<name>`.
 | `test-host-routing.sh` | Host-dependent routing: the `/vibe` index, the second-opinion pick, the memrain code-graph rule |
 | `test-redact-scan.sh` | `vibe-redact scan`: deterministic, fail-closed, sharing the pre-push guard's matcher |
 | `test-compliance-runner.sh` | The rule/skill compliance runner's bun tests against a fake `claude` — no tokens spent |
+| `test-skill-prefix.sh` | Every rendered skill carries the compaction re-anchor note within its first 20,000 bytes |
+| `test-positional-literals.sh` | No skill text carries a bare `$N` the host would replace with an invocation argument |
+| `test-python-isolation.sh` | Every inline `python3 -c` / `python3 -` in `bin/`, `lib/*.sh` and `skills/*/bin/` runs with `-I`, and a `json.py` in the working directory is never imported |
+| `test-state-root.sh` | Every state path a skill's fenced code runs honours `VIBESTACK_HOME` |
+| `test-cursor-rules-consistency.sh` | `config/cursor/rules/*.mdc` mirror `config/claude/rules/*.md`: headings, table rows and the sentences other runtimes rely on |
+| `test-address-pr-review.sh` | `/address-pr-review` reads every open thread before the first edit, checks whether code was deliberate before changing it, and applies the flake rerun rule |
+| `test-agent-eval-harness.sh` | The `/agent-eval` runner skeleton, executed against fixture cases with stubbed project functions: holdout separation and its other controls |
+| `test-aws-skills-contract.sh` | The AWS review skills scope findings to the account and region the CLI confirmed, run against a PATH `aws` shim |
+| `test-benchmark-schema.sh` | `/benchmark`: one page load feeds every metric, 5 runs with medians and ranges, the verdict line and UTC report names |
+| `test-iac-review-contract.sh` | `/iac-review` ranks a Terraform plan's stateful replaces, destroys, churn and secret outputs, and an unreadable plan never reads as clean |
+| `test-improve-arch-contract.sh` | `/improve-arch`: scope before exploration, rated candidates with one top recommendation, the fixed grilling method |
+| `test-investigate-contract.sh` | `/investigate`: a red feedback loop before hypotheses, one variable per probe, a regression test at a real seam run red first |
+| `test-landing-report.sh` | `/landing-report` says when the version queue may be incomplete |
+| `test-qa-rubric.sh` | `/qa` and `/qa-only` share one health rubric, rendered byte-identical, scored over the categories actually run |
+| `test-retro-prs.sh` | `/retro` counts merged PRs/MRs through the platform it detected, bounded at both ends of the window |
+| `test-setup-deploy-config.sh` | `/setup-deploy` writes a confirmed Deploy Configuration naming the resolved default branch; `/canary` alerts only on confirmed findings |
+| `test-spec-execute.sh` | `/spec --execute`: the executor brief and spawn line forbid commits, pushes and PRs and carry a budget, a turn cap and explicit tool grants |
+| `test-unslop-gate.sh` | `/unslop` cannot hand back a rewrite that changed code, inline code, headings or link targets |
+| `test-vibe-design-batch.sh` | `vibe-design variants --briefs-file` against a stub image endpoint: one file per brief, retries, the Gemini provider |
+| `test-vibe-error-capture.sh` | `vibe-error-capture` runs a CLI's error path in isolation and reports only redacted output |
 
 ## CI (`.github/workflows/tests.yml`)
 
@@ -349,8 +371,9 @@ legs `brew install bash` first. Six jobs run beyond the matrix:
 - **installed skills match sources** — installs into an isolated `HOME` and
   proves every rendered `SKILL.md` still matches its source.
 - **make-pdf and browse daemon unit tests** — `bun test` over `make-pdf/test/*.test.ts`
-  (after building the binary) and `browse/test/`, with Chromium installed for the
-  navigation-guard fixture.
+  (after building the binary), `lib/diagram-render/test/` (the committed
+  diagram bundle's integrity check) and `browse/test/`, with Chromium installed
+  for the navigation-guard fixture.
 - **skill listing fits the context budget** — `vibe-context-budget` over the
   rendered listing; an over-budget result is a warning annotation, not a failure.
 - **hook scripts are runnable** — every skill hook and `bin/` script carries the

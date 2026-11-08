@@ -161,9 +161,12 @@ The Claude projection ships an `attribution` object (empty `commit` and `pr`,
 bin is not installed). That hook writes the git
 state and the transcript path — never its contents — to
 `~/.vibestack/projects/<slug>/compact-snapshots/` before each compaction, keeping
-the 10 newest; `VIBESTACK_COMPACT_SNAPSHOT=0` turns it off. The settings merge
-is per hook event: it sets `PreCompact` and keeps every other event a tool added
-there, such as RTK's `PreToolUse`.
+the 10 newest; `VIBESTACK_COMPACT_SNAPSHOT=0` turns it off. A `SessionStart`
+hook with the `compact` matcher runs `vibe-compact-reanchor` (also a no-op when
+not installed), which reminds the model after a compaction to re-read the skill
+it was following from disk and any file before editing it again. The settings
+merge is per hook event: it sets `PreCompact` and `SessionStart` and keeps
+every other entry a tool added there, such as RTK's `PreToolUse`.
 
 - Skip entirely with `-R` (or `RTK=false`).
 - The installer tracks the latest tagged release and verifies SHA-256

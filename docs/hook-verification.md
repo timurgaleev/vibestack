@@ -69,6 +69,12 @@ observe whether the skill's hook fires:
    - **FAIL** if the agent edits the file with no friction.
    - **INCONCLUSIVE** if behavior differs from Claude Code.
 
+On every host, the freeze hook denies a Windows drive-letter (`C:\...`,
+`C:/...`), UNC (`\\server\share`) or other backslash (`..\out`) path outright:
+bash does not read it as absolute or as separated, so the hook would otherwise
+judge it as `<cwd>/C:\...` — inside the boundary whenever the session is.
+`bash test/test-hooks.sh` executes these rows.
+
 ### Test 3 — `/guard` (uses careful's hook script via cross-skill path)
 
 If careful's Test 1 passed, also verify guard:
@@ -137,6 +143,28 @@ commands manually.
   env var shim in install (track as v1.5 candidate `vibe certify` /
   `vibe-hook-shim`) or a per-target frontmatter rewrite.
 
+## Claude Code session hooks
+
+Two hooks in `config/claude/settings.json` are not skill-scoped; the
+configuration payload merges them into `~/.claude/settings.json`. Each runs a
+`~/.vibestack/bin` script and exits 0 with no output when it is not installed.
+
+| Event | Matcher | Runs | Output |
+|---|---|---|---|
+| `PreCompact` | none | `vibe-compact-snapshot` | `{}`; writes a git-state snapshot per project |
+| `SessionStart` | `compact` | `vibe-compact-reanchor` | `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"<reminder>"}}` |
+
+After a compaction, the copy of a long skill in context may be cut off. Every
+skill opens with a note naming its `SKILL.md`; the `SessionStart` reminder tells
+the model to read that file again from disk and to re-read any file before
+editing it. The string is encoded by `vibe_hook_json_string` from the careful
+skill's `hook-extract.sh`; without that helper (a configuration-only install)
+the reminder is printed as plain text, which `SessionStart` also adds to the
+context. `bash test/test-hooks.sh` runs the registered command against a scratch
+`HOME` and checks the envelope. Whether a live session acts on the reminder
+after a real compaction has not been verified here: it needs an interactive
+session long enough to compact.
+
 ## Copilot CLI
 
 Copilot CLI ignores the `hooks:` key in SKILL.md frontmatter: its hooks are
@@ -192,11 +220,6 @@ that they agree, and runs each command from the hook file against a scratch
 - `NotebookEdit` has no Copilot tool, so there is no matcher for it.
 - The entries carry only a `bash` command; native Windows PowerShell sessions
   run no command for them.
-- `/freeze` denies a Windows drive-letter (`C:\...`, `C:/...`), UNC
-  (`\\server\share`) or other backslash (`..\out`) path outright on every host:
-  bash does not read it as absolute or as separated, so the hook would
-  otherwise judge it as `<cwd>/C:\...` — inside the boundary whenever the
-  session is. `bash test/test-hooks.sh` executes these rows.
 
 ### Live verification
 
