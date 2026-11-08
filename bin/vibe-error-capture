@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# vibe-error-capture — run one CLI invocation in isolation and print its result
+# as redacted JSON. /devex-review uses it to trigger a product's error paths.
+#
+# Usage:
+#   vibe-error-capture [--timeout SECS] [--head BYTES]
+#                      [--approved [--pass-env NAME]...] -- <command> [args...]
+#
+# The command runs with an empty environment (`env -i`) plus PATH and a fresh
+# HOME, in a fresh scratch cwd, with stdin from /dev/null, under a timeout
+# (default 20 s; the whole process group is killed on expiry). --pass-env NAME
+# forwards one caller variable and is refused without --approved: a variable is
+# passed only when the user approved that run. Scratch HOME and cwd are removed
+# afterwards.
+#
+# Output (stdout, one JSON object):
+#   exit_code          the command's exit status; null when it timed out;
+#                      127 when it could not be found, 126 when not executable
+#   timed_out          true when the timeout killed it
+#   stdout_head        the first --head bytes (default 4000) of stdout, redacted
+#   stderr_head        the same for stderr
+#   stdout_truncated, stderr_truncated
+#   secret_findings    [{stream, line, label}] — credentials the shared
+#                      vibe-redact matcher found and masked in the output
+#
+# Exit codes: 0 the run was captured (whatever the command's own status);
+# 2 usage error; 3 the capture or the redaction could not run — nothing is
+# printed then, because unredacted output must never reach the caller.
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+MATCHER="$SELF_DIR/vibe-redact-prepush"
+
+usage() { echo "usage: vibe-error-capture [--timeout SECS] [--head BYTES] [--approved [--pass-env NAME]...] -- <command> [args...]" >&2; exit 2; }
+
+timeout_s=20; head=4000; approved=0; pass_env=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --timeout) [ $# -ge 2 ] || usage; timeout_s="$2"; shift 2 ;;
+    --head) [ $# -ge 2 ] || usage; head="$2"; shift 2 ;;
+    --approved) approved=1; shift ;;
+    --pass-env) [ $# -ge 2 ] || usage; pass_env+=("$2"); shift 2 ;;
+    --) shift; break ;;
+    *) echo "vibe-error-capture: unknown option '$1' (put the command after --)" >&2; usage ;;
+  esac
+done
+[ $# -gt 0 ] || usage
+case "$timeout_s" in ''|*[!0-9]*|0) echo "vibe-error-capture: --timeout must be a positive integer" >&2; exit 2 ;; esac
+case "$head" in ''|*[!0-9]*|0) echo "vibe-error-capture: --head must be a positive integer" >&2; exit 2 ;; esac
+for name in ${pass_env[@]+"${pass_env[@]}"}; do
+  case "$name" in
+    [A-Za-z_]*) case "$name" in *[!A-Za-z0-9_]*) echo "vibe-error-capture: bad --pass-env name '$name'" >&2; exit 2 ;; esac ;;
+    *) echo "vibe-error-capture: bad --pass-env name '$name'" >&2; exit 2 ;;
+  esac
+done
+if [ "${#pass_env[@]}" -gt 0 ] && [ "$approved" -ne 1 ]; then
+  echo "vibe-error-capture: --pass-env forwards caller secrets; it needs --approved (the user approved this run)" >&2
+  exit 2
+fi
+[ -r "$MATCHER" ] || { echo "vibe-error-capture: redaction matcher $MATCHER missing — refusing to print unredacted output" >&2; exit 3; }
+
+rc=0
+python3 -I -c '
+import json, os, shutil, signal, subprocess, sys, tempfile, threading
+
+timeout_s, head, matcher, n = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], int(sys.argv[4])
+names, cmd = sys.argv[5:5 + n], sys.argv[5 + n:]
+SCAN_CAP = 65536
+
+
+def drain(fd, sink):
+    # Keep only the first SCAN_CAP bytes, but read to EOF so the child never
+    # blocks on a full pipe; sink[1] counts every byte for the truncated flag.
+    while True:
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            return
+        sink[1] += len(chunk)
+        room = SCAN_CAP - len(sink[0])
+        if room > 0:
+            sink[0] += chunk[:room]
+
+
+stage = tempfile.mkdtemp(prefix="vibe-error-capture.")
+try:
+    home, cwd = os.path.join(stage, "home"), os.path.join(stage, "cwd")
+    os.mkdir(home); os.mkdir(cwd)
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": home}
+    env.update({k: os.environ[k] for k in names if k in os.environ})
+    timed_out, code = False, None
+    try:
+        p = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        sinks = ([bytearray(), 0], [bytearray(), 0])
+        readers = [threading.Thread(target=drain, args=(pipe.fileno(), sink), daemon=True)
+                   for pipe, sink in zip((p.stdout, p.stderr), sinks)]
+        for t in readers:
+            t.start()
+        try:
+            code = p.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            p.wait()
+        for t in readers:
+            t.join(5)  # a child that left the group can hold a pipe open
+        (out, out_total), (err, err_total) = ((bytes(b), n) for b, n in sinks)
+    except FileNotFoundError:
+        code, out, err = 127, b"", ("command not found: %s\n" % cmd[0]).encode()
+        out_total, err_total = 0, len(err)
+    except PermissionError:
+        code, out, err = 126, b"", ("permission denied: %s\n" % cmd[0]).encode()
+        out_total, err_total = 0, len(err)
+
+    result = {"exit_code": code, "timed_out": timed_out}
+    findings = []
+    for stream, raw, total in (("stdout", out, out_total), ("stderr", err, err_total)):
+        text = raw[:SCAN_CAP].decode("utf-8", "replace")
+        scan = os.path.join(stage, stream + ".txt")
+        with open(scan, "w", encoding="utf-8") as f:
+            f.write(text)
+        r = subprocess.run(["bash", "-c", ". \"$1\" && redact_find \"$(cat \"$2\")\"", "_", matcher, scan],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env={"PATH": env["PATH"], "HOME": home})
+        if r.returncode != 0:
+            sys.stderr.write("vibe-error-capture: the redaction matcher failed on %s\n" % stream)
+            sys.exit(3)
+        for row in r.stdout.decode("utf-8", "replace").splitlines():
+            line, label, span = (row.split("\t", 2) + ["", ""])[:3]
+            if not span:
+                continue
+            text = text.replace(span, "[REDACTED %s]" % label)
+            findings.append({"stream": stream, "line": int(line) if line.isdigit() else None, "label": label})
+        cut = text.encode("utf-8")[:head].decode("utf-8", "ignore")
+        result[stream + "_head"] = cut
+        result[stream + "_truncated"] = total > len(cut.encode("utf-8"))
+    result["secret_findings"] = findings
+    print(json.dumps(result, indent=2))
+finally:
+    shutil.rmtree(stage, ignore_errors=True)
+' "$timeout_s" "$head" "$MATCHER" "${#pass_env[@]}" ${pass_env[@]+"${pass_env[@]}"} "$@" || rc=$?
+[ "$rc" -eq 0 ] || exit 3
