@@ -108,8 +108,9 @@ For a `repo` row (an oversized log under a project's `.vibestack/`):
 It keeps the last 256 KB and keeps the untrimmed original in
 `~/.vibestack/gc-trash/<date>/repo/`; it refuses while that repository's browse
 daemon may be running, and for a log with no line break in its last 256 KB.
-`undo` does not restore a trim: the gc-log line names the original, and
-`mv '<original>' '<log>'` puts it back.
+`undo <date>` puts the original back, with any records appended since the trim
+kept at the end; it leaves the original in the trash if the log no longer starts
+with the kept tail.
 
 The bin moves it to `~/.vibestack/gc-trash/<date>/<channel>/` and appends an
 `undo:` line to `~/.vibestack/gc-log.md`. A `REFUSED:` line means the path is

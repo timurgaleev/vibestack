@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.58.0 — 2026-11-08
+
+### Fixed
+
+- Secret scan: the env-style rule now judges only the value's first shell word.
+  A mixed-case value that starts with `$` (`$ecretP4ss`) and a short value
+  ending in `...` (`P4ss...`) are refused instead of passing as placeholders,
+  and a quoted `KEY = "value"` is matched. Ordinary shell such as
+  `KEY=$1  # first argument` no longer blocks a push. The pre-push guard, the
+  log sinks, `vibe-evidence` and the canonical pattern list change together.
+- browse: `newtab`, `tabs` and `tab` inside a pinned request no longer move or
+  mark the shared active tab. In a headed session the tab listener lets
+  browse's own opens register first, so a pinned `newtab` no longer turns up
+  as a second, shared-active tab.
+- browse: `/health` reports a hung browser process as unhealthy, and repeated
+  probes of a stuck tab share one pending check. `status` no longer reopens a
+  blank tab, the last-tab close reopens through the shared recovery, headed
+  `viewport auto` fits the window again, re-pairing an exact host to its
+  wildcard keeps the session, and the agent names `.` and `..` are refused.
+- `uninstall --with-config` restores a pre-install list entry that a merge
+  had removed.
+- `/claude` and `/codex` date grounding rebuilds the prompt path from its
+  printed name, so a path that holds a quote neither breaks the block nor runs
+  as code.
+- Ship: a failed GitLab MR lookup stops the run instead of opening a
+  duplicate MR. Every test lane reports its own count, and a counter that
+  prints nothing reads as zero tests. Jest, Vitest and mocha counts are
+  recognised, and an adversarial pass with no coverage is never recorded as
+  complete.
+- Land-and-deploy files the deploy log under the PR's branch and never runs a
+  trigger written as prose. The landing report treats 1.2.4 and 1.2.4.0 as one
+  slot. The evidence ledger also scans `--label` and `--skill` for secrets.
+- make-pdf's DOCX image guard reads only real `src` attributes, so prose that
+  mentions `src=` no longer fails an export or drops a valid image.
+- Plan, QA, security, cost, deploy, design and debugging skills: safer temp-file
+  cleanup, reports that never truncate or overwrite each other, scope and
+  timeout fixes, and skill text that no longer contradicts itself. A plan
+  review whose outside voice did not run records `unavailable (<cause>)`
+  instead of N/A.
+
+### Changed
+
+- Source lint reads bytes, fails when any awk pass fails, treats every bare
+  positional as a finding, follows fences inside list items and scans skill
+  sub-docs. `./install` no longer prints its authoring warnings. The
+  python-isolation and heredoc ratchets now also cover `install`, `uninstall`
+  and `lib/`.
+- `/careful` asks when `core.hooksPath` is set to a number or through
+  `GIT_CONFIG_KEY_n` / `GIT_CONFIG_PARAMETERS`. `/freeze` denies a payload that
+  names different paths in its path fields. `vibe-gc undo` restores a trimmed
+  log.
+- Docs: corrected skill counts and catalog entries, added internals rows for
+  every bin and suite, and `TODOS.md` now lists only what is still open.
+
+### Added
+
+- Claude Code: a `SessionStart` hook with the `compact` matcher
+  (`bin/vibe-compact-reanchor`) tells the model to re-read the running skill
+  and any file before editing it after a compaction.
+- The Claude deny list covers `~/.git-credentials`. CI runs the diagram-render
+  bundle test, and the catalog test checks the skill-map count and the
+  internals index.
+
 ## 1.57.2 — 2026-11-08
 
 ### Fixed

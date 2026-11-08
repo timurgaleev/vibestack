@@ -12,7 +12,8 @@
 #
 # Three parts:
 #   1. the scanner flags exactly the shapes it should (fixtures),
-#   2. the ratchet: every script under bin/ and skills/*/bin/ is clean,
+#   2. the ratchet: every script under bin/, skills/*/bin/ and lib/, and
+#      install and uninstall, is clean,
 #   3. behaviour: the guard line the bins carry really switches this bash from
 #      a pipe to a file (only observable on bash 5.2+).
 set -uo pipefail
@@ -25,13 +26,31 @@ ok() { pass=$((pass+1)); echo "  ok   $1"; }
 no() { fail=$((fail+1)); echo "  FAIL $1"; [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/       /'; }
 
 # Prints "<path>:<line>: <size> B heredoc <tag> without BASH_COMPAT=50 before it"
-# for each offending heredoc in the given files; non-shell files are skipped.
+# (or "... here-string ...") for each offending heredoc or here-string in the
+# given files; non-shell files are skipped.
 SCAN='
 import re, sys
 
 LO, HI = 512, 64 * 1024
-OPEN = re.compile(r"(?<!<)<<(-?)[ \t]*(\\?)([\x27\"]?)([A-Za-z_][A-Za-z0-9_]*)\3")
+OPEN = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*(?:([\x27\"])([^\x27\"]+)\2|(\\?)([A-Za-z_][A-Za-z0-9_]*))")
+# (( ... )) and $(( ... )) hold arithmetic, where << is a shift.
+ARITH = re.compile(r"\(\((?:[^()]|\([^()]*\))*\)\)")
 GUARD = re.compile(r"^(\[ .*\] \|\| )?BASH_COMPAT=50[ \t]*(#.*)?$")
+HSTR = re.compile(r"<<<[ \t]*")
+
+def herestring(rest):
+    """(bytes, expands) for the word after <<<, newline included."""
+    if rest.startswith("\x27"):
+        j = rest.find("\x27", 1)
+        return len(rest[1:j if j > 0 else None].encode("utf-8")) + 1, False
+    if rest.startswith("\""):
+        j = 1
+        while j < len(rest) and rest[j] != "\"":
+            j += 2 if rest[j] == "\\" else 1
+        word = rest[1:j]
+    else:
+        word = re.match(r"[^ \t;|&)]*", rest).group(0)
+    return len(word.encode("utf-8")) + 1, bool(re.search(r"[$`]", word))
 
 for path in sys.argv[1:]:
     try:
@@ -51,8 +70,13 @@ for path in sys.argv[1:]:
             guarded = True
         if line.lstrip().startswith("#"):
             continue
-        for m in OPEN.finditer(line):
-            dash, literal, tag = m.group(1), m.group(2) or m.group(3), m.group(4)
+        for m in HSTR.finditer(line):
+            size, expands = herestring(line[m.end():])
+            if not guarded and size <= HI and (size > LO or expands):
+                print("%s:%d: %d B here-string without BASH_COMPAT=50 before it" % (path, i, size))
+        for m in OPEN.finditer(ARITH.sub("", line)):
+            dash = m.group(1)
+            literal, tag = (True, m.group(3)) if m.group(2) else (bool(m.group(4)), m.group(5))
             start, body = i, []
             while i < len(lines):
                 cur = lines[i].lstrip("\t") if dash else lines[i]
@@ -120,24 +144,47 @@ f="$TMP/fx2/literal-small"
 out="$(scan "$f")"
 [ -z "$out" ] && ok "a small quoted heredoc is literal and not flagged" || no "small quoted heredoc flagged" "$out"
 
+# A here-string takes the same pipe path: flagged when it expands anything
+# (size known only at run time) or holds more than 512 B literally.
 f="$TMP/fx2/herestring"
-{ echo '#!/usr/bin/env bash'; printf 'grep x <<< "%s"\n' "$(body 2000)"; echo 'y=$((1 << 20))'; } > "$f"
+{ echo '#!/usr/bin/env bash'; printf 'grep x <<< "%s"\n' "$(body 2000)"; echo 'while read -r l; do :; done <<< "$out"';
+  echo "grep x <<<'abc'"; echo 'grep x <<< plain'; echo 'y=$((1 << 20))'; } > "$f"
 out="$(scan "$f")"
-[ -z "$out" ] && ok "here-strings and arithmetic shifts are not heredocs" || no "non-heredoc << flagged" "$out"
+printf '%s\n' "$out" | grep -q 'herestring:2: .*here-string' && ok "a 2000 B literal here-string is flagged" || no "large here-string not flagged" "$out"
+printf '%s\n' "$out" | grep -q 'herestring:3: .*here-string' && ok "a here-string that expands a variable is flagged" || no "expanding here-string not flagged" "$out"
+printf '%s\n' "$out" | grep -qE 'herestring:(4|5|6):' && no "a small literal here-string or a shift flagged" "$out" \
+  || ok "small literal here-strings and arithmetic shifts are not flagged"
+f="$TMP/fx2/herestring-guarded"
+{ echo '#!/usr/bin/env bash'; echo "$GUARD_LINE"; echo 'grep x <<< "$out"'; } > "$f"
+out="$(scan "$f")"
+[ -z "$out" ] && ok "the guard clears a here-string" || no "guarded here-string flagged" "$out"
+
+# A quoted tag may hold any character but the quote; an arithmetic shift is
+# not an opener even when an identifier follows it.
+f="$TMP/fx2/oddtag"
+{ echo '#!/usr/bin/env bash'; echo 'y=$((1<<NAME)); z=$(( x << SHIFT ))'; echo "python3 -I - <<'END-PY'"; body 2000; echo 'END-PY'; } > "$f"
+out="$(scan "$f")"
+printf '%s\n' "$out" | grep -q "oddtag:3: 2000 B heredoc END-PY" && ok "a quoted tag holding a dash is read to its terminator" || no "quoted non-identifier tag missed" "$out"
+printf '%s\n' "$out" | grep -q 'oddtag:2:' && no "an arithmetic shift read as a heredoc" "$out" || ok "\$((1<<NAME)) is not a heredoc opener"
 
 f="$TMP/fx2/notshell.py"
 { echo '#!/usr/bin/env python3'; echo "x = '''<<'EOF'"; body 2000; echo "EOF'''"; } > "$f"
 out="$(scan "$f")"
 [ -z "$out" ] && ok "a non-shell script is skipped" || no "python script scanned as shell" "$out"
 
-echo "ratchet: bin/ and skills/*/bin/"
+echo "ratchet: bin/, skills/*/bin/, lib/*.sh, install, uninstall"
 targets=()
-for f in "$ROOT"/bin/* "$ROOT"/skills/*/bin/*; do
+for f in "$ROOT"/bin/* "$ROOT"/skills/*/bin/* "$ROOT"/lib/*.sh "$ROOT"/install "$ROOT"/uninstall; do
   [ -f "$f" ] && targets+=("$f")
 done
-out="$(scan "${targets[@]}")"
-[ -z "$out" ] && ok "every in-window heredoc under bin/ and skills/*/bin/ runs at compat 5.0 (${#targets[@]} files)" \
-  || no "unguarded in-window heredocs" "$(printf '%s\n' "$out" | sed "s|$ROOT/||")"
+scan_rc=0
+out="$(scan "${targets[@]}")" || scan_rc=$?
+if [ "$scan_rc" -ne 0 ] || [ "${#targets[@]}" -lt 20 ]; then
+  no "the scanner did not run over the tree (exit $scan_rc, ${#targets[@]} files)" "$out"
+else
+  [ -z "$out" ] && ok "every in-window heredoc and here-string runs at compat 5.0 (${#targets[@]} files)" \
+    || no "unguarded in-window heredocs or here-strings" "$(printf '%s\n' "$out" | sed "s|$ROOT/||")"
+fi
 # The bin that every skill preamble calls is the one the hang was found in.
 grep -qE '^(\[ .*\] \|\| )?BASH_COMPAT=50' "$ROOT/bin/vibe-learnings-search" \
   && ok "vibe-learnings-search carries the guard" || no "vibe-learnings-search has no BASH_COMPAT=50 line"

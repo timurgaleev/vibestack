@@ -376,6 +376,9 @@ INTENT_STUB = re.compile(
     r"(?:look|check|inspect|examin|explor|read|review|investigat|search|scan|analy[sz]|dig|open|grep|find|go through|take a look)\w*\b",
     re.I)
 INTENT_STUB_MAX = 400
+# A stub may chain announcements ("First I'll read X. Then I'll check Y."); one
+# sentence that is not an announcement makes it an answer.
+STUB_NEXT = re.compile(r"^(?:then|next|after that|and then|also|finally),?\s+", re.I)
 # `codex review` prints its transcript on stderr; a command that ran logs " succeeded in Nms:".
 TRANSCRIPT_SUCCESS = re.compile(r"^\s*succeeded in \d+(?:\.\d+)?m?s:?\s*$", re.M)
 EXIT_CODES = {'clean': 0, 'answered': 0, 'findings': 3, 'unverified': 4, 'unavailable': 1}
@@ -469,7 +472,8 @@ def refused(text, graded):
 
 def intent_stub(text):
     body = plain(text).strip()
-    return len(body) < INTENT_STUB_MAX and bool(INTENT_STUB.match(body))
+    parts = [s for s in re.split(r'(?<=[.!?:])\s+', body) if s]
+    return len(body) < INTENT_STUB_MAX and bool(parts) and all(INTENT_STUB.match(STUB_NEXT.sub('', s)) for s in parts)
 
 
 def plain(text):
@@ -606,7 +610,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 330" would reach execve as one argument (exit 127).
 _cx() {
-  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" -k 10 "$@"; return; fi
   _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
@@ -701,7 +705,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 330" would reach execve as one argument (exit 127).
 _cx() {
-  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" -k 10 "$@"; return; fi
   _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
@@ -895,7 +899,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cx() {
-  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" -k 10 "$@"; return; fi
   _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
@@ -924,7 +928,7 @@ rm -f "$_EXIT_FILE" "$_TURN_FILE" "$TMPRESP" "$_EVENTS_FILE"
 {
   _cx 540 codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c "model_reasoning_effort=\"$_EFFORT\"" -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
   _rc=$?; printf '%s\n' "$_rc" > "$_EXIT_FILE"; (exit "$_rc")
-} | tee "$_EVENTS_FILE" | VIBE_CODEX_TURN_FILE="$_TURN_FILE" PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+} | tee "$_EVENTS_FILE" | VIBE_CODEX_TURN_FILE="$_TURN_FILE" PYTHONUNBUFFERED=1 "$PYTHON_CMD" -I -u -c "
 import sys, json, os
 turn_completed_count = 0
 turn_failed = None
@@ -1014,7 +1018,7 @@ CODEX SAYS (adversarial challenge):
 ════════════════════════════════════════════════════════════
 <full output from above, verbatim>
 ════════════════════════════════════════════════════════════
-Tokens: N | Est. cost: ~$X.XX
+Tokens: N | Est. cost: about USD X.XX
 ```
 
 3a. **Synthesis recommendation (REQUIRED).** After presenting the full
@@ -1119,7 +1123,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cx() {
-  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" -k 10 "$@"; return; fi
   _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
@@ -1155,7 +1159,7 @@ rm -f "$_EXIT_FILE" "$_TURN_FILE" "$TMPRESP" "$_EVENTS_FILE"
     _cx 540 codex exec - -C "$_REPO_ROOT" -s read-only -c 'skills.include_instructions=false' -c "model_reasoning_effort=\"$_EFFORT\"" -c 'web_search="cached"' --json -o "$TMPRESP" < "$PROMPT_FILE" 2>"$TMPERR"
   fi
   _rc=$?; printf '%s\n' "$_rc" > "$_EXIT_FILE"; (exit "$_rc")
-} | tee "$_EVENTS_FILE" | VIBE_CODEX_TURN_FILE="$_TURN_FILE" PYTHONUNBUFFERED=1 "$PYTHON_CMD" -u -c "
+} | tee "$_EVENTS_FILE" | VIBE_CODEX_TURN_FILE="$_TURN_FILE" PYTHONUNBUFFERED=1 "$PYTHON_CMD" -I -u -c "
 import sys, json, os
 turn_completed_count = 0
 turn_failed = None
@@ -1254,7 +1258,7 @@ CODEX SAYS (consult):
 ════════════════════════════════════════════════════════════
 <full output, verbatim — includes [codex thinking] traces>
 ════════════════════════════════════════════════════════════
-Tokens: N | Est. cost: ~$X.XX
+Tokens: N | Est. cost: about USD X.XX
 Session saved — run /codex again to continue this conversation.
 ```
 

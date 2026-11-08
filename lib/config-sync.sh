@@ -32,6 +32,11 @@ if [[ "$(declare -p CFG_TMP_FILES 2>/dev/null)" != "declare -a"* ]]; then
   CFG_TMP_FILES=()
 fi
 
+# bash 5.2+ writes a heredoc or here-string under 64 KiB into a pipe and can hang
+# on a small macOS pipe; compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+# Sourced, so this sets the level for the caller too, as its own guard would.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # Escape sequences only where something can render them. Piped into a file or a
 # CI log they are noise, and this library is now part of a command whose other
 # half prints none.

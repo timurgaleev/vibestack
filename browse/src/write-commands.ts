@@ -572,6 +572,12 @@ export async function handleWriteCommand(
         throw new Error(`viewport is refused while device ${device} is emulated — run \`device off\` first.`);
       }
       if (args.length === 1 && args[0] === 'auto') {
+        // A headed session starts with no override (the page fills the
+        // window), so auto returns there; headless returns to the default.
+        if (bm.getConnectionMode() === 'headed') {
+          const { width, height } = await bm.fitViewportToWindow();
+          return `Viewport fits the browser window (${width}x${height})`;
+        }
         await bm.setViewport(DEFAULT_VIEWPORT.width, DEFAULT_VIEWPORT.height);
         return `Viewport set to ${DEFAULT_VIEWPORT.width}x${DEFAULT_VIEWPORT.height} (default)`;
       }

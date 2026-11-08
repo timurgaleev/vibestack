@@ -150,6 +150,36 @@ describe.skipIf(!hasChromium)('daemon tabs (real daemon)', () => {
     }
   }, 60_000);
 
+  test('newtab and tabs under a pin leave the shared active tab alone', async () => {
+    const a = await newTab('/na');
+    const c = await newTab('/nc');
+    const opened = await run('newtab', [`http://127.0.0.1:${site.port}/nn`, '--json'], a);
+    expect(opened.status).toBe(200);
+    const n = JSON.parse(opened.text).tabId;
+    try {
+      expect((await run('url')).text).toContain('/nc');
+      const listed = (await run('tabs', [], a)).text;
+      expect(listed).toContain(`→ [${a}]`);
+      expect(listed).not.toContain(`→ [${c}]`);
+    } finally {
+      for (const id of [a, c, n]) await run('closetab', [String(id)]);
+    }
+  }, 30_000);
+
+  test('tab inside a pinned chain moves the chain, not the shared active tab', async () => {
+    const a = await newTab('/ca');
+    const b = await newTab('/cb');
+    const c = await newTab('/cc');
+    try {
+      const chain = await run('chain', [JSON.stringify([['tab', String(b)], ['url']])], a);
+      expect(chain.status).toBe(200);
+      expect(chain.text).toContain('/cb');
+      expect((await run('url')).text).toContain('/cc');
+    } finally {
+      for (const id of [a, b, c]) await run('closetab', [String(id)]);
+    }
+  }, 30_000);
+
   test('a pin on a tab that does not exist is refused, not run on the shared tab', async () => {
     const r = await run('url', [], 987654);
     expect(r.status).not.toBe(200);
@@ -172,10 +202,13 @@ describe.skipIf(!hasChromium)('daemon tabs (real daemon)', () => {
     for (let i = 0; i < 50 && (await tabCount()) > 0; i++) await Bun.sleep(100);
     expect(await tabCount()).toBe(0);
 
+    // status reports the empty browser without opening anything.
     const status = await run('status');
     expect(status.status).toBe(200);
     expect(status.text).toContain('Status: healthy');
-    expect(status.text).toContain('opened a blank tab');
+    expect(status.text).toContain('Tabs: 0');
+    expect(status.text).not.toContain('opened a blank tab');
+    expect(await tabCount()).toBe(0);
 
     const goto = await run('goto', [`http://127.0.0.1:${site.port}/back`]);
     expect(goto.status).toBe(200);

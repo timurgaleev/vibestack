@@ -78,7 +78,18 @@ echo "instrumentation"
 has    "boundary instrumentation in one run"   'every component boundary in one run'
 has    "secrets logged only as SET/UNSET"      '`SET`/`UNSET`'
 has    "temporary logs are tagged"             '[DEBUG-<short>]'
-has    "Phase 5 removes the tagged logs"       "git grep -n '\[DEBUG-<short>\]'"
+# Value: protects=the cleanup check runs with this run's tag and sees untracked files and the harness; fails_when=the grep keeps the literal placeholder or drops --untracked; why_new=the old row pinned the placeholder form; seam=none
+has    "Phase 5 greps with this run's tag"     "TAG='<short>'"
+has    "Phase 5 grep sees untracked files"     'git grep -n --untracked -F "[DEBUG-$TAG]"'
+has    "the throwaway harness is deleted"      'Delete the throwaway harness'
+has    "regression test outside the lock asks first" 'When the regression test belongs outside the locked directory'
+has    "only scanner exit 1 means redact"      'only exit 1 means redact and re-scan'
+has    "a scan that cannot run keeps the artifact here" 'Exit 2 (the scan could not run) or 127'
+has    "only prompt-only revisions collapse"   'and whose model, tool and sampling settings match'
+has    "loop-less outcomes are named"          'The only outcomes without a red loop are'
+P4="$(awk 'index($0, "## Phase 4: Implementation") {f=1} index($0, "## Phase 5: Verification") {exit} f' "$SKILL")"
+case "$P4" in *'**Test value bar.**'*) ok "the value bar renders inside Phase 4" ;; *) no "the value bar is not inside Phase 4" ;; esac
+has    "the value card's home in /investigate" "value card goes in the regression test's header comment"
 has    "last edit precedes last run"           'last edit precedes the last run'
 # The scope lock can cover less than the instrumented files and the regression
 # test, so it is released before the tagged lines are removed.
@@ -170,7 +181,6 @@ if [ -f "$FLAKE" ]; then
   fl "at least ten runs per side"         'N ≥ 10'
   fl "single-file test command in a loop" "project's single-file test command"
   fl "first moved headSha dated"          'gh run list'
-  fl "only green runs date it"            '--status success'
   fl "headSha named"                      'headSha'
   fl "forced probe rule"                  'No probe, no cause.'
   fl "never loosen a gate"                'Never loosen'
@@ -212,7 +222,39 @@ if [ -f "$FLAKE" ]; then
   else
     no "the LOOP: gate still requires a local red run for a CI-only failure"
   fi
-  fl "a failed base SETUP stops before any rate" 'no base rate"; git worktree remove'
+  fl "a failed base SETUP stops before any rate" 'SETUP failed in the base worktree — no base rate'
+  # Value: protects=the base-rate block never leaves a registered worktree or its temp parent behind; fails_when=cleanup runs only on the happy path or forgets the mktemp parent; why_new=no row ran the block; seam=none (real git worktree)
+  RB="$(awk '/^```bash$/ {on=1; buf=""; next} on && /^```$/ {on=0; if (index(buf, "git worktree add")) {printf "%s", buf; exit}; next} on {buf = buf $0 "\n"}' "$FLAKE")"
+  # A bare `mktemp -d` ignores TMPDIR on some hosts, so the leftover check below needs the explicit template.
+  case "$RB" in *'mktemp -d "${TMPDIR:-/tmp}/'*) ;; *) no "base-rate block makes its temp dir under \${TMPDIR:-/tmp}"; RB="" ;; esac
+  if [ -n "$RB" ]; then
+    FR="$TMP/flake-repo"; FT="$TMP/flake-tmp"; mkdir -p "$FR" "$FT"
+    git -C "$FR" init -q -b main 2>/dev/null || { git -C "$FR" init -q && git -C "$FR" checkout -q -b main; }
+    git -C "$FR" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -q --allow-empty -m init
+    for setup in true false; do
+      printf '%s' "$RB" | sed -e "s|<single-file test command for the failing file, run from the repo root>|true|" \
+        -e "s|<dependency install command for a fresh checkout, or true>|$setup|" -e "s|<base ref, e.g. origin/main>|main|" > "$TMP/rate.sh"
+      (cd "$FR" && TMPDIR="$FT" bash "$TMP/rate.sh") > "$TMP/rate.out" 2>&1 || true
+      wts="$(git -C "$FR" worktree list | wc -l | tr -d ' ')"
+      left="$(ls -A "$FT")"
+      [ "$wts" = 1 ] && [ -z "$left" ] && ok "base-rate block (SETUP $setup) removes its worktree and temp dir" \
+        || no "base-rate block (SETUP $setup) left worktrees=$wts tmp=[$left]: $(tr '\n' '|' < "$TMP/rate.out")"
+    done
+  fi
+  fsec() { awk -v h="$1" 'index($0, h) == 1 {f=1; next} f && /^## / {exit} f' "$FLAKE"; }
+  insec() { if fsec "$1" | grep -qF -- "$3"; then ok "$2"; else no "$2 (missing in $1: $3)"; fi; }
+  # Value: protects=each recipe rule lives in its own section; fails_when=a phrase survives only elsewhere in the file; why_new=these rows were whole-file substring checks; seam=none
+  insec '## Order-dependent failures' "bisect the earlier files (in its section)" 'bisect the list of earlier files'
+  insec '## Order-dependent failures' "names what leaked: mock (in its section)" 'mock or stub never restored'
+  insec '## Order-dependent failures' "names what leaked: timer (in its section)" 'timer or interval'
+  insec '## Races' "atomic primitive (in its section)" 'Fix with an atomic primitive'
+  # Value: protects=intermittent failures are dated by the earliest red, not the newest green; fails_when=the last-green/first-red pair returns; why_new=new rule; seam=none
+  fl "the earliest red and the green before it bracket the change" 'the earliest red run and the last green run before it'
+  fl "per-revision rates when reds and greens interleave"          'per-revision failure rate'
+  fl "cached test results are not replayed"                       '-count=1'
+  fl "a CI-only failure runs the full suite before it is environmental" 'run the full suite locally first'
+  fl "races prefer a real seam to a test-only hook"               'only when no real seam exists'
+  fl "three retries are four attempts"                            'four attempts'
 else
   no "flake.md exists"
 fi

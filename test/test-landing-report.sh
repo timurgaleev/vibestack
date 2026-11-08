@@ -45,6 +45,13 @@ grep -q '`.complete`' "$SK" && ok "Step 4 lists the .complete field" || no "Step
 grep -qi 'queue may be incomplete' "$SK" && awk '/^## Step 4/{on=1} on' "$SK" | grep -q 'complete` is `false`' \
   && ok "complete:false renders as a possibly incomplete queue" || no "complete:false is not rendered"
 
+# vibe-next-version keeps four-part versions and reads branch heads when no PR
+# host answers; the report has to describe what the tool actually emits.
+grep -q 'there is no separate micro' "$SK" && no "Step 3 still says versions are three-part" || ok "Step 3 allows a fourth MICRO component"
+awk '/^## Step 4/{on=1} on' "$SK" | grep '`.host`.*`git`' >/dev/null && ok "Step 4 lists the git (branch-head) host" || no "Step 4 omits the git host"
+awk '/^## Step 4/{on=1} on' "$SK" | grep '`"host":"git"`\|`.host` is `git`' >/dev/null && ok "branch-head claims are rendered, not dropped as offline" || no "a branch-head read is discarded as offline"
+awk '/^## Step 4/{on=1} on' "$SK" | grep '1\.2\.4.*1\.2\.4\.0' >/dev/null && ok "1.2.4 and 1.2.4.0 count as one slot" || no "collisions match by exact string"
+
 echo
 echo "pass=$pass fail=$fail"
 [ "$fail" -eq 0 ]

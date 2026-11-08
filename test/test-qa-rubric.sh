@@ -229,10 +229,36 @@ done
 section "$QA" '^### 8a' '^### ' > "$TMP/qa-8a.md"
 checkF "qa: 8a replays the repro from the same starting state" 'same starting state' "$TMP/qa-8a.md"
 checkF "qa: 8a does not replay a non-idempotent repro" 'non-idempotent' "$TMP/qa-8a.md"
-lint_hits="$("$ROOT/bin/vibe-lint-sources" 2>&1 | grep -E '/skills/qa(-only)?/.*host path' | head -1)"
-if [ -z "$lint_hits" ]; then ok "host-path lint: no hits in qa or qa-only"; else no "host-path lint: $lint_hits"; fi
+# Value: protects=the host-path row is evidence only when the lint actually ran; fails_when=a missing or crashing lint reads as no hits; why_new=the old row passed when the binary could not run; seam=none
+lint_out="$("$ROOT/bin/vibe-lint-sources" 2>&1)"
+lint_hits="$(printf '%s\n' "$lint_out" | grep -E '/skills/qa(-only)?/.*host path' | head -1)"
+if ! printf '%s\n' "$lint_out" | grep -q '^vibe-lint-sources: '; then
+  no "host-path lint did not run: $(printf '%s' "$lint_out" | tail -1)"
+elif [ -z "$lint_hits" ]; then ok "host-path lint: no hits in qa or qa-only"; else no "host-path lint: $lint_hits"; fi
 refuteF "qa: no dead browser-attach branch" 'Mode: cdp' "$ROOT/skills/qa/SKILL.md"
 refuteF "qa: no CDP_MODE flag" 'CDP_MODE' "$QA"
+
+echo "functional surface coherence"
+# Value: protects=the browser-only rules do not contradict the functional surface; fails_when=rule 1 demands a screenshot for a probe-transcript issue, qa-only claims it never reads source, or qa's re-test, final QA and scoring stay browser-only; why_new=the functional section landed without these call sites; seam=none
+for skill in qa qa-only; do
+  R="$TMP/$skill.md"
+  checkF "$skill: rule 1 accepts a probe transcript on a functional surface" 'on a functional surface, the probe transcript' "$R"
+  refuteF "$skill: no unconditional screenshot rule" 'Every issue needs at least one screenshot. No exceptions.' "$R"
+  checkF "$skill: functional-report.md is in the output contract" 'functional-report.md' "$(printf '%s' "$R")"
+  out="$(awk '/^## Output/ {f=1} f' "$R")"
+  case "$out" in *'functional-report.md'*) ok "$skill: output section lists functional-report.md" ;; *) no "$skill: output section omits functional-report.md" ;; esac
+  checkF "$skill: Hypothesis is optional in both skills" '**Hypothesis** — optional' "$R"
+  checkF "$skill: the quick budget names its clock" 'from the first `$B goto`' "$R"
+done
+refuteF "qa-only: no blanket never-reads-source claim" 'This skill never reads source' "$QO"
+checkF "qa-only: rule 5 names the contract-map exception" 'rule 11 allows on a functional surface' "$QO"
+checkF "qa: 8d re-tests a functional row by its command and read-back" "rerun the row's exact command and read-back" "$QA"
+checkF "qa: no health score on a functional-only surface" 'a functional-only surface gets no score' "$QA"
+checkF "qa: Phase 9 reruns fixed functional rows" 'rerun each fixed row' "$QA"
+# Value: protects=8a never overwrites a valid replayed confirmation; fails_when=an issue an earlier fix stopped reproducing is relabelled observed once; why_new=new rule; seam=none
+checkF "qa: 8a keeps a replayed issue that an earlier fix resolved" 'keep its `replayed` confirmation' "$QA"
+section "$QA" '^### 8b' '^### 8c' > "$TMP/qa-8b.md"
+checkF "qa: 8b states the channel rule where the test is written" 'asserts on the channel the bug was seen on' "$TMP/qa-8b.md"
 
 echo "outcome file name"
 # outcome_block RENDERED — the fenced bash block that prints OUTCOME_FILE:.
@@ -260,6 +286,9 @@ for skill in qa qa-only; do
   else
     no "$skill: outcome name not sanitised: ${first:-<none>}"
   fi
+  # Value: protects=two runs in the same second never share an outcome file; fails_when=the name is checked but not reserved before it is printed; why_new=the collision row below pre-creates the file itself; seam=none
+  [ -n "$first" ] && [ -e "$first" ] && ok "$skill: the printed outcome file is reserved (created) before use" \
+    || no "$skill: outcome file printed but not reserved: ${first:-<none>}"
   [ -n "$first" ] && mkdir -p "$(dirname "$first")" && : > "$first"
   second="$(run_outcome "$skill" 'j.doe')"
   if [ -n "$first" ] && [ "$second" = "${first%.md}-2.md" ]; then

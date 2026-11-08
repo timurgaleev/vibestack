@@ -58,7 +58,7 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Description ≤ 1024 chars (spec limit) | 62/62 PASS | — |
 | YAML frontmatter parseable | 62/62 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 35 skills | address-pr-review, autoplan, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, document-release, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, plan-ceo-review, plan-devex-review, plan-eng-review, qa, qa-only, review, scrape, setup-browser-cookies, ship, skillify, telegram, unfreeze, vibe. Twenty-three carry the token in their own SKILL.md (the plan reviews and `autoplan` read sibling skills through it, `review` its checklists and specialists, `document-release` the review skill's TODOS format, `vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `skillify` the browse launcher, `unfreeze` the freeze skill's state script, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 62 skills | Every skill: each `SKILL.md` opens with the compaction re-anchor note, which names `${CLAUDE_SKILL_DIR}/SKILL.md`. Beyond that note, 35 reach files through the token: address-pr-review, autoplan, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, document-release, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, plan-ceo-review, plan-devex-review, plan-eng-review, qa, qa-only, review, scrape, setup-browser-cookies, ship, skillify, telegram, unfreeze, vibe. Twenty-three of those carry it for a path in their own SKILL.md (the plan reviews and `autoplan` read sibling skills through it, `review` its checklists and specialists, `document-release` the review skill's TODOS format, `vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `skillify` the browse launcher, `unfreeze` the freeze skill's state script, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
 | Skills needing the full browse daemon | 4 skills | browse family: browse, open-browser, pair-agent, setup-browser-cookies. The daemon source ships under `browse/` and `./install` prepares it; it runs on bun and fetches Chromium on first use. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
@@ -69,16 +69,22 @@ The `${CLAUDE_SKILL_DIR}` row above and the matrix column below are derived
 mechanically rather than hand-maintained — the token often arrives through an
 `{{include}}`d snippet, so it cannot be read off a skill's own source; regenerate
 the list with the same sentinel-render probe `test/test-install-integration.sh`
-uses:
+uses. The matrix column leaves out the re-anchor note line, which every skill
+carries (`test/test-skill-prefix.sh`); `test/test-config-skills-routing.sh`
+checks the row's count:
 
 ```bash
 tmp=$(mktemp -d)
 for s in $(ls skills); do
   bin/vibe-render-skill --skill-dir /__probe__ "skills/$s/SKILL.md" "$tmp/$s.md" >/dev/null
-  grep -q /__probe__ "$tmp/$s.md" && echo "$s"
+  grep /__probe__ "$tmp/$s.md" | grep -qv '/__probe__/SKILL\.md' && echo "$s"
 done
 rm -rf "$tmp"
 ```
+
+`./install` substitutes both `${CLAUDE_SKILL_DIR}` and its
+`${CLAUDE_SKILL_DIR:-fallback}` form with the skill's concrete install path in
+every target, so an installed skill does not depend on the host expanding it.
 
 **Verdict:** All 62 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
@@ -86,7 +92,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 
 ## Per-skill compatibility matrix
 
-| Skill | Hooks | `${CLAUDE_SKILL_DIR}` | `Agent` tool | Tier (claude / cursor / kiro) |
+| Skill | Hooks | `${CLAUDE_SKILL_DIR}` paths | `Agent` tool | Tier (claude / cursor / kiro) |
 |---|---|---|---|---|
 | address-pr-review | — | yes | — | full / full / full |
 | agent-eval | — | — | — | full / full / full |
@@ -191,9 +197,11 @@ sibling skill directory exists at runtime. Day 0 Track B must verify whether
 Cursor and Kiro keep skills in per-skill directories (where the relative path
 resolves) or in some other layout.
 
-### F3 — 35 skills use `${CLAUDE_SKILL_DIR}` env var substitution
+### F3 — every skill uses `${CLAUDE_SKILL_DIR}` substitution
 
-Twenty-three name the token in their own SKILL.md. `careful`, `freeze`, `guard`
+All 62 name the token in the compaction re-anchor note at the top of their
+`SKILL.md`. Beyond that note, 35 reach files through it. Twenty-three of those
+name it for a path in their own SKILL.md: `careful`, `freeze`, `guard`
 and `investigate` use it in `hooks:` commands; `address-pr-review`, `make-pdf`,
 `ship` and `telegram` use it in their bodies to reach their own `bin/` and a
 sibling skill's sub-doc; `autoplan` and the plan reviews read sibling skills,
@@ -204,19 +212,18 @@ reach the browse runtime directly; `diagram` resolves its vendored offline
 renderer, `open-browser` its bundled extension, and `vibe` its skills index. The
 other 12 — `benchmark`, `canary`, `connect-chrome`, `design-consultation`,
 `design-review`, `design-shotgun`, `devex-review`, `land-and-deploy`,
-`office-hours`, `qa`, `qa-only`, `scrape` — never name the token themselves; it
-reaches them through the `browse-detect` / `browse-setup` snippets they
+`office-hours`, `qa`, `qa-only`, `scrape` — name no path through the token
+themselves; it reaches them through the `browse-detect` / `browse-setup` snippets they
 `{{include}}`.
 
-**Risk:** if Cursor and Kiro don't substitute `${CLAUDE_SKILL_DIR}` (or its
-target-specific equivalent), the hook commands and the body reference will
-silently fail to resolve the path. Track B must verify substitution behavior
-in each target.
+**Risk:** a host that neither substitutes nor exports `${CLAUDE_SKILL_DIR}`
+would leave the hook commands and body references pointing at `/bin/...`.
 
-**Mitigation:** v1.4.0's install does not transform these references. If a
-target fails to substitute the env var, the symptom is a silent no-op rather
-than a crash. The post-install warning print in `./install` (Track B output
-section) flags any targets where hooks did not fire.
+**Mitigation:** `./install` renders every target with the token (and its
+`${CLAUDE_SKILL_DIR:-fallback}` form) replaced by the skill's concrete install
+path, so installed skills resolve their files on every host. What remains
+host-specific is whether `hooks:` frontmatter runs at all (F2); the post-install
+warning in `./install` names the targets where it does not.
 
 ### F4 — Most skills use `AskUserQuestion` (Claude Code-specific tool)
 

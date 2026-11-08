@@ -286,6 +286,18 @@ else
   no "ai-cost-guard Bedrock cap block not found"
 fi
 
+echo "aws-cost: pricing sources"
+# Value: protects=each idle and estimate figure is priced from the right line item; fails_when=idle IPv4 is read from EC2 - Other only, an update is priced as a create, several SKUs feed one rate, or the log-storage unit is unstated; why_new=new rules; seam=none
+grep -qF 'Amazon Virtual Private Cloud' "$AC" && ok "idle public IPv4 is read from the Amazon VPC service" || no "idle public IPv4 still read from EC2 - Other only"
+grep -qF 'priced per GB-month' "$AC" && ok "log storage names its unit" || no "log-storage rate names no unit"
+grep -qF 'price both `change.before` and `change.after`' "$AC" && ok "an update is priced as after minus before" || no "updates priced like creates"
+grep -qF 'more than one product' "$AC" && ok "a Price List answer with several SKUs is narrowed, never averaged" || no "several SKUs can feed one rate"
+grep -qF 'On the MCP path, skip this block' "$AC" && ok "the MCP path does not need the CLI context block" || no "an MCP-only user stops on the CLI context block"
+echo "bedrock-guardrails: org-scoped wildcard"
+# Value: protects=a Principal * policy limited to the caller's organisation is not rated as open to anyone; fails_when=aws:PrincipalOrgID or aws:PrincipalArn conditions are ignored; why_new=new rule; seam=none
+grep -qF 'aws:PrincipalOrgID' "$BG" && grep -qF 'aws:PrincipalArn' "$BG" \
+  && ok "an org- or ARN-scoped Principal * is not HIGH" || no "org-scoped Principal * still HIGH"
+
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

@@ -215,7 +215,7 @@ plus a snapshot of the working tree about to ship:
 echo "TREE_NOW: $("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" --snapshot 2>/dev/null || echo unavailable)"
 ```
 
-Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
+Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` and `plan-eng-review`. Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` and `design-review-lite`. Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry.
 
 **Source attribution:** append an entry's \`"via"\` in parentheses — `review` with `via:"ship"` shows "CLEAR (DIFF via /ship)".
 
@@ -250,9 +250,9 @@ Display:
 
 **Staleness detection:** After displaying the dashboard, check if any existing reviews may be stale. Content decides, not commits: committing the reviewed bytes keeps a review current, and an uncommitted edit makes it stale though HEAD never moved.
 - For each review entry that has a \`tree\` field: if its \`tree\` is \`null\`, display: "Note: {skill} review from {date} was logged without a tree fingerprint, so freshness is unknown". Otherwise compare it with \`TREE_NOW\`. If different, display: "Note: {skill} review from {date} is stale — the working tree changed since it was logged". If \`TREE_NOW\` is \`unavailable\`, display: "Note: {skill} review from {date} — the current tree cannot be fingerprinted, so freshness is unknown". Skip the commit checks below for these entries.
-- For the remaining entries, get the current HEAD yourself with \`git rev-parse --short HEAD\`. The review log is a flat JSON array of entries and carries no HEAD of its own — there is no footer section to parse.
+- For the remaining entries, get the current HEAD yourself with \`git rev-parse --short HEAD\`. The review log carries no HEAD of its own.
 - For each such entry that has a \`commit\` field: compare it against the current HEAD. If different, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. Display: "Note: {skill} review from {date} may be stale — {N} commits since review"
-- If that count command FAILS, the stored commit was rebased or amended away and is no longer reachable. Grade the entry UNKNOWN instead of letting the error surface mid-dashboard: "Note: {skill} review from {date} — stored commit is no longer in this branch's history (rebased or amended); re-run to be sure."
+- If that count command FAILS (the stored commit was rebased or amended away), display: "Note: {skill} review from {date} — stored commit is no longer in this branch's history; re-run to be sure."
 - For entries with neither \`tree\` nor \`commit\` (legacy entries): display "Note: {skill} review from {date} has no commit tracking — consider re-running for accurate staleness detection"
 - If every review matches \`TREE_NOW\` (or, for entries without \`tree\`, the current HEAD), do not display any staleness notes
 
@@ -330,58 +330,10 @@ git fetch origin <base> && git merge origin/<base> --no-edit
 
 **Read the project's CLAUDE.md (and TESTING.md if present) FIRST.** If it documents a test command, the project already told you: no detection, no bootstrap. Skip the rest of bootstrap and use that command in Step 5.
 
-**Otherwise gather markers. Every marker below is EVIDENCE for the question you ask — never a command to run blind.** A marker tells you which ecosystem you're in and which command to OFFER. It does not tell you the command works. Do not execute a candidate test command to "check" it: a probe on a project that never had that runner fails loudly and teaches you nothing, and installing a second framework over a working one is worse.
+{{include lib/snippets/test-bootstrap.md}}
 
-```bash
-setopt +o nomatch 2>/dev/null || true  # zsh compat
-# Definitive ecosystem markers (presence = ecosystem, NOT a command to run)
-[ -f manage.py ] && echo "RUNTIME:python FRAMEWORK:django MARKER:manage.py"
-{ [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f tox.ini ] || [ -f setup.cfg ] || [ -f requirements.txt ]; } && echo "RUNTIME:python"
-{ [ -f Gemfile ] || [ -f Rakefile ] || [ -f .rspec ]; } && echo "RUNTIME:ruby"
-[ -f package.json ] && echo "RUNTIME:node"
-[ -f go.mod ] && echo "RUNTIME:go"
-[ -f Cargo.toml ] && echo "RUNTIME:rust"
-[ -f composer.json ] && echo "RUNTIME:php"
-[ -f mix.exs ] && echo "RUNTIME:elixir"
-[ -f pom.xml ] && echo "RUNTIME:jvm BUILD:maven"
-{ [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "RUNTIME:jvm BUILD:gradle"
-# Detect sub-frameworks
-[ -f Gemfile ] && grep -q "rails" Gemfile 2>/dev/null && echo "FRAMEWORK:rails"
-[ -f package.json ] && grep -q '"next"' package.json 2>/dev/null && echo "FRAMEWORK:nextjs"
-# Existing test path — config files, declared scripts, AND test FILES.
-# A project with real tests and no config file is the common miss.
-ls jest.config.* vitest.config.* playwright.config.* .rspec pytest.ini tox.ini phpunit.xml* 2>/dev/null
-[ -f package.json ] && grep -q '"test"[[:space:]]*:' package.json && echo "SCRIPT:package.json test"
-[ -f Makefile ] && grep -qE '^(test|check):' Makefile && echo "TARGET:make test"
-[ -f pyproject.toml ] && grep -q "pytest" pyproject.toml && echo "CONFIG:pyproject pytest"
-git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)tests?\.py$|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
-# Rust keeps unit tests inside src/, so file names alone miss them
-[ -f Cargo.toml ] && git grep -lF '#[test]' -- 'src' >/dev/null 2>&1 && echo "TESTS:rust in-source"
-# Check opt-out marker
-[ -f .vibestack/no-test-bootstrap ] && echo "BOOTSTRAP_DECLINED"
-```
-
-Map the markers to the command you will OFFER — never to one you run on a guess:
-
-| Marker | Ecosystem | Candidate command to offer |
-|--------|-----------|----------------------------|
-| `manage.py` | Django | `python manage.py test` (or `pytest` when pytest-django is in the deps) |
-| `pytest.ini` / `tox.ini` / pytest in `pyproject.toml` / `test_*.py` | Python | `pytest` |
-| `go.mod` (+ any `*_test.go`) | Go | `go test ./...` |
-| `Cargo.toml` | Rust | `cargo test` |
-| `pom.xml` | JVM (Maven) | `mvn test` |
-| `build.gradle` / `build.gradle.kts` | JVM (Gradle) | `./gradlew test` |
-| `Gemfile` / `Rakefile` / `.rspec` | Ruby | `bundle exec rspec`, `bin/rails test`, or `rake test` |
-| `mix.exs` | Elixir | `mix test` |
-| `composer.json` | PHP | `composer test` or `./vendor/bin/phpunit` |
-| `package.json` with a `test` script | Node | that script, run with the package manager the lockfile names |
-| `Makefile` with a `test:` target | any | `make test` |
-
-**If ANY existing-test evidence appears** (a config file, a declared test script or make target, a nonzero `TESTFILES:` count, or `TESTS:rust in-source`): the project has tests. **Do NOT bootstrap.** Print "Existing tests detected: {the evidence}." Then settle the command Step 5 will run — CLAUDE.md/TESTING.md if documented, otherwise AskUserQuestion offering the candidates from the table above plus "Other", and persist the answer to CLAUDE.md's `## Testing` section so it is never asked again. When the ecosystem ships a runner (Django, Go, Rust, Elixir, Maven/Gradle), that runner is the candidate — never install a second framework beside a working one.
 Read 2-3 existing test files to learn conventions (naming, imports, assertion style, setup patterns).
-Store conventions as prose context for use in Phase 8e.5 or Step 7. **Skip the rest of bootstrap.**
-
-Absent config files and absent `tests/` directories are NOT evidence of "no tests": Django keeps tests in `<app>/tests.py`, Go in `*_test.go` beside the source, Rust in `#[test]` blocks inside `src/`. A green `python manage.py test` with no `pytest.ini` is a tested project, not a bootstrap candidate.
+Store conventions as prose context for use in Step 7. **Skip the rest of bootstrap.**
 
 **If BOOTSTRAP_DECLINED** appears: Print "Test bootstrap previously declined — skipping." **Skip the rest of bootstrap.**
 
@@ -499,7 +451,7 @@ conditional, and no commit that breaks an existing test.
 git status --porcelain
 ```
 
-Only commit if there are changes. Stage the bootstrap files by name — `git add -- <config> <test dir> TESTING.md CLAUDE.md <workflow if created> <manifests>` — then check `git diff --cached --name-only`. If any other path is staged, STOP and show it. Otherwise:
+Only commit if there are changes. Stage the bootstrap files by name — `git add -- <config> <test dir> TESTING.md CLAUDE.md <workflow if created> <manifests>` — leaving out any file B4 step 0 recorded as already changed (staging it whole would fold the branch's own hunks into this commit; Step 15 commits it), then check `git diff --cached --name-only`. If any other path is staged, STOP and show it. Otherwise:
 `git commit -m "chore: bootstrap test framework ({framework name})"`
 
 ---
@@ -534,8 +486,6 @@ it — do not offer B for it.
 `db:test:prepare` internally, which loads the schema into the correct lane database.
 Running bare test migrations without INSTANCE hits an orphan DB and corrupts structure.sql.
 
-A lane needs no run when `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence" check --skill health --expect-cmd '<lane command>'` prints `FRESH` (`/health --fix` passed it at this tree): cite it as `exit=0 tests_ran=unknown` under its health label.
-
 Run independent suites in parallel, one lane per suite. Substitute each lane's
 label and exact command; a single-suite project has one lane:
 
@@ -555,13 +505,13 @@ wait
 for _lane in <lane1> <lane2>; do
   _f="$_SHIP_LOG/$_lane.exit"
   if [ -s "$_f" ]; then _st=$(cat "$_f"); else _st=MISSING; fi
-  _n=$(awk '/No tests found|no tests ran|\[no test files\]/ {z=1} /^ok / {g=1}
-    /^Tests:/ && match($(0), /[0-9]+ total/) {n=substr($(0),RSTART,RLENGTH)+0; c=1}
-    /^=+ .* in [0-9.]+s/ {s=$(0); p=0; while (match(s, /[0-9]+ (passed|failed)/)) {p+=substr(s,RSTART,RLENGTH)+0; s=substr(s,RSTART+RLENGTH)} n=p; c=1}
+  _n=$(awk '/No tests found|No test files found|no tests ran|\[no test files\]/ {z=1} /^ok / {g=1}
+    /^[[:space:]]*[0-9]+ (passing|failing)/ {m+=$(1); n=m; c=1}
+    /^[[:space:]]*Tests:?[[:space:]]+[0-9]/ || /^=+ .* in [0-9.]+s/ {s=$(0); p=0; while (match(s, /[0-9]+ (passed|failed)/)) {p+=substr(s,RSTART,RLENGTH)+0; s=substr(s,RSTART+RLENGTH)} n=p; c=1}
     match($(0), /^[0-9]+ examples?,/) || match($(0), /^Ran [0-9]+ test/) || match($(0), /^([^[:space:][:digit:]]+[[:space:]]+)?tests [0-9]+[[:space:]]*$/) {s=substr($(0),RSTART,RLENGTH); gsub(/[^0-9]/,"",s); n=s+0; c=1}
     /^test result: / {s=$(0); while (match(s, /[0-9]+ (passed|failed)/)) {r+=substr(s,RSTART,RLENGTH)+0; s=substr(s,RSTART+RLENGTH)} n=r; c=1}
     END {print c ? n : (z && !g ? 0 : "unknown")}' "$_SHIP_LOG/$_lane.txt" 2>/dev/null)
-  echo "LANE: $_lane exit=$_st tests_ran=${_n:-unknown} log=$_SHIP_LOG/$_lane.txt"
+  echo "LANE: $_lane exit=$_st tests_ran=${_n:-0} log=$_SHIP_LOG/$_lane.txt"
 done
 ```
 
@@ -602,6 +552,8 @@ For each failing test:
    ```bash
    _BW=$(mktemp -d "${TMPDIR:-/tmp}/vibestack-ship-base-XXXXXXXX")
    if git worktree add -q --detach "$_BW/wt" origin/<base> 2>/dev/null; then
+     # Ignored dependencies are not in a fresh worktree; borrow the checkout's.
+     for _d in node_modules .venv venv; do [ -d "$_d" ] && [ ! -e "$_BW/wt/$_d" ] && ln -s "$PWD/$_d" "$_BW/wt/$_d"; done
      ( cd "$_BW/wt" && bash -c '<failing test command>' ) > "$_BW/log" 2>&1; echo "BASE_EXIT: $?"
      git worktree remove --force "$_BW/wt"
    else
@@ -772,7 +724,7 @@ commands apply to a repo that does not have them.
 **3. Run the selected command and keep its exit status** (`<SHIP_LOG>` is Step 5's printed path):
 
 ```bash
-( bash -c '<project eval command>' ) > '<SHIP_LOG>/evals.txt' 2>&1; echo "EVAL_EXIT: $?"
+( bash -c '<project eval command>' ) > '<SHIP_LOG>/evals.txt' 2>&1; _E=$?; echo "EVAL_EXIT: $_E"; exit "$_E"
 ```
 
 A suite that can run past ~10 minutes outlives the turn and dies with it. Start it
@@ -797,13 +749,13 @@ output in the PR body (Step 19).
 
 **Foreground dispatch.** Every subagent in this skill runs with `run_in_background: false` — a background call returns at once with nothing, and the step's gate would pass on an empty result. Wait for each subagent's final output.
 
-**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent runs the coverage audit in a fresh context window — the parent only sees the conclusion, not intermediate file reads. This is context-rot defense.
+**Dispatch this step as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent runs the coverage audit in a fresh context window; the parent sees only the conclusion.
 
 **Subagent prompt:** Pass the following instructions to the subagent, with `<base>` substituted with the base branch and `<test command>` with Step 4's command:
 
 > You are running a ship-workflow test coverage audit. Run `git diff origin/<base>...HEAD` as needed. Do not commit or push. You may write or extend test files only where substep 5 below permits; leave them in the working tree and list them in your JSON — the parent commits them in Step 15.
 >
-> Every changed path needs a test that would catch its regression — every untested path is a path where bugs hide and vibe coding becomes yolo coding. More tests is not the goal. Evaluate what was ACTUALLY coded (from the diff), not what was planned. Coverage means a test that would catch a regression, not a test that merely runs the line.
+> Every changed path needs a test that would catch its regression. More tests is not the goal. Evaluate what was ACTUALLY coded (from the diff), not what was planned. Coverage means a test that would catch a regression, not a test that merely runs the line. The test value bar and the **Rules for the implementing agent** below are part of these instructions.
 
 {{include lib/snippets/test-value-bar.md}}
 
@@ -1241,7 +1193,7 @@ Applied by the parent to the validated counts:
   - If B: Continue. Record each NOT DONE item as deferred; Step 14 creates a P1 TODO for each with "Deferred from plan: {plan file path}".
   - If C: Continue. Note in PR body: "Plan items intentionally dropped: {list}."
 
-**If the subagent fails or returns invalid JSON:** Fall back to running the audit inline (parent runs the same plan-extraction + classification). **If the inline fallback ALSO fails** (plan file unreadable, parser error): do NOT silently pass. Surface it as an explicit AskUserQuestion — "Plan Completion audit could not run ({reason}). A) Skip audit and ship anyway (record 'audit skipped' in the PR body + Step 20 metrics), B) Stop and fix the audit." Default and recommended: B. A silent fail-open here is exactly how a missed deliverable ships unnoticed.
+**If the subagent fails or returns invalid JSON:** Fall back to running the audit inline (parent runs the same plan-extraction + classification). **If the inline fallback ALSO fails** (plan file unreadable, parser error): do NOT silently pass. Surface it as an explicit AskUserQuestion — "Plan Completion audit could not run ({reason}). A) Skip audit and ship anyway (record 'audit skipped' in the PR body + Step 20 metrics), B) Stop and fix the audit." Default and recommended: B.
 
 ---
 
@@ -1645,8 +1597,8 @@ fi
 echo "CODEX_MODE: $CODEX_MODE"
 ```
 
-Branch on `CODEX_MODE`. In every case except `ready`, the Claude adversarial
-subagent still runs — it is free, fast, and independent of Codex.
+Branch on `CODEX_MODE`. The Claude adversarial subagent runs in every case,
+`ready` included — it is free, fast, and independent of Codex.
 
 - **`disabled`** — the user turned Codex passes off. Skip them without comment.
 - **`under_codex`** — this session already runs inside a Codex host: skip both
@@ -1763,7 +1715,7 @@ B) Continue without the Codex gate — recorded as missing coverage
 With B, persist the gate as `fail` (below) and say "Codex gate: missing coverage" in
 the PR body's `## Pre-Landing Review` section. Never record it as `pass`.
 
-If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversarial passes provide sufficient coverage for smaller diffs.
+If `DIFF_TOTAL < 200`: skip this section silently.
 
 ---
 
@@ -1773,7 +1725,7 @@ Once Step 11.1 has settled the pass, persist:
 ```bash
 "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","completed":COMPLETED,"start_tree":"START_TREE","commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
-Substitute: START_TREE = the final pass's Step 9 snapshot (drop the field if it printed `unknown`). COMPLETED = `false` when any started pass failed, timed out or returned unusable output (a Codex that was never started does not count). STATUS = "issues_found" if any pass found issues, else "clean" only when COMPLETED is `true`, otherwise "incomplete". SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If every pass failed, still persist with STATUS "incomplete".
+Substitute: START_TREE = the final pass's Step 9 snapshot (drop the field if it printed `unknown`). COMPLETED = `false` when any started pass failed, timed out, printed `MISSING_COVERAGE`, or ended without its closing `Recommendation:` line (a Codex that was never started does not count). STATUS = "issues_found" if any pass found issues, else "clean" only when COMPLETED is `true`, otherwise "incomplete". SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the structured review's `GATE:` line lowercased ("pass", "fail" — which includes a run with no usable review — or "skipped" for a timeout), "skipped" if diff < 200, or "informational" if Codex was unavailable. If every pass failed, still persist with STATUS "incomplete".
 
 ---
 
@@ -1903,7 +1855,7 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
   (Step 19.5), use an unprefixed PR title in Step 19, and log `"version":null` in
   Step 20. Set `NEW_VERSION` to empty and carry `NO_VERSION` forward.
 - **FRESH** → proceed with the bump action below (steps 1–4).
-- **ALREADY_BUMPED** → skip the bump by default. When `BASE_VERSION` is empty (VERSION was added on this branch) there is no base slot to compare against: skip the queue-drift check and reuse `CURRENT_VERSION`. Otherwise check for queue drift first: run step 3's block with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`) — it excludes this branch's own PR, whose claim is `CURRENT_VERSION` itself — and compare its `NEW_VERSION` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4 (which will also trigger Step 13 CHANGELOG header rewrite and Step 19 PR title rewrite). If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
+- **ALREADY_BUMPED** → skip the bump by default. When `BASE_VERSION` is empty (VERSION was added on this branch) there is no base slot to compare against: skip the queue-drift check and reuse `CURRENT_VERSION`. Otherwise check for queue drift first: run step 3's block with the implied bump level (derived from `CURRENT_VERSION` vs `BASE_VERSION`) — it excludes this branch's own PR, whose claim is `CURRENT_VERSION` itself — and compare its `NEW_VERSION` against `CURRENT_VERSION`. If they differ (queue moved since last ship), use **AskUserQuestion**: "VERSION drift detected: you claim v<CURRENT> but next available is v<NEW> (queue moved). A) Rebump to v<NEW> and rewrite CHANGELOG header + PR title (recommended), B) Keep v<CURRENT> — will be rejected by CI version-gate until resolved." If A, treat this as FRESH with `NEW_VERSION=<new>` and run steps 1-4. If B, reuse `CURRENT_VERSION` and warn that CI will likely reject. If util is offline, warn and reuse `CURRENT_VERSION`.
 - **DRIFT_STALE_PKG** → a prior `/ship` bumped `VERSION` but failed to update `package.json`. Run the sync-only repair block below (after step 4). Do NOT re-bump. Reuse `CURRENT_VERSION` for CHANGELOG and PR body. (Queue check still runs in ALREADY_BUMPED terms after repair.)
 - **DRIFT_UNEXPECTED** → `/ship` has halted (exit 1). Resolve manually; /ship cannot tell which file is authoritative.
 
@@ -1931,10 +1883,10 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
    ```bash
    BUMP_LEVEL='<BUMP_LEVEL>'
    BASE_VERSION='<BASE_VERSION>'
-   # This branch's open PR claims its own VERSION; counting it would push the pick
-   # past itself. An array: zsh does not word-split ${_PR:+--exclude-pr "$_PR"}.
-   _PR=$(gh pr view --json number -q .number 2>/dev/null || true)
-   _X=(); [ -n "$_PR" ] && _X=(--exclude-pr "$_PR")
+   # This branch's open PR/MR (or, offline, its branch head) claims its own VERSION;
+   # counting it would push the pick past itself. An array: zsh does not word-split.
+   _PR=$(gh pr view --json number -q .number 2>/dev/null || glab mr view -F json 2>/dev/null | jq -r '.iid // empty' 2>/dev/null || true)
+   _X=(--exclude-branch "$(git branch --show-current 2>/dev/null)"); [ -n "$_PR" ] && _X+=(--exclude-pr "$_PR")
    QUEUE_JSON=$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-next-version" \
      --base <base> \
      --bump "$BUMP_LEVEL" \
@@ -1948,7 +1900,8 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
    echo "QUEUE: $QUEUE_JSON"
    ```
 
-   - If `OFFLINE=true` or the util fails (auth expired, no `gh`/`glab`, network): fall back to local `BUMP_LEVEL` arithmetic (bump `BASE_VERSION` at the chosen level). Print `⚠ workspace-aware ship offline — using local bump only`. Continue.
+   - If `OFFLINE=true` with `.host` `git` (no PR host; claims read from branch heads): keep `NEW_VERSION`, print `⚠ workspace-aware ship offline — slot picked from branch heads`, and render its `.warnings[]`. Continue.
+   - Any other `OFFLINE=true`, or the util fails (auth expired, no `gh`/`glab`, network): fall back to local `BUMP_LEVEL` arithmetic (bump `BASE_VERSION` at the chosen level). Print `⚠ workspace-aware ship offline — using local bump only`. Continue.
    - If `CLAIMED_COUNT > 0`: render the queue table to the user so they can see landing order at a glance:
      ```
      Queue on <base> (vBASE_VERSION):
@@ -1956,6 +1909,7 @@ missing-on-branch or malformed VERSION: STOP and show the message — never subs
      Your branch will claim: vNEW_VERSION  (<reason>)
      ```
      Each row comes from one `.claimed[]` object (`pr`, `branch`, `version`). Print every `.warnings[]` line under the table — a PR whose VERSION could not be read is a claim the pick did not see.
+   - If `.complete` is `false` (even with no claims): print `⚠ queue incomplete — the slot may already be claimed` and every `.warnings[]` line.
    - Validate `NEW_VERSION` against the shape the `VERSION` file already uses. If util returns an empty or malformed version, fall back to local bump.
 
 4. **Validate** `NEW_VERSION` and write it with `vibe-version-bump`, which moves `VERSION`, `package.json` and the npm lockfiles together or not at all. This block runs only when `STATE: FRESH`. Replace `<NEW_VERSION>` with the version step 3 settled on (the printed `NEW_VERSION:`, or the local bump when it fell back).
@@ -2100,7 +2054,7 @@ Save this summary — it goes into the PR body in Step 19.
 
 ## Step 14.5: Documentation sync (via subagent, before commit and push)
 
-**Dispatch /document-release as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent gets a fresh context window — zero rot from the preceding steps — and runs `/document-release` in its **spawned mode**: it edits authored documentation only and reports back. It never stages, commits, pushes, asks the user, or touches VERSION, CHANGELOG.md or TODOS.md. /ship owns the commit (Step 15.1) and the push (Step 17).
+**Dispatch /document-release as a subagent** using the Agent tool with `subagent_type: "general-purpose"` and `run_in_background: false`. The subagent runs `/document-release` in its **spawned mode**: it edits authored documentation only and reports back. It never stages, commits, pushes, asks the user, or touches VERSION, CHANGELOG.md or TODOS.md. /ship owns the commit (Step 15.1) and the push (Step 17).
 
 **Sequencing:** This step runs AFTER Step 14 (TODOS) and BEFORE Step 15 (Commit). Its edits are committed with the rest of the branch in Step 15.1 and pass through Step 16's verification gate before anything is pushed — no documentation writer runs after the push. The PR is created once from final HEAD with the `## Documentation` section baked into the initial body.
 
@@ -2234,31 +2188,34 @@ during Steps 4-6":
    ```bash
    _VB="${VIBESTACK_HOME:-$HOME/.vibestack}/bin"
    _NOW=$("$_VB/vibe-review-log" --snapshot 2>/dev/null)
-   # Paths that differ between tree ${1} and now, release bookkeeping aside. A
+   # Lane trees are tracked content only (vibe-tree-hash); the review's include untracked files.
+   _NOWT=$("$_VB/vibe-tree-hash" 2>/dev/null)
+   # Paths that differ between tree ${1} and now (${3}), release bookkeeping aside. A
    # manifest is bookkeeping only when it differs in nothing but its own version
    # (root and packages[""]); a dependency's version is a real change.
    _moved() {
-     if [ -z "${1}" ] || [ -z "$_NOW" ] || ! _D=$(git diff --name-only "${1}" "$_NOW" 2>/dev/null); then echo "MOVED ${2}: unknown"; return; fi
+     if [ -z "${1}" ] || [ -z "${3}" ] || ! _D=$(git diff --name-only "${1}" "${3}" 2>/dev/null); then echo "MOVED ${2}: unknown"; return; fi
      printf '%s\n' "$_D" | while IFS= read -r _p; do
        case "$_p" in
          ''|CHANGELOG.md|VERSION|TODOS.md) continue ;;
          package.json|package-lock.json|npm-shrinkwrap.json)
-           python3 -I -c 'import json,subprocess,sys; b=[json.loads(subprocess.run(["git","show",t+":"+sys.argv[3]],capture_output=True,check=True).stdout) for t in sys.argv[1:3]]; [(d.pop("version",None),d.get("packages",{}).get("",{}).pop("version",None)) for d in b]; sys.exit(b[0]!=b[1])' "${1}" "$_NOW" "$_p" 2>/dev/null && continue ;;
+           python3 -I -c 'import json,subprocess,sys; b=[json.loads(subprocess.run(["git","show",t+":"+sys.argv[3]],capture_output=True,check=True).stdout) for t in sys.argv[1:3]]; [(d.pop("version",None),d.get("packages",{}).get("",{}).pop("version",None)) for d in b]; sys.exit(b[0]!=b[1])' "${1}" "${3}" "$_p" 2>/dev/null && continue ;;
        esac
        echo "MOVED ${2}: $_p"
      done
    }
    _RT=$("$_VB/vibe-review-read" --skill review --json 2>/dev/null | jq -r '[.[] | select(.via == "ship")][0].tree // empty')
-   echo "REVIEWED: ${_RT:-none}"; _moved "$_RT" review
+   echo "REVIEWED: ${_RT:-none}"; _moved "$_RT" review "$_NOW"
    for _lane in <lane1> <lane2>; do
      _LT=$("$_VB/vibe-evidence" read --skill ship --label "$_lane" --limit 1 | sed -n 's/.* tree=\([0-9a-f]*\) .*/\1/p')
-     _moved "$_LT" "$_lane"
+     _moved "$_LT" "$_lane" "$_NOWT"
    done
    ```
 
-   Any `MOVED review:` line other than a `DOC_HELD_FILES` path — `unknown` included —
+   Any `MOVED review:` line other than a Step 14.5 `DOC_FILES` or `DOC_HELD_FILES` path — `unknown` included —
    means code nobody reviewed is about to ship: run Steps 9-11 again on the full diff
    with a fresh `START_TREE`, through Step 11.1 (its cycle cap still applies), then return here.
+   If `unknown` survives that re-review, STOP: the review record cannot be read, and another pass will not fix it.
 
 1. **Test verification:** For each Step 5 lane, with its exact label and command:
 
@@ -2269,8 +2226,6 @@ during Steps 4-6":
    - **FRESH** (exit 0): the lane passed on this exact content (release bookkeeping
      aside). Cite the printed line and the Step 5 log; do not re-run it. A lane whose
      last `tests_ran` was `0` is never FRESH: re-run it and read the count again.
-     A lane Step 5 took from the health ledger is checked with `--skill health` in
-     place of `--label <lane>`.
    - **STALE** (exit 1), or the helper is missing: something a test can read changed
      since the run — fixes from review findings, Step 7's generated tests, Step 14.5's
      documentation edits (docs are inputs to doc tests, linters and generators) — or
@@ -2426,7 +2381,12 @@ esac
 
 **If GitLab:**
 ```bash
-_MR=$(glab mr view -F json 2>/dev/null | jq -r 'if .state == "opened" then "MR_EXISTS" elif .state == "merged" then "PR_MERGED \(.sha) !\(.iid): \(.web_url)" else "NO_MR" end' 2>/dev/null)
+_ERR=$(mktemp "${TMPDIR:-/tmp}/vibe-mr-view.XXXXXXXX")
+if _J=$(glab mr view -F json 2>"$_ERR"); then
+  _MR=$(printf '%s' "$_J" | jq -r 'if .state == "opened" then "MR_EXISTS" elif .state == "merged" then "PR_MERGED \(.sha) !\(.iid): \(.web_url)" else "NO_MR" end' 2>/dev/null)
+elif grep -Eqi 'no (open )?merge requests? (available|found)' "$_ERR"; then _MR="NO_MR"
+else echo "PR_LOOKUP_FAILED: $(head -3 "$_ERR")"; rm -f "$_ERR"; exit 1; fi
+rm -f "$_ERR"
 case "$_MR" in
   PR_MERGED*)
     _HEAD=$(printf '%s' "$_MR" | awk '{print $(2)}')
@@ -2451,7 +2411,7 @@ a fresh one.
 
 If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file — a re-run edits, so an unscanned edit would publish most ships unscanned.
 
-**Also update the PR title** if the version changed on rerun (never under NO_VERSION — there is no version to put in it). PR titles use the workspace-aware format `v<NEW_VERSION> <type>: <summary>` — version ALWAYS first. If the current title's version prefix doesn't match `NEW_VERSION`, write the new title into a `TITLE_FILE` (created and scanned as below) and run `gh pr edit --title "$(cat '<TITLE_FILE>')"`, or for GitLab `python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-t",pathlib.Path(sys.argv[1]).read_text().strip()]).returncode)' '<TITLE_FILE>'`. This keeps the title truthful when Step 12's queue-drift detection rebumps a stale version. If the title has no `v<version>` prefix (a custom title kept intentionally), leave the title alone — only rewrite titles that already follow the format.
+**Also update the PR title** if the version changed on rerun (never under NO_VERSION — there is no version to put in it). PR titles use the workspace-aware format `v<NEW_VERSION> <type>: <summary>` — version ALWAYS first. If the current title's version prefix doesn't match `NEW_VERSION`, write the new title into a `TITLE_FILE` (created and scanned as below) and run `gh pr edit --title "$(cat '<TITLE_FILE>')"`, or for GitLab `python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-t",pathlib.Path(sys.argv[1]).read_text().strip()]).returncode)' '<TITLE_FILE>'`. If the title has no `v<version>` prefix (a custom title kept intentionally), leave the title alone — only rewrite titles that already follow the format.
 
 Print the existing URL and continue to Step 20.
 

@@ -32,11 +32,11 @@ inline, so run it through `uv` (plain `python3` has no Telethon). Shell
 variables do not survive between tool calls, so spell the path out each time:
 
 ```bash
-uv run "${CLAUDE_SKILL_DIR}/bin/tg.py" status                     # logged in? as whom?
-uv run "${CLAUDE_SKILL_DIR}/bin/tg.py" chats "Alice"              # names, @usernames, ids
-uv run "${CLAUDE_SKILL_DIR}/bin/tg.py" read "Alice" -n 20         # oldest first, UTC
-uv run "${CLAUDE_SKILL_DIR}/bin/tg.py" voice "Alice" --language ru
-uv run "${CLAUDE_SKILL_DIR}/bin/tg.py" send "Alice" --text "..." --file a.pdf --dry-run
+uv run "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/telegram}/bin/tg.py" status                     # logged in? as whom?
+uv run "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/telegram}/bin/tg.py" chats "Alice"              # names, @usernames, ids
+uv run "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/telegram}/bin/tg.py" read "Alice" -n 20         # oldest first, UTC
+uv run "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/telegram}/bin/tg.py" voice "Alice" --language ru
+uv run "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/telegram}/bin/tg.py" send "Alice" --text "..." --file a.pdf --dry-run
 ```
 
 A chat is a dialog name, an `@username`, or a numeric id from `chats`. `read`

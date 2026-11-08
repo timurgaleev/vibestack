@@ -605,6 +605,25 @@ MD
   sed 's|^- Deploy trigger: .*|- Deploy trigger: automatic on push to main|' "$d/CLAUDE.md" > "$d/CLAUDE.md.n" && mv "$d/CLAUDE.md.n" "$d/CLAUDE.md"
   out=$(run "$SH" "$d" "$TMP/strategy.sh")
   case "$out" in *DEPLOY_TRIGGER_COMMAND*) no "[$SH] an automatic trigger read as a command: $out" ;; *) ok "[$SH] an automatic trigger is not a command" ;; esac
+  sed 's|^- Deploy trigger: .*|- Deploy trigger: Vercel Git integration|' "$d/CLAUDE.md" > "$d/CLAUDE.md.n" && mv "$d/CLAUDE.md.n" "$d/CLAUDE.md"
+  out=$(run "$SH" "$d" "$TMP/strategy.sh")
+  case "$out" in *DEPLOY_TRIGGER_COMMAND*) no "[$SH] prose in the trigger read as a command: $out" ;; *) ok "[$SH] a prose trigger is not a command" ;; esac
+  # The trigger is offered for running; a PR that rewrote it was never reviewed
+  # as a command to run here.
+  d=$(repo "dcc-$SH" app.js)
+  printf '## Deploy Configuration (configured by /setup-deploy)\n- Platform: fly\n- Deploy trigger: ./scripts/deploy.sh production\n' > "$d/CLAUDE.md"
+  B=$(git -C "$d" rev-parse HEAD)
+  fill "$TMP/strategy.sh" "$d.s.sh" BASE_SHA="$B" PR_HEAD="$B"
+  out=$(run "$SH" "$d" "$d.s.sh")
+  case "$out" in *DEPLOY_CONFIG_CHANGED*) no "[$SH] an unchanged config reads as PR-edited: $out" ;; *) ok "[$SH] an unchanged config is trusted" ;; esac
+  git -C "$d" add CLAUDE.md && git -C "$d" commit -q -m "edit deploy trigger"
+  fill "$TMP/strategy.sh" "$d.s.sh" BASE_SHA="$B" PR_HEAD="$(git -C "$d" rev-parse HEAD)"
+  out=$(run "$SH" "$d" "$d.s.sh")
+  case "$out" in *DEPLOY_CONFIG_CHANGED*) ok "[$SH] a trigger the PR wrote is flagged DEPLOY_CONFIG_CHANGED" ;; *) no "[$SH] a PR-edited trigger is offered as reviewed: $out" ;; esac
+  awk '/^## Step 5:/{on=1} /^### 5a:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | gq 'On `DEPLOY_CONFIG_CHANGED`' \
+    && ok "[$SH] rule 2 withholds 'run it now' for a PR-edited trigger" || no "[$SH] rule 2 ignores DEPLOY_CONFIG_CHANGED"
+  awk '/^## Step 5:/{on=1} /^### 5a:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | awk '/^2\. `DEPLOY_TRIGGER_COMMAND:`/{on=1} /^3\. /{on=0} on' | gq 'DEPLOY_WORKFLOW' \
+    && ok "[$SH] rule 2 waits for an expected workflow run before offering the command" || no "[$SH] rule 2 can offer the command while a deploy run is still pending"
   # /setup-deploy option F records `none` for a project that never deploys; the
   # sentinel must not be probed as a URL.
   printf '## Deploy Configuration (configured by /setup-deploy)\n- Platform: none\n- Production URL: none\n- Deploy trigger: none\n' > "$d/CLAUDE.md"
@@ -614,6 +633,8 @@ MD
   done
   awk '/^## Step 5:/{on=1} /^## Step 6:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | gq -F 'On `NO_DEPLOY:`, with no URL argument' \
     && ok "[$SH] Step 5 routes NO_DEPLOY to the no-deploy verdict" || no "[$SH] Step 5 has no NO_DEPLOY route"
+  awk '/^## Step 5:/{on=1} /^## Step 6:/{on=0} on' "$ROOT/skills/land-and-deploy/SKILL.md" | awk '/^1\. Check for a deploy run/{on=1} /^2\. /{on=0} on' | gq 'NO_DEPLOY' \
+    && ok "[$SH] under NO_DEPLOY a package-release run is not taken for a deploy" || no "[$SH] a release workflow on MERGE_SHA overrides NO_DEPLOY"
 
   echo "[$SH] deploy fingerprint and pre-approval facts"
   d=$(repo "fp-$SH" app.js)

@@ -69,6 +69,10 @@
 # errexit off, and its rollback paths depend on that: a failing `rm -rf` or a
 # `mv` of an absent backup must not abort the run. Commands whose failure
 # matters are checked here instead.
+# bash 5.2+ writes a heredoc or here-string under 64 KiB into a pipe and can hang
+# on a small macOS pipe; compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+# Sourced, so this sets the level for the caller too, as its own guard would.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 CFG_REPO_DIR="${CFG_REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 # The deployable payload; the repo root stays separate because the sync library

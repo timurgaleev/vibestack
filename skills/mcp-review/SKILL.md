@@ -1,7 +1,7 @@
 ---
 name: mcp-review
 description: |
-  Review an MCP server for tool design, auth, input validation and prompt-injection risk before publishing it.
+  Review an MCP server for tool design, auth, input validation and prompt-injection risk before publishing.
 triggers:
   - mcp review
   - review my mcp server

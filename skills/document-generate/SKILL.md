@@ -676,8 +676,8 @@ don't know and what would settle it instead of asserting the limit.
 - **Cross-link everything.** Isolated docs are undiscoverable docs.
 - **Voice: friendly, concrete, user-forward.** Write like you're explaining to a smart person
   who hasn't seen the code. Never corporate, never academic.
-- **Completeness over minimalism.** AI makes comprehensive documentation cheap. Don't write
-  "minimal viable docs" — write complete docs. Boil the lake.
+- **Complete within the scope.** Don't write "minimal viable docs": cover everything in
+  the scope confirmed in Step 0a, and nothing outside it.
 
 ## Capture Learnings
 

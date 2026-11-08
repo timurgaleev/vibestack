@@ -2,38 +2,54 @@
 # vibe-lint-sources — static checks over skill sources and shared snippets.
 #
 # Rules:
-#   fences    — every fenced code block in skills/*/SKILL.md and
-#               lib/snippets/*.md is closed (an unbalanced fence silently
-#               swallows include directives in the renderer). Fences follow
-#               CommonMark, as the renderer does: a fence opens on 0-3 spaces
-#               then 3+ backticks or 3+ tildes (an info string may follow, and
-#               after backticks it may not contain a backtick) and
-#               closes only on 0-3 spaces, the same character, a run at least
-#               as long, and nothing but whitespace after.
+#   fences    — every fenced code block in skills/*/SKILL.md, the skill
+#               sub-docs (skills/<name>/**/*.md) and lib/snippets/*.md is
+#               closed (an unbalanced fence silently swallows include
+#               directives in the renderer). Fences follow CommonMark: a fence
+#               opens on 0-3 spaces — counted from a list item's content column
+#               inside a list item — then 3+ backticks or 3+ tildes (an info
+#               string may follow, and after backticks it may not contain a
+#               backtick) and closes only on the same indent, the same
+#               character, a run at least as long, and nothing but whitespace
+#               after.
 #   snippets  — lib/snippets/*.md: no duplicate headings inside one snippet,
 #               no nested {{include}} directives, max 400 lines.
 #   hostvars  — warning only: inside bash/sh fences, $ARGUMENTS, and a
 #               ${CLAUDE_SKILL_DIR} whose block has neither a :- default nor a
 #               command -v fallback. Only Claude Code substitutes them; other
 #               hosts see empty or literal text. Prose mentions never warn.
-#   hostpath  — a finding: a file reached through
-#               ~/.claude/skills/<name>/..., a Read of a repo-relative
+#   hostpath  — a finding, in skills, sub-docs and snippets: a file reached
+#               through ~/.claude/skills/<name>/... (or $HOME, ${HOME}), a
+#               Read of a repo-relative
 #               `.claude/skills/` path, or a bare qa/templates, qa/references
 #               or review/TODOS-format.md path. Each resolves only where
 #               Claude Code installed the pack at that one path. Use
 #               ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/<name>}/... or
 #               .../../<sibling>/... instead.
-#   pyisolate — a finding: a fenced python3 -c or python3 - without -I, which
-#               imports from the working directory before the standard library.
+#   pyisolate — a finding, in skills, sub-docs and snippets: a fenced python
+#               call that runs -c code, a -m module or stdin (-, a redirect, a
+#               heredoc, a pipe) without -I, which imports from the working
+#               directory before the standard library. Options that take an
+#               argument (-W, -X), versioned or absolute interpreters and
+#               backslash-continued lines are followed.
+#   positional — a finding, in skills and snippets: a bare $N anywhere (the
+#               host substitutes it in prose too). Sub-docs are read, not
+#               invoked, so they keep their text.
 #
 # Usage: vibe-lint-sources [--strict] [repo-root]
 #        (default root: the repo containing this script)
 # Exit: 0 clean, 1 findings (one file:line message per finding), 2 usage or
 # a root with no skills/ directory. Warnings (warn: file:line: ...) never
-# change the exit code. An unreadable file or an awk failure in the hostpath
-# pass is a finding; under --strict a tree with no skill or snippet files is
-# one too, never "clean".
+# change the exit code. An unreadable file or an awk failure in any pass is a
+# finding; under --strict a tree with no skill or snippet files is one too,
+# never "clean".
 set -uo pipefail
+# Bytes, not characters: under a UTF-8 locale BSD awk aborts on an invalid or
+# split multibyte sequence, and a pass that aborts has checked nothing.
+export LC_ALL=C
+# bash 5.2+ writes a heredoc or here-string under 64 KiB into a pipe and can hang
+# on a small macOS pipe; compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 usage() { echo "usage: vibe-lint-sources [--strict] [repo-root]" >&2; exit 2; }
 STRICT=0
@@ -52,14 +68,54 @@ ROOT="${ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 errors=0
 say() { echo "$1"; errors=$((errors + 1)); }
 
+# awk_pass <pass> <file> <awk args...>: runs awk over one file, output in
+# AWK_OUT. An awk that exits non-zero checked nothing, so it is a finding.
+AWK_OUT=""
+awk_pass() {
+  local pass="$1" f="$2" rc=0
+  shift 2
+  AWK_OUT=$(awk "$@" "$f") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    say "$f: awk exited $rc — $pass check could not run"
+    AWK_OUT=""
+    return 1
+  fi
+}
+
+# Skills and snippets are invoked text; sub-docs are files a skill reads.
+SKILL_FILES=()
+for f in "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md; do
+  [ -e "$f" ] && SKILL_FILES+=("$f")
+done
+DOC_FILES=()
+while IFS= read -r f; do
+  DOC_FILES+=("$f")
+done < <(find "$ROOT/skills" -mindepth 2 -type f -name '*.md' ! -name SKILL.md ! -path '*/node_modules/*' 2>/dev/null | sort)
+if [ "${#SKILL_FILES[@]}" -eq 0 ]; then
+  if [ "$STRICT" -eq 1 ]; then say "$ROOT: no skill or snippet files to check"; else echo "warn: $ROOT: no skill or snippet files to check"; fi
+fi
+# A file no pass could read is a finding, reported once, never a clean pass.
+READABLE=()
+for f in ${SKILL_FILES[@]+"${SKILL_FILES[@]}"} ${DOC_FILES[@]+"${DOC_FILES[@]}"}; do
+  if [ -r "$f" ]; then READABLE+=("$f"); else say "$f: unreadable — lint could not run"; fi
+done
+is_skill_file() { case "$1" in "$ROOT"/skills/*/SKILL.md|"$ROOT"/lib/snippets/*.md) return 0 ;; esac; return 1; }
+
 # fence_step(line) returns 1 for a fence line or a line inside a fence, 0 for a
 # line outside every fence. State: fc/fl (open fence char and run length, fc
-# empty outside a fence), fline/fopen (line number and text of the opener).
+# empty outside a fence), fb (indent base of the open fence), li (content
+# column of the list item in force, 0 outside lists), fline/fopen (line number
+# and text of the opener).
 FENCE_AWK='
-function fence_step(line,   rest, c, n) {
-  match(line, /^ */)
-  if (RLENGTH > 3) return fc != ""
-  rest = substr(line, RLENGTH + 1)
+function fence_step(line,   rest, c, n, ind, base) {
+  match(line, /^ */); ind = RLENGTH
+  if (fc == "" && line !~ /^[ \t]*$/) {
+    if (match(line, /^ *([-*+]|[0-9]+[.)])( +|$)/)) li = RLENGTH
+    else if (ind < li) li = ind
+  }
+  base = (fc == "") ? li : fb
+  if (ind > 3 && (base == 0 || ind < base || ind - base > 3)) return fc != ""
+  rest = substr(line, ind + 1)
   c = substr(rest, 1, 1)
   if (c != "`" && c != "~") return fc != ""
   n = 0
@@ -67,25 +123,25 @@ function fence_step(line,   rest, c, n) {
   if (n < 3) return fc != ""
   if (fc == "") {
     if (c == "`" && index(substr(rest, n + 1), "`")) return 0
-    fc = c; fl = n; fline = NR; fopen = line; return 1
+    fc = c; fl = n; fb = (li > 0 && ind >= li) ? li : 0; fline = NR; fopen = line; return 1
   }
   if (c == fc && n >= fl && substr(rest, n + 1) ~ /^[ \t]*$/) fc = ""
   return 1
 }'
 
 # --- fence balance ---------------------------------------------------------
-while IFS= read -r f; do
-  open=$(awk "$FENCE_AWK"'
+for f in ${READABLE[@]+"${READABLE[@]}"}; do
+  awk_pass fences "$f" "$FENCE_AWK"'
     { fence_step($0) }
-    END { if (fc != "") print fline ": " fopen }' "$f")
-  if [ -n "$open" ]; then
-    say "$f:${open%%:*}: unclosed fence opened here (${open#*: }) — an unbalanced fence swallows directives"
+    END { if (fc != "") print fline ": " fopen }' || continue
+  if [ -n "$AWK_OUT" ]; then
+    say "$f:${AWK_OUT%%:*}: unclosed fence opened here (${AWK_OUT#*: }) — an unbalanced fence swallows directives"
   fi
-done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
+done
 
 # --- snippet rules ---------------------------------------------------------
 for f in "$ROOT"/lib/snippets/*.md; do
-  [ -f "$f" ] || continue
+  [ -f "$f" ] && [ -r "$f" ] || continue
 
   lines=$(wc -l < "$f" | tr -d ' ')
   if [ "$lines" -gt 400 ]; then
@@ -95,28 +151,27 @@ for f in "$ROOT"/lib/snippets/*.md; do
   # Nested includes: the renderer supports one level only. Match the exact
   # directive grammar; indented/fenced occurrences are content, not directives
   # (fence-aware, same as the renderer's treatment).
-  n=$(awk "$FENCE_AWK"'
+  if awk_pass "nested include" "$f" "$FENCE_AWK"'
     fence_step($0) { next }
-    /^\{\{include lib\/snippets\/[A-Za-z0-9_-]+\.md\}\}$/ { print NR; exit }' "$f")
-  if [ -n "$n" ]; then
-    say "$f:$n: nested {{include}} — snippets must not include other snippets"
+    /^\{\{include lib\/snippets\/[A-Za-z0-9_-]+\.md\}\}$/ { print NR; exit }' && [ -n "$AWK_OUT" ]; then
+    say "$f:$AWK_OUT: nested {{include}} — snippets must not include other snippets"
   fi
 
   # Duplicate headings inside one snippet (fence-aware: skip fenced blocks).
-  dup=$(awk "$FENCE_AWK"'
+  if awk_pass "duplicate heading" "$f" "$FENCE_AWK"'
     fence_step($0) { next }
     /^#{1,6} / {
       if (seen[$0]++) { print NR ": " $0; exit }
-    }' "$f")
-  if [ -n "$dup" ]; then
-    say "$f:${dup%%:*}: duplicate heading (${dup#*: }) inside one snippet"
+    }' && [ -n "$AWK_OUT" ]; then
+    say "$f:${AWK_OUT%%:*}: duplicate heading (${AWK_OUT#*: }) inside one snippet"
   fi
 done
 
 # --- host-only variables (warnings) ----------------------------------------
 HOSTDOC="see docs/agent-skills-compatibility-audit.md"
-while IFS= read -r f; do
-  awk -v file="$f" -v doc="$HOSTDOC" "$FENCE_AWK"'
+for f in ${READABLE[@]+"${READABLE[@]}"}; do
+  is_skill_file "$f" || continue
+  awk_pass hostvars "$f" -v file="$f" -v doc="$HOSTDOC" "$FENCE_AWK"'
     function flush(   i) {
       for (i = 1; i <= nb; i++) {
         if (index(bl[i], "$ARGUMENTS"))
@@ -138,87 +193,108 @@ while IFS= read -r f; do
         bl[++nb] = $0; bn[nb] = NR
         if (index($0, "CLAUDE_SKILL_DIR:-") || index($0, "command -v")) guarded = 1
       }
-    }'  "$f"
-done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
+    }' || continue
+  [ -z "$AWK_OUT" ] || printf '%s\n' "$AWK_OUT"
+done
 
 # --- hard-coded host paths ------------------------------------------------
 # Every line counts, fenced or not: a prose "Read `~/.claude/skills/...`" sends
 # the model to the same missing file a fenced cat does. Directory mentions with
 # no file under them (`~/.claude/skills/`) describe install locations and pass.
-# A file this pass could not read is reported the same way a host path is, so
-# the lint fails closed instead of passing a tree it never looked at.
-HP_FILES=()
-for f in "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md; do
-  [ -e "$f" ] && HP_FILES+=("$f")
-done
-if [ "${#HP_FILES[@]}" -eq 0 ]; then
-  if [ "$STRICT" -eq 1 ]; then say "$ROOT: no skill or snippet files to check"; else echo "warn: $ROOT: no skill or snippet files to check"; fi
-fi
-while IFS= read -r line; do
-  say "$line"
-done < <(for f in ${HP_FILES[@]+"${HP_FILES[@]}"}; do
-  if [ ! -r "$f" ]; then echo "$f: unreadable — hostpath check could not run"; continue; fi
-  awk -v file="$f" '
+for f in ${READABLE[@]+"${READABLE[@]}"}; do
+  awk_pass hostpath "$f" -v file="$f" '
     {
       form = ""
-      if (match($0, /~\/\.claude\/skills\/[^\/` \t]+\//)) form = substr($0, RSTART, RLENGTH)
+      # A skill name, then a file under it. A } (the :- fallback of a braced
+      # default), a glob or a <name> placeholder, or a bare trailing slash
+      # names no file of its own.
+      if (match($0, /(~|[$]HOME|[$][{]HOME[}])\/\.claude\/skills\/[^\/` \t*<}]+\/[^` \t)"\047]/)) form = substr($0, RSTART, RLENGTH - 1)
+      else if (match($0, /(^|[ \t"\047(`])(\.\/)?\.claude\/skills\/[^\/` \t*<}]+\/[^` \t)"\047]/)) {
+        form = substr($0, RSTART, RLENGTH - 1); sub(/^[ \t"\047(`]/, "", form)
+      }
       else if (match($0, /[Rr]ead `\.claude\/skills\//)) form = substr($0, RSTART + 6, RLENGTH - 6)
       else if (match($0, /(^|[^\/A-Za-z0-9_.-])(qa\/templates|qa\/references|review\/TODOS-format\.md)/)) {
         form = substr($0, RSTART, RLENGTH); sub(/^[^qr]/, "", form)
       }
       if (form != "")
         printf "%s:%d: hard-coded host path %s exists only where Claude Code installed the pack at that path — use ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/<name>}/... or .../../<sibling>/...\n", file, NR, form
-    }' "$f" || echo "$f: awk exited $? — hostpath check could not run"
-done)
+    }' || continue
+  [ -z "$AWK_OUT" ] && continue
+  while IFS= read -r line; do say "$line"; done <<< "$AWK_OUT"
+done
 
 # --- positionals and python isolation --------------------------------------
 # The host replaces $N (digits with no word character after them) with the Nth
-# invocation argument before the model sees the skill, backslash or not.
-while IFS= read -r f; do
-  while IFS= read -r line; do
-    case "$line" in
-      ERR*) say "${line#ERR }" ;;
-      *) echo "$line" ;;
-    esac
-  done < <(awk -v file="$f" "$FENCE_AWK"'
-    function positional(s,   p, n) {
+# invocation argument before the model sees the skill, backslash or not, in
+# prose as much as in a fence.
+for f in ${READABLE[@]+"${READABLE[@]}"}; do
+  pos=0; is_skill_file "$f" && pos=1
+  awk_pass "positional and python" "$f" -v file="$f" -v pos="$pos" "$FENCE_AWK"'
+    function positional(s,   p, n, all) {
+      all = ""
       while (match(s, /[$][0-9]+/)) {
         p = substr(s, RSTART, RLENGTH); n = substr(s, RSTART + RLENGTH, 1)
-        if (n !~ /[A-Za-z0-9_]/) return p
+        if (n !~ /[A-Za-z0-9_]/) all = all (all == "" ? "" : ", ") p
         s = substr(s, RSTART + RLENGTH)
+      }
+      return all
+    }
+    # A python interpreter word: python, python3, python3.12, an absolute or
+    # relative path to one, or a $PY / $PYTHON style variable.
+    function interp(t) {
+      sub(/^.*[(`]/, "", t); gsub(/["\047]/, "", t)
+      if (t ~ /^([A-Za-z0-9_.\/-]*\/)?python(3(\.[0-9]+)?)?$/) return 1
+      return t ~ /^[$][{]?([A-Za-z0-9_]*_)?(PY|PYTHON|PYTHON3|py|python|python3)[}]?$/
+    }
+    # Echo "<python> -c", "-m" or "-" for a call that runs inline code, a
+    # module or stdin without -I; empty otherwise.
+    function unisolated(s,   t, k, i, j, p, c, tok, prev, name, iso, res, skip) {
+      k = split(s, t, /[ \t]+/)
+      for (i = 1; i <= k; i++) {
+        if (t[i] == "" || !interp(t[i])) continue
+        prev = (i > 1) ? t[i - 1] : ""
+        if (prev == "-v" || prev == "-V" || prev == "which" || prev == "type" || prev == "hash" || prev == "command") continue
+        name = t[i]; sub(/^.*[(`\/]/, "", name); gsub(/["\047]/, "", name)
+        iso = 0; res = ""
+        for (j = i + 1; j <= k + 1 && res == ""; j++) {
+          tok = (j <= k) ? t[j] : ""
+          if (tok == "" || tok ~ /^(\||\|\||&&|;|;;|&|\))$/) { if (prev ~ /\|$/) res = "-"; else res = "none"; break }
+          if (tok ~ /^[0-9]*</) { res = "-"; break }
+          if (tok ~ /^[0-9]*>/) { if (tok ~ /^[0-9]*>>?$/) j++; continue }
+          if (tok == "-" || tok ~ /^-</) { res = "-"; break }
+          if (tok !~ /^-/ || tok ~ /^--/) { res = "none"; break }
+          skip = 0
+          for (p = 2; p <= length(tok); p++) {
+            c = substr(tok, p, 1)
+            if (c == "I") iso = 1
+            else if (c == "c" || c == "m") { res = "-" c; break }
+            else if (c == "W" || c == "X") { if (p == length(tok)) skip = 1; break }
+            else if (c == "V" || c == "h") { res = "none"; break }
+          }
+          if (skip) j++
+        }
+        if (res != "" && res != "none" && !iso) return name " " res
       }
       return ""
     }
-    # Echo "-c" or "-" for a python3 that runs inline code without -I.
-    function unisolated(s,   rest, t, i, k, iso) {
-      while (match(s, /python3[ \t]/)) {
-        rest = substr(s, RSTART + RLENGTH)
-        if (RSTART > 1 && substr(s, RSTART - 1, 1) ~ /[A-Za-z0-9_]/) { s = rest; continue }
-        k = split(rest, t, /[ \t]+/); iso = 0
-        for (i = 1; i <= k; i++) {
-          if (t[i] == "") continue
-          if (t[i] !~ /^-/) break
-          if (t[i] == "-") { if (!iso) return "-"; break }
-          if (t[i] ~ /^-[A-Za-z]*I/) iso = 1
-          if (t[i] ~ /^-[A-Za-z]*c/) { if (!iso) return "-c"; break }
-        }
-        s = rest
-      }
-      return ""
+    function check(s, at,   m) {
+      if (s !~ /^[ \t]*#/ && (m = unisolated(s)) != "")
+        printf "ERR %s:%d: %s without -I imports from the working directory first — add -I\n", file, at, m
     }
     {
       fenced = fence_step($0)
-      p = positional($0)
-      if (p != "") {
-        if (fenced)
-          printf "ERR %s:%d: bare %s is replaced by an invocation argument when the skill loads — use ${N} in shell, $(N) in awk, USD for money\n", file, NR, p
-        else
-          printf "warn: %s:%d: bare %s is replaced by an invocation argument when the skill loads — use ${N} in shell, $(N) in awk, USD for money\n", file, NR, p
-      }
-      if (fenced && (m = unisolated($0)) != "")
-        printf "ERR %s:%d: python3 %s without -I imports from the working directory first — add -I\n", file, NR, m
-    }' "$f")
-done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
+      if (pos && (p = positional($0)) != "")
+        printf "ERR %s:%d: bare %s is replaced by an invocation argument when the skill loads — use ${N} in shell, $(N) in awk, USD for money\n", file, NR, p
+      if (!fenced) { if (buf != "") check(buf, at); buf = ""; next }
+      if (buf == "") at = NR
+      buf = buf (buf == "" ? "" : " ") $0
+      if (buf ~ /\\$/) { sub(/\\$/, "", buf); next }
+      check(buf, at); buf = ""
+    }
+    END { if (buf != "") check(buf, at) }' || continue
+  [ -z "$AWK_OUT" ] && continue
+  while IFS= read -r line; do say "${line#ERR }"; done <<< "$AWK_OUT"
+done
 
 if [ "$errors" -gt 0 ]; then
   echo "vibe-lint-sources: $errors finding(s)"

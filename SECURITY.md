@@ -47,7 +47,10 @@ If you run the configuration phase on your own machine and want tighter control,
 
 The `deny` list also carries `Read(...)` rules for a few credential files:
 `~/.ssh/id_*`, `~/.ssh/*.pem`, `~/.aws/credentials`, `~/.netrc`,
-`~/.config/gh/hosts.yml` and `~/.docker/config.json`. Claude Code applies a
+`~/.git-credentials`, `~/.config/gh/hosts.yml` and `~/.docker/config.json`.
+The SSH rules match default key names only: a key saved under another name
+(`~/.ssh/github`) is not covered, so add a `Read(...)` rule for it in your own
+`~/.claude/settings.json`; the merge keeps it. Claude Code applies a
 `Read` deny to its own file tools, to the file commands it recognizes in Bash
 (`cat`, `head`, `tail`, `sed`, `tee`), to redirection targets, and to writes on
 the same path. It does not apply to a command that reads a file without naming

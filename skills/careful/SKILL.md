@@ -186,7 +186,9 @@ script, a teardown target. Add warn rules for them, one POSIX ERE per line
 
 Both are consulted **after** the built-in families, so a pattern file can only
 ADD a warning, never suppress a baseline one — a guard a project can silence is
-not a guard. A line whose regex grep cannot compile is reported on stderr
+not a guard. Like the built-in warn rules, a pattern is matched with every
+commit message masked: it can catch a command, not the words of a
+`git commit -m` message. A line whose regex grep cannot compile is reported on stderr
 (`[careful] skipped unusable pattern in <file>:<line>`) and skipped; the
 built-in families and the file's other lines stay active, so a typo never takes
 the hook down with it.

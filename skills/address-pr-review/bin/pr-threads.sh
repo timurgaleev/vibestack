@@ -15,6 +15,7 @@
 # says so on stderr rather than letting the caller read a short comment list as
 # a complete one.
 set -euo pipefail
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # Guard against a cursor that never advances. 50 pages is 5000 threads.
 MAX_PAGES="${PR_THREADS_MAX_PAGES:-50}"

@@ -2,17 +2,55 @@
 
 ## Open
 
+Every item here needs something this repository cannot provide on its own: a
+live third-party runtime, an interactive session, or a paid API call.
+
 ### Track B for Copilot CLI
 
-The copilot target installs and its hook file is checked structurally, but no
-recorded run under a live `copilot` session confirms: a destructive command
-reaching the `/careful` ask prompt, an edit outside a frozen directory being
-denied with its reason, `/env` listing the three hooks from the user source,
+The copilot target installs and its hook file is checked structurally. A live
+`copilot -p` run (recorded in `docs/hook-verification.md`) confirmed the freeze
+deny and the careful force-push refusal. Still unrecorded, because they need an
+interactive `copilot` session: a destructive command reaching the `/careful`
+ask prompt, `/env` listing the three hooks from the user source,
 `allowed-tools` with Claude tool names mapping to Copilot's own, and
-`copilot skill list --json` showing each skill once. Record the outcome in
-`docs/hook-verification.md` and add the copilot column to the audit matrix.
+`copilot skill list --json` showing each skill once. Record the outcome there
+and add the copilot column to the audit matrix.
+
+### Live runtime checks
+
+- **Cursor permission grammar.** Whether a real `cursor-agent` honours the
+  `Shell(...)` denies in `config/cursor/cli-config.json` (for example refuses
+  `shutdown -h +999`). The grammar follows Cursor's documentation; the runtime
+  behaviour is unverified.
+- **Compaction re-anchor.** Whether a Claude Code session that really compacts
+  keeps only the head of a long skill, and acts on the `SessionStart` reminder
+  `vibe-compact-reanchor` adds. Needs an interactive session long enough to
+  compact; `test/test-hooks.sh` covers the hook's output.
+- **New-skill smoke.** `/iac-review` loading as a slash command in a fresh
+  session.
+
+### Paid runs
+
+- **Compliance specs.** `bun run test:compliance --spec
+  investigate-no-fix-first,ship-no-push-without-fresh-evidence,review-no-clean-after-unreviewed-fix
+  --max-usd <cap>` has not been run live; a cap of USD 1 is likely too low for
+  the largest skills.
+- **Image model probe.** Whether a newer OpenAI image model should replace the
+  `gpt-image-1` default in `vibe-design` needs a live `OPENAI_API_KEY` call.
 
 ## Completed
+
+### Compaction re-anchor hook (2026-11-08)
+
+A `SessionStart` hook with the `compact` matcher in `config/claude/settings.json`
+runs `bin/vibe-compact-reanchor`, which adds an `additionalContext` reminder to
+re-read the running skill's `SKILL.md` and any file before editing it. The
+envelope is encoded with the careful skill's `vibe_hook_json_string`; without it
+the reminder is plain text. `test/test-hooks.sh` checks the registered command
+and the envelope; the settings merge test checks it arrives next to a machine's
+own hooks.
+
+**Completed:** next release (2026-11-08)
 
 ### GitHub Copilot CLI is a default target (2026-10-13)
 

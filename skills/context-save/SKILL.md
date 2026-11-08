@@ -177,7 +177,7 @@ eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkd
 CHECKPOINT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/checkpoints"
 mkdir -p "$CHECKPOINT_DIR"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-# Bash-side title sanitize. Pass the raw title as ${1} when running this block.
+# Bash-side title sanitize. Pass the raw title in TITLE_RAW when running this block.
 # Example: TITLE_RAW="wintermute progress" bash -c '...'
 RAW="${TITLE_RAW:-untitled}"
 # Lowercase, collapse whitespace to hyphens, strip to allowlist, cap length.

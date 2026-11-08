@@ -102,8 +102,12 @@ eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
 _REPOTOP=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
-_REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
+if [ -n "$DESIGN" ]; then  # another feature's docs/designs/*.md never displaces this branch's doc
+  _REPO_DESIGN=$(ls "$_REPOTOP"/DESIGN.md 2>/dev/null)
+else
+  DESIGN=$(ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-design-*.md 2>/dev/null | head -1)
+  _REPO_DESIGN=$(ls -t "$_REPOTOP"/DESIGN.md "$_REPOTOP"/docs/designs/*.md 2>/dev/null | head -1)
+fi
 if [ -n "$_REPO_DESIGN" ] && { [ -z "$DESIGN" ] || [ ! "$DESIGN" -nt "$_REPO_DESIGN" ]; }; then
   DESIGN="$_REPO_DESIGN"
 fi
@@ -122,7 +126,7 @@ ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/ceo-plans/"*.md 2>/dev
   elif [ -n "$_CEO_OTHER" ]; then echo "CEO plan from another branch ($_OTHER_BRANCH): $_CEO_OTHER"; fi
 }
 ```
-If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why. A repo-local `DESIGN.md` or `docs/designs/*.md` wins on a tie: it is the copy the team can see.
+If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why. A repo-local `DESIGN.md` or `docs/designs/*.md` wins on a tie: it is the copy the team can see. A doc filed for this branch yields only to `DESIGN.md`.
 
 On `CEO plan found:`, read its Scope Decisions and Accepted Scope: they record what
 the user accepted, deferred and rejected, and this review does not reopen them. On
@@ -571,7 +575,7 @@ survived the review scrutiny, overcomplexity (is there a fundamentally simpler
 approach the review was too deep in the weeds to see?), feasibility risks the review
 took for granted, missing dependencies or sequencing issues, and strategic
 miscalibration (is this the right thing to build at all?). Be direct. Be terse. No
-compliments. Just the problems."
+compliments. Just the problems, then the closing Recommendation line."
 
 **Material:** the plan file being reviewed (the file the user pointed this review at,
 or the branch diff scope). If /plan-ceo-review saved a CEO plan for this branch under
@@ -720,7 +724,7 @@ At the end of the review, fill in and display this summary so the user can see a
 - What already exists: written
 - TODOS.md updates: ___ items proposed to user
 - Failure modes: ___ critical gaps flagged
-- Outside voice: ran (codex/claude) / skipped
+- Outside voice: ran (codex/claude) / unavailable (<cause>) / skipped
 - Parallelization: ___ lanes, ___ parallel / ___ sequential; interface names agree across lanes: yes / mismatch <name>
 - Release & rollback: ___ items missing / not applicable
 - Lake Score: X/Y recommendations chose complete option
@@ -757,9 +761,15 @@ If the review settled a durable architecture choice — a data model, a module
 boundary, a dependency taken or refused — record it so the next session builds on it
 instead of reopening it. Skip this when nothing architectural was decided:
 
+The text is free prose, so it reaches the log through a file, never through shell
+source: run `mktemp "${TMPDIR:-/tmp}/vibe-decision.XXXXXX"`, write the JSON object
+`{"decision":"Eng review: DECISION","rationale":"RATIONALE","scope":"branch","source":"skill"}` with the Write tool to the printed path, then run this with `<DECISION_FILE>` replaced:
+
 ```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log" '{"decision":"Eng review: DECISION","rationale":"RATIONALE","scope":"branch","source":"skill"}' \
+_DEC='<DECISION_FILE>'
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-decision-log" "$(cat "$_DEC")" \
   || echo "DECISION_LOG_NOT_PERSISTED (exit $?)"
+rm -f "$_DEC"
 ```
 
 - **DECISION**: one line naming the choice

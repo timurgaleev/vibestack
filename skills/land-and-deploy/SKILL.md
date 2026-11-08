@@ -1361,6 +1361,7 @@ Determine what kind of project this is and how to verify the deploy.
 First, run the deploy configuration bootstrap to detect or read persisted deploy settings:
 
 ```bash
+BASE_SHA='<BASE_SHA>'; PR_HEAD='<PR_HEAD>'   # from Step 1's TARGET line
 # Check for persisted deploy config in CLAUDE.md
 DEPLOY_CONFIG=$(grep -A 20 "## Deploy Configuration" CLAUDE.md 2>/dev/null || echo "NO_CONFIG")
 echo "$DEPLOY_CONFIG"
@@ -1375,7 +1376,15 @@ if [ "$DEPLOY_CONFIG" != "NO_CONFIG" ]; then
   case "$PLATFORM" in [Nn]one*) echo "NO_DEPLOY: /setup-deploy recorded that this project never deploys" ;; esac
   # /setup-deploy records either "automatic on push to <branch>" or the command that deploys.
   TRIGGER=$(echo "$DEPLOY_CONFIG" | grep -i '^[[:space:]]*-[[:space:]]*deploy trigger:' | head -1 | sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//')
-  case "$TRIGGER" in ''|[Aa]uto*|[Nn]one*|*"on push"*|*"on merge"*) ;; *) echo "DEPLOY_TRIGGER_COMMAND: $TRIGGER" ;; esac
+  _T=$(printf '%s' "$TRIGGER" | tr -d '`'); _T=${_T%% *}
+  case "$TRIGGER" in ''|[Aa]uto*|[Nn]one*|*"on push"*|*"on merge"*) ;;
+    # A command names a path or a tool on PATH; anything else is a note, never run.
+    *) if case "$_T" in */*) true ;; *) command -v "$_T" >/dev/null 2>&1 ;; esac; then
+         echo "DEPLOY_TRIGGER_COMMAND: $TRIGGER"
+         # A trigger this PR wrote was never reviewed as a command to run here.
+         git diff --quiet "$BASE_SHA" "$PR_HEAD" -- CLAUDE.md 2>/dev/null || echo "DEPLOY_CONFIG_CHANGED: this PR edits CLAUDE.md"
+       else echo "DEPLOY_TRIGGER_NOTE: $TRIGGER"; fi ;;
+  esac
 fi
 
 # Auto-detect platform from config files
@@ -1416,11 +1425,13 @@ gh run list --repo "$REPO" --branch "$BASE_BRANCH" --limit 10 --json databaseId,
 ```
 A run with `headSha` = `MERGE_SHA` whose workflow deploys ("deploy", "release",
 "production", "cd" in its name or jobs): monitor it in Step 6, then canary — even for a
-docs-only change. A configured deploy whose run has not appeared yet is still pending:
+docs-only change. Under `NO_DEPLOY:` only "deploy" or "production" counts: a release
+run there publishes a package, not a site. A configured deploy whose run has not appeared yet is still pending:
 Step 6 keeps looking for it within its deadline.
 
 2. `DEPLOY_TRIGGER_COMMAND:` printed (the Deploy Configuration records a command as the
-   deploy trigger) and no run from rule 1: nothing deploys until that command runs. Tell
+   deploy trigger) and no run from rule 1 — when a `DEPLOY_WORKFLOW:` was also detected,
+   only once Step 6's deadline passes with no run: nothing deploys until that command runs. Tell
    the user "PR #NNN is merged, but production has not moved yet — this project deploys
    when `<command>` runs," show the command, and use AskUserQuestion:
    - A) I'll run it myself — tell me when it's done
@@ -1428,6 +1439,8 @@ Step 6 keeps looking for it within its deadline.
      from a checkout of `BASE_BRANCH` that contains `MERGE_SHA`
      (`git merge-base --is-ancestor "$MERGE_SHA" HEAD`)
    - C) Finish as MERGED (UNVERIFIED) → Step 9
+   On `DEPLOY_CONFIG_CHANGED`, offer only A and C: this PR wrote or edited that command.
+   A `DEPLOY_TRIGGER_NOTE:` is prose, not a command: show it and go on with rules 3-5.
    After A or B, go to Step 6 with `DEPLOY_SHA=MERGE_SHA`. The command's exit 0 is not
    proof of the revision — Step 6 still needs a record for `DEPLOY_SHA`.
 
@@ -1848,8 +1861,8 @@ alongside it:
 ```
 
 `vibe-review-log` writes it. After `--delete-branch` the checkout is on the base, so the
-block names the PR's branch and the merge commit in the entry itself rather than letting
-the writer take them from the checkout:
+block names the PR's branch and the merge commit in the entry itself, and the writer files
+the entry under that branch's log rather than the checkout's:
 ```bash
 REPO='<REPO>'; PR_NUMBER='<PR_NUMBER>'; MERGE_SHA='<MERGE_SHA>'   # Step 1; readback
 ENTRY='<ENTRY>'   # the JSON line above, every <…> filled in

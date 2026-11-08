@@ -251,8 +251,15 @@ export class BrowserManager {
   private tabGuardrailSoftHit = false;
   private tabGuardrailHardHit = false;
 
-  private tabPin = new AsyncLocalStorage<number>();
-  private tabRecovery: Promise<number> | null = null;
+  // Mutable so `tab` / `newtab` inside a pinned chain move the chain's pin,
+  // never the shared active tab.
+  private tabPin = new AsyncLocalStorage<{ id: number }>();
+  private tabRecovery: { done: Promise<number>; external: boolean } | null = null;
+  // One outstanding liveness evaluate per page: a stuck renderer never answers,
+  // and a fresh evaluate per health poll would pile up behind it.
+  private pendingProbes = new WeakMap<object, Promise<unknown>>();
+  /** browse's own in-flight newPage() opens, each settling once registered. */
+  private ownPageOpens = new Set<Promise<unknown>>();
 
   /**
    * Called from context.on('page') after a new tab is tracked. Emits at
@@ -686,18 +693,7 @@ export class BrowserManager {
     };
     await this.context.addInitScript(indicatorScript);
 
-    // Track user-created tabs automatically (Cmd+T, link opens in new tab, etc.)
-    this.context.on('page', (page) => {
-      const id = this.nextTabId++;
-      this.pages.set(id, page);
-      this.tabSessions.set(id, new TabSession(page));
-      this.activeTabId = id;
-      this.wirePageEvents(page);
-      // Inject indicator on the new tab
-      page.evaluate(indicatorScript).catch(() => {});
-      console.log(`[browse] New tab detected (id=${id}, total=${this.pages.size})`);
-      this.checkTabGuardrails();
-    });
+    this.trackExternalPages(indicatorScript);
 
     // Persistent context opens a default page — adopt it instead of creating a new one
     const existingPages = this.context.pages();
@@ -787,12 +783,23 @@ export class BrowserManager {
   }
 
   /**
-   * Liveness only: is Chromium still connected. A tab stuck in a script is a
+   * Liveness of the browser process: connected, and its browser target answers
+   * within TAB_PROBE_TIMEOUT_MS. A stopped or wedged browser keeps its pipe
+   * open, so the connection alone reads healthy. A tab stuck in a script is a
    * fact about that tab, reported by probeActiveTab(), and must not make the
    * whole daemon look dead to the CLI.
    */
   async isHealthy(): Promise<boolean> {
-    return !!this.browser && this.browser.isConnected();
+    const browser = this.browser;
+    if (!browser || !browser.isConnected()) return false;
+    try {
+      return (await withTabTimeout(this.singleProbe(browser, async () => {
+        const session = await browser.newBrowserCDPSession();
+        try { await session.send('Browser.getVersion'); } finally { session.detach().catch(() => {}); }
+      }))) !== TAB_TIMED_OUT;
+    } catch {
+      return false;
+    }
   }
 
   /** Does the active tab's renderer answer a trivial script within TAB_PROBE_TIMEOUT_MS. */
@@ -802,9 +809,19 @@ export class BrowserManager {
     if (!page) return null;
     let responsive = false;
     try {
-      responsive = (await withTabTimeout(page.evaluate('1'))) !== TAB_TIMED_OUT;
+      responsive = (await withTabTimeout(this.singleProbe(page, () => page.evaluate('1')))) !== TAB_TIMED_OUT;
     } catch {}
     return { id, url: page.url(), responsive };
+  }
+
+  /** Reuse the probe still outstanding against `target` instead of stacking another. */
+  private singleProbe(target: object, start: () => Promise<unknown>): Promise<unknown> {
+    let pending = this.pendingProbes.get(target);
+    if (!pending) {
+      pending = start().finally(() => this.pendingProbes.delete(target));
+      this.pendingProbes.set(target, pending);
+    }
+    return pending;
   }
 
   /**
@@ -815,13 +832,22 @@ export class BrowserManager {
    */
   async ensureActiveTab(): Promise<string | null> {
     if (this.pages.size > 0 || !this.context) return null;
-    if (!this.tabRecovery) {
-      this.tabRecovery = this.newTab().finally(() => { this.tabRecovery = null; });
-    }
-    const id = await this.tabRecovery;
+    const recovery = this.reopenBlankTab(true);
+    const id = await recovery.done;
+    // Joining the reopen of a closetab is not news: browse closed that tab.
+    if (!recovery.external) return null;
     const warning = `Warning: every tab had been closed outside browse; opened a blank tab [${id}].`;
     console.warn(`[browse] ${warning}`);
     return warning;
+  }
+
+  /** The one shared reopen of a blank tab once none is left. */
+  private reopenBlankTab(external: boolean): { done: Promise<number>; external: boolean } {
+    if (!this.tabRecovery) {
+      const done = this.newTab().finally(() => { this.tabRecovery = null; });
+      this.tabRecovery = { done, external };
+    }
+    return this.tabRecovery;
   }
 
   /**
@@ -830,18 +856,54 @@ export class BrowserManager {
    * different tabs can overlap without moving each other, or unpinned
    * callers, onto the wrong tab.
    */
-  runPinned<T>(tabId: number | null | undefined, work: () => Promise<T>): Promise<T> {
+  runPinned<T>(tabId: number | null | undefined, work: () => Promise<T>, opts?: { lenient?: boolean }): Promise<T> {
     if (tabId === undefined || tabId === null) return work();
     // Running unpinned would drive whatever tab is shared-active, which is
-    // exactly the cross-lane interference a pin exists to prevent.
-    if (!this.tabSessions.has(tabId)) {
+    // exactly the cross-lane interference a pin exists to prevent. `lenient`
+    // (newtab, tabs) touches no page, so a stale pin must not block the
+    // recovery the not-found error suggests.
+    if (!opts?.lenient && !this.tabSessions.has(tabId)) {
       return Promise.reject(new Error(`Tab ${tabId} not found — it was closed; run tabs, or newtab --json for a fresh one`));
     }
-    return this.tabPin.run(tabId, work);
+    return this.tabPin.run({ id: tabId }, work);
   }
 
   private get currentTabId(): number {
-    return this.tabPin.getStore() ?? this.activeTabId;
+    return this.tabPin.getStore()?.id ?? this.activeTabId;
+  }
+
+  /**
+   * Track tabs opened outside browse (Cmd+T, a link opening a new tab). The
+   * context fires 'page' for browse's own newPage() too, so the listener
+   * first lets those opens register their page, and skips a page that is
+   * already tracked. Otherwise a pinned newtab in a headed session would land
+   * as a second, shared-active tab.
+   */
+  private trackExternalPages(indicatorScript: () => void): void {
+    this.context!.on('page', async (page) => {
+      if (this.ownPageOpens.size > 0) await Promise.allSettled([...this.ownPageOpens]);
+      if ([...this.pages.values()].includes(page)) return;
+      const id = this.nextTabId++;
+      this.pages.set(id, page);
+      this.tabSessions.set(id, new TabSession(page));
+      this.activeTabId = id;
+      this.wirePageEvents(page);
+      // Inject indicator on the new tab
+      page.evaluate(indicatorScript).catch(() => {});
+      console.log(`[browse] New tab detected (id=${id}, total=${this.pages.size})`);
+      this.checkTabGuardrails();
+    });
+  }
+
+  /** Open a page and run `register` on it before the 'page' listener looks. */
+  private async openOwnPage<T>(register: (page: Page) => T): Promise<T> {
+    const opening = this.context!.newPage().then(register);
+    this.ownPageOpens.add(opening);
+    try {
+      return await opening;
+    } finally {
+      this.ownPageOpens.delete(opening);
+    }
   }
 
   // ─── Tab Management ────────────────────────────────────────
@@ -856,19 +918,26 @@ export class BrowserManager {
       normalizedUrl = await validateNavigationUrl(url);
     }
 
-    const page = await this.context.newPage();
-    const id = this.nextTabId++;
-    this.pages.set(id, page);
-    this.tabSessions.set(id, new TabSession(page));
-    this.activeTabId = id;
+    const pin = this.tabPin.getStore();
+    const { id, page } = await this.openOwnPage((page) => {
+      const id = this.nextTabId++;
+      const sharedLive = this.pages.has(this.activeTabId);
+      this.pages.set(id, page);
+      this.tabSessions.set(id, new TabSession(page));
+      // A pinned request moves its own pin; the shared active tab moves only
+      // when it is unpinned, or when the shared tab is gone.
+      if (pin) pin.id = id;
+      if (!pin || !sharedLive) this.activeTabId = id;
 
-    // Record tab ownership for multi-agent isolation
-    if (clientId) {
-      this.tabOwnership.set(id, clientId);
-    }
+      // Record tab ownership for multi-agent isolation
+      if (clientId) {
+        this.tabOwnership.set(id, clientId);
+      }
 
-    // Wire up console/network/dialog capture
-    this.wirePageEvents(page);
+      // Wire up console/network/dialog capture
+      this.wirePageEvents(page);
+      return { id, page };
+    });
 
     if (normalizedUrl) {
       await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
@@ -882,25 +951,30 @@ export class BrowserManager {
     const page = this.pages.get(tabId);
     if (!page) throw new Error(`Tab ${tabId} not found`);
 
-    await page.close();
+    // Untrack before closing: the page's own close event can land first and
+    // would otherwise hide that this was the active, or the last, tab.
     this.pages.delete(tabId);
     this.tabSessions.delete(tabId);
     this.tabOwnership.delete(tabId);
-
-    // Switch to another tab if we closed the active one
     if (tabId === this.activeTabId) {
       const remaining = [...this.pages.keys()];
-      if (remaining.length > 0) {
-        this.activeTabId = remaining[remaining.length - 1];
-      } else {
-        // No tabs left — create a new blank one
-        await this.newTab();
-      }
+      this.activeTabId = remaining.length > 0 ? remaining[remaining.length - 1] : 0;
     }
+    // No tabs left — reopen a blank one through the shared recovery, so a
+    // request arriving meanwhile joins it instead of opening a second.
+    const reopen = this.pages.size === 0 && this.context ? this.reopenBlankTab(false) : null;
+    await page.close();
+    if (reopen) await reopen.done;
   }
 
   switchTab(id: number, opts?: { bringToFront?: boolean }): void {
     if (!this.tabSessions.has(id)) throw new Error(`Tab ${id} not found`);
+    // Inside a pinned request, `tab` moves that request's pin only.
+    const pin = this.tabPin.getStore();
+    if (pin) {
+      pin.id = id;
+      return;
+    }
     this.activeTabId = id;
     // Only bring to front when explicitly requested (user-initiated tab switch).
     // Internal tab pinning (BROWSE_TAB) should NOT steal focus.
@@ -1027,7 +1101,7 @@ export class BrowserManager {
         const read = await withTabTimeout(page.title());
         if (read !== TAB_TIMED_OUT) title = read;
       } catch {}
-      return { id, url: page.url(), title, active: id === this.activeTabId };
+      return { id, url: page.url(), title, active: id === this.currentTabId };
     }));
   }
 
@@ -1311,6 +1385,23 @@ export class BrowserManager {
   async setViewport(width: number, height: number) {
     this.currentViewport = { width, height };
     await this.getPage().setViewportSize({ width, height });
+  }
+
+  /**
+   * Drop the active page's viewport override so it fills its window again,
+   * the way a headed session starts (viewport: null). Returns the size the
+   * page now has.
+   */
+  async fitViewportToWindow(): Promise<{ width: number; height: number }> {
+    const page = this.getPage();
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+    this.currentViewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    return { ...this.currentViewport };
   }
 
   // ─── Extra Headers ─────────────────────────────────────────

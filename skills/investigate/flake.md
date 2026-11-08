@@ -6,7 +6,7 @@ Read from `/investigate` Phase 2 when a failure does not happen every run, or ha
 
 ## 1. Measure the rate on base and on the branch
 
-Run the project's single-file test command for the failing file in a loop, on the branch and on the base, N ≥ 10 times each (20 is a good default; raise it when the rate is low). Same command, same machine, nothing else running. `SETUP` installs the base worktree's dependencies (`true` when there are none); without it every base run fails for the wrong reason.
+Run the project's single-file test command for the failing file in a loop, on the branch and on the base, N ≥ 10 times each (20 is a good default; raise it when the rate is low). Same command, same machine, nothing else running, and no cached results: a runner that replays a stored pass (`go test` without `-count=1`, a build cache, `--onlyChanged`) must run uncached. `SETUP` installs the base worktree's dependencies (`true` when there are none); without it every base run fails for the wrong reason.
 
 ```bash
 CMD='<single-file test command for the failing file, run from the repo root>'
@@ -20,12 +20,15 @@ rate() {
   done
   echo "$fails/$N"
 }
-WT="$(mktemp -d)/base"
-git worktree add --detach "$WT" "$BASE" >/dev/null
-(cd "$WT" && sh -c "$SETUP") >/dev/null 2>&1 || { echo "SETUP failed in the base worktree — no base rate"; git worktree remove --force "$WT"; exit 1; }
+case "$BASE" in origin/*) git fetch --quiet origin "${BASE#origin/}" || echo "WARN: could not fetch $BASE; using the local copy" ;; esac
+WT_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/vibe-flake.XXXXXX")" || exit 1
+WT="$WT_PARENT/base"
+trap 'git worktree remove --force "$WT" >/dev/null 2>&1; rm -rf "$WT_PARENT"' EXIT
+trap 'exit 130' INT TERM
+git worktree add --detach "$WT" "$BASE" >/dev/null || { echo "cannot check out $BASE — no base rate"; exit 1; }
+(cd "$WT" && sh -c "$SETUP") >/dev/null 2>&1 || { echo "SETUP failed in the base worktree — no base rate"; exit 1; }
 echo "branch failed/N: $(rate .)"
 echo "base   failed/N: $(rate "$WT")"
-git worktree remove --force "$WT"
 ```
 
 Before the loop, run `CMD` once in each tree with its output visible. The failing test must exist on the base (a new or renamed test has no base rate, and a runner that matches nothing exits 0), and the base worktree resolves its own code, not the branch's: no activated branch `.venv`, editable install or `PATH` entry pointing back at the branch checkout. A run that ends with exit 126 or 127, or fails before any test starts, cannot run; fix that first, it is not a failure.
@@ -34,18 +37,17 @@ Read the two rates. `0/N` rules out only a rate above 3/N (about 15% at N=20): a
 
 - base `0/N`, branch at least 5/20 (or the same ratio at a larger N) — the branch introduced it; the cause is in the diff. A branch count below that against base `0/N` is not yet distinguishable from noise: raise N on both sides until it is.
 - both above zero at a similar rate (counts within a few of each other at the same N) — a pre-existing flake; it does not block this branch, and it is still not loosened (section 3).
-- both `0/N` locally, red in CI — the difference is the environment: CPU count, parallelism, file-system speed, locale, time zone, clock, network. Diff the CI job's environment against yours the way Phase 2's working example diff does, and reproduce under the CI condition (fewer cores, the CI parallelism flag, the CI container image).
+- both `0/N` locally, red in CI — run the full suite locally first (section 4, run 2): red there is order dependence, not environment. Still green, the difference is the environment: CPU count, parallelism, file-system speed, locale, time zone, clock, network. Diff the CI job's environment against yours the way Phase 2's working example diff does, and reproduce under the CI condition (fewer cores, the CI parallelism flag, the CI container image).
 
-Then date when it started. The last green CI run's `headSha` and the first red one bracket the commits that moved it:
+Then date when it started. An intermittent failure is green on some runs after it began, so the newest green run says nothing; the earliest red run and the last green run before it bracket the commits that moved it:
 
 ```bash
 WF='<workflow file name, e.g. tests.yml>'
 BR='<branch the CI runs on, e.g. the base branch>'
-gh run list --workflow "$WF" --branch "$BR" --status success --limit 30 --json headSha,createdAt
-gh run list --workflow "$WF" --branch "$BR" --status failure --limit 30 --json headSha,createdAt
+gh run list --workflow "$WF" --branch "$BR" --limit 100 --json headSha,createdAt,conclusion
 ```
 
-The first failure after the last success is the first moved `headSha`; `git log <last-green-sha>..<first-red-sha>` is the candidate range, and a loop over that range with `git bisect run` (Phase 1's bisection, clean tree first) narrows it when the rate is high enough to trust each step.
+Read the runs oldest first. `git log <green-sha>..<earliest-red-sha>` is the candidate range. When reds and greens interleave across many revisions, one green proves little: compare the per-revision failure rate (the section 1 loop at each candidate `headSha`) and bisect with `git bisect run` (Phase 1's bisection, clean tree first) only when the rate is high enough to trust each step.
 
 ## 2. No probe, no cause.
 
@@ -53,7 +55,7 @@ A flake's cause is named only after a probe forces it. Make the suspected condit
 
 ## 3. Never loosen
 
-A longer timeout, a retry, a skip, a quarantine tag or a widened tolerance is a gate relaxation, not a fix. It lowers the chance the test catches a real regression. Never apply one as the fix. If one is still proposed (for example as a stopgap while the real fix lands), state P(fail | regression) before and after in the report: a test that fails 3 times in 10 under a real intermittent regression catches it with probability 0.3 per run; wrapped in three retries it catches it with 0.3 × 0.3 × 0.3 ≈ 0.03. The user decides with those two numbers in front of them.
+A longer timeout, a retry, a skip, a quarantine tag or a widened tolerance is a gate relaxation, not a fix. It lowers the chance the test catches a real regression. Never apply one as the fix. If one is still proposed (for example as a stopgap while the real fix lands), state P(fail | regression) before and after in the report: a test that fails 3 times in 10 under a real intermittent regression catches it with probability 0.3 per run; wrapped in three retries (four attempts, all of which must fail) it catches it with 0.3⁴ ≈ 0.008. The user decides with those two numbers in front of them.
 
 A CI rerun is allowed only with a named outside cause, quoted from the log: the runner ran out of memory or disk, a package registry or third-party API returned 5xx, the job was cancelled by a newer push. "It passed on retry" is not a cause.
 
@@ -83,7 +85,7 @@ The failing test (the victim) is fine; something an earlier file did is still th
 Two actors (threads, processes, requests, workers) touch shared state and the result depends on who goes first.
 
 1. **See the interleaving.** Log each actor's id and a monotonic timestamp at every read and write of the shared state, tagged `[DEBUG-<short>]` like any temporary log. Merge and sort. Wall-clock time can repeat or go backwards; a monotonic clock per actor cannot.
-2. **Force it.** Put a test-only hook between the check and the act (a latch, barrier or channel the test controls; compiled out or inert in production) and make the test hold actor A at the hook until actor B has acted. The bad interleaving now happens every run, which is the red the regression test needs.
+2. **Force it.** Hold actor A between the check and the act until actor B has acted, through the nearest real seam Phase 4 would test at (an injected clock, a callback, a queue or lock the test controls). Add a test-only hook (a latch, barrier or channel; compiled out or inert in production) only when no real seam exists, and say so in the regression proof. The bad interleaving now happens every run, which is the red the regression test needs.
 3. **Test the invariant under load.** Alongside the forced test, start N ≥ 8 concurrent writers against the real code and assert the invariant afterwards: the counter equals the number of increments, no update was lost, no id was issued twice, the file is whole.
 4. **Fix with an atomic primitive.** The check and the act become one step: a compare-and-swap or a conditional update (`UPDATE … WHERE version = ?`), a unique constraint with insert-on-conflict handling, an exclusive create (`O_EXCL`) or write-then-atomic-rename for files, a lock held across both the check and the act, or a single writer that owns the state and takes requests from a queue.
 
@@ -96,7 +98,7 @@ Add this block to the DEBUG REPORT, below `Regression proof:`. A field with noth
 ```
 Flake evidence:
   Rate:          branch <f>/<N>, base <f>/<N>   (<command>, same machine)
-  First moved:   <last green headSha> → <first red headSha> (<dates>)
+  First moved:   <last green headSha before the earliest red> → <earliest red headSha> (<dates>)
   Kind:          order-dependent (polluter <file>, leaked <what>) | race (<state>, <actors>) | timing | environment (<difference>) | outside cause (<named, quoted from the log>)
   Probe:         <condition forced> → <f>/<N> with it, <f>/<N> without
   Order runs:    alone <f>/<N>, full suite <f>/<N>, random <seed> <result>

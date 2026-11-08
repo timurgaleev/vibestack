@@ -289,9 +289,17 @@ ask	export HUSKY=0; git commit -m x
 ask	env HUSKY=0 git commit -m x
 ask	env -i HUSKY=0 git commit -m x
 ask	CI=1 HUSKY=0 git commit -m x
+ask	git config core.hooksPath 0
+ask	git config core.hooksPath 0; git commit -m x
+ask	GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x
+ask	export GIT_CONFIG_KEY_0=core.hooksPath
+ask	GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" git push
 allow	echo HUSKY=0 > INSTALL.md
 allow	git config --get core.hooksPath
 allow	git config core.hooksPath
+allow	git config core.hooksPath 2>/dev/null
+allow	git config core.hooksPath 2>&1
+allow	GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git commit -m y
 allow	git -c user.name=x commit -m y
 CASES
 
@@ -371,6 +379,14 @@ case "$_err" in
   *'skipped unusable pattern'*) ok "bad line reported on stderr" ;;
   *) bad "bad line reported on stderr" "skipped unusable pattern" "$_err" ;;
 esac
+# A project pattern sees the command with commit messages masked, as the
+# built-in warn rules do (the documented contract in skills/careful/SKILL.md).
+printf 'PROJ-[0-9]+\n' > "$VIBESTACK_HOME/careful-patterns.txt"
+assert_decision "project pattern skips commit-message text" "$CAREFUL" '{"tool_input":{"command":"git commit -m \"PROJ-123 fix\""}}' allow
+assert_decision "project pattern still sees the command"    "$CAREFUL" '{"tool_input":{"command":"deploy PROJ-123"}}' ask
+grep -q 'pattern is matched with every' "$ROOT/skills/careful/SKILL.md" \
+  && ok "careful documents that project patterns see the masked command" \
+  || bad "careful documents that project patterns see the masked command" "a sentence in SKILL.md" "missing"
 rm -f "$VIBESTACK_HOME/careful-patterns.txt"
 
 echo "careful — escaped-quote extractor (the bypass)"
@@ -639,6 +655,11 @@ echo "freeze — NotebookEdit carries notebook_path"
 # Reading file_path alone parsed a notebook edit as "no path" and allowed it.
 assert_decision "notebook outside denied"       "$FREEZE" "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"notebook_path\":\"$FZ/out/x.ipynb\",\"new_source\":\"x\"}}" deny
 assert_decision "notebook inside allowed"       "$FREEZE" "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"notebook_path\":\"$FZ/in/x.ipynb\",\"new_source\":\"x\"}}" allow
+# Checking file_path first let a payload carry an inside file_path next to the
+# outside notebook_path the tool writes. Every path field must agree.
+assert_decision "mixed fields: inside file_path, outside notebook_path denied" "$FREEZE" "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"file_path\":\"$FZ/in/a.txt\",\"notebook_path\":\"$FZ/out/x.ipynb\"}}" deny
+assert_decision "mixed fields: inside file_path, outside path denied"          "$FREEZE" "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$FZ/in/a.txt\",\"path\":\"$FZ/out/a.txt\"}}" deny
+assert_decision "mixed fields naming the same inside path allowed"            "$FREEZE" "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"file_path\":\"$FZ/in/x.ipynb\",\"notebook_path\":\"$FZ/in/x.ipynb\"}}" allow
 for _skill in freeze guard investigate; do
   if grep -q 'matcher: "NotebookEdit"' "$ROOT/skills/$_skill/SKILL.md"; then
     ok "$_skill registers a NotebookEdit matcher"
@@ -962,6 +983,58 @@ _out=$(run_copilot_hook "$_careful_cmd" "$_rm" "$CP_HOME/alt"); _rc=$?
 mv "$CP_HOME/.copilot/skills" "$CP_HOME/alt/skills"
 _v=$(envelope_verdict "$(run_copilot_hook "$_careful_cmd" "$_rm" "$CP_HOME/alt")")
 [ "$_v" = ask ] && ok "careful hook asks via \$COPILOT_HOME/skills" || bad "careful hook asks via \$COPILOT_HOME/skills" "ask" "$_v"
+
+echo "claude — SessionStart compact re-anchor"
+# After a compaction the copy of a running skill in context may be cut off. The
+# SessionStart hook (matcher "compact") adds a reminder to re-read it from disk.
+# Claude Code takes additionalContext only from a hookSpecificOutput envelope
+# that names SessionStart, so the shape is what is asserted.
+CLAUDE_SETTINGS="$ROOT/config/claude/settings.json"
+_reanchor_cmd=$(python3 -I -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+for e in d.get("hooks", {}).get("SessionStart", []):
+    for h in e.get("hooks", []):
+        c = h.get("command", "")
+        if e.get("matcher") == "compact" and "vibe-compact-reanchor" in c and "[ -f \"$f\" ]" in c and isinstance(h.get("timeout"), int):
+            print(c)' "$CLAUDE_SETTINGS" 2>/dev/null)
+[ -n "$_reanchor_cmd" ] && ok "settings: SessionStart compact entry runs a guarded vibe-compact-reanchor" || bad "settings: SessionStart compact entry runs a guarded vibe-compact-reanchor" "one matcher=compact entry with a [ -f ] guard and a timeout" "missing"
+reanchor_shape() {
+  printf '%s' "$1" | python3 -I -c 'import sys,json
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    print("not one parseable JSON object"); sys.exit()
+h = d.get("hookSpecificOutput") if isinstance(d, dict) else None
+if not isinstance(h, dict) or h.get("hookEventName") != "SessionStart":
+    print("no hookSpecificOutput naming SessionStart"); sys.exit()
+c = h.get("additionalContext")
+if not isinstance(c, str) or "SKILL.md" not in c:
+    print("additionalContext does not name SKILL.md"); sys.exit()
+print("ok")'
+}
+run_reanchor() {
+  # run_reanchor HOME-DIR: the settings command, the way Claude Code runs it.
+  (cd "$HOSTILE" && printf '%s' '{"hook_event_name":"SessionStart","source":"compact"}' \
+    | env -i PATH="$PATH" HOME="$1" VIBESTACK_HOME="$1/state" bash -c "$_reanchor_cmd" 2>/dev/null)
+}
+RA_HOME="$TMPHOME/reanchor-home"
+mkdir -p "$RA_HOME/state"
+_out=$(run_reanchor "$RA_HOME"); _rc=$?
+[ -n "$_reanchor_cmd" ] && [ "$_rc" -eq 0 ] && [ -z "$_out" ] && ok "re-anchor: no-op when the bin is not installed" || bad "re-anchor: no-op when the bin is not installed" "exit 0, empty stdout" "exit $_rc, $_out"
+mkdir -p "$RA_HOME/state/bin" "$RA_HOME/.claude/skills"
+cp "$ROOT/bin/vibe-compact-reanchor" "$RA_HOME/state/bin/" 2>/dev/null
+ln -s "$ROOT/skills/careful" "$RA_HOME/.claude/skills/careful"
+rm -f "$HOSTILE/MARKER"
+_out=$(run_reanchor "$RA_HOME"); _rc=$?
+_v=$(reanchor_shape "$_out")
+[ "$_rc" -eq 0 ] && [ "$_v" = ok ] && ok "re-anchor: installed bin emits a SessionStart additionalContext envelope" || bad "re-anchor: installed bin emits a SessionStart additionalContext envelope" "exit 0, ok" "exit $_rc, $_v: $_out"
+[ ! -e "$HOSTILE/MARKER" ] && ok "re-anchor: a json.py in the working directory is never imported" || bad "re-anchor: a json.py in the working directory is never imported" "no MARKER file" "json.py was imported"
+# A config-only install has no careful skill to build JSON with; SessionStart
+# stdout is added to the context as plain text, so the reminder still lands.
+rm -f "$RA_HOME/.claude/skills/careful"
+_out=$(run_reanchor "$RA_HOME"); _rc=$?
+case "$_out" in *'{'*) _plain=json ;; *SKILL.md*) _plain=plain ;; *) _plain=missing ;; esac
+[ "$_rc" -eq 0 ] && [ "$_plain" = plain ] && ok "re-anchor: without the JSON helper the reminder is plain text" || bad "re-anchor: without the JSON helper the reminder is plain text" "exit 0, plain text naming SKILL.md" "exit $_rc, $_out"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

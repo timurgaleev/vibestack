@@ -186,6 +186,99 @@ for s in office-hours plan-ceo-review; do
     && ok "$s renders the spec review loop" || no "$s does not render the spec review loop"
 done
 
+echo "decision log"
+# Value: protects=a decision or rationale holding a quote reaches the decision log intact; fails_when=the free text is spliced back into a single-quoted shell argument; why_new=nothing ran these blocks; seam=none (the real vibe-decision-log)
+HOSTILE="the user's call: keep \$(touch $TMP/pwned) and \`id\` out"
+for s in plan-eng-review plan-ceo-review; do
+  R="$TMP/r/$s/SKILL.md"
+  blk="$(python3 -I - "$R" <<'PY2'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+hits = [m.group(1) for m in re.finditer(r"^```bash\n(.*?)\n```", text, re.S | re.M) if "DECISION_LOG_NOT_PERSISTED" in m.group(1)]
+sys.stdout.write(hits[0] if len(hits) == 1 else "")
+PY2
+)"
+  [ -n "$blk" ] || { no "$s: one decision-log block"; continue; }
+  VH="$TMP/dl-$s"; mkdir -p "$VH/bin"; ln -sf "$SRC/bin/vibe-decision-log" "$VH/bin/vibe-decision-log"
+  printf '%s\n' "$blk" > "$TMP/dl.sh"
+  if grep -qF '<DECISION_FILE>' "$TMP/dl.sh"; then
+    python3 -I -c 'import json,sys; json.dump({"decision": sys.argv[2], "rationale": sys.argv[2], "scope": "branch", "source": "skill"}, open(sys.argv[1], "w"))' "$TMP/dec.json" "$HOSTILE"
+    python3 -I -c 'import sys; p=sys.argv[1]; t=open(p).read(); open(p,"w").write(t.replace("<DECISION_FILE>", sys.argv[2]))' "$TMP/dl.sh" "$TMP/dec.json"
+  else  # the model following the inline form substitutes the text in place
+    python3 -I -c 'import sys; p=sys.argv[1]; t=open(p).read()
+for k in ("SCOPE_SUMMARY", "VERDICT", "RATIONALE", "DECISION\""): t=t.replace(k, sys.argv[2] + ("\"" if k.endswith("\"") else ""))
+open(p,"w").write(t)' "$TMP/dl.sh" "$HOSTILE"
+  fi
+  (cd "$TMP" && VIBESTACK_HOME="$VH" bash "$TMP/dl.sh") > "$TMP/dl.out" 2>&1
+  log="$(cat "$VH"/projects/*/decisions.jsonl 2>/dev/null)"
+  if [ ! -e "$TMP/pwned" ] && python3 -I -c 'import json,sys; e=json.loads(sys.argv[1].splitlines()[-1]); sys.exit(sys.argv[2] not in e["decision"] or e["rationale"] != sys.argv[2])' "$log" "$HOSTILE" 2>/dev/null; then
+    ok "$s: a decision with quotes and \$(...) is logged byte-for-byte"
+  else
+    no "$s: decision not logged intact: $(tr '\n' '|' < "$TMP/dl.out") log=[$log]"
+  fi
+  rm -f "$TMP/pwned" "$TMP/dec.json"
+done
+
+echo "outside-voice briefs"
+# Value: protects=each reviewer brief asks for the closing Recommendation line the shared grader requires; fails_when=a brief ends on "Just the problems." alone and pulls the reviewer off that line; why_new=test-outside-voice-body.sh checks the body, not the briefs; seam=none
+for s in plan-ceo-review plan-eng-review plan-devex-review; do
+  grep -qF 'Just the problems, then the closing Recommendation line."' "$SRC/skills/$s/SKILL.md" \
+    && ok "$s brief asks for the Recommendation line" || no "$s brief ends without the Recommendation line"
+  # Value: protects=text the model copies carries plain backticks; fails_when=a \` escape returns to prose; why_new=the report snippet was fixed alone; seam=none
+  n="$(awk '/^[ \t]*```/ {f = !f; next} !f' "$SRC/skills/$s/SKILL.md" | grep -c '\\`' || true)"
+  [ "$n" -eq 0 ] && ok "$s prose has no escaped backticks" || no "$s prose has $n escaped backtick lines"
+done
+
+# Value: protects=an outside voice that graded unavailable is reported as such, not as ran or skipped; fails_when=a completion summary loses the unavailable value; why_new=nothing checked the summaries; seam=none
+grep -qF -- '- Outside voice: ran (codex/claude) / unavailable (<cause>) / skipped' "$SRC/skills/plan-eng-review/SKILL.md" \
+  && ok "plan-eng-review summary can say unavailable" || no "plan-eng-review summary offers only ran / skipped"
+grep -qF 'ran (codex/claude) / unavailable / skipped' "$SRC/skills/plan-ceo-review/SKILL.md" \
+  && ok "plan-ceo-review summary can say unavailable" || no "plan-ceo-review summary lacks unavailable"
+
+echo "merged-branch stop"
+# Value: protects=a plan-file review does not stop on a branch the base already contains; fails_when=the plan-file exception after the base-branch include is dropped; why_new=the snippet's stop is written for diff reviews; seam=none
+for s in plan-ceo-review plan-devex-review autoplan; do
+  grep -qF 'is a plan file rather than the branch diff, a `BASE_CONTAINS_HEAD` line is not a stop' "$SRC/skills/$s/SKILL.md" \
+    && ok "$s: BASE_CONTAINS_HEAD does not stop a plan-file review" || no "$s stops a plan-file review on BASE_CONTAINS_HEAD"
+done
+
+echo "timeout kill-after"
+# Value: protects=a Codex process that ignores SIGTERM cannot outlive the Bash tool limit; fails_when=a _cx wrapper calls timeout without -k; why_new=no test ran the wrappers; seam=none (real timeout binary)
+for s in autoplan office-hours design-consultation design-review; do
+  n="$(grep -c '"$_CX_TO" "$@"' "$SRC/skills/$s/SKILL.md" || true)"
+  [ "$n" -eq 0 ] && ok "$s: every timeout wrapper sends a kill after the grace period" || no "$s: $n timeout wrappers without -k"
+done
+TO="$(command -v gtimeout || command -v timeout || true)"
+if [ -n "$TO" ]; then
+  def="$(grep -m1 '^_cx() {' "$SRC/skills/autoplan/SKILL.md")"
+  start=$(date +%s)
+  ( eval "$def"; _CX_TO="$TO"; _cx 1 sh -c 'trap "" TERM; while :; do sleep 1; done' "vibe-cx-probe-$$" ) >/dev/null 2>&1 &
+  wp=$!
+  for _ in $(seq 1 25); do kill -0 "$wp" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$wp" 2>/dev/null; then
+    pkill -KILL -f "vibe-cx-probe-$$" 2>/dev/null; kill -KILL "$wp" 2>/dev/null
+    no "autoplan _cx: a TERM-ignoring child outlived 25s"
+  else
+    ok "autoplan _cx: a TERM-ignoring child is killed ($(( $(date +%s) - start ))s)"
+  fi
+fi
+
+echo "autoplan urgent findings"
+# Value: protects=a critical finding outside the plan reaches the final gate from the phase that found it; fails_when=the producer rule or the pre-gate check is dropped and the gate relies on recall; why_new=the gate section had no producer; seam=none
+AP="$SRC/skills/autoplan/SKILL.md"
+grep -qF 'Classification `URGENT-OUTSIDE`' "$AP" && ok "phases record urgent out-of-plan findings as they find them" \
+  || no "no producer for the Urgent, outside this plan section"
+grep -qF -- '- [ ] Every `URGENT-OUTSIDE` row is listed under "Urgent, outside this plan"' "$AP" \
+  && ok "pre-gate checks the urgent list" || no "pre-gate has no urgent-list checkbox"
+
+echo "context pressure"
+# Value: protects=/plan-devex-review runs every stage under context pressure, like /plan-design-review; fails_when=a priority ranking returns that lets late passes drop; why_new=test-plan-design-review.sh checks only the design skill; seam=none
+DX="$TMP/r/plan-devex-review/SKILL.md"
+grep -qF 'Priority Hierarchy Under Context Pressure' "$DX" \
+  && no "plan-devex-review still ranks passes it may drop under context pressure" || ok "plan-devex-review has no priority ranking"
+grep -qF 'Complete every stage; shorten only optional commentary' "$DX" \
+  && ok "plan-devex-review completes every stage under context pressure" || no "plan-devex-review lacks the context-pressure rule"
+
 echo
 echo "plan review contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

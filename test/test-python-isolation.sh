@@ -22,27 +22,54 @@ ok() { pass=$((pass+1)); echo "  ok   $1"; }
 no() { fail=$((fail+1)); echo "  FAIL $1"; }
 
 # Prints "<file>:<line>: <text>" for each python call that runs inline code,
-# stdin or a module without -I. Comment lines (and shebangs) are skipped.
+# stdin or a module without -I. Comment lines (and shebangs) are skipped; a
+# backslash-continued call is read as one line and reported at its first line.
+# The interpreter may be python, python3, python3.12, a path to one, or a
+# $PY / $PYTHON variable; -W and -X take a separate argument; stdin counts
+# whether it arrives through "-", a redirect, a heredoc or a pipe.
 scan() {
   awk '
-    /^[[:space:]]*#/ { next }
-    {
-      n = split($0, w, /[[:space:]]+/)
-      for (i = 1; i <= n; i++) {
-        if (w[i] !~ /(^|[^A-Za-z0-9_.\/-])python3?$/) continue
-        iso = 0; code = 0
-        for (j = i + 1; j <= n; j++) {
-          t = w[j]
-          if (t ~ /^-($|<)/) { code = 1; break }
-          if (t !~ /^-[A-Za-z]/) break
-          match(t, /^-[A-Za-z]+/)
-          letters = substr(t, 2, RLENGTH - 1)
-          if (letters ~ /I/) iso = 1
-          if (letters ~ /[cm]/) { code = 1; break }
-          if (RLENGTH != length(t)) break
+    function interp(t) {
+      sub(/^.*[(`]/, "", t); gsub(/["\047]/, "", t)
+      if (t ~ /^([A-Za-z0-9_.\/-]*\/)?python(3(\.[0-9]+)?)?$/) return 1
+      return t ~ /^[$][{]?([A-Za-z0-9_]*_)?(PY|PYTHON|PYTHON3|py|python|python3)[}]?$/
+    }
+    function unisolated(s,   t, k, i, j, p, c, tok, prev, iso, res, skip) {
+      k = split(s, t, /[[:space:]]+/)
+      for (i = 1; i <= k; i++) {
+        if (t[i] == "" || !interp(t[i])) continue
+        prev = (i > 1) ? t[i - 1] : ""
+        if (prev == "-v" || prev == "-V" || prev == "which" || prev == "type" || prev == "hash" || prev == "command") continue
+        iso = 0; res = ""
+        for (j = i + 1; j <= k + 1 && res == ""; j++) {
+          tok = (j <= k) ? t[j] : ""
+          if (tok == "" || tok ~ /^(\||\|\||&&|;|;;|&|\))$/) { res = (prev ~ /\|$/) ? "-" : "none"; break }
+          if (tok ~ /^[0-9]*</) { res = "-"; break }
+          if (tok ~ /^[0-9]*>/) { if (tok ~ /^[0-9]*>>?$/) j++; continue }
+          if (tok == "-" || tok ~ /^-</) { res = "-"; break }
+          if (tok !~ /^-/ || tok ~ /^--/) { res = "none"; break }
+          skip = 0
+          for (p = 2; p <= length(tok); p++) {
+            c = substr(tok, p, 1)
+            if (c == "I") iso = 1
+            else if (c == "c" || c == "m") { res = "-" c; break }
+            else if (c == "W" || c == "X") { if (p == length(tok)) skip = 1; break }
+            else if (c == "V" || c == "h") { res = "none"; break }
+          }
+          if (skip) j++
         }
-        if (code && !iso) { print FILENAME ":" FNR ": " $0; break }
+        if (res != "" && res != "none" && !iso) return 1
       }
+      return 0
+    }
+    FNR == 1 { buf = "" }
+    buf == "" && /^[[:space:]]*#/ { next }
+    {
+      if (buf == "") { at = FNR; first = $0 }
+      buf = buf (buf == "" ? "" : " ") $0
+      if (buf ~ /\\$/) { sub(/\\$/, "", buf); next }
+      if (unisolated(buf)) print FILENAME ":" at ": " first
+      buf = ""
     }
   ' "$@"
 }
@@ -64,19 +91,41 @@ python3 --version
 python3 "$script"
 code_python|code_rust) ;;
 # python3 -c 'commented out'
+python3 \
+  -c 'import json'
+python3 <<'PY'
+/usr/bin/python3 -c 'import json'
+"$PY" -c 'import json'
+python3.12 -c 'import json'
+python3 -X utf8 -c 'import json'
+python3 -W ignore - <<'PY'
+printf x | python3
+python3 -X utf8 script.py
+echo "python3 is needed"
+printf x | python3 -I
+PY=python3
 EOF
 got="$(scan "$TMP/fixture.sh" | sed -E 's/^[^:]+:([0-9]+):.*/\1/' | tr '\n' ' ')"
-[ "$got" = "1 2 3 4 5 6 " ] \
-  && ok "scanner flags the six unisolated shapes and nothing else" \
-  || no "scanner flagged lines '$got', expected '1 2 3 4 5 6 '"
+want="1 2 3 4 5 6 16 18 19 20 21 22 23 24 "
+[ "$got" = "$want" ] \
+  && ok "scanner flags every unisolated shape (continued lines, stdin, paths, versions, -X/-W) and nothing else" \
+  || no "scanner flagged lines '$got', expected '$want'"
 
 echo "ratchet"
 files=()
-for f in "$ROOT"/bin/* "$ROOT"/lib/*.sh "$ROOT"/skills/*/bin/*; do
+for f in "$ROOT"/bin/* "$ROOT"/lib/*.sh "$ROOT"/skills/*/bin/* "$ROOT"/install "$ROOT"/uninstall; do
   [ -f "$f" ] && grep -Iq . "$f" && files+=("$f")
 done
-hits="$(cd "$ROOT" && scan "${files[@]#"$ROOT/"}")"
-if [ -z "$hits" ]; then
+inst=0
+for f in ${files[@]+"${files[@]}"}; do case "$f" in "$ROOT/install"|"$ROOT/uninstall") inst=$((inst + 1)) ;; esac; done
+[ "${#files[@]}" -gt 20 ] && [ "$inst" -eq 2 ] \
+  && ok "the ratchet scans ${#files[@]} files, install and uninstall included" \
+  || no "the ratchet file list is short (${#files[@]} files, $inst of install/uninstall)"
+scan_rc=0
+hits="$(cd "$ROOT" && scan ${files[@]+"${files[@]#"$ROOT/"}"})" || scan_rc=$?
+if [ "$scan_rc" -ne 0 ]; then
+  no "the scanner itself failed (awk exit $scan_rc) — nothing was checked"
+elif [ -z "$hits" ]; then
   ok "no unisolated python call in ${#files[@]} files"
 else
   no "unisolated python calls (add -I):"

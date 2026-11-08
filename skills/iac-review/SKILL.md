@@ -81,7 +81,10 @@ Generating a plan runs the providers with the user's credentials and executes an
 
 ```bash
 TF_DIR='<TF_DIR>'
-PLAN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/iac-review.XXXXXX")"
+# A run that stopped before Step 6 left its plan (secrets in clear text) behind.
+find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name 'iac-review.??????' -mmin +60 -exec rm -rf {} + 2>/dev/null
+PLAN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/iac-review.XXXXXX")" || { echo "ERROR: mktemp failed" >&2; exit 1; }
+trap 'rm -rf "$PLAN_DIR"; exit 130' INT TERM HUP
 echo "PLAN_DIR: $PLAN_DIR"
 INIT_OK=1; NEW_LOCK=0
 if [ ! -d "$TF_DIR/.terraform" ]; then
@@ -96,14 +99,15 @@ if [ "$INIT_OK" = 0 ]; then
   echo "PLAN_JSON: N-A (terraform init failed)"; tail -n 20 "$PLAN_DIR/plan.log"
 elif terraform -chdir="$TF_DIR" plan -lock=false -input=false -out="$PLAN_DIR/plan.bin" >>"$PLAN_DIR/plan.log" 2>&1 \
   && terraform -chdir="$TF_DIR" show -json "$PLAN_DIR/plan.bin" >"$PLAN_DIR/plan.json" 2>>"$PLAN_DIR/plan.log"; then
-  echo "PLAN_JSON: $PLAN_DIR/plan.json"
+  rm -f "$PLAN_DIR/plan.bin"; echo "PLAN_JSON: $PLAN_DIR/plan.json"
 else
   echo "PLAN_JSON: N-A (terraform plan failed)"; tail -n 20 "$PLAN_DIR/plan.log"
 fi
 if [ "$NEW_LOCK" = 1 ]; then rm -f "$TF_DIR/.terraform.lock.hcl"; fi
+[ -s "$PLAN_DIR/plan.json" ] || { rm -rf "$PLAN_DIR"; echo "PLAN_DIR: removed"; }
 ```
 
-`-lock=false` keeps a read-only review from holding the state lock someone else's apply needs. `-lockfile=readonly` stops init from rewriting an existing `.terraform.lock.hcl`; a root with none gets a plain init, and the lock file that init writes is removed afterwards so Step 3 still sees it missing. The plan JSON carries sensitive values in clear text: never print it, never paste from it, and delete it in Step 6.
+`-lock=false` keeps a read-only review from holding the state lock someone else's apply needs. `-lockfile=readonly` stops init from rewriting an existing `.terraform.lock.hcl`; a root with none gets a plain init, and the lock file that init writes is removed afterwards so Step 3 still sees it missing. The plan JSON carries sensitive values in clear text: never print it, never paste from it, and delete it in Step 6 — or as soon as the review stops early, by running the Step 6 cleanup block. A failed plan removes its directory here, and a directory an aborted run left behind is swept on the next run after an hour.
 
 For a CDK app, use the project's own CDK (no download); `--no-change-set` diffs against the deployed template without creating a CloudFormation change set:
 
@@ -405,7 +409,7 @@ Offer `/aws-cost --estimate` while the plan JSON still exists. Then delete the g
 
 ```bash
 PLAN_DIR='<PLAN_DIR>'
-rm -f "$PLAN_DIR/plan.bin" "$PLAN_DIR/plan.json" "$PLAN_DIR/plan.log" && rmdir "$PLAN_DIR" && echo "PLAN_DIR: removed"
+case "$PLAN_DIR" in */iac-review.??????) rm -rf "$PLAN_DIR" && echo "PLAN_DIR: removed" ;; *) echo "ERROR: not a plan dir: $PLAN_DIR" >&2 ;; esac
 ```
 
 Skip that block when the user supplied the plan; it is theirs. Finish with the completion status from the working protocols.

@@ -141,6 +141,16 @@ for f in "$ENG" "$AUTO"; do
   printf '%s\n' "$out" | grep -qxF "CEO plan found: $VB/projects/proj/ceo-plans/2026-01-01-x.md" \
     && ok "$name: same-branch CEO plan is found" || no "$name: same-branch CEO plan is found: '$out'"
 done
+# Value: protects=this branch's design doc is not displaced by another feature's committed doc; fails_when=any newer docs/designs/*.md wins over a branch-matched store doc; why_new=the row above covers only the repo-wide DESIGN.md; seam=none
+mv "$DREPO/DESIGN.md" "$TMP/DESIGN.md.off"; mkdir -p "$DREPO/docs/designs"; printf '# other feature\n' > "$DREPO/docs/designs/other-feature.md"
+for f in "$ENG" "$AUTO"; do
+  name="plan-eng-review"; [ "$f" = "$AUTO" ] && name="autoplan"
+  out="$(run_design "$f")"
+  printf '%s\n' "$out" | grep -qxF "Design doc found: $VB/projects/proj/u-feat-ctx-design-1.md" \
+    && ok "$name: another feature's newer docs/designs doc does not displace this branch's doc" \
+    || no "$name: branch doc displaced: '$out'"
+done
+rm -rf "$DREPO/docs"; mv "$TMP/DESIGN.md.off" "$DREPO/DESIGN.md"
 # A newer plan from another branch must not hide this branch's older plan.
 printf -- '# CEO Plan: y\nBranch: other | Mode: HOLD SCOPE\n' > "$VB/projects/proj/ceo-plans/2026-02-01-y.md"
 for f in "$ENG" "$AUTO"; do

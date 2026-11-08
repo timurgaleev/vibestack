@@ -183,6 +183,48 @@ else
   _fail "D3: README's ETHOS pointer does not say 'the ${ethos_word:-?} principles'"
 fi
 
+# D4-D6: counts and indexes that drift each time a skill, bin or suite lands.
+# The README's skill map states a command count; docs/internals.md is the index
+# of every bin/vibe-* tool and test/test-*.sh suite; the compatibility audit
+# counts the skills that reach ${CLAUDE_SKILL_DIR} (in the source, or through an
+# included snippet, which only a render shows).
+map_count=$(grep -oE '>[0-9]+ commands' "$ROOT/docs/assets/skill-map.svg" | grep -oE '[0-9]+' | head -n 1)
+if [[ "$map_count" == "$n_skills" ]]; then
+  _pass "D4: docs/assets/skill-map.svg says $n_skills commands"
+else
+  _fail "D4: docs/assets/skill-map.svg says '${map_count:-?} commands', skills/ has $n_skills"
+fi
+INTERNALS="$ROOT/docs/internals.md"
+unindexed=""
+for f in "$ROOT"/bin/vibe-* "$ROOT"/test/test-*.sh; do
+  [[ -f "$f" ]] || continue
+  grep -qF "\`$(basename "$f")\`" "$INTERNALS" || unindexed="$unindexed $(basename "$f")"
+done
+if [[ -z "$unindexed" ]]; then
+  _pass "D5: docs/internals.md has a row for every bin/vibe-* and test/test-*.sh"
+else
+  _fail "D5: docs/internals.md has no row for:$unindexed"
+fi
+AUDIT="$ROOT/docs/agent-skills-compatibility-audit.md"
+probe_tmp="$(mktemp -d "${TMPDIR:-/tmp}/skilldir-probe.XXXXXX")"
+with_token=0
+for dir in "$SKILLS_DIR"/*/; do
+  [[ -f "$dir/SKILL.md" ]] || continue
+  if grep -qF 'CLAUDE_SKILL_DIR' "$dir/SKILL.md"; then
+    with_token=$((with_token + 1))
+  elif "$ROOT/bin/vibe-render-skill" --skill-dir /__probe__ "$dir/SKILL.md" "$probe_tmp/out.md" >/dev/null 2>&1 \
+       && grep -qF '/__probe__' "$probe_tmp/out.md"; then
+    with_token=$((with_token + 1))
+  fi
+done
+rm -rf "$probe_tmp"
+audit_count=$(grep -F 'Skills using `${CLAUDE_SKILL_DIR}` substitution' "$AUDIT" | grep -oE '\| [0-9]+ skills' | grep -oE '[0-9]+' | head -n 1)
+if [[ "$audit_count" == "$with_token" ]]; then
+  _pass "D6: the compatibility audit counts $with_token \${CLAUDE_SKILL_DIR} skills"
+else
+  _fail "D6: the compatibility audit counts '${audit_count:-?}' \${CLAUDE_SKILL_DIR} skills, the tree has $with_token"
+fi
+
 # Self-tests: each mutation must turn the check red.
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/skills-routing.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

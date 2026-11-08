@@ -11,6 +11,9 @@
 # The same decision is also emitted flat at the top level, the form Copilot CLI
 # documents; the inline fallback envelope below carries both copies too.
 set -euo pipefail
+# bash 5.2+ writes a heredoc or here-string under 64 KiB into a pipe and can hang
+# on a small macOS pipe; compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # Opt-in debug logging. No-op unless VIBESTACK_DEBUG=1.
 # All side effects run in a subshell so errors never propagate back into the
@@ -644,11 +647,15 @@ if [ -z "$WARN" ] && printf '%s' "$CMD_MEDIUM" | grep -qE \
 fi
 
 # Pointing core.hooksPath elsewhere (or dropping it), or HUSKY=0, skips the
-# hooks as surely as --no-verify. Config keys are case-insensitive. Reading the
-# key (`git config --get core.hooksPath`) passes.
+# hooks as surely as --no-verify, and so does the same key handed over through
+# the environment (GIT_CONFIG_KEY_<n>, GIT_CONFIG_PARAMETERS). Config keys are
+# case-insensitive. Reading the key (`git config --get core.hooksPath`, or
+# with only a redirect after it) passes; a value of digits is still a value.
 if [ -z "$WARN" ] && { printf '%s' "$CMD_MEDIUM_LOWER" | grep -qE \
     -e "git${_OPTS}[[:space:]]+(-c[[:space:]]*|--config-env[=[:space:]])[\"']?core\\.hookspath=" \
-    -e "${_GIT}config([[:space:]]+${_ARG})*[[:space:]]+[\"']?core\\.hookspath[\"']?[[:space:]]+[^;&|<>[:space:]0-9]" \
+    -e "${_GIT}config([[:space:]]+${_ARG})*[[:space:]]+[\"']?core\\.hookspath[\"']?[[:space:]]+([^;&|<>[:space:]0-9]|[0-9]+([^0-9<>]|\$))" \
+    -e "git_config_key_[0-9]+=[\"']?core\\.hookspath" \
+    -e "git_config_parameters=[^[:space:]]*core\\.hookspath=" \
     -e "${_GIT}config([[:space:]]+${_ARG})*[[:space:]]+(--unset(-all)?|unset)([[:space:]]+${_ARG})*[[:space:]]+[\"']?core\\.hookspath" 2>/dev/null \
   || printf '%s' "$CMD_MEDIUM" | grep -qE "(^|[;&|({])[[:space:]]*(export[[:space:]]+|env([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*=[^;&|[:space:]]*[[:space:]]+)*HUSKY=[\"']?0[\"']?${_END}" 2>/dev/null; }; then
   WARN="Destructive: disabling git hooks (core.hooksPath, HUSKY=0) skips the checks they run, the same as --no-verify."

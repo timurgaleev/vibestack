@@ -78,11 +78,80 @@ describe.skipIf(!hasChromium)('a busy tab next to an idle one (real Chromium)', 
     expect(idle?.storage).not.toBeNull();
   }, 10_000);
 
+  // Each health poll probes the active tab. A stuck renderer never answers, so
+  // a fresh evaluate per poll would pile up for as long as the tab spins.
+  test('repeated probes of a stuck tab share one pending evaluate', async () => {
+    const page = bm.getPageForTab(busyId)!;
+    const original = page.evaluate.bind(page);
+    let calls = 0;
+    (page as any).evaluate = (...a: Parameters<typeof page.evaluate>) => { calls++; return original(...a); };
+    try {
+      for (let i = 0; i < 3; i++) {
+        expect((await bm.probeActiveTab())?.responsive).toBe(false);
+      }
+      expect(calls).toBeLessThanOrEqual(1);
+    } finally {
+      (page as any).evaluate = original;
+    }
+  }, 15_000);
+
   test('an idle active tab probes as responsive', async () => {
     bm.switchTab(idleId, { bringToFront: false });
     expect(await bm.probeActiveTab()).toEqual({ id: idleId, url: `http://localhost:${server.port}/idle`, responsive: true });
     bm.switchTab(busyId, { bringToFront: false });
   }, 10_000);
+});
+
+/** Chromium browser processes that are direct children of this test process. */
+function browserPids(): number[] {
+  const out = Bun.spawnSync(['ps', '-A', '-o', 'pid=,ppid=,command=']).stdout.toString();
+  return out.split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean)
+    .filter(m => Number(m![2]) === process.pid && /chrom/i.test(m![3]) && !/--type=/.test(m![3]))
+    .map(m => Number(m![1]));
+}
+
+describe.skipIf(!hasChromium || process.platform === 'win32')('a hung browser process (real Chromium)', () => {
+  let bm: BrowserManager;
+  let stopped: number[] = [];
+
+  beforeAll(async () => {
+    bm = new BrowserManager();
+    await bm.launch();
+  }, 60_000);
+
+  afterAll(async () => {
+    for (const pid of stopped) { try { process.kill(pid, 'SIGCONT'); } catch {} }
+    await bm?.close();
+  }, 15_000);
+
+  // The pipe to a stopped browser stays open, so a connection check alone
+  // keeps answering healthy while every command against it would hang.
+  test('reads unhealthy within the probe bound', async () => {
+    expect(await bm.isHealthy()).toBe(true);
+    stopped = browserPids();
+    expect(stopped.length).toBe(1);
+    process.kill(stopped[0], 'SIGSTOP');
+    try {
+      const started = Date.now();
+      expect(await within(3_000, bm.isHealthy())).toBe(false);
+      expect(Date.now() - started).toBeLessThan(1_800);
+    } finally {
+      process.kill(stopped[0], 'SIGCONT');
+      stopped = [];
+    }
+    expect(await bm.isHealthy()).toBe(true);
+  }, 20_000);
+
+  // Closing the last tab reopens a blank one. A request that needs a tab
+  // while that is under way must join it, not open a second blank tab.
+  test('closing the last tab and a concurrent recovery open one blank tab', async () => {
+    while (bm.getTabCount() > 1) await bm.closeTab();
+    const closing = bm.closeTab();
+    while (bm.getTabCount() > 0) await new Promise(r => setTimeout(r, 0));
+    const [, warning] = await Promise.all([closing, bm.ensureActiveTab()]);
+    expect(bm.getTabCount()).toBe(1);
+    expect(warning).toBeNull();
+  }, 20_000);
 });
 
 describe('handoff launches on the resolved profile and Chromium binary', () => {

@@ -161,6 +161,10 @@ echo "anti-convergence"
 grep -qF 'When a DESIGN.md exists, it decides' "$SHOT" \
   && ok "the anti-convergence rule defers to DESIGN.md" || no "anti-convergence ignores DESIGN.md"
 
+# Value: protects=more than four Persuade concepts still get distinct structures, and the confirmation states the real timing; fails_when=those lines drop; why_new=new rules; seam=none
+grep -qF 'every archetype is used once before any repeats' "$SHOT" && ok "five or more concepts reuse archetypes only after all four" || no "no rule for more than four Persuade concepts"
+grep -qF 'total time is ~60 seconds regardless of count' "$SHOT" && no "Step 3b still promises ~60 seconds regardless of count" || ok "Step 3b states the staggered timing"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

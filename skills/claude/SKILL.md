@@ -195,6 +195,9 @@ INTENT_STUB = re.compile(
     r"(?:(?:\w+ly|first|now|just)\s+)?(?:(?:start|begin) by\s+)?"
     r"(?:look|check|inspect|examin|explor|read|review|investigat|search|scan|analy[sz]|dig|open|grep|find|go through|take a look)\w*\b",
     re.I)
+# A stub may chain announcements ("First I'll read X. Then I'll check Y."); one
+# sentence that is not an announcement makes it an answer.
+STUB_NEXT = re.compile(r"^(?:then|next|after that|and then|also|finally),?\s+", re.I)
 path, mode = sys.argv[1], sys.argv[2]
 if mode not in ("review", "challenge", "consult"):
     print(f"CLAUDE_STATUS: unavailable (unknown mode {mode!r})")
@@ -242,7 +245,8 @@ tags = [a or b for a, b in re.findall(r"\[(P[0-3])\]|^(P[0-3]):", body, re.M)]
 no_findings = re.search(r"^[\t ]*(?:[-+*][\t ]+)?[*`]*NO_FINDINGS[*`]*[\t ]*$", result, re.M) is not None
 if not tags and not no_findings and len(result.strip()) <= 600 and REFUSAL.search(opening(result)):
     unavailable("review_refused - Claude declined the request")
-if mode == "consult" and len(body) < 400 and INTENT_STUB.match(body):
+parts = [s for s in re.split(r"(?<=[.!?:])\s+", body) if s]
+if mode == "consult" and len(body) < 400 and parts and all(INTENT_STUB.match(STUB_NEXT.sub("", s)) for s in parts):
     unavailable("intent_stub - Claude announced what it would inspect and stopped")
 
 print(result)
@@ -286,7 +290,7 @@ footer()
 sys.exit(code)
 VIBE_CLAUDE_PARSE_PY
 echo "SCRATCH: $D"
-echo "PROMPT_FILE: $D/prompt.txt"
+echo "PROMPT_FILE: $D/prompt.txt (name: ${D##*/}/prompt.txt)"
 echo "USER_TEXT_FILE: $D/user.txt"
 ```
 
@@ -398,7 +402,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
-  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
+  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" -k 10 "$@"; return; fi
   _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do
@@ -533,7 +537,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
-  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
+  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" -k 10 "$@"; return; fi
   _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do
@@ -664,7 +668,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
-  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
+  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" -k 10 "$@"; return; fi
   _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do
@@ -719,7 +723,7 @@ _CL_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 540" would reach execve as one argument (exit 127).
 _cl() {
-  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" "$@"; return; fi
+  if [ -n "${_CL_TO:-}" ]; then "$_CL_TO" -k 10 "$@"; return; fi
   _cl_s=${1}; shift
   "$@" <&0 & _cl_p=$!
   while kill -0 "$_cl_p" 2>/dev/null; do

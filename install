@@ -4,6 +4,9 @@
 # v1.5.0: install plan UX + per-target atomic stage-and-swap
 
 set -uo pipefail
+# bash 5.2+ writes a heredoc or here-string under 64 KiB into a pipe and can hang
+# on a small macOS pipe; compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # ───────────────────────────────────────────────────────────────────────────
 # Bash 4+ guard (v1.5.0). Associative arrays are used for per-target state
@@ -663,10 +666,16 @@ unset _ordered _deferred _t _r
 
 # Static source lint — fail fast before rendering anything. An unbalanced
 # fence or a broken snippet would otherwise render silently-wrong skills.
-if ! bash "$REPO_DIR/bin/vibe-lint-sources" "$REPO_DIR"; then
+# Authoring warnings (warn: ...) are for whoever edits the skills, not for the
+# person installing them, so only findings are shown.
+_lint_rc=0
+_lint_out=$(bash "$REPO_DIR/bin/vibe-lint-sources" "$REPO_DIR" 2>&1) || _lint_rc=$?
+printf '%s\n' "$_lint_out" | grep -v '^warn: ' || true
+if [ "$_lint_rc" -ne 0 ]; then
   echo "ERROR: source lint failed — fix the findings above, then re-run ./install" >&2
   exit 1
 fi
+unset _lint_rc _lint_out
 
 # ───────────────────────────────────────────────────────────────────────────
 # Per-skill install — renders SKILL.md to a target dir + symlinks bin/ and

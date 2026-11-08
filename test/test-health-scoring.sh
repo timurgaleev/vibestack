@@ -102,6 +102,11 @@ else
   out=$(detect_in "$DT")
   grep -qx 'TEST: bun test' <<<"$out" && ! grep -q '^MISSING: test' <<<"$out" \
     && ok "single-line scripts.test is the test command" || no "single-line script: $out"
+  # Value: protects=npm's init placeholder is not scored as a failing test suite; fails_when=the placeholder prints as a TEST command again; why_new=only blank and multi-line scripts were covered; seam=none
+  printf '{"scripts":{"test":"echo \\"Error: no test specified\\" && exit 1"}}\n' > "$DT/package.json"
+  out=$(detect_in "$DT")
+  grep -qx 'TEST: none (npm init placeholder test script)' <<<"$out" && grep -qx 'MISSING: test (npm init placeholder test script)' <<<"$out" \
+    && ok "npm's placeholder scripts.test is not a test command" || no "npm placeholder script: $out"
   printf '{"scripts":{"test":"  "}}\n' > "$DT/package.json"
   out=$(detect_in "$DT")
   grep -q '^TEST:' <<<"$out" && no "blank scripts.test yields a TEST line" || ok "blank scripts.test is not a test command"
@@ -129,7 +134,15 @@ else
   out=$(detect_in "$DI" "$FB")
   grep -qx 'LINT: terraform fmt -check -recursive' <<<"$out" && ok "terraform files detected" || no "terraform row: $out"
   grep -qx 'LINT: actionlint' <<<"$out" && ok "GitHub workflows detected for actionlint" || no "actionlint row: $out"
-  grep -qx 'LINT: cfn-lint ./template.yaml' <<<"$out" && ok "CloudFormation template detected for cfn-lint" || no "cfn-lint row: $out"
+  grep -qx "LINT: cfn-lint './template.yaml'" <<<"$out" && ok "CloudFormation template detected for cfn-lint" || no "cfn-lint row: $out"
+  # Value: protects=a template path with a space or quote stays one argument to cfn-lint; fails_when=the row joins paths unquoted; why_new=the row above has no special characters; seam=none
+  mkdir -p "$DI/my stacks"; printf 'AWSTemplateFormatVersion: "2010-09-09"\n' > "$DI/my stacks/it's.yaml"
+  out=$(detect_in "$DI" "$FB")
+  row=$(sed -n 's/^LINT: cfn-lint //p' <<<"$out")
+  args=$(eval "set -- $row; printf '%s|' \"\$@\"" 2>&1)
+  [ "$args" = "./my stacks/it's.yaml|./template.yaml|" ] && ok "cfn-lint paths with spaces and quotes stay one argument each" \
+    || no "cfn-lint row splits paths: $row -> $args"
+  rm -rf "$DI/my stacks"
   grep -q '^MISSING: lint' <<<"$out" && no "lint MISSING despite IaC linters" || ok "IaC linters fill the lint category"
 fi
 s1=$(section "## Step 1: Detect Health Stack" "## Step 2")

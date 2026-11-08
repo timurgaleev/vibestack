@@ -109,6 +109,19 @@ STATS=$(cd "$REPO" && "$BIN/vibe-specialist-stats" --min-dispatches 2)
 printf '%s\n' "$STATS" | grep -Eq '^testing +dispatched=1 findings=0 +active$' \
   && ok "failed specialist runs do not count toward gating" || no "failed runs counted: $STATS"
 
+echo "an entry's own branch picks its log file"
+# /land-and-deploy logs after --delete-branch, from the base checkout; the entry
+# names the PR's branch and must land in that branch's log, not the base's.
+P="$VIBESTACK_HOME/projects"
+log '{"skill":"land-and-deploy","status":"SUCCESS","branch":"feat/shipped"}' >/dev/null; RC=$?
+chk "entry with its own branch logs" "$RC" "0"
+N=$(find "$P" -path '*/feat/shipped-reviews.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+chk "entry filed under its own branch" "$N" "1"
+log '{"skill":"land-and-deploy","status":"SUCCESS","branch":"../../escape"}' >/dev/null 2>&1; RC=$?
+chk "a branch that climbs out of the project is refused" "$RC" "1"
+N=$(find "$TMP" -name 'escape-reviews.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+chk "nothing written for a climbing branch" "$N" "0"
+
 echo "review skill contracts"
 has() { if grep -qF -- "$2" "$SK"; then ok "$1"; else no "$1 (missing: $2)"; fi; }
 hasnt() { if grep -qF -- "$2" "$SK"; then no "$1 (still present: $2)"; else ok "$1"; fi; }

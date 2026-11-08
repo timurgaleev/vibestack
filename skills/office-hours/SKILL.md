@@ -481,7 +481,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 270" would reach execve as one argument (exit 127).
 _cx() {
-  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" -k 10 "$@"; return; fi
   _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
@@ -508,7 +508,7 @@ a finding, or a scan that could not run) means the prompt stayed here: tell the 
 what kind of credential the scan named and where, then use the Claude subagent.
 Under `under_codex` with `claude_cli`, the `claude -p` pass gets the same gate: run
 `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file '<PROMPT_FILE>'; echo "REDACT_EXIT: $?"`
-first and send the prompt only on exit 0, else go to the subagent.
+first and send the prompt only on exit 0, else go to the subagent; remove the prompt file in either case (`rm -f '<PROMPT_FILE>'`).
 
 **Error handling:** All errors are non-blocking — second opinion is a quality enhancement, not a prerequisite.
 - **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate." Fall back to Claude subagent.
@@ -749,9 +749,13 @@ eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev
 _PD="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
 _BR=$(git branch --show-current 2>/dev/null | tr '/' '-')
 _OUT="$_PD/$(whoami)-${_BR:-nobranch}-sketch-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$_PD"
-cp "$SKETCH_FILE" "$_OUT.html" && echo "SKETCH_SAVED: $_OUT.html"
-[ -f "${SKETCH_FILE%.html}.png" ] && cp "${SKETCH_FILE%.html}.png" "$_OUT.png" && echo "SKETCH_SAVED: $_OUT.png"
+mkdir -p "$_PD" && cp "$SKETCH_FILE" "$_OUT.html" \
+  || { echo "ERROR: sketch not saved; it stays at $SKETCH_FILE" >&2; exit 1; }
+echo "SKETCH_SAVED: $_OUT.html"
+if [ -f "${SKETCH_FILE%.html}.png" ]; then
+  cp "${SKETCH_FILE%.html}.png" "$_OUT.png" || { echo "ERROR: PNG not saved; it stays next to $SKETCH_FILE" >&2; exit 1; }
+  echo "SKETCH_SAVED: $_OUT.png"
+fi
 _SD=$(dirname "$SKETCH_FILE")
 case "$_SD" in */vibe-sketch.??????) rm -rf "$_SD" ;; esac
 ```
@@ -1104,7 +1108,8 @@ try:
                 entry = json.loads(line)
             except ValueError:
                 continue
-            (resource_entries if entry.get("mode") == "resources" else sessions).append(entry)
+            if isinstance(entry, dict):
+                (resource_entries if entry.get("mode") == "resources" else sessions).append(entry)
 except OSError:
     pass
 
@@ -1112,11 +1117,14 @@ n = len(sessions)
 tier = ("introduction" if n <= 1 else "welcome_back" if n <= 3
         else "regular" if n <= 7 else "inner_circle")
 prev = sessions[-2] if n >= 2 else {}
+def strs(e, k):  # older or hand-edited lines may hold any type here
+    v = e.get(k)
+    return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
 signals = {}
 for s in sessions:
-    for name in s.get("signals", []):
+    for name in strs(s, "signals"):
         signals[name] = signals.get(name, 0) + 1
-shown = [u for e in sessions + resource_entries for u in e.get("resources_shown", [])]
+shown = [u for e in sessions + resource_entries for u in strs(e, "resources_shown")]
 
 print("SESSION_COUNT:", max(n, 1))
 print("TIER:", tier)
@@ -1124,7 +1132,7 @@ print("LAST_ASSIGNMENT:", prev.get("assignment", ""))
 print("LAST_PROJECT:", prev.get("project_slug", ""))
 print("CROSS_PROJECT:", "true" if prev and prev.get("project_slug") != slug else "false")
 print("DESIGN_TITLES:", " | ".join(
-    os.path.basename(s["design_doc"]) for s in sessions if s.get("design_doc")))
+    os.path.basename(s["design_doc"]) for s in sessions if isinstance(s.get("design_doc"), str) and s["design_doc"]))
 print("ACCUMULATED_SIGNALS:", ", ".join(f"{k}={v}" for k, v in sorted(signals.items())))
 print("RESOURCES_SHOWN_COUNT:", len(shown))
 print("RESOURCES_SHOWN:", " ".join(shown))

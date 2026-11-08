@@ -75,6 +75,11 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 
 {{include lib/snippets/base-branch-detect.md}}
 
+In /retro that stop does not apply: retro reads the base branch's history, not
+this branch's diff, and running it on a branch that was just merged is normal.
+Take the base from the `origin/<base>` in the `BASE_CONTAINS_HEAD` line and
+continue.
+
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
 branch name wherever the instructions say "the base branch" or `<default>`.

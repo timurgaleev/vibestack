@@ -375,8 +375,10 @@ status from confirmed alerts only:
 - **HEALTHY** — no alert was confirmed
 
 A confirmed alert that later clears stays in the report with `resolved: true`; it still
-counts toward the status. Findings seen on a single check never confirm — they go under
-`observations`. Under `--quick` the single pass is the whole run: its findings count as
+counts toward the status. A finding that clears and comes back — seen on 3 or more checks,
+never twice in a row — confirms as **intermittent**: it counts toward the status like any
+confirmed alert, and the report lists the checks it appeared on. Findings seen on a single
+check never confirm — they go under `observations`. Under `--quick` the single pass is the whole run: its findings count as
 confirmed for the status (a CRITICAL makes it BROKEN), and the report says they were seen once.
 
 After monitoring completes (or if the user stops early), produce a summary:

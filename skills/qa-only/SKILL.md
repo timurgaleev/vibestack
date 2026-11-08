@@ -149,7 +149,7 @@ This is the **primary mode** for developers verifying their work. When the user 
 Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced issues. Produce health score. Takes 5-15 minutes depending on app size.
 
 ### Quick (`--quick`)
-Smoke test on a soft 3-minute budget. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? At the cap, start nothing new and list the unfinished coverage (targets not visited, checks not run) in the report. Produce a health score labelled partial coverage: the accessibility checks do not run, so Accessibility is `not run`. No detailed issue documentation.
+Smoke test on a soft 3-minute budget, timed from the first `$B goto`. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? At the cap, start nothing new and list the unfinished coverage (targets not visited, checks not run) in the report. Produce a health score labelled partial coverage: the accessibility checks do not run, so Accessibility is `not run`. No detailed issue documentation.
 
 ### Regression (`--regression <baseline>`)
 Run full mode, then compare with the prior baseline resolved at setup — `prior-baseline.json` in this run's directory, copied from the `--regression` path or the newest earlier run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
@@ -292,7 +292,7 @@ $B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
 
 {{include lib/snippets/test-value-bar.md}}
 
-From the browser alone you can answer `protects` (the user-visible behavior) and `fails_when` (the repro). This skill never reads source, so write `why_new=unchecked` and `seam=unchecked`; `/qa` answers those before writing the test. Propose nothing for a purely visual or content issue.
+From the browser alone you can answer `protects` (the user-visible behavior) and `fails_when` (the repro). This skill reads source only as rules 5 and 11 allow, never to check coverage, so write `why_new=unchecked` and `seam=unchecked`; `/qa` answers those before writing the test. Propose nothing for a purely visual or content issue.
 
 ### Assemble the report from evidence
 
@@ -368,11 +368,11 @@ Last, scrub the report: a claim of frequency ("always", "intermittent", "3 of 5"
 
 ## Important Rules
 
-1. **Repro is everything.** Every issue needs at least one screenshot. No exceptions.
+1. **Repro is everything.** Every browser issue needs at least one screenshot; on a functional surface, the probe transcript (command, exit code, output, read-back) is the evidence instead. No exceptions.
 2. **Verify before documenting.** Replay the exact command or interaction from the same starting state (same URL, auth and inputs, after a reload) to confirm it is reproducible, not a fluke. It fails the same way → `replayed`; it does not → the issue stays `observed once`, never confirmed. Never replay a non-idempotent action (a submit, send, purchase or delete) on a non-local target: a reload restores the page, not the server state, so the replay repeats the action. Such an issue stays `observed once`.
 3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
 4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
-5. **Test as a user, not a developer.** The one exception is diff-aware mode: read the branch diff and the route, controller and view files it names only to work out which pages to test. Never read source to explain, diagnose or fix a bug.
+5. **Test as a user, not a developer.** The one exception is diff-aware mode: read the branch diff and the route, controller and view files it names only to work out which pages to test. The other is the contract map rule 11 allows on a functional surface. Never read source to explain, diagnose or fix a bug.
 6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
 7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
 8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
@@ -387,7 +387,7 @@ Last, scrub the report: a claim of frequency ("always", "intermittent", "3 of 5"
 
 Write the report to both local and project-scoped locations:
 
-**Local:** `$REPORT_DIR/qa-report.md` — `.vibestack/qa-reports/run-<UTC>/{qa-report.md, baseline.json, prior-baseline.json, screenshots/}`
+**Local:** `$REPORT_DIR/qa-report.md` — `.vibestack/qa-reports/run-<UTC>/{qa-report.md, functional-report.md (functional or mixed surface), baseline.json, prior-baseline.json, screenshots/}`
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
@@ -400,7 +400,11 @@ _branch="$(printf '%s' "$(git symbolic-ref --short -q HEAD 2>/dev/null)" | tr -c
 [ -n "$_branch" ] || _branch="detached"
 _base="$PROJECT_DIR/${_user}-${_branch}-test-outcome-$(date -u +%Y%m%dT%H%M%SZ)"
 OUTCOME_FILE="$_base.md"; _n=2
-while [ -e "$OUTCOME_FILE" ]; do OUTCOME_FILE="$_base-$_n.md"; _n=$((_n + 1)); done
+# Reserve the name (noclobber create), so a run in the same second cannot take it too.
+while ! ( set -C; : > "$OUTCOME_FILE" ) 2>/dev/null; do
+  [ -e "$OUTCOME_FILE" ] || { echo "ERROR: cannot create $OUTCOME_FILE" >&2; exit 1; }
+  OUTCOME_FILE="$_base-$_n.md"; _n=$((_n + 1))
+done
 echo "OUTCOME_FILE: $OUTCOME_FILE"
 ```
 Write the test outcome to the path printed on the `OUTCOME_FILE:` line.
@@ -411,6 +415,7 @@ Write the test outcome to the path printed on the `OUTCOME_FILE:` line.
 .vibestack/qa-reports/
 └── run-<UTC>/                             # One directory per run, never overwritten
     ├── qa-report.md                       # Structured report
+    ├── functional-report.md               # Contract-map rows (functional or mixed surface only)
     ├── baseline.json                      # This run's baseline, for later runs
     ├── prior-baseline.json                # The baseline this run compares with (if any)
     └── screenshots/

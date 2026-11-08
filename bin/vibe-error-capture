@@ -8,7 +8,8 @@
 #
 # The command runs with an empty environment (`env -i`) plus PATH and a fresh
 # HOME, in a fresh scratch cwd, with stdin from /dev/null, under a timeout
-# (default 20 s; the whole process group is killed on expiry). --pass-env NAME
+# (default 20 s; on expiry the whole process group is killed, and so is any
+# process still in the scratch cwd — a grandchild that called setsid). --pass-env NAME
 # forwards one caller variable and is refused without --approved: a variable is
 # passed only when the user approved that run. Scratch HOME and cwd are removed
 # afterwards.
@@ -81,6 +82,29 @@ def drain(fd, sink):
             sink[0] += chunk[:room]
 
 
+def stragglers(root):
+    # A grandchild that called setsid has left the process group killpg reaches;
+    # it still sits in the scratch cwd unless it changed directory.
+    root, found = os.path.realpath(root), set()
+    if os.path.isdir("/proc"):
+        for d in os.listdir("/proc"):
+            try:
+                cwd = os.readlink("/proc/%s/cwd" % d)
+            except (OSError, ValueError):
+                continue
+            if cwd == root or cwd.startswith(root + os.sep):
+                found.add(int(d))
+    else:
+        try:
+            r = subprocess.run(["lsof", "-t", "+D", root], stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, timeout=10)
+            found.update(int(x) for x in r.stdout.split() if x.isdigit())
+        except (OSError, subprocess.SubprocessError):
+            pass
+    found.discard(os.getpid())
+    return found
+
+
 stage = tempfile.mkdtemp(prefix="vibe-error-capture.")
 try:
     home, cwd = os.path.join(stage, "home"), os.path.join(stage, "cwd")
@@ -105,6 +129,11 @@ try:
             except OSError:
                 pass
             p.wait()
+            for pid in stragglers(cwd):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
         for t in readers:
             t.join(5)  # a child that left the group can hold a pipe open
         (out, out_total), (err, err_total) = ((bytes(b), n) for b, n in sinks)

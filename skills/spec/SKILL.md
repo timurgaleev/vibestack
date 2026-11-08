@@ -564,7 +564,7 @@ spec_issue_url: ${ISSUE_URL:-}
 spec_filed_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 spec_branch: $(git branch --show-current 2>/dev/null || echo unknown)
 spec_plan_mode: ${PLAN_MODE:-unset}
-spec_executed: ${WILL_EXECUTE:-false}
+spec_executed: false
 spec_worktree_path:
 ---
 
@@ -599,7 +599,8 @@ cross-machine sync and is currently a local-only no-op.
 
 **Spawn gate (first):** the child runs unattended with Bash granted, so nobody
 approves its commands one by one. Refuse when no human is driving this session,
-or when the repo was never set up for agent work (no `CLAUDE.md`, no `.claude/`):
+or when the repo was never set up for agent work (no committed `CLAUDE.md` or `.claude/`
+— the child's worktree is checked out from a commit, so an untracked one never reaches it):
 
 ```bash
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "NOT_SPAWNED: not inside a git repository"; exit 1; }
@@ -608,8 +609,9 @@ if [ -z "$_KIND" ]; then
   echo "NOT_SPAWNED: session kind unknown — vibe-session-kind is missing"
 elif [ "$_KIND" != interactive ]; then
   echo "NOT_SPAWNED: $_KIND session — only an interactive session may start an unattended child"
-elif [ ! -f "$_ROOT/CLAUDE.md" ] && [ ! -d "$_ROOT/.claude" ]; then
-  echo "NOT_SPAWNED: untrusted repo — no CLAUDE.md or .claude/ at $_ROOT"
+elif ! git -C "$_ROOT" cat-file -e HEAD:CLAUDE.md 2>/dev/null \
+     && [ -z "$(git -C "$_ROOT" ls-tree -d --name-only HEAD .claude 2>/dev/null)" ]; then
+  echo "NOT_SPAWNED: untrusted repo — no committed CLAUDE.md or .claude/ at $_ROOT (the worktree gets only committed files)"
 else
   echo "SPAWN_GATE: ok"
 fi
@@ -726,16 +728,19 @@ SPAWN_BRANCH='<SPAWN_BRANCH>'
 [ "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-session-kind" 2>/dev/null)" = interactive ] \
   || { echo "NOT_SPAWNED: session is not interactive, or vibe-session-kind is missing"; exit 1; }
 BRIEF_PATH="${ARCHIVE_PATH%.md}.brief.txt"
-LOG_PATH="${ARCHIVE_PATH%.md}.execute.log"
 [ -s "$BRIEF_PATH" ] || { echo "NOT_SPAWNED: no executor brief at $BRIEF_PATH — write it with the Write tool first"; exit 1; }
 # git reports the toplevel as a physical path; resolve ours the same way so a
 # symlinked WORKTREE_PARENT (macOS /tmp is one) still matches.
 SPAWN_PATH=$(cd "$SPAWN_PATH" 2>/dev/null && pwd -P) || { echo "NOT_SPAWNED: worktree path does not exist"; exit 1; }
 [ "$(git -C "$SPAWN_PATH" rev-parse --show-toplevel 2>/dev/null)" = "$SPAWN_PATH" ] || { echo "NOT_SPAWNED: $SPAWN_PATH is not the worktree root"; exit 1; }
 cd "$SPAWN_PATH"
+# The child's output is unredacted: it stays in its own worktree, out of the specs archive.
+LOG_PATH="$SPAWN_PATH/.vibestack-execute.log"
 _EXCLUDE=$(git rev-parse --git-path info/exclude)
 mkdir -p "$(dirname "$_EXCLUDE")"
-grep -qxF '.vibestack-progress.md' "$_EXCLUDE" 2>/dev/null || printf '.vibestack-progress.md\n' >> "$_EXCLUDE"
+for _x in .vibestack-progress.md .vibestack-execute.log; do
+  grep -qxF "$_x" "$_EXCLUDE" 2>/dev/null || printf '%s\n' "$_x" >> "$_EXCLUDE"
+done
 cat "$BRIEF_PATH" "$ARCHIVE_PATH" | VIBE_SPAWNED=1 claude -p --allowedTools Edit,Write,Read,Bash,Grep,Glob --strict-mcp-config --mcp-config '{"mcpServers":{}}' --disallowedTools 'mcp__*' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(gh pr:*)' --max-budget-usd "${VIBE_SPEC_EXECUTE_USD:-5}" --max-turns "${VIBE_SPEC_EXECUTE_TURNS:-200}" > "$LOG_PATH" 2>&1 &
 SPAWN_PID=$!
 echo "Spawned: PID $SPAWN_PID in $SPAWN_PATH (branch $SPAWN_BRANCH)"

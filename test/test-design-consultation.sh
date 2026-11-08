@@ -325,6 +325,12 @@ if VIBESTACK_REPO_ROOT="$SRC" "$HERE/bin/vibe-render-skill" "$SRC/skills/design-
 else
   no "design-html renders"
 fi
+echo "deferred-cleanup rules"
+# Value: protects=the chooser never offers a variant the self-gate discarded, remixes are bounded, and no board wording survives; fails_when=those rules drop; why_new=new rules; seam=none
+has "$R" 'Offer only the variants that passed the self-gate' && ok "chooser offers only gated variants" || no "chooser can offer discarded variants"
+has "$R" 'A remix counts as a round' && ok "remix rounds are capped" || no "remix rounds have no cap"
+has "$R" 'comparison boards' && no "stale comparison-board wording" || ok "no stale comparison-board wording"
+
 
 echo "design-consultation: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

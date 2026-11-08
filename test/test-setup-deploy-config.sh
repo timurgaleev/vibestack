@@ -139,6 +139,12 @@ expect "gh down: merge methods unknown, never guessed" "MERGE_METHODS_ALLOWED: u
 
 run_settings "$TMP/plain" FAIL
 expect "no gh and no remote: default branch unknown" "DEFAULT_BRANCH: unknown"
+# Value: protects=the fallback reads the remote's current default branch, not a stale cached origin/HEAD; fails_when=the block trusts refs/remotes/origin/HEAD after the remote moved; why_new=the rows above never moved the remote; seam=none (a real bare remote)
+git -C "$TMP/seed" push -q origin develop:trunk2
+git -C "$TMP/origin.git" symbolic-ref HEAD refs/heads/trunk2
+run_settings "$TMP/work" FAIL
+expect "gh down: a moved remote default branch is read live" "DEFAULT_BRANCH: trunk2"
+git -C "$TMP/origin.git" symbolic-ref HEAD refs/heads/develop
 
 if command -v zsh >/dev/null 2>&1; then
   SH=zsh
@@ -170,6 +176,12 @@ has    "GitHub Actions status command"                   'gh run list --workflow
 has    "Vercel auto-deploys only when Git-connected"     'only when the Vercel project is connected to this Git repository'
 has    "Netlify URL asked and confirmed"                 'Ask for the production URL and confirm it'
 has    "Fly /health only on a 2xx probe"                 'only when the probe answers 2xx'
+# Value: protects=deploy facts are recorded, not swapped silently; fails_when=a failing /health falls back to the root URL, Netlify's unlinked answer records no trigger, option F drops a pre-merge command, or "not deployed yet" leaves a stale configuration; why_new=new rules; seam=none
+has    "a failing Fly /health is reported, not replaced" 'A 5xx or `000` is a failing or unreachable route'
+has    "Netlify not linked records a manual trigger"     'not linked'
+has    "never-deploys keeps a pre-merge command"         'except Merge method, Project type and Pre-merge'
+has    "not deployed yet offers to remove a stale configuration" 'offer to remove the existing `## Deploy Configuration` section'
+
 
 SKILL="$TMP/canary.md"
 echo "canary: alert after confirm"
@@ -180,6 +192,9 @@ has    "a pending finding at the deadline gets a confirming round" 'one more con
 has    "--quick reports its single pass as findings"     'Under `--quick` there is no second check'
 awk '/^### Phase 6:/{on=1} /^### Phase 7:/{on=0} on' "$SKILL" | grep -qF 'Under `--quick`' \
   && ok "Phase 6 status counts --quick findings" || no "Phase 6 status ignores --quick findings"
+
+# Value: protects=a finding that keeps coming back between clean checks does not leave the status HEALTHY; fails_when=only consecutive sightings confirm; why_new=new rule; seam=none
+has    "a recurring non-consecutive finding confirms as intermittent" 'confirms as **intermittent**'
 
 echo "canary: cadence"
 has    "start and deadline recorded"                     'record the start time and the deadline'

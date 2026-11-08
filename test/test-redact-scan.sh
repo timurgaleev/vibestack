@@ -514,6 +514,38 @@ md_base_commit
 md_push_edit "# t\n\n\`\`\`text\nours\ntheirs\n\`\`\`\n$L7 HEAD\n\nend\n"; rc=$?
 [ "$rc" -eq 1 ] && ok "a marker right after a closed text fence in a .md blocks" || no "marker after closed fence pushed (rc=$rc)"
 
+# Value: protects=env-style values that only look like expansions or stubs are still judged, a quoted `KEY = "value"` assignment is matched, and a positional with trailing shell text is not a finding; fails_when=any $Identifier or any short "..." value passes as a placeholder again, the spaced form drops out of the pattern, or the value is judged with the rest of the line; why_new=sections 13c/14 only feed a bare "$1", a long "..." value and KEY=value with no spaces; seam=none
+ENV_REFUSED=(
+  'DB_PASSWORD=$ecretP4ssw0rd'
+  'API_KEY=P4ss...'
+  'API_KEY = "'"${B16}"'"'
+  "API_KEY = '${B16}'"
+)
+ENV_ACCEPTED=(
+  '    API_KEY=$1  # first argument'
+  '  API_TOKEN="$1";'
+  'API_KEY=$API_KEY'
+  'API_TOKEN=$token'
+  'API_KEY=sk-proj-...'
+  'API_KEY=AKIA...'
+  'API_KEY=dop_v1_...'
+  "SECRET_KEY = os.environ['SECRET_KEY']"
+  'API_KEY = "${API_KEY}"'
+  'API_KEY = "<your-key>"'
+)
+for value in "${ENV_REFUSED[@]}"; do
+  for s in $SINKS; do
+    sink "$s" "$value"; rc=$?
+    [ "$rc" -eq 0 ] && ok "$s refuses '$value'" || no "$s accepted '$value' (rc=$rc)"
+  done
+done
+for value in "${ENV_ACCEPTED[@]}"; do
+  for s in $SINKS; do
+    sink "$s" "$value"; rc=$?
+    [ "$rc" -eq 1 ] && ok "$s accepts '$value'" || no "$s refused '$value' (rc=$rc)"
+  done
+done
+
 echo ""
 echo "redact-scan: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

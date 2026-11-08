@@ -1,7 +1,7 @@
 ---
 name: devex-review
 description: |
-  Live DX audit: test docs, getting-started and CLI help in a browser, time TTHW, and score against the plan.
+  Live DX audit: test docs, getting-started and CLI help in a browser, time TTHW, score vs the plan.
 triggers:
   - live dx audit
   - test developer experience

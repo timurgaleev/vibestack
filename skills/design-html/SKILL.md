@@ -84,7 +84,7 @@ this skill needs to read a mockup, you read it yourself with the Read tool. Neve
 invent a subcommand; anything other than `status` and `variants` either reports that
 it is unsupported or exits with a usage error.
 
-**CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards,
+**CRITICAL PATH RULE:** All design artifacts (mockups,
 `approved.json`) MUST be saved under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/designs/`, NEVER to
 `.context/`, `docs/designs/`, `/tmp/`, or any project-local / version-controlled
 directory. Design artifacts are USER data, not project files. The finalized HTML is
@@ -327,13 +327,15 @@ waitlist), settle these before writing markup:
 - **Intake.** Ask at most three questions, in one AskUserQuestion, and only what the
   plan or mockup leaves open: who the visitor is and what stops them, the one action
   you want, and what proof the user can actually supply.
-- **Archetype.** Pick one archetype for the page's structure (show the product
-  working, problem then outcome, compare and price, or a short launch/waitlist page)
+- **Archetype.** Pick one archetype for the page's structure — `classic-hero` (show
+  the product working), `long-form-story` (problem then outcome), `comparison` (compare
+  and price) or `minimal-conversion` (a short launch/waitlist page), the ids
+  /design-shotgun writes —
   and say in one line why it fits this visitor — unless `approved.json` already
   names one (Step 1, item 4). The hero still holds to one headline, one supporting
   line, one action group.
-- **Primary action.** One named action, built with every state: default, hover and
-  focus, **invalid** (a message beside the field that names the fix), **pending**
+- **Primary action.** One named action with default, hover and focus states, and,
+  when the action submits data (a form, a signup, a purchase), also **invalid** (a message beside the field that names the fix), **pending**
   (disabled, with a progress label), **failure** (what went wrong, the input kept,
   a retry), and **success** (what happens next).
 - **Index decision.** `index` for a public page meant to be found, `noindex` for a
@@ -616,7 +618,7 @@ After writing the HTML file, start a simple HTTP server for live preview:
 # Start a simple HTTP server in the output directory
 _OUTPUT_DIR=$(dirname <path-to-finalized.html>)
 cd "$_OUTPUT_DIR"
-python3 -m http.server 0 --bind 127.0.0.1 &
+python3 -I -m http.server 0 --bind 127.0.0.1 &
 _SERVER_PID=$!
 # The server needs a moment to bind; wait for its listening socket before reading the port.
 _PORT=""
@@ -726,7 +728,10 @@ Deck mode is explicit and never the default path. Enter it only when the input i
 slide deck, the user says "deck" or "slides", or passes `--deck`. Otherwise build a
 page as above. In deck mode, Steps 0-3.5 still apply (input detection, design tokens,
 output path, live-reload server); this section replaces the page structure and the
-Step 4 verification screenshots.
+Step 4 verification screenshots. Of the craft floor, a deck keeps the title and meta
+description, the favicon, alt text, real links, and the proof, honesty and scale rules;
+the header/nav/footer landmarks, the skip link, `aria-current` and inline form errors do
+not apply to a deck (one `<main>`, no navigation, no forms).
 
 **Structure:**
 - One `<section class="slide">` per slide inside `<main>`, each `height: 100dvh`

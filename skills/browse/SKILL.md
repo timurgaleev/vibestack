@@ -526,7 +526,7 @@ $B prettyscreenshot --cleanup --scroll-to ".pricing" --width 1440 ~/Desktop/hero
 | `type [--selector <sel\|@ref>] [--] <text>` | Type into the focused element, or into `--selector` (focused first). `--` before text that starts with `--` |
 | `upload <sel> <file> [file2...]` | Upload file(s) |
 | `useragent <string>` | Set user agent |
-| `viewport [<WxH>\|auto] [--scale <n>]` | Set viewport size and optional deviceScaleFactor (1-3, for retina screenshots). --scale requires a context rebuild. `auto` returns to the default 1280x720. Refused while a device is emulated |
+| `viewport [<WxH>\|auto] [--scale <n>]` | Set viewport size and optional deviceScaleFactor (1-3, for retina screenshots). --scale requires a context rebuild. `auto` returns to the default 1280x720 (headed: back to fitting the window). Refused while a device is emulated |
 | `wait <sel\|--networkidle\|--load>` | Wait for element, network idle, or page load (timeout: 15s) |
 
 ### Inspection

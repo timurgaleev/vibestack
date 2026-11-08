@@ -124,10 +124,11 @@ function readState(): ServerState | null {
  */
 export async function isServerHealthy(port: number): Promise<boolean> {
   try {
-    // Keep this above TAB_PROBE_TIMEOUT_MS (browser-manager.ts): /health waits
-    // that long on a stuck active tab before it answers.
+    // Keep this above twice TAB_PROBE_TIMEOUT_MS (browser-manager.ts): /health
+    // waits up to that long on the browser probe, then as long again on a stuck
+    // active tab, before it answers.
     const resp = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(3000),
     });
     if (!resp.ok) return false;
     const health = await resp.json() as any;

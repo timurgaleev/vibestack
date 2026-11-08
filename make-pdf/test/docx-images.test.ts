@@ -84,6 +84,16 @@ describe("dropIcnsImages", () => {
     expect(() => dropIcnsImages(`<image src="data:image/png;base64,${icnsB64}">`, () => {})).toThrow(/ICNS/);
   });
 
+  test("text that only looks like an ICNS src does not fail the export", () => {
+    for (const html of [
+      `<p>Set src=data:image/png;base64,${icnsB64} on the tag.</p>`,
+      `<p><a title="src=data:image/png;base64,${icnsB64}" href="#x">x</a></p>`,
+      `<p><img alt="x src='data:image/png;base64,${icnsB64}'" src="data:image/png;base64,${pngB64}"></p>`,
+    ]) {
+      expect(dropIcnsImages(html, () => {})).toBe(html);
+    }
+  });
+
   test("isIcnsDataUri ignores non-data and non-base64 URIs", () => {
     expect(isIcnsDataUri("icon.icns")).toBe(false);
     expect(isIcnsDataUri("data:image/png,icns")).toBe(false);

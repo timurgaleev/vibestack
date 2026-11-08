@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# vibe-compact-reanchor — Claude Code SessionStart hook (matcher "compact") that
+# tells the model, right after a compaction, to re-read from disk any skill it
+# was following. A compacted session may keep only the head of a long skill;
+# every skill opens with a note saying where its SKILL.md lives, and this hook
+# makes sure the model acts on it instead of resuming from a truncated copy.
+#
+# Usage (registered as a Claude Code SessionStart hook, matcher "compact"):
+#   stdin  = JSON payload (ignored: the reminder does not depend on it)
+#   stdout = {"hookSpecificOutput":{"hookEventName":"SessionStart",
+#             "additionalContext":"<reminder>"}}
+#
+# The envelope is encoded by vibe_hook_json_string from the careful skill's
+# hook-extract.sh. When that helper is not installed (a configuration-only
+# install), the reminder goes out as plain text, which Claude Code also adds to
+# the context for SessionStart. Always exits 0: it never blocks a session.
+set -euo pipefail
+
+cat >/dev/null 2>&1 || true
+
+REMINDER='This session was just compacted. If you were following a skill, the copy of it in context may be cut off: read its SKILL.md from disk again (the path is in the note at the top of the skill) and resume at the step you were on. Re-read any file before editing it again; do not rely on its remembered contents.'
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+HELPER=""
+for c in "$HERE/../skills/careful/bin/hook-extract.sh" \
+         "$HOME/.claude/skills/careful/bin/hook-extract.sh"; do
+  if [ -f "$c" ]; then HELPER="$c"; break; fi
+done
+
+if [ -n "$HELPER" ] && . "$HELPER" 2>/dev/null && ENCODED=$(vibe_hook_json_string "$REMINDER"); then
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' "$ENCODED"
+else
+  printf '%s\n' "$REMINDER"
+fi
+exit 0

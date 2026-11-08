@@ -1,7 +1,7 @@
 ---
 name: cso
 description: |
-  Security audit: secrets, supply chain, CI/CD, cloud posture, LLM risks, OWASP and STRIDE, with trend tracking.
+  Security audit: secrets, supply chain, CI/CD, cloud posture, LLM risks, OWASP and STRIDE, tracked over time.
 allowed-tools:
   - Bash
   - Read
@@ -85,7 +85,7 @@ When the user types `/cso`, run this skill.
 5. When `--diff` is active, each phase constrains scanning to files/configs changed on the current branch vs the base branch. For git history scanning (Phase 2), `--diff` limits to commits on the current branch only.
    Phase 5b is the one phase that cannot be constrained that way — a live account has no diff. Under `--diff` it runs only when the branch diff touches AWS configuration: a Terraform file declaring an `aws` provider or an `aws_*` resource, a CDK app file, an IAM policy document, or a deploy config naming AWS. When it runs, it audits the whole account as usual and the report says so. When the diff touches none of those, skip it, print `AWS posture: skipped (--diff, no AWS configuration changed on this branch)`, and omit `"5b"` from `phases_run`.
 6. Phases 0, 1, 12, 13, 14 ALWAYS run regardless of scope flag.
-6a. `--paths <p,q>` hands each listed path to every Grep search through its `path` parameter (one search per path when several are listed), and to every `git log` / `git ls-files` call as pathspecs (`-- <p> <q>`). The status can then be at most `partial`, with one gap line `outside --paths: <top-level directories not covered>`, and the saved report records the list in `paths`.
+6a. `--paths <p,q>` hands each listed path to every Grep search through its `path` parameter (one search per path when several are listed), and to every `git log` / `git ls-files` call as pathspecs (`-- <p> <q>`). Git unions pathspecs, so when a call already names its own file patterns, prefix each of the call's own file patterns with each path (`-- 'src/*.env'`, not `-- '*.env' src`). The status can then be at most `partial`, with one gap line `outside --paths: <top-level directories not covered>`, and the saved report records the list in `paths`.
 7. If WebSearch is unavailable, skip checks that require it and note: "WebSearch unavailable — proceeding with local-only analysis." The phases that lost those checks are recorded as `partial` in the coverage record (Phase 13).
 8. Every phase the selected mode includes gets a coverage entry, whether it ran in full, ran degraded, or could not run. A phase that did not do its work never counts as a clean phase.
 
@@ -95,9 +95,10 @@ The bash blocks throughout this skill show WHAT patterns to search for, not HOW 
 
 **Exception — Phase 5b (AWS Account Posture).** That phase queries a live account, so there is nothing in the repository to grep. Its credential gate and every `aws` command in its Checks table are meant to be executed with Bash, as written. They are all read-only (`get`, `list`, `describe`), and the phase's own read-only contract is the limit on what may run. This exception covers Phase 5b only; every other phase stays on the Grep tool.
 
-**Exception — installed scanners (optional).** When one of these is already on `PATH`, run it with Bash alongside the phase's own method, never in place of it: `gitleaks` (Phase 2), `zizmor --offline .github/workflows` (Phase 4), `trivy config --skip-check-update --skip-db-update .` (Phase 5; it also reads a repo `trivy.yaml`, so note one when present), `semgrep --metrics=off --config <a rules file in the repo>` (Phases 7 and 9 — never `--config auto`, which fetches remote rules). Never install a scanner, and never let one update its database or rules during the audit. Scanner output is a candidate for Phase 12, not a finding. Record each scanner's version and outcome (`ran, N candidates` or `exited <rc>`) in that phase's coverage reason; a scanner that is absent is not a gap when the phase's own method ran. gitleaks prints matches, so it writes a redacted report to a private temp file and only the count reaches the session:
+**Exception — installed scanners (optional).** When one of these is already on `PATH`, run it with Bash alongside the phase's own method, never in place of it: `gitleaks` (Phase 2), `zizmor --offline .github/workflows` (Phase 4), `trivy config --skip-check-update --skip-db-update .` (Phase 5; it also reads a repo `trivy.yaml`, so note one when present), `semgrep --metrics=off --disable-version-check --config <a rules file in the repo>` (Phases 7 and 9 — never `--config auto`, which fetches remote rules). Never install a scanner, and never let one update its database or rules during the audit. Scanner output is a candidate for Phase 12, not a finding. Under `--diff` or `--paths`, give a scanner only the changed or listed paths as its target (`trivy config <path>`, `zizmor --offline <path>`, `gitleaks git --log-opts=<base>..HEAD`), or skip it and record `skipped (scope flag)`. Record each scanner's version and outcome (`ran, N candidates` or `exited <rc>`) in that phase's coverage reason, and note a repo `.gitleaks.toml` there — it can allowlist anything; a scanner that is absent is not a gap when the phase's own method ran. gitleaks prints matches, so it writes a redacted report to a private temp file and only the count reaches the session:
 ```bash
 if command -v gitleaks >/dev/null 2>&1; then
+  umask 077
   GL_REPORT="$(mktemp)"
   gitleaks git --redact --no-banner --report-format json --report-path "$GL_REPORT" . >/dev/null 2>&1
   GL_RC=$?
@@ -356,6 +357,8 @@ Phase 5 reads the IaC. This phase reads the live account, because what Terraform
 
 **Under `--diff`:** the account has no diff to constrain, so this phase runs only when the branch diff touches AWS configuration — a Terraform file declaring an `aws` provider or an `aws_*` resource, a CDK app file, an IAM policy document, or a deploy config naming AWS. If it does, run the phase in full against the whole account and say in the report that this phase alone was not limited to the branch. If it does not, print `AWS posture: skipped (--diff, no AWS configuration changed on this branch)` and omit `"5b"` from `phases_run`. Check this before the credential gate below.
 
+**Under `--paths`:** the same rule applies to the listed paths — run the phase only when one of them holds AWS configuration, account-wide, and say so in the report; otherwise print `AWS posture: skipped (--paths, no AWS configuration in the listed paths)` and omit `"5b"`.
+
 **Gate:** Run only when AWS is detected: a Terraform `provider "aws"` block, a CDK app (`aws-cdk-lib` in package.json or `aws_cdk` in requirements), `boto3` or `@aws-sdk` imports, or `aws sts get-caller-identity` succeeding. If none match, skip silently. Never ask the user for keys, never read `~/.aws/credentials` yourself, and never print `AWS_*` variables.
 
 Two failure modes are reported separately, because they need different fixes: the `aws` CLI is not installed, or it is installed and the identity call failed (no profile, expired session, wrong region, blocked network). The CLI's own error text names which. Report the skip line, record Phase 5b as `skipped` in the coverage record (the audit is then `partial`), then move on — an account nobody could reach is never reported as clean.
@@ -363,7 +366,7 @@ Two failure modes are reported separately, because they need different fixes: th
 ```bash
 if ! command -v aws >/dev/null 2>&1; then
   echo "AWS posture: skipped (aws CLI not found)"
-elif ! AWS_STS_ERR=$(aws sts get-caller-identity --output text 2>&1 >/dev/null); then
+elif ! AWS_STS_ERR=$(aws sts get-caller-identity --cli-connect-timeout 5 --cli-read-timeout 15 --output text 2>&1 >/dev/null); then
   echo "AWS posture: skipped (credentials unusable) — $(printf '%s' "${AWS_STS_ERR:-no error text from aws}" | tr '\n' ' ')"
 fi
 ```
@@ -844,11 +847,15 @@ if ! git check-ignore -q .vibestack/security-reports/report.json 2>/dev/null; th
   EXCLUDE="$(git rev-parse --git-path info/exclude 2>/dev/null)" \
     && mkdir -p "$(dirname "$EXCLUDE")" && printf '.vibestack/\n' >> "$EXCLUDE" \
     && echo "IGNORE: added .vibestack/ to $EXCLUDE" \
-    || echo "IGNORE: nothing ignores .vibestack/ and info/exclude could not be updated"
+    || { echo "PERSISTENCE_FAILED: report not saved (nothing ignores .vibestack/ and info/exclude could not be updated)"; exit 1; }
 fi
-REPORT=".vibestack/security-reports/$(date +%Y-%m-%d-%H%M%S).json"
-( : > "$REPORT" && chmod 600 "$REPORT" ) && echo "REPORT: $REPORT" \
-  || echo "PERSISTENCE_FAILED: report not saved (cannot create $REPORT)"
+_R=".vibestack/security-reports/$(date +%Y-%m-%d-%H%M%S)"; REPORT="$_R.json"; _n=2
+# Create exclusively: a second audit in the same second gets a suffix, never truncates the first.
+while ! ( set -C; : > "$REPORT" ) 2>/dev/null; do
+  [ -e "$REPORT" ] || { echo "PERSISTENCE_FAILED: report not saved (cannot create $REPORT)"; exit 1; }
+  REPORT="$_R-$_n.json"; _n=$((_n + 1))
+done
+chmod 600 "$REPORT" && echo "REPORT: $REPORT" || echo "PERSISTENCE_FAILED: report not saved (cannot chmod $REPORT)"
 ```
 `.git/info/exclude` is local and untracked, so the ignore rule adds nothing to the diff. Write the JSON into the printed `REPORT:` path with the Write tool, then run `chmod 600 '<REPORT>' && [ -s '<REPORT>' ] && echo SAVED` with that path. If any step prints `PERSISTENCE_FAILED`, the write fails, the check does not print `SAVED`, or the secret scan below cannot run or blocks, print `PERSISTENCE_FAILED: report not saved` with the reason and never say the report was saved.
 

@@ -1,7 +1,7 @@
 ---
 name: design-review
 description: |
-  Visual design QA on a live site: find spacing, hierarchy and consistency issues, then fix and re-verify them.
+  Visual design QA on a live site: find spacing, hierarchy and consistency issues, then fix and re-verify.
 allowed-tools:
   - Bash
   - Read
@@ -301,6 +301,8 @@ succeeds: `gh pr view --json baseRefName -q .baseRefName`;
 
 {{include lib/snippets/base-branch-detect.md}}
 
+If `git rev-parse -q --verify origin/<BASE_BRANCH>` prints nothing, the block guessed: ask which base to compare against before reading a diff.
+
 Print the base you used, then:
 1. Analyze the branch diff: `git diff <base>...HEAD --name-only`
 2. Map changed files to affected pages/routes
@@ -493,7 +495,7 @@ Apply these at each page. Each finding gets an impact rating (high/medium/polish
 - No `transition: all` — properties listed explicitly
 - Only `transform` and `opacity` animated (not layout properties like width, height, top, left)
 - At most one authored motion moment per page: not the same entrance on every section, not a hover effect on everything. Ease-out from an already-visible default; content never hides behind animation timing. Zero motion is not a finding
-- With JS disabled and under reduced motion every section renders its final content; nothing starts at opacity 0 waiting for a scroll handler. After load, before scrolling, count hidden in-viewport elements: `$B js "[...document.querySelectorAll('body *')].filter(e => {const r=e.getBoundingClientRect(); return r.width>0 && r.height>0 && r.top<innerHeight && r.bottom>0 && getComputedStyle(e).opacity==='0'}).length"`. A nonzero count is a finding when those elements hold content
+- Under reduced motion every section renders its final content; nothing starts at opacity 0 waiting for a scroll handler. For content below the fold, read the stylesheet and scripts for an initial `opacity: 0` (or a reveal class) that only a scroll handler removes; browse cannot turn JavaScript off, so check that content is in the served HTML rather than injected. After load, before scrolling, count hidden in-viewport elements: `$B js "[...document.querySelectorAll('body *')].filter(e => {const r=e.getBoundingClientRect(); return r.width>0 && r.height>0 && r.top<innerHeight && r.bottom>0 && getComputedStyle(e).opacity==='0'}).length"`. A nonzero count is a finding when those elements hold content
 
 **8. Content & Microcopy** (8 items)
 - Empty states designed with warmth (message + action + illustration/icon)
@@ -567,7 +569,7 @@ Then the five Persuade checks:
 4. **A real risk reversal** — a trial, refund, free tier or cancel-anytime, stated where the action is.
 5. **An index decision** — `<meta name="robots">` matches whether this page should be found.
 
-A Persuade check that fails needs content or a decision only the user has, so file it as High and deferred (category: content) and say exactly what you need from the user. Invented proof found on the page (a quote nobody said, a round-number metric, an unearned logo) is filed the same way. The fix loop never writes proof, objections or a guarantee, and never "fixes" invented proof by rewording it.
+When a failed Persuade check needs content or a decision only the user has (proof, objections, a guarantee, whether the page should be found), file it as High and deferred (category: content) and say exactly what you need from the user. A code-fixable miss — a CTA label that only needs to name the action the page already offers, a robots tag whose intent is already clear — is an ordinary finding the fix loop takes. Invented proof found on the page (a quote nobody said, a round-number metric, an unearned logo) is filed the same way. The fix loop never writes proof, objections or a guarantee, and never "fixes" invented proof by rewording it.
 
 ---
 
@@ -912,7 +914,7 @@ _CX_TO=$(command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null || tr
 # A function, not an inline ${VAR:+...} prefix: zsh does not word-split that
 # expansion, so "gtimeout 270" would reach execve as one argument (exit 127).
 _cx() {
-  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" "$@"; return; fi
+  if [ -n "${_CX_TO:-}" ]; then "$_CX_TO" -k 10 "$@"; return; fi
   _cx_s=${1}; shift
   "$@" <&0 & _cx_p=$!
   while kill -0 "$_cx_p" 2>/dev/null; do
@@ -1099,7 +1101,7 @@ the command; skip to writing the test. Otherwise read those two files first, the
 
 {{include lib/snippets/test-bootstrap.md}}
 
-A `## Testing` entry written to CLAUDE.md here goes into the regression-test commit, staged by name.
+A `## Testing` entry written to CLAUDE.md here goes into the regression-test commit, staged by name. If the regression test is dropped, commit the CLAUDE.md entry on its own (`test(design): record the test command`) — never leave it uncommitted for the next run.
 
 **If BOOTSTRAP_DECLINED** appears: write no test; record `Regression proof — unavailable (test bootstrap declined)`.
 
@@ -1297,6 +1299,8 @@ Write a one-line summary to `<PROJECT_DIR>/{user}-{branch}-design-audit-{datetim
 - Deferred findings
 - Design score delta: baseline → final
 - AI slop score delta: baseline → final
+
+**Before this can ship:** the craft floor's list of open items (proof, content, decisions only the user can supply), one line each — or `none`.
 
 **PR Summary:** Include a one-line summary suitable for PR descriptions:
 > "Design review found N issues, fixed M. Design score X → Y, AI slop score X → Y."

@@ -1,7 +1,7 @@
 ---
 name: improve-arch
 description: |
-  Find shallow modules in a codebase and propose refactors that make them deep: small interface, deep implementation.
+  Find shallow modules and propose refactors that make them deep: small interface, deep implementation.
 allowed-tools:
   - Bash
   - Read
