@@ -127,6 +127,28 @@ else
   _fail "G6: copilot/agents is stale or missing — run scripts/gen-copilot-agents.py"
 fi
 
+# G6b: the review and planning agents keep the gates that make their output
+# usable — a reviewer that reports unproven HIGHs, edits the tree, or never says
+# whether to merge, and a plan whose steps carry no check, are what these lines
+# prevent. Checked in the source; G6 carries them into the Copilot twins.
+g6b=""
+need() { grep -qF -- "$2" "$SRC_AGENTS/$1.md" || g6b="$g6b [$1: $2]"; }
+need code-reviewer "## Before you report"
+need code-reviewer "failure scenario"
+need code-reviewer "Zero findings is a valid review"
+need code-reviewer "Ready to merge: Yes / No / With fixes"
+need code-reviewer "Never edit files, stage, or change branches"
+need quality-guard "failure scenario"
+need quality-guard "Never edit files, stage, or change branches"
+need task-planner "Verify: <command> → <expected>"
+need task-planner "Interfaces"
+need task-planner "## Self-review"
+if [[ -z "$g6b" ]]; then
+  _pass "G6b: reviewer pre-report gate, merge verdict, read-only clause and plan Verify lines present"
+else
+  _fail "G6b: agent contract lines missing:$g6b"
+fi
+
 # G7: settings.json ships exactly one key, the one that keeps Copilot from
 # adding a co-author trailer to commits. Anything else is unvetted policy.
 if [[ -f "$SETTINGS" ]] && python3 -c '

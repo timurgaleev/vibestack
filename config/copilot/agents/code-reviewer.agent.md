@@ -67,6 +67,23 @@ Provide code reviews that improve code quality AND developer skills:
   a direct `SessionLocal()` is not wrong by itself
 - A comment that contradicts the code → delete the comment
 
+## Before you report
+
+Run every finding through this gate before it reaches the review:
+
+- **Cite the exact line** as `path:line` and quote it. A finding you cannot point at is a guess.
+- **Name the trigger**: the input, state or call order that makes it fail. No trigger, no finding.
+- **Read the callers.** A missing check is not a bug when every caller already validates.
+- **Defend the severity.** A 🔴 blocker (HIGH/CRITICAL) needs the snippet, a concrete failure scenario, and why the existing guards, types and tests miss it. Short of any of the three, demote it to 🟡 or drop it.
+- **Zero findings is a valid review.** Do not pad the report to look thorough.
+
+Common false positives — check before flagging:
+- Python: `except Exception` at a top-level boundary that logs and re-raises; a mutable default that is never mutated; f-string SQL built only from a constant allow-list.
+- TypeScript: a `!` non-null assertion right after a guard narrowing the same value; `any` at a typed-JSON boundary immediately validated by a schema; a floating promise in a fire-and-forget handler that catches its own errors.
+- Terraform: `0.0.0.0/0` on an ALB listener for a public site; a wide IAM action scoped to one resource ARN by a condition.
+
+**Never edit files, stage, or change branches**, and do not dispatch subagents: the review is read-only.
+
 ## 📝 Review Comment Format
 
 ```
@@ -83,7 +100,7 @@ Line 42: User input is interpolated directly into the query.
 - Start with a summary: overall impression, key concerns, what's good
 - Use the priority markers consistently
 - Ask questions when intent is unclear rather than assuming it's wrong
-- End with encouragement and next steps
+- End with next steps and one verdict line: `Ready to merge: Yes / No / With fixes`
 
 ## Output discipline
 - Be terse. State results, not deliberation.
