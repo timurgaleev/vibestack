@@ -130,6 +130,7 @@ own installed directory — `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse`, fal
 back to `vibe-browse` on `PATH` — which resolves in both user and project scope and
 does not depend on where the checkout lives. There is nothing to drop in by hand.
 
+The daemon pins Playwright `~1.64.1` (Chromium 156) in the repo `package.json`.
 The one thing that is not vendored is Chromium itself: the launcher fetches Playwright
 and a browser into a cache directory on first use. Without `npm` on `PATH` it cannot,
 and prints `BROWSE_NOT_AVAILABLE` — the browse-dependent skills then fall back to
@@ -219,11 +220,14 @@ Devices when you stop using the skill.
 
 ---
 
-## Why aren't these bundled?
+## Why aren't the others bundled?
 
-vibestack is a curated skills pack. The browse daemon is a non-trivial standalone project (a Chromium controller). Building and shipping it would expand the project scope well beyond "skills pack." The gh CLI, the aws CLI and the MCP inspector are a different case: other people's tools, with their own release cadence, install story and credential handling — vendoring any of them would mean shipping a stale copy, and in gh's case a second copy of a credential store the machine already has. The honest path in every case is to document the gap and let skills fail gracefully when the dependency is absent.
+The browse daemon is the exception: its source ships in this repo, and only its
+runtime (bun, the Playwright dependencies, Chromium) is fetched on the machine.
+The gh CLI, the aws CLI and the MCP inspector are a different case: other people's tools, with their own release cadence, install story and credential handling — vendoring any of them would mean shipping a stale copy, and in gh's case a second copy of a credential store the machine already has. The honest path is to document the gap and let skills fail gracefully when the dependency is absent.
 
-The affected skills are kept in the pack because (a) they're useful when the daemon **is** available, (b) they fall back when it isn't, and (c) deleting them would lose the integration scaffolding for anyone who supplies their own daemon.
+The browser skills stay useful without that runtime: they fall back to the
+stateless shim or to text-only checks and say which capability was missing.
 
 ---
 
