@@ -37,11 +37,12 @@ implementing, investigate before fixing, review before shipping.
 | Shape a rough idea into a design doc | `office-hours` |
 | Turn intent into a precise, executable spec | `spec` |
 | Plan a feature, refactor, or architecture change | `plan-eng-review`, `autoplan` |
+| Execute an approved multi-step plan | an installed plan-execution skill if present; otherwise the `plan-eng-review` cold-start briefs lane by lane, then `review` and `ship` |
 | Weigh product scope or the bigger problem | `plan-ceo-review` |
 | Plan a UI change, or review a design before it is built | `plan-design-review` |
 | Pressure-test the developer experience of a plan | `plan-devex-review` |
 | Audit the live developer experience of a shipped product | `devex-review` |
-| Debug an error, test failure, or odd behavior | `investigate` |
+| Debug an error, test failure, or odd behavior | `investigate` (see **Failures** below) |
 | Review a diff before merge | `review` |
 | Rewrite a PR description from its actual changes | `pr-summary` |
 | Get a second opinion from a different model | `codex` or `claude` — by host, see below |
@@ -58,7 +59,7 @@ implementing, investigate before fixing, review before shipping.
 | Ship: tests, version, changelog, PR | `ship` |
 | See which VERSION slots open PRs already claim | `landing-report` |
 | Address PR review threads and failing CI | `address-pr-review` |
-| Merge, deploy, and confirm production health | `land-and-deploy`, `canary` (`setup-deploy` configures it once) |
+| Merge, deploy, and confirm production health | type `/land-and-deploy` (typed-only), then `canary` (`setup-deploy` configures it once) |
 | Measure page performance against a baseline | `benchmark` |
 | Update docs after shipping | `document-release`, `document-generate` |
 | Strip machine-sounding prose | `unslop` |
@@ -75,7 +76,7 @@ implementing, investigate before fixing, review before shipping.
 | Run a retrospective from git history | `retro` |
 | Tune which questions the skills ask you | `plan-tune` |
 | Guard a risky session | `careful`, `freeze`, `guard` (and `unfreeze` to release) |
-| Update the pack itself | `vibe-upgrade` |
+| Update the pack itself | type `/vibe-upgrade` (typed-only) |
 | Find and retire unused skills, hooks, permissions and caches | `vibe-gc` |
 
 Anything not listed here is in the full index — read it rather than guessing at
@@ -122,6 +123,14 @@ Rules when routing:
   through the Skill tool (Claude Code, Cursor, Kiro, Copilot CLI), or on Codex load that
   skill's `SKILL.md` and follow it (users invoke it there as `Use $<name>`). Do not answer with a list of
   options, and do not do the skill's work freehand when the skill exists.
+  Except: never invoke a typed-only skill (a row that says "type `/name`") —
+  tell the user to type it (on Codex, `Use $name`) and do not do its work yourself.
+- **Failures.** When the user names the cause and a narrow fix, make
+  one read-only check of the file, test or log it rests on; if it holds, fix
+  it and run the focused test, otherwise invoke `investigate`. When the cause
+  is unknown, make one read-only triage pass, with no reproduction and no wider search,
+  over the supplied evidence and the code it implicates; fix only if that
+  pass alone proves the root cause, otherwise invoke `investigate`.
 - **Answer directly instead** when the request is a quick factual question
   (including "which skills are there?" — show the table), a small edit the user
   scoped themselves, or the user asked for a direct answer rather than a
