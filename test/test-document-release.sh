@@ -83,7 +83,7 @@ echo "pr body"
 grep -q '/tmp/vibestack-pr-body' "$SKILL" && no "fixed /tmp body path remains" || ok "no fixed /tmp body path"
 grep -q 'mktemp -d "${TMPDIR:-/tmp}/vibe-doc-release-' "$SKILL" && ok "private run dir" || no "no private run dir"
 grep -q "<<'MRBODY'" "$SKILL" && no "MR body still pasted into a heredoc" || ok "no MR body heredoc"
-WB=$(grep -E "^python3 -c 'import pathlib,subprocess,sys; subprocess.run\(\[\"glab\"" "$SKILL" | head -1)
+WB=$(grep -E "^python3 -I -c 'import pathlib,subprocess,sys; subprocess.run\(\[\"glab\"" "$SKILL" | head -1)
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/glab" <<'STUB'
 #!/usr/bin/env bash

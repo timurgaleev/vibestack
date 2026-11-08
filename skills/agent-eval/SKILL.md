@@ -109,7 +109,7 @@ CASES="evals/<unit>/cases.jsonl"
 wc -l < "$CASES"
 grep -c '"golden"' "$CASES"
 grep -c '"adversarial"' "$CASES"
-python3 -c 'import collections,json,sys
+python3 -I -c 'import collections,json,sys
 ids=[json.loads(l)["id"] for l in open(sys.argv[1]) if l.strip()]
 print("\n".join(sorted(i for i,n in collections.Counter(ids).items() if n>1)))' "$CASES"
 ```

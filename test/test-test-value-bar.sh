@@ -2,10 +2,10 @@
 # test-test-value-bar.sh — the test value bar reaches every skill that writes,
 # proposes or reviews tests, and the copies cannot drift apart.
 #
-# lib/snippets/test-value-bar.md is included by /ship, /plan-eng-review, /qa and
-# /qa-only. review/specialists/testing.md is installed as a symlink, not
-# rendered, so it carries the four questions inline; this suite holds the two
-# copies to the same wording.
+# lib/snippets/test-value-bar.md is included by /ship, /plan-eng-review, /qa,
+# /qa-only, /investigate, /review and /spec. review/specialists/testing.md is
+# installed as a symlink, not rendered, so it carries the four questions
+# inline; this suite holds the two copies to the same wording.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -80,7 +80,7 @@ else
 fi
 
 echo "rendered skills"
-for skill in ship plan-eng-review qa qa-only; do
+for skill in ship plan-eng-review qa qa-only investigate review spec; do
   src="$ROOT/skills/$skill/SKILL.md"
   out="$TMP/$skill.md"
   if ! "$ROOT/bin/vibe-render-skill" "$src" "$out" >/dev/null 2>&1; then

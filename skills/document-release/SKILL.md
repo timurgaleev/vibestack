@@ -654,7 +654,7 @@ gh pr view --json body -q .body > "<run-dir>/body.md" && cp "<run-dir>/body.md" 
 **If GitLab:**
 ```bash
 set -o pipefail
-glab mr view -F json | python3 -c "import sys,json; print(json.load(sys.stdin).get('description',''))" > "<run-dir>/body.md" || exit 1
+glab mr view -F json | python3 -I -c "import sys,json; print(json.load(sys.stdin).get('description',''))" > "<run-dir>/body.md" || exit 1
 cp "<run-dir>/body.md" "<run-dir>/body-orig.md"
 ```
 
@@ -739,7 +739,7 @@ Hand the scanned file to `glab` as one argument, without reading it into your
 context or pasting it into a heredoc — a body line that matches the heredoc
 terminator would end it early, and the raw text would bypass the trust envelope:
 ```bash
-python3 -c 'import pathlib,subprocess,sys; subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()],check=True)' "<run-dir>/body.md"
+python3 -I -c 'import pathlib,subprocess,sys; subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()],check=True)' "<run-dir>/body.md"
 ```
 
 9. Clean up the run directory:

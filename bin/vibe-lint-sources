@@ -16,21 +16,23 @@
 #               ${CLAUDE_SKILL_DIR} whose block has neither a :- default nor a
 #               command -v fallback. Only Claude Code substitutes them; other
 #               hosts see empty or literal text. Prose mentions never warn.
-#   hostpath  — warning by default, a finding under --strict: a file reached
-#               through ~/.claude/skills/<name>/..., a Read of a repo-relative
+#   hostpath  — a finding: a file reached through
+#               ~/.claude/skills/<name>/..., a Read of a repo-relative
 #               `.claude/skills/` path, or a bare qa/templates, qa/references
 #               or review/TODOS-format.md path. Each resolves only where
 #               Claude Code installed the pack at that one path. Use
 #               ${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/<name>}/... or
 #               .../../<sibling>/... instead.
+#   pyisolate — a finding: a fenced python3 -c or python3 - without -I, which
+#               imports from the working directory before the standard library.
 #
 # Usage: vibe-lint-sources [--strict] [repo-root]
 #        (default root: the repo containing this script)
 # Exit: 0 clean, 1 findings (one file:line message per finding), 2 usage or
 # a root with no skills/ directory. Warnings (warn: file:line: ...) never
-# change the exit code. Under --strict a run that read nothing — no skill or
-# snippet files, an unreadable file, or an awk failure in the hostpath pass —
-# is a finding, never "clean".
+# change the exit code. An unreadable file or an awk failure in the hostpath
+# pass is a finding; under --strict a tree with no skill or snippet files is
+# one too, never "clean".
 set -uo pipefail
 
 usage() { echo "usage: vibe-lint-sources [--strict] [repo-root]" >&2; exit 2; }
@@ -144,7 +146,7 @@ done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
 # the model to the same missing file a fenced cat does. Directory mentions with
 # no file under them (`~/.claude/skills/`) describe install locations and pass.
 # A file this pass could not read is reported the same way a host path is, so
-# --strict fails closed instead of passing a tree it never looked at.
+# the lint fails closed instead of passing a tree it never looked at.
 HP_FILES=()
 for f in "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md; do
   [ -e "$f" ] && HP_FILES+=("$f")
@@ -153,7 +155,7 @@ if [ "${#HP_FILES[@]}" -eq 0 ]; then
   if [ "$STRICT" -eq 1 ]; then say "$ROOT: no skill or snippet files to check"; else echo "warn: $ROOT: no skill or snippet files to check"; fi
 fi
 while IFS= read -r line; do
-  if [ "$STRICT" -eq 1 ]; then say "$line"; else echo "warn: $line"; fi
+  say "$line"
 done < <(for f in ${HP_FILES[@]+"${HP_FILES[@]}"}; do
   if [ ! -r "$f" ]; then echo "$f: unreadable — hostpath check could not run"; continue; fi
   awk -v file="$f" '
@@ -214,7 +216,7 @@ while IFS= read -r f; do
           printf "warn: %s:%d: bare %s is replaced by an invocation argument when the skill loads — use ${N} in shell, $(N) in awk, USD for money\n", file, NR, p
       }
       if (fenced && (m = unisolated($0)) != "")
-        printf "warn: %s:%d: python3 %s without -I imports from the working directory first — add -I\n", file, NR, m
+        printf "ERR %s:%d: python3 %s without -I imports from the working directory first — add -I\n", file, NR, m
     }' "$f")
 done < <(ls "$ROOT"/skills/*/SKILL.md "$ROOT"/lib/snippets/*.md 2>/dev/null)
 

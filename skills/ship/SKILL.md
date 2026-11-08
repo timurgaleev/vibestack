@@ -702,7 +702,7 @@ Test plan, with the waiver beside it.
     file and hands its bytes to `glab` as one argument — the body never passes
     through shell text:
     ```bash
-    python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","issue","create","-t",sys.argv[2],"-d",pathlib.Path(sys.argv[1]).read_text(),"-a",sys.argv[3]]).returncode)' \
+    python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","issue","create","-t",sys.argv[2],"-d",pathlib.Path(sys.argv[1]).read_text(),"-a",sys.argv[3]]).returncode)' \
       "<ISSUE_BODY_FILE>" 'Pre-existing test failure: <test-name>' '<gitlab-username>'
     rm -f "<ISSUE_BODY_FILE>"
     ```
@@ -2445,7 +2445,7 @@ merge commit and publishes the release. A `CLOSED`-without-merge PR, and a merge
 that HEAD has moved past (commits made after the merge), read as `NO_PR`/`NO_MR` and get
 a fresh one.
 
-If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file — a re-run edits, so an unscanned edit would publish most ships unscanned.
+If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file — a re-run edits, so an unscanned edit would publish most ships unscanned.
 
 **Also update the PR title** if the version changed on rerun (never under NO_VERSION — there is no version to put in it). PR titles use the workspace-aware format `v<NEW_VERSION> <type>: <summary>` — version ALWAYS first. If the current title's version prefix doesn't match `NEW_VERSION`, write the new title into a `TITLE_FILE` (created and scanned as below) and run `gh pr edit --title "$(cat '<TITLE_FILE>')"`, or for GitLab `python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-t",pathlib.Path(sys.argv[1]).read_text().strip()]).returncode)' '<TITLE_FILE>'`. This keeps the title truthful when Step 12's queue-drift detection rebumps a stale version. If the title has no `v<version>` prefix (a custom title kept intentionally), leave the title alone — only rewrite titles that already follow the format.
 
