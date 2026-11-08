@@ -558,7 +558,7 @@ for _lane in <lane1> <lane2>; do
   _n=$(awk '/No tests found|no tests ran|\[no test files\]/ {z=1} /^ok / {g=1}
     /^Tests:/ && match($(0), /[0-9]+ total/) {n=substr($(0),RSTART,RLENGTH)+0; c=1}
     /^=+ .* in [0-9.]+s/ {s=$(0); p=0; while (match(s, /[0-9]+ (passed|failed)/)) {p+=substr(s,RSTART,RLENGTH)+0; s=substr(s,RSTART+RLENGTH)} n=p; c=1}
-    match($(0), /^[0-9]+ examples?,/) || match($(0), /^Ran [0-9]+ test/) || match($(0), /^[^[:alnum:]]*tests [0-9]+[[:space:]]*$/) {s=substr($(0),RSTART,RLENGTH); gsub(/[^0-9]/,"",s); n=s+0; c=1}
+    match($(0), /^[0-9]+ examples?,/) || match($(0), /^Ran [0-9]+ test/) || match($(0), /^([^[:space:][:digit:]]+[[:space:]]+)?tests [0-9]+[[:space:]]*$/) {s=substr($(0),RSTART,RLENGTH); gsub(/[^0-9]/,"",s); n=s+0; c=1}
     /^test result: / {s=$(0); while (match(s, /[0-9]+ (passed|failed)/)) {r+=substr(s,RSTART,RLENGTH)+0; s=substr(s,RSTART+RLENGTH)} n=r; c=1}
     END {print c ? n : (z && !g ? 0 : "unknown")}' "$_SHIP_LOG/$_lane.txt" 2>/dev/null)
   echo "LANE: $_lane exit=$_st tests_ran=${_n:-unknown} log=$_SHIP_LOG/$_lane.txt"
