@@ -98,6 +98,25 @@ describe('revoking a paired agent', () => {
     expect((await rootCall('DELETE', '/token/nobody-by-this-name')).status).toBe(404);
   });
 
+  // A URL drops `.` and `..` path segments, so `tunnel revoke` could never
+  // reach an agent paired under one of those names.
+  test('a name that a revoke URL cannot carry is refused at pairing', async () => {
+    for (const clientId of ['.', '..']) {
+      const res = await rootCall('POST', '/pair', { clientId });
+      expect(res.status).toBe(400);
+    }
+    const listed = await (await rootCall('GET', '/agents')).json();
+    expect(listed.pending.map((p: any) => p.clientId)).not.toContain('.');
+    expect(listed.pending.map((p: any) => p.clientId)).not.toContain('..');
+  });
+
+  test('revoking a skill spawn reports a boolean', async () => {
+    const { mintSkillToken, revokeSkillToken } = await import('../src/skill-token');
+    mintSkillToken({ skillName: 'bool-skill', spawnId: 'spawn-1', spawnTimeoutSeconds: 60 });
+    expect(revokeSkillToken('bool-skill', 'spawn-1')).toBe(true);
+    expect(revokeSkillToken('bool-skill', 'spawn-1')).toBe(false);
+  });
+
   test('/agents lists pending setup keys without their secret', async () => {
     const key = await pair('listed-pending');
     const body = await (await rootCall('GET', '/agents')).json();
@@ -141,6 +160,20 @@ describe('re-pairing an existing name', () => {
     await session(broad);
     expect(await tunnelStatus(token)).toBe(401);
     await rootCall('DELETE', '/token/broaden-live');
+  });
+
+  test('widening an exact host to its wildcard keeps the live session', async () => {
+    const token = await session(await pair('widen-domain', { domains: ['example.com'] }));
+    await pair('widen-domain', { domains: ['*.example.com'] });
+    expect(await tunnelStatus(token)).toBe(403);
+    await rootCall('DELETE', '/token/widen-domain');
+  });
+
+  test('trading a wildcard for its bare host counts as narrowing', async () => {
+    const token = await session(await pair('wild-to-exact', { domains: ['*.example.com'] }));
+    await pair('wild-to-exact', { domains: ['example.com'] });
+    expect(await tunnelStatus(token)).toBe(401);
+    await rootCall('DELETE', '/token/wild-to-exact');
   });
 
   test('an invalid scope is refused before anything is revoked', async () => {

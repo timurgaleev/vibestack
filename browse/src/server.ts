@@ -1086,9 +1086,10 @@ async function handleCommandInternalImpl(
   try {
     let result: string;
 
-    // stop/restart/connect/disconnect/handoff and newtab work with no tab open;
-    // every other command gets one back if all tabs were closed outside browse.
-    const needsTab = !META_COMMANDS_WITHOUT_PAGE.has(command) && command !== 'newtab';
+    // stop/restart/connect/disconnect/handoff, newtab, tabs and status work
+    // with no tab open (tabs and status only report); every other command
+    // gets one back if all tabs were closed outside browse.
+    const needsTab = !META_COMMANDS_WITHOUT_PAGE.has(command) && !['newtab', 'tabs', 'status'].includes(command);
     const tabRecoveryWarning = needsTab ? await browserManager.ensureActiveTab() : null;
     const session = needsTab ? browserManager.getActiveSession() : browserManager.findActiveSession();
 
@@ -1321,10 +1322,12 @@ async function handleCommandInternal(
   // active tab: requests overlap while handleCommandInternalImpl awaits.
   let cr: CommandResult;
   try {
-    // Commands that need no page (newtab, tabs, stop, ...) ignore a pin, so a
-    // stale BROWSE_TAB never blocks the recovery the not-found error suggests.
-    const pageless = META_COMMANDS_WITHOUT_PAGE.has(body.command) || body.command === 'newtab' || body.command === 'tabs';
-    cr = await browserManager.runPinned(pageless ? undefined : body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts));
+    // stop, restart, ... ignore a pin. newtab and tabs keep it (so they do not
+    // move or mark the shared active tab) but never fail on a stale one, so
+    // BROWSE_TAB never blocks the recovery the not-found error suggests.
+    const unpinned = META_COMMANDS_WITHOUT_PAGE.has(body.command);
+    const lenient = body.command === 'newtab' || body.command === 'tabs';
+    cr = await browserManager.runPinned(unpinned ? undefined : body.tabId, () => handleCommandInternalImpl(body, tokenInfo, opts), { lenient });
   } catch (err: any) {
     if (!/^Tab \S+ not found/.test(err?.message ?? '')) throw err;
     cr = { status: 404, json: true, result: JSON.stringify({ error: err.message }) };
@@ -1800,8 +1803,8 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
           mode: browserManager.getConnectionMode(),
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
-          // Bounded by TAB_PROBE_TIMEOUT_MS, well inside the CLI's 2 s /health
-          // timeout. A stuck tab shows up here, not as an unhealthy daemon.
+          // Bounded by TAB_PROBE_TIMEOUT_MS and run only once the browser
+          // answered, so a stuck tab shows up here, not as an unhealthy daemon.
           activeTab: healthy ? await browserManager.probeActiveTab() : null,
           // Root token for the side panel's bootstrap, headed mode only.
           // /health is not authenticated: it is off the tunnel listener
@@ -2309,6 +2312,13 @@ export function buildFetchHandler(cfg: ServerConfig): ServerHandle {
             validateScopes(scopes);
           } catch (err: any) {
             return new Response(JSON.stringify({ error: err.message }), {
+              status: 400, headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          // A URL drops `.` and `..` path segments, so `DELETE /token/<name>`
+          // (tunnel revoke) could never reach an agent paired under them.
+          if (pairBody.clientId === '.' || pairBody.clientId === '..') {
+            return new Response(JSON.stringify({ error: `Agent name "${pairBody.clientId}" cannot be revoked by name; choose another --client` }), {
               status: 400, headers: { 'Content-Type': 'application/json' },
             });
           }

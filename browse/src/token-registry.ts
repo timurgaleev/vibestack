@@ -445,7 +445,16 @@ function isNarrowing(prev: TokenInfo, next: { scopes: readonly string[]; domains
   if (nextDomains.length === 0) return false;
   const prevDomains = prev.domains ?? [];
   if (prevDomains.length === 0) return true;
-  return prevDomains.some(d => !nextDomains.includes(d));
+  return prevDomains.some(d => !nextDomains.some(n => domainPatternCovers(n, d)));
+}
+
+/** True when every host `inner` matches is also matched by `outer`. */
+function domainPatternCovers(outer: string, inner: string): boolean {
+  if (inner.startsWith('*.')) {
+    // A wildcard reaches every subdomain, which only a wildcard can cover.
+    return outer.startsWith('*.') && matchDomainGlob(inner.slice(2), outer);
+  }
+  return matchDomainGlob(inner, outer);
 }
 
 /**

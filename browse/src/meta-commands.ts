@@ -397,13 +397,15 @@ export async function handleMetaCommand(
 
     // ─── Server Control ────────────────────────────────
     case 'status': {
-      const page = bm.getPage();
+      // Side-effect free: with every tab closed it reports that, and the next
+      // command that needs a page reopens one.
+      const session = bm.findActiveSession();
       const tabs = bm.getTabCount();
       const mode = bm.getConnectionMode();
       return [
         `Status: healthy`,
         `Mode: ${mode}`,
-        `URL: ${page.url()}`,
+        `URL: ${session ? session.getPage().url() : '(no tab open)'}`,
         `Tabs: ${tabs}`,
         `PID: ${process.pid}`,
       ].join('\n');
