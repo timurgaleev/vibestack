@@ -1,5 +1,56 @@
 # Changelog
 
+## 1.57.0 — 2026-11-08
+
+### Added
+
+- **`/iac-review`**: a read-only review of a Terraform plan or `cdk diff`
+  before apply. It ranks stateful replacements, destroys, count-index churn,
+  unlocked or unencrypted state backends, unpinned providers and modules, and
+  secrets reaching state or outputs. An EKS section covers endpoint exposure,
+  workload identity, Pod Security, network policies, requests and limits,
+  PodDisruptionBudgets and add-on lag. Generating a plan asks first, and a
+  check that could not run is N-A and never counts as a pass.
+- **`/health --fix`** runs the project's detected checks, fixes the source
+  until they pass, and reports READY only from the evidence ledger at the
+  current tree. Only exit 0 is green, pre-existing means red before any edit,
+  tests and checker config are never edited to get green, and it stops after
+  5 runs or a repeated failure. A spawned or headless run needs `--yes`.
+- **Compliance specs for three iron laws**: `/investigate` runs the failing
+  test before editing source, `/ship` runs the suite in-session before any
+  push and never pushes with `--no-verify`, and `/review` never reports clean
+  over a fix it has not re-reviewed. Each spec has a fixture that checks
+  itself, and the contributor guide gains a rule to run the matching spec
+  before and after changing a discipline rule.
+- **Every skill opens with a compaction re-anchor note** telling the agent to
+  re-read its `SKILL.md` from disk after a compaction; `test-skill-prefix`
+  fails if any rendered skill lacks it in its first 20,000 bytes.
+
+### Changed
+
+- The source lint now fails the build on a fenced `python3 -c` or `python3 -`
+  without `-I`, and on hard-coded host paths whether or not `--strict` is
+  passed. The test value bar suite now requires `/investigate`, `/review` and
+  `/spec` to render the bar.
+- `/ship` Step 5 takes a lane as passed when `/health --fix` already passed
+  that exact command at the current tree, and Step 16 checks such a lane
+  against the health ledger instead of re-running it.
+- The context-budget suite requires 300 chars of headroom under the
+  skill-listing cap.
+- README, the skills reference, the `/vibe` router and the compatibility
+  audit cover `/iac-review` and `/health --fix`, and document the bundled
+  browse daemon, vibe-design's OpenAI and Gemini keys, the investigate flake
+  guide, `aws-cost --estimate`, `cso --paths` and the typed-only skills. The
+  routing suite checks every skill has a reference entry and the README count
+  adds up.
+
+### Fixed
+
+- The remaining inline Python calls in skill text, including ones the lint
+  cannot see, now run with `-I`.
+- The README skill count and ETHOS principle count are correct again, and the
+  docs no longer say the browse daemon is not bundled.
+
 ## 1.56.0 — 2026-11-08
 
 ### Added
