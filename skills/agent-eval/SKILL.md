@@ -20,6 +20,9 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when: "evaluate the agent", "build an eval set", "LLM as judge", "prompt regression test", "did the prompt change make it better", "measure prompt quality", "eval harness".

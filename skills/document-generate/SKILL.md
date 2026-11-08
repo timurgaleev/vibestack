@@ -21,6 +21,9 @@ triggers:
   - record this decision
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when asked to "write docs", "generate documentation", "document this feature", "create a tutorial", or "explain this module". "ADR this", "record this decision" or `--adr` runs [ADR mode](#adr-mode) instead.

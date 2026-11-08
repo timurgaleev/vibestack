@@ -11,6 +11,9 @@ allowed-tools:
 disable-model-invocation: true
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Only when the user types `/land-and-deploy`. A merge to production is a one-way door: a

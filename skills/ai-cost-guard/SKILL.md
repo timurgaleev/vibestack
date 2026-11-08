@@ -20,6 +20,9 @@ allowed-tools:
   - Glob
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when: "ai cost guard", "cap llm spend", "unbounded llm loop", "token budget", "runaway api cost", "bedrock spend limit", "why was the Anthropic/OpenAI bill so high", or before merging a change that adds a call to a paid model API.
