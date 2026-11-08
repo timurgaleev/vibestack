@@ -270,8 +270,24 @@ kept="$VIBESTACK_HOME/gc-trash/$TODAY/repo/browse-audit.jsonl"
   && ok "the untrimmed original is kept in gc-trash/<date>/repo" || no "original not kept at $kept"
 grep -q "trimmed '$RS/browse-audit.jsonl'" "$VIBESTACK_HOME/gc-log.md" 2>/dev/null \
   && ok "gc-log.md records the trim" || no "no trim line in gc-log.md"
+# Value: protects=undo puts a trimmed log's original back with the records
+# appended since the trim; fails_when=undo skips trim lines (the original stays
+# in the trash) or overwrites the appended records; why_new=no row ran undo
+# after a trim; seam=none
+printf '{"n": "after-trim"}\n' >> "$RS/browse-audit.jsonl"
 (cd "$REPO" && "$GC" undo "$TODAY" >/dev/null 2>&1); rc=$?
-[ "$rc" -eq 0 ] && ok "undo ignores trim lines" || no "undo after a trim exit $rc"
+undo_size=$(wc -c < "$RS/browse-audit.jsonl" | tr -d ' ')
+[ "$rc" -eq 0 ] && [ "$undo_size" -eq $((audit_size + 20)) ] \
+  && [ "$(head -n 1 "$RS/browse-audit.jsonl" | cut -c1-8)" = '{"n": 1,' ] \
+  && [ "$(tail -n 1 "$RS/browse-audit.jsonl")" = '{"n": "after-trim"}' ] \
+  && ok "undo restores a trimmed log's original and keeps the records appended since" \
+  || no "undo after a trim: exit $rc, size $undo_size (want $((audit_size + 20)))"
+[ ! -e "$kept" ] && ok "undo takes the kept original out of the trash" || no "kept original still in the trash after undo"
+grep -q "restored '$RS/browse-audit.jsonl'" "$VIBESTACK_HOME/gc-log.md" 2>/dev/null \
+  && ok "gc-log.md records the restore" || no "no restore line for the trim"
+(cd "$REPO" && "$GC" undo "$TODAY" >/dev/null 2>&1); rc=$?
+[ "$rc" -eq 0 ] && [ "$(wc -c < "$RS/browse-audit.jsonl" | tr -d ' ')" -eq "$undo_size" ] \
+  && ok "a second undo of the same day changes nothing" || no "second undo: exit $rc"
 python3 -I -c 'import sys; open(sys.argv[1], "w").write("net\n" * 300000)' "$RS/browse-network.log"
 (cd "$REPO" && "$GC" trim "$RS/browse-network.log" "$RS/../.vibestack/browse-network.log" >/dev/null 2>&1); rc=$?
 [ "$rc" -eq 0 ] && [ "$(wc -c < "$RS/browse-network.log" | tr -d ' ')" -le 262144 ] \

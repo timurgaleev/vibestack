@@ -23,6 +23,7 @@
 # Exit 0 on success, 1 on bad arguments or API failure.
 # Exit 2 when the branch has no PR, or when gh cannot see the repo.
 set -euo pipefail
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 usage() {
   echo "usage: pr-thread-reply.sh <thread_id> <body>|--body-file <path> [--resolve]" >&2

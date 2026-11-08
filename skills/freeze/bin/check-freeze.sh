@@ -162,22 +162,26 @@ _extract_path() {
   _raw=$(vibe_hook_extract_field "$INPUT" "$1" && printf x) || return 1
   FILE_PATH="${_raw%x}"
 }
+# Copilot CLI's edit and create tools name the file tool_input.path. Every field
+# is read: a payload naming two different paths is denied below, so an inside
+# file_path cannot vouch for an outside notebook_path the tool writes.
 set +e
-PATH_FIELD=file_path
+PATH_FIELD=""
 FILE_PATH=""
-_extract_path file_path
-EXTRACT_RC=$?
-if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
-  PATH_FIELD=notebook_path
-  _extract_path notebook_path
-  EXTRACT_RC=$?
-fi
-# Copilot CLI's edit and create tools name the file tool_input.path.
-if [ "$EXTRACT_RC" -eq 0 ] && [ -z "$FILE_PATH" ]; then
-  PATH_FIELD=path
-  _extract_path path
-  EXTRACT_RC=$?
-fi
+_MIXED_PATHS=0
+EXTRACT_RC=0
+for _f in file_path notebook_path path; do
+  _prev="$FILE_PATH"
+  _extract_path "$_f" || { EXTRACT_RC=1; break; }
+  if [ -z "$FILE_PATH" ]; then
+    FILE_PATH="$_prev"
+  elif [ -z "$PATH_FIELD" ]; then
+    PATH_FIELD="$_f"
+  elif [ "$FILE_PATH" != "$_prev" ]; then
+    _MIXED_PATHS=1
+  fi
+done
+PATH_FIELD="${PATH_FIELD:-file_path}"
 set -e
 
 # Unparseable payload (or no parser available): DENY. A boundary hook that
@@ -197,6 +201,13 @@ if [ -z "$FILE_PATH" ]; then
   _vibestack_log freeze deny no-file-path ""
   _vibestack_analytics deny no_file_path
   vibe_hook_decision deny "[freeze] The tool payload names no file_path, notebook_path or path, so the freeze boundary cannot be checked. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
+  _FREEZE_DECIDED=1
+  exit 0
+fi
+if [ "$_MIXED_PATHS" -eq 1 ]; then
+  _vibestack_log freeze deny mixed-path-fields ""
+  _vibestack_analytics deny mixed_path_fields
+  vibe_hook_decision deny "[freeze] The tool payload names different paths in file_path, notebook_path and path, so the hook cannot tell which one the tool writes. Blocked (fail closed). Freeze boundary: $FREEZE_DIR"
   _FREEZE_DECIDED=1
   exit 0
 fi

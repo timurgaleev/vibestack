@@ -98,8 +98,8 @@ out=$(bash "$LINT" "$d" 2>&1)
 grep -q '^warn:' <<<"$out" && no "non-shell fence warned: $out" || ok "non-shell fence does not warn"
 
 # 9. positionals: the host replaces $N (N digits, no word character after) with
-#    the Nth argument before the model reads the skill. Inside any fence that is
-#    an error; in prose it warns.
+#    the Nth argument before the model reads the skill, fenced or in prose: an
+#    error everywhere.
 d=$(mkfix posawk); printf '# demo\n```bash\nawk %s{print $1}%s f\n```\n' "'" "'" > "$d/skills/demo/SKILL.md"
 out=$(bash "$LINT" "$d" 2>&1); rc=$?
 [ "$rc" -eq 1 ] && grep -q 'SKILL.md:3: bare \$1 ' <<<"$out" && ok "bare \$1 in an awk fence fails with file:line" || no "fenced \$1 missed (rc=$rc): $out"
@@ -122,7 +122,7 @@ out=$(bash "$LINT" "$d" 2>&1); rc=$?
 
 d=$(mkfix posprose); printf '# demo\n\nA service up more than $500 is HIGH.\n' > "$d/skills/demo/SKILL.md"
 out=$(bash "$LINT" "$d" 2>&1); rc=$?
-[ "$rc" -eq 0 ] && grep -q 'warn: .*SKILL.md:3: bare \$500 ' <<<"$out" && ok "a prose positional warns without failing" || no "prose positional (rc=$rc): $out"
+[ "$rc" -eq 1 ] && grep -q '^[^w].*SKILL.md:3: bare \$500 ' <<<"$out" && ok "a prose positional is a finding" || no "prose positional (rc=$rc): $out"
 
 # 10. pyisolate: a fenced python3 -c / python3 - without -I imports from the
 #     current directory first — a finding.
@@ -191,6 +191,109 @@ d=$(mkfix awkfail); mkdir -p "$TMP/fakebin"; printf '#!/bin/sh\nexit 2\n' > "$TM
 out=$(PATH="$TMP/fakebin:$PATH" bash "$LINT" --strict "$d" 2>&1); rc=$?
 [ "$rc" -eq 1 ] && grep -q 'awk exited 2' <<<"$out" \
   && ok "--strict fails when awk fails" || no "awk failure passed --strict (rc=$rc): $out"
+
+# 13. Every awk pass fails closed: an awk that dies in the fence, snippet,
+#     hostvars or positional pass is a finding, never a clean run.
+cat > "$TMP/fakebin/awk" <<EOF
+#!/bin/sh
+case "\$*" in *"\$LINT_FAIL_MARK"*) echo "awk: forced failure" >&2; exit 2 ;; esac
+exec "$(command -v awk)" "\$@"
+EOF
+chmod +x "$TMP/fakebin/awk"
+awkn=0
+for mark in 'END { if (fc != "")' 'include lib' 'seen[$0]++' 'function flush(' 'function positional('; do
+  d=$(mkfix "awkpass$((++awkn))")
+  printf '# snip\n\nbody\n' > "$d/lib/snippets/good.md"
+  out=$(LINT_FAIL_MARK="$mark" PATH="$TMP/fakebin:$PATH" bash "$LINT" "$d" 2>&1); rc=$?
+  [ "$rc" -eq 1 ] && grep -q 'awk exited 2' <<<"$out" \
+    && ok "an awk failure in the pass holding '$mark' fails the lint" || no "awk failure in '$mark' pass passed (rc=$rc): $out"
+done
+
+# 14. Bytes, not characters: under a UTF-8 locale BSD awk aborts on a split or
+#     invalid multibyte sequence. The lint must still read the whole line.
+d=$(mkfix utf8); printf '# demo\n```bash\nx="\342\200" y=$1 \303\251\n```\n' > "$d/skills/demo/SKILL.md"
+out=$(LC_ALL=en_US.UTF-8 bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'SKILL.md:3: bare \$1' <<<"$out" \
+  && ok "an invalid UTF-8 byte does not hide a positional on the same line" || no "invalid UTF-8 line not linted (rc=$rc): $out"
+
+# 15. A fence inside a list item may sit 4+ spaces in (relative to the item's
+#     content it is 0-3): it is a fence for balance and for the fenced rules.
+d=$(mkfix listfence); printf '%s\n' '# demo' '- **If GitHub:**' '    ```bash' '    python3 -c "print(1)"' '    ```' \
+  '1. Step' '   - sub' '     ```' '     unclosed' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'SKILL.md:4: python3 -c without -I' <<<"$out" \
+  && ok "python3 -c in a list-item fence indented 4 spaces is a finding" || no "list-item fence not treated as a fence (rc=$rc): $out"
+grep -q 'SKILL.md:8: unclosed fence opened here' <<<"$out" \
+  && ok "an unclosed list-item fence indented 5 spaces is caught" || no "unclosed list-item fence missed: $out"
+d=$(mkfix listcode); printf '%s\n' '# demo' '- item' '' '      ```' '      not a fence: indented code inside the item' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "a fence line 4+ past the item's content column is indented code" || no "indented code in a list item flagged (rc=$rc): $out"
+
+# 16. Skill sub-docs (skills/<name>/**/*.md besides SKILL.md) are read by the
+#     model too: fences, host paths and python isolation apply. The host does
+#     not substitute $N in them, so positionals do not.
+d=$(mkfix subdoc); mkdir -p "$d/skills/demo/specialists"
+printf '%s\n' '# ref' 'Read `~/.claude/skills/review/checklist.md`.' '```bash' 'python3 -c "print(1)"' 'awk '"'"'{print $1}'"'"' f' '```' > "$d/skills/demo/specialists/ref.md"
+printf '# t\n```\nunclosed\n' > "$d/skills/demo/notes.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'specialists/ref.md:2: hard-coded host path' <<<"$out" \
+  && ok "a sub-doc host path is a finding" || no "sub-doc host path missed (rc=$rc): $out"
+grep -q 'specialists/ref.md:4: python3 -c without -I' <<<"$out" && ok "a sub-doc python3 -c is a finding" || no "sub-doc python missed: $out"
+grep -q 'notes.md:2: unclosed fence' <<<"$out" && ok "a sub-doc unclosed fence is a finding" || no "sub-doc fence missed: $out"
+grep -q 'ref.md:5: bare' <<<"$out" && no "a sub-doc positional was flagged: $out" || ok "positionals are not checked in sub-docs"
+
+# 17. Every positional is a finding, prose and inline code included, and each
+#     one on a line is named.
+d=$(mkfix posall); printf '# demo\n\nPass `$1` and $2 through.\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q '^[^w].*SKILL.md:3: bare \$1, \$2 ' <<<"$out" \
+  && ok "prose positionals are findings, all of them named" || no "prose positionals (rc=$rc): $out"
+
+# 18. pyisolate covers every inline-code shape: options that take a separate
+#     argument, versioned and absolute interpreters, a continued line, stdin
+#     with no "-", and -m.
+d=$(mkfix pygaps); printf '%s\n' '# demo' '```bash' \
+  'python3 -W ignore -c "x"' 'python3 -X utf8 -c "x"' 'python -c "x"' 'python3.12 -c "x"' \
+  '/usr/bin/python3 -c "x"' 'out=$(python3 \' '  -c "x")' "python3 <<'PY'" 'PY' 'python3 -m json.tool f' \
+  'python3 -W ignore -I -c "x"' 'python3 -X utf8 script.py' 'command -v python3 >/dev/null' 'python3 --version' \
+  'printf x | python3 -I' '```' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+got=$(grep 'without -I' <<<"$out" | sed -E 's/.*SKILL\.md:([0-9]+):.*/\1/' | tr '\n' ' ')
+[ "$rc" -eq 1 ] && [ "$got" = "3 4 5 6 7 8 10 12 " ] \
+  && ok "every unisolated python shape is a finding and isolated ones are not" || no "pyisolate shapes: got '$got' (rc=$rc): $out"
+
+# 19. ./install runs the lint before rendering: it shows findings and stops on
+#     them, but never prints authoring warnings the person installing cannot act on.
+H="$TMP/insthome"; mkdir -p "$H"
+out=$(HOME="$H" VIBESTACK_HOME="$H/.vibestack" bash "$ROOT/install" --dry-run --target=claude --no-config 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ! grep -q '^warn: ' <<<"$out" \
+  && ok "install prints no lint warnings" || no "install printed lint warnings (rc=$rc): $(grep -m2 '^warn: ' <<<"$out")"
+INST="$TMP/insttree"; mkdir -p "$INST"
+cp -R "$ROOT/install" "$ROOT/bin" "$ROOT/lib" "$INST/" 2>/dev/null; mkdir -p "$INST/skills/demo"
+printf '# demo\n```\nunclosed\n' > "$INST/skills/demo/SKILL.md"
+out=$(HOME="$H" VIBESTACK_HOME="$H/.vibestack" bash "$INST/install" --dry-run --target=claude --no-config 2>&1); rc=$?
+[ "$rc" -ne 0 ] && grep -q 'SKILL.md:2: unclosed fence' <<<"$out" && grep -q 'source lint failed' <<<"$out" \
+  && ok "install shows a lint finding and stops" || no "install lint finding (rc=$rc): $out"
+
+# 20. hostpath reads $HOME and ${HOME} spellings of the install path too, and
+#     passes the shapes that name no file: a :- fallback, a glob or <name>
+#     placeholder over every installed skill, a directory with a trailing slash.
+d=$(mkfix hostpathhome); printf '%s\n' '# demo' 'cat "$HOME/.claude/skills/review/checklist.md"' \
+  'Read `${HOME}/.claude/skills/qa/x.md`.' 'cat .claude/skills/review/checklist.md' 'Open ./.claude/skills/qa/x.md first.' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 1 ] && grep -q 'SKILL.md:2: hard-coded host path' <<<"$out" && grep -q 'SKILL.md:3: hard-coded host path' <<<"$out" \
+  && ok "\$HOME and \${HOME} install paths are findings" || no "\$HOME install paths missed (rc=$rc): $out"
+grep -q 'SKILL.md:4: hard-coded host path' <<<"$out" && grep -q 'SKILL.md:5: hard-coded host path' <<<"$out" \
+  && ok "a repo-relative .claude/skills/<name>/<file>, with or without ./, is a finding" || no "repo-relative install path missed: $out"
+d=$(mkfix hostpathshapes); printf '%s\n' '# demo' 'D="${CLAUDE_SKILL_DIR:-~/.claude/skills/demo}/x.md"' \
+  'ls ~/.claude/skills/*/SKILL.md' 'Each skill lives at `~/.claude/skills/<name>/SKILL.md`.' \
+  'The pack installs into `~/.claude/skills/demo/`.' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "a :- fallback, a glob, a <name> placeholder and a directory mention pass" || no "harmless install-path shapes flagged (rc=$rc): $out"
+
+# 21. An unknown flag is a usage error.
+out=$(bash "$LINT" --bogus 2>&1); rc=$?
+[ "$rc" -eq 2 ] && grep -q '^usage:' <<<"$out" && ok "an unknown flag exits 2 with usage" || no "unknown flag (rc=$rc): $out"
 
 echo
 echo "== summary =="

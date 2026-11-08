@@ -3,6 +3,7 @@
 # Resolves the repo through the installed skill's bin symlink, prefers the
 # compiled binary, falls back to running the CLI on bun.
 set -uo pipefail
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # Same floor as ./install: below it the install skips the make-pdf tooling,
 # so the launcher refuses too rather than run bun without its isolation flags.

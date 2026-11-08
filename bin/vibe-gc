@@ -10,7 +10,9 @@
 #   vibe-gc trim PATH...                        cut each repo log to its last 256 KB at a line
 #                                               boundary; the untrimmed original moves to
 #                                               $VIBESTACK_HOME/gc-trash/<date>/repo/<name>
-#   vibe-gc undo [YYYY-MM-DD]                   move that date's trashed paths back, newest first
+#   vibe-gc undo [YYYY-MM-DD]                   move that date's trashed paths back, newest first;
+#                                               a trimmed log gets its original back, with the
+#                                               records appended since the trim kept at the end
 #   vibe-gc log                                 print the log
 #
 # --roots applies to scan only; trash always judges against the default roots.
@@ -649,6 +651,43 @@ def cmd_trim(paths):
 
 
 LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2})T\S+ trash from '([^']*)' to '([^']*)' undo: ")
+TRIM_LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2})T\S+ trimmed '([^']*)' to its last (\d+) bytes; original kept at '([^']*)'$")
+
+
+def untrim(src, kept, tail_len):
+    """Put a trimmed log's original back, keeping what was appended since.
+
+    The log at src starts with the tail_len bytes the trim kept; anything after
+    them was written later and is appended to the original. Returns False when
+    the log no longer starts with that tail and cannot be rejoined safely.
+    """
+    if not os.path.lexists(src):
+        os.makedirs(os.path.dirname(src), exist_ok=True)
+        shutil.move(kept, src)
+        return True
+    size = os.lstat(src).st_size
+    if not os.path.isfile(src) or os.path.islink(src) or size < tail_len:
+        return False
+    with open(kept, "rb") as f:
+        f.seek(max(0, os.path.getsize(kept) - tail_len))
+        kept_tail = f.read()
+    with open(src, "rb") as f:
+        if f.read(tail_len) != kept_tail:
+            return False
+        extra = f.read()
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(src), prefix=".gc-untrim.")
+    try:
+        with os.fdopen(fd, "wb") as out, open(kept, "rb") as f:
+            shutil.copyfileobj(f, out)
+            out.write(extra)
+        os.chmod(tmp, stat.S_IMODE(os.lstat(src).st_mode))
+        os.replace(tmp, src)
+    except BaseException:
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
+        raise
+    os.unlink(kept)
+    return True
 
 
 def cmd_undo(rest):
@@ -660,18 +699,31 @@ def cmd_undo(rest):
             lines = f.read().splitlines()
     except OSError:
         die("no log at %s" % LOG, 1)
-    todo = [m for m in map(LINE.match, lines) if m and m.group(1) == date]
+    todo = []
+    for line in lines:
+        m = LINE.match(line)
+        if m and m.group(1) == date:
+            todo.append(("trash", m.group(2), m.group(3), 0))
+            continue
+        m = TRIM_LINE.match(line)
+        if m and m.group(1) == date:
+            todo.append(("trim", m.group(2), m.group(4), int(m.group(3))))
     restored, skipped = 0, 0
-    for m in reversed(todo):
-        src, dest = m.group(2), m.group(3)
+    for kind, src, dest, tail_len in reversed(todo):
         if not os.path.lexists(dest):
             continue
-        if os.path.lexists(src):
+        if kind == "trim":
+            if not untrim(src, dest, tail_len):
+                sys.stderr.write("vibe-gc: %s changed since the trim; left the original at %s\n" % (src, dest))
+                skipped += 1
+                continue
+        elif os.path.lexists(src):
             sys.stderr.write("vibe-gc: %s exists again; left %s in the trash\n" % (src, dest))
             skipped += 1
             continue
-        os.makedirs(os.path.dirname(src), exist_ok=True)
-        shutil.move(dest, src)
+        else:
+            os.makedirs(os.path.dirname(src), exist_ok=True)
+            shutil.move(dest, src)
         append_log("- %s restored '%s' from '%s'" % (now_iso(), src, dest))
         print("restored\t%s" % src)
         restored += 1
