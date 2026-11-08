@@ -495,6 +495,34 @@ JSON
     "U14b: uninstall takes the secret-path denies back and keeps the user's own"
 }
 
+# ---------------------------------------------------------------------------
+# U15 — a list item the merge removed comes back
+#
+# Value: protects=uninstall restores a pre-install list entry that a merge dropped and the user never re-added; fails_when=the list branch rebuilds only from the current list; why_new=U2/U14 only cover entries the pack added, never one it removed; seam=none
+# ---------------------------------------------------------------------------
+test_list_item_the_merge_removed_is_restored() {
+  local sb; sb="$(new_sandbox)" || { _fail "U15: no sandbox"; return; }
+  cat > "$(SETTINGS "$sb")" <<'JSON'
+{"permissions": {"deny": ["Read(./secrets/**)"]}}
+JSON
+  run_install "$sb"
+  local f; f="$(SETTINGS "$sb")"
+  # Record a pre-install entry that neither the post snapshot nor the live file
+  # holds: what a merge that replaces the list would have left.
+  python3 - "$sb/state/vibekit/premerge_claude_settings.json" <<'PY2'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["permissions"]["deny"].append("Bash(curl:*)")
+json.dump(d, open(p, "w"))
+PY2
+  assert_expr "$f" "'Bash(curl:*)' in d['permissions']['deny']" "False" \
+    "U15a: precondition — the live file does not hold the removed entry"
+
+  run_uninstall "$sb" >/dev/null
+  assert_expr "$f" "d['permissions']['deny']" "['Read(./secrets/**)', 'Bash(curl:*)']" \
+    "U15b: uninstall puts the removed entry back, in its original place"
+}
+
 echo "uninstall --with-config: merged keys"
 test_ours_alone_is_removed
 test_grant_revoked_user_entries_kept
@@ -514,6 +542,7 @@ test_copilot_user_value_kept
 test_full_round_trip_claude
 test_full_round_trip_copilot
 test_secret_read_denies_round_trip
+test_list_item_the_merge_removed_is_restored
 
 echo "  ---"
 echo "  passed: $PASS  failed: $FAIL"

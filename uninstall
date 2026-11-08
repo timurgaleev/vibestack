@@ -471,10 +471,16 @@ def walk(cur_node, post_node, pre_node, path):
             ours = [x for x in post_val if x not in pre_list]
             survivors = [x for x in cur_val if x not in ours]
             dropped = [x for x in cur_val if x in ours]
-            if dropped:
-                removed.append("%s  (%d entr%s; %d of yours kept)" % (
+            # An entry the merge took out, and nobody put back since.
+            restored = [x for x in pre_list if x not in post_val and x not in cur_val]
+            if restored:
+                survivors = ([x for x in pre_list if x in restored or x in survivors]
+                             + [x for x in survivors if x not in pre_list])
+            if dropped or restored:
+                removed.append("%s  (%d entr%s; %d of yours kept, %d restored)" % (
                     label(path, key), len(dropped),
-                    "y" if len(dropped) == 1 else "ies", len(survivors)))
+                    "y" if len(dropped) == 1 else "ies", len(survivors) - len(restored),
+                    len(restored)))
             if survivors or pre_val is not MISSING:
                 cur_node[key] = survivors
             else:
