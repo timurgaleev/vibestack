@@ -17,6 +17,9 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when: "unslop", "humanize this", "de-ai this", "this reads like a bot", "make it sound like me", "clean up the prose before I post it", or when a README, CHANGELOG entry, release note, PR body or article draft needs a voice pass before it goes public.

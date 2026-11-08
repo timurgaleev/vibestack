@@ -148,6 +148,41 @@ for f in "$RULE" "$CURSOR_RULE"; do
   fi
 done
 
+# D1-D3: the catalog surfaces. The /vibe router reads docs/skills.md as its full
+# index (skills/vibe/skills-index.md links to it), so a skill with no entry there
+# is one the router cannot find. The README names a subset in its table and
+# counts "the other N"; the two together must cover every skill. The README's
+# pointer to ETHOS.md states how many principles it holds.
+DOCS="$ROOT/docs/skills.md"
+README="$ROOT/README.md"
+no_entry=""
+n_skills=0
+for dir in "$SKILLS_DIR"/*/; do
+  name="$(basename "$dir")"
+  [[ -f "$dir/SKILL.md" ]] || continue
+  n_skills=$((n_skills + 1))
+  grep -qF "### \`/$name\`" "$DOCS" || no_entry="$no_entry $name"
+done
+if [[ -z "$no_entry" ]]; then
+  _pass "D1: every skill has a docs/skills.md entry"
+else
+  _fail "D1: skills with no docs/skills.md entry:$no_entry"
+fi
+in_table=$(awk '/^## Commands/ { on = 1; next } on && /^## / { on = 0 } on && /^\| `\// { print }' "$README" \
+  | grep -oE '`/[A-Za-z0-9_-]+`' | sort -u | wc -l | tr -d ' ')
+other=$(grep -oE 'The other [0-9]+ cover' "$README" | grep -oE '[0-9]+')
+if [[ -n "$other" && $((in_table + other)) -eq "$n_skills" ]]; then
+  _pass "D2: README table ($in_table) + 'the other $other' = $n_skills skills"
+else
+  _fail "D2: README table ($in_table) + 'the other ${other:-?}' != $n_skills skills"
+fi
+ethos_word=$(sed -n 's/^\([A-Za-z-]*\) principles .*/\1/p' "$ROOT/ETHOS.md" | head -n 1 | tr '[:upper:]' '[:lower:]')
+if [[ -n "$ethos_word" ]] && grep -qF "the $ethos_word principles" "$README"; then
+  _pass "D3: README states the $ethos_word principles ETHOS.md holds"
+else
+  _fail "D3: README's ETHOS pointer does not say 'the ${ethos_word:-?} principles'"
+fi
+
 # Self-tests: each mutation must turn the check red.
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/skills-routing.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT

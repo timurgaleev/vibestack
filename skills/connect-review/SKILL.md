@@ -19,6 +19,9 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when: "review the contact flow", "review this Connect solution", "is the Lex bot well designed", "why is the voice bot slow", "review the IVR", "check the phone assistant before go-live".

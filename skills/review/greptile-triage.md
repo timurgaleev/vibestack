@@ -66,7 +66,7 @@ TEXT enters your context only through the trust envelope:
 
 ```bash
 GREPTILE_DIR='<greptile-dir>'
-python3 -c '
+python3 -I -c '
 import json, sys
 for path in sys.argv[1:]:
     try:

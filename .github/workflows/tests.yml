@@ -31,6 +31,7 @@ jobs:
           - test-render-skill.sh
           - test-source-lint.sh
           - test-skill-size.sh
+          - test-skill-prefix.sh
           - test-positional-literals.sh
           - test-python-isolation.sh
           - test-heredoc-compat.sh
@@ -114,6 +115,7 @@ jobs:
           - test-snippet-text.sh
           - test-aws-context.sh
           - test-aws-skills-contract.sh
+          - test-iac-review-contract.sh
           - test-agent-eval-harness.sh
           - test-base-branch-detect.sh
           - test-unslop-gate.sh

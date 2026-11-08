@@ -12,7 +12,7 @@
 
 ## What is vibestack?
 
-Sixty commands for AI coding assistants, each one a file your agent reads and
+Sixty-two commands for AI coding assistants, each one a file your agent reads and
 exposes by name. You type `/review` instead of "check my code," and a written
 process runs: read the diff, look for the things that actually break, report with
 evidence. Same for planning, debugging, security, shipping.
@@ -112,8 +112,10 @@ standing rules.
 | `/spec` | Turn rough intent into an executable spec, then file it as an issue | ⭐ |
 | `/qa` | Drive a running web app, find bugs, fix them, verify | ⭐ |
 | `/learn` | Record what this session taught, so the next one starts ahead | ⭐ |
+| `/health` | Code-quality dashboard; `--fix` drives the checks to green without touching a test | |
 | `/unslop` | Find the AI tells in prose and rewrite it in the author's voice | |
 | `/aws-cost` | Read-only bill review: month-over-month deltas, waste, commitments | |
+| `/iac-review` | Read-only Terraform plan or `cdk diff` review: destroys, state safety, pins, EKS | |
 | `/ai-cost-guard` | Cap runaway model spend — in code and at the provider | |
 | `/bedrock-guardrails` | Audit Bedrock region pinning, IAM scope, guardrails, logging | |
 | `/kb-review` | RAG and Knowledge Base review: chunking, tenant filters, recall@5 | |
@@ -124,11 +126,11 @@ standing rules.
 | `/careful` `/freeze` `/guard` | Refuse destructive commands and edits outside a boundary | |
 | `/vibe-gc` | Audit skills, hooks, permissions and caches across runtimes; soft-delete with undo | |
 
-The other 38 cover design, docs, retros, context handoff, browser QA and
+The other 37 cover design, docs, retros, context handoff, browser QA and
 release. **[Every command, with what it does: `docs/skills.md`](docs/skills.md)**
 
 <p align="center">
-  <img src="./docs/assets/skill-map.svg" alt="The sixty-one commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
+  <img src="./docs/assets/skill-map.svg" alt="The commands in six families: shape and plan, build and debug, review, AWS and AI, ship, and guard and drive." width="100%">
 </p>
 
 ---
@@ -204,7 +206,7 @@ vibestack doctor                   # what is installed, where, and whether it is
 
 - [`docs/skills.md`](docs/skills.md) — every command, in detail
 - [`docs/configuration.md`](docs/configuration.md) — the standing rules, statusline, sub-agents
-- [`ETHOS.md`](ETHOS.md) — the five principles behind the design
+- [`ETHOS.md`](ETHOS.md) — the six principles behind the design
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — add your own command in minutes
 - [`docs/agent-skills-compatibility-audit.md`](docs/agent-skills-compatibility-audit.md) — what each runtime actually supports
 - [`docs/internals.md`](docs/internals.md) — binaries, snippets, state paths, test suites

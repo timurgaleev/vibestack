@@ -19,6 +19,9 @@ triggers:
   - deploy this
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when asked to "ship", "deploy", "push to main", "create a PR", "merge and push", or "get it deployed". Proactively invoke this skill (do NOT push/PR directly) when the user says code is ready, asks about deploying, wants to push code up, or asks to create a PR.
@@ -508,8 +511,7 @@ Run the test command(s) Step 4 settled on: the one documented in CLAUDE.md's
 persisted there. Run every suite the project declares (a repo can have more than
 one — for example a unit lane and a browser lane). **Never assume a stack:** do
 not run `bin/test-lane`, `npm run test` or any other command the project did not
-name. A command that does not exist "fails" with exit 127 and the triage below
-then chases a failure the branch never caused.
+name.
 
 **If no test command exists** (Step 4 recorded `BOOTSTRAP_DECLINED`, or the user
 picked "This project doesn't need tests"): name the untested scope and use
@@ -531,6 +533,8 @@ it — do not offer B for it.
 `RAILS_ENV=test bin/rails db:migrate` — `bin/test-lane` already calls
 `db:test:prepare` internally, which loads the schema into the correct lane database.
 Running bare test migrations without INSTANCE hits an orphan DB and corrupts structure.sql.
+
+A lane needs no run when `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-evidence" check --skill health --expect-cmd '<lane command>'` prints `FRESH` (`/health --fix` passed it at this tree): cite it as `exit=0 tests_ran=unknown` under its health label.
 
 Run independent suites in parallel, one lane per suite. Substitute each lane's
 label and exact command; a single-suite project has one lane:
@@ -562,8 +566,7 @@ done
 ```
 
 Keep the braces: `{ …; echo $? > exit; } &` backgrounds the run and the status
-write together. Without them, `a; b &` runs the suite in the foreground and only
-the `echo` in the background, so the lanes stop running in parallel. Pass each
+write together (`a; b &` would background only the `echo`). Pass each
 lane's command as ONE single-quoted string after `--`: the ledger records that
 string verbatim, and Step 16 asks for it byte for byte. If a lane log shows
 `vibe-evidence` itself was not found, run the lane commands bare instead (same
@@ -574,9 +577,8 @@ After all lanes complete, read each `LANE:` line. **A lane passes only when its
 failure, whatever the log text says. **`tests_ran=0` is a failure too:** the runner
 collected nothing, so nothing was verified — treat it as in-branch (Step T2).
 `tests_ran=unknown` (a runner whose summary is not recognized) passes, and that
-lane's Test plan line says `count unavailable`. Read the log files for failure
-detail. Use the same lane labels and exact commands again in Step 16; keep the
-printed `SHIP_LOG:` path for Step 6.
+lane's Test plan line says `count unavailable`. Reuse the lane labels and exact
+commands in Step 16; keep `SHIP_LOG:` for Step 6.
 
 **If any test fails, do NOT immediately stop.** Determine ownership first:
 
@@ -702,7 +704,7 @@ Test plan, with the waiver beside it.
     file and hands its bytes to `glab` as one argument — the body never passes
     through shell text:
     ```bash
-    python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","issue","create","-t",sys.argv[2],"-d",pathlib.Path(sys.argv[1]).read_text(),"-a",sys.argv[3]]).returncode)' \
+    python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","issue","create","-t",sys.argv[2],"-d",pathlib.Path(sys.argv[1]).read_text(),"-a",sys.argv[3]]).returncode)' \
       "<ISSUE_BODY_FILE>" 'Pre-existing test failure: <test-name>' '<gitlab-username>'
     rm -f "<ISSUE_BODY_FILE>"
     ```
@@ -1781,13 +1783,13 @@ After all passes complete, synthesize findings across all sources:
 
 ```
 ADVERSARIAL REVIEW SYNTHESIS (always-on, N lines):
-════════════════════════════════════════════════════════════
+════════════════════
   High confidence (found by multiple sources): [findings agreed on by >1 pass]
   Unique to Claude structured review: [from earlier step]
   Unique to Claude adversarial: [from subagent]
   Unique to Codex: [from codex adversarial or code review, if ran]
   Models used: Claude structured ✓  Claude adversarial ✓/✗  Codex ✓/✗
-════════════════════════════════════════════════════════════
+════════════════════
 ```
 
 High-confidence findings (agreed on by multiple sources) should be prioritized for fixes.
@@ -2267,6 +2269,8 @@ during Steps 4-6":
    - **FRESH** (exit 0): the lane passed on this exact content (release bookkeeping
      aside). Cite the printed line and the Step 5 log; do not re-run it. A lane whose
      last `tests_ran` was `0` is never FRESH: re-run it and read the count again.
+     A lane Step 5 took from the health ledger is checked with `--skill health` in
+     place of `--label <lane>`.
    - **STALE** (exit 1), or the helper is missing: something a test can read changed
      since the run — fixes from review findings, Step 7's generated tests, Step 14.5's
      documentation edits (docs are inputs to doc tests, linters and generators) — or
@@ -2445,7 +2449,7 @@ merge commit and publishes the release. A `CLOSED`-without-merge PR, and a merge
 that HEAD has moved past (commits made after the merge), read as `NO_PR`/`NO_MR` and get
 a fresh one.
 
-If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file — a re-run edits, so an unscanned edit would publish most ships unscanned.
+If an **open** PR/MR already exists: **update** it. Compose the body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary, documentation_section from Step 14.5) — never reuse stale PR body content from a prior run — then write and scan it through the same **Secret scan before external write** block below before publishing (substitute the printed `PR_BODY_FILE` path in the publishing command): `gh pr edit --body-file '<PR_BODY_FILE>'` (GitHub) or `python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()]).returncode)' '<PR_BODY_FILE>'` (GitLab), then `rm -f` that file — a re-run edits, so an unscanned edit would publish most ships unscanned.
 
 **Also update the PR title** if the version changed on rerun (never under NO_VERSION — there is no version to put in it). PR titles use the workspace-aware format `v<NEW_VERSION> <type>: <summary>` — version ALWAYS first. If the current title's version prefix doesn't match `NEW_VERSION`, write the new title into a `TITLE_FILE` (created and scanned as below) and run `gh pr edit --title "$(cat '<TITLE_FILE>')"`, or for GitLab `python3 -I -c 'import pathlib,subprocess,sys; sys.exit(subprocess.run(["glab","mr","update","-t",pathlib.Path(sys.argv[1]).read_text().strip()]).returncode)' '<TITLE_FILE>'`. This keeps the title truthful when Step 12's queue-drift detection rebumps a stale version. If the title has no `v<version>` prefix (a custom title kept intentionally), leave the title alone — only rewrite titles that already follow the format.
 

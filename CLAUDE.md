@@ -88,6 +88,10 @@ Each rule has a suite that fails the build; the suite holds the detail.
   and a regression test is proven red before the fix. Include
   `lib/snippets/test-value-bar.md` in any skill that writes or proposes tests.
   (`test/test-test-value-bar.sh`)
+- **A discipline-rule edit runs its compliance spec before and after.** When a skill
+  edit changes a rule with a spec in `test/evals/compliance/specs/`, run
+  `bun run test:compliance --spec <id> --max-usd 1` on both sides of the edit; it spends
+  tokens, so CI only validates the specs. (`test/test-compliance-runner.sh`)
 - **Descriptions are a context budget.** Every session lists them; keep them
   short and run `bin/vibe-context-budget`. (`test/test-context-budget.sh`; CI reports it)
 - **Brand audit.** `bin/vibe-brand-audit` on files, commits and PR text.

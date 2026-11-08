@@ -19,6 +19,9 @@ triggers:
   - IAM review
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when: "security audit", "threat model", "pentest review", "OWASP", "CSO review".

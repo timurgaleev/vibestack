@@ -17,6 +17,9 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when: "review my MCP server", "is this MCP server safe", "check the tool schemas", "MCP auth", "MCP security", or before an MCP server is published, deployed over HTTP, or given to an agent with real credentials.

@@ -21,6 +21,9 @@ triggers:
   - record this decision
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when asked to "write docs", "generate documentation", "document this feature", "create a tutorial", or "explain this module". "ADR this", "record this decision" or `--adr` runs [ADR mode](#adr-mode) instead.
@@ -58,7 +61,7 @@ correct on either host:
 ```bash
 BASE=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null)
 [ -z "$BASE" ] && BASE=$(glab mr view -F json 2>/dev/null \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('target_branch',''))" 2>/dev/null)
+  | python3 -I -c "import sys,json; print(json.load(sys.stdin).get('target_branch',''))" 2>/dev/null)
 [ -z "$BASE" ] && BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
 [ -z "$BASE" ] && git rev-parse --verify origin/main >/dev/null 2>&1 && BASE=main
 [ -z "$BASE" ] && git rev-parse --verify origin/master >/dev/null 2>&1 && BASE=master
@@ -544,7 +547,7 @@ gh pr view --json body -q .body > <body-file> && cp <body-file> <body-orig>
 
 **If GitLab:**
 ```bash
-glab mr view -F json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('description',''))" > <body-file> && cp <body-file> <body-orig>
+glab mr view -F json 2>/dev/null | python3 -I -c "import sys,json; print(json.load(sys.stdin).get('description',''))" > <body-file> && cp <body-file> <body-orig>
 ```
 
    If the view command fails (no PR/MR exists), skip this whole step with
@@ -619,7 +622,7 @@ Hand the scanned file to `glab` as one argument, without reading it into your
 context or pasting it into a heredoc — a body line that matches the heredoc
 terminator would end it early, and the raw text would bypass the trust envelope:
 ```bash
-python3 -c 'import pathlib,subprocess,sys; subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()],check=True)' <body-file>
+python3 -I -c 'import pathlib,subprocess,sys; subprocess.run(["glab","mr","update","-d",pathlib.Path(sys.argv[1]).read_text()],check=True)' <body-file>
 ```
 
    If the write fails, warn "Could not update PR/MR body — documentation is in

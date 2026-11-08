@@ -299,6 +299,58 @@ grep -q 'never show 10/10 for an empty run' "$SKILL" && ok "empty run never show
 grep -q 'Skip only a tool whose absence was established before running' "$SKILL" \
   && ok "rule 4: skip only on established absence" || no "rule 4 still skips failures"
 
+echo "Mode: --fix"
+fx=$(section "## Mode: --fix" "## Target: skills")
+fxflat=$(tr -s '[:space:]' ' ' <<<"$fx")
+if [ -z "$fx" ]; then
+  no "--fix mode section found"
+else
+  grep -q '`/health --fix`' "$SKILL" && ok "--fix is reachable from the invocation line" || no "--fix not named in User-invocable"
+  # Run the per-run block and the finish block against a throwaway repo with a
+  # scratch ledger: the run must record the checker's own exit, and the finish
+  # must answer from the ledger without running the checker again.
+  FR="$TMP/fixrepo"; FV="$TMP/fixhome"; mkdir -p "$FR" "$FV"
+  ln -s "$ROOT/bin" "$FV/bin"
+  git -C "$FR" init -q && git -C "$FR" config user.email t@example.com && git -C "$FR" config user.name t
+  printf 'one\n' > "$FR/a.txt"; git -C "$FR" add a.txt; git -C "$FR" commit -q -m base
+  printf '#!/usr/bin/env bash\necho run >> "%s/count"\nexit "$(cat "%s/rc")"\n' "$TMP" "$TMP" > "$TMP/chk.sh"; chmod +x "$TMP/chk.sh"
+  fix_block() { # fix_block MARKER -> the block with the fixture check substituted
+    block "$1" | sed -e "s#'<check>'#'test'#g" -e "s#'<command>'#'$TMP/chk.sh'#g"
+  }
+  fix_run() { (cd "$FR" && VIBESTACK_HOME="$FV" TMPDIR="$TMP" bash -c "$(fix_block '**Run the checks.**')" 2>&1); }
+  fix_finish() { (cd "$FR" && VIBESTACK_HOME="$FV" bash -c "$(fix_block '**Finish from the ledger.**')" 2>&1); }
+  if ! block "**Run the checks.**" | grep -q 'run --skill health --label'; then
+    no "--fix run block wraps each check in vibe-evidence run --skill health"
+  else
+    echo 1 > "$TMP/rc"
+    out=$(fix_run)
+    grep -q '^CHECK: test exit=1 ' <<<"$out" && ok "--fix run reports the checker's own exit (1)" || no "--fix run exit: $out"
+    out=$(fix_finish)
+    grep -q '^NOT READY: test$' <<<"$out" && ok "--fix finish: a red last run is NOT READY" || no "--fix finish after red: $out"
+    echo 0 > "$TMP/rc"
+    out=$(fix_run)
+    grep -q '^CHECK: test exit=0 ' <<<"$out" && ok "--fix run reports exit 0 for a green check" || no "--fix run green: $out"
+    before=$(wc -l < "$TMP/count")
+    out=$(fix_finish)
+    grep -q '^READY at tree [0-9a-f]\{7,\}$' <<<"$out" && ok "--fix finish: READY at TREE_NOW from the ledger" || no "--fix finish READY: $out"
+    [ "$(wc -l < "$TMP/count")" -eq "$before" ] && ok "--fix finish does not re-run the checker" || no "--fix finish re-ran the checker"
+    printf 'edit\n' >> "$FR/a.txt"
+    out=$(fix_finish)
+    grep -q '^NOT READY: test$' <<<"$out" && ok "--fix finish: an edit after the green run is NOT READY" || no "--fix finish after edit: $out"
+  fi
+  grep -q 'CHECKS: none' <<<"$fx" && ok "--fix: no detected check stops with CHECKS: none" || no "--fix lacks the CHECKS: none stop"
+  grep -q -- '--fix --yes' <<<"$fxflat" && ok "--fix: spawned/headless runs need an explicit flag" || no "--fix runs headless without a flag"
+  grep -q 'Only exit 0 is green' <<<"$fxflat" && ok "--fix: only exit 0 is green" || no "--fix lacks the exit-0 rule"
+  grep -q 'red on the first run this session, before any edit' <<<"$fxflat" \
+    && ok "--fix: pre-existing only when red before any edit" || no "--fix lacks the pre-existing rule"
+  grep -q 'Never edit a test, a checker config or a script' <<<"$fxflat" \
+    && ok "--fix: never edits tests or checker config to get green" || no "--fix lacks the no-test-edit rule"
+  grep -qi 'never stub' <<<"$fxflat" && ok "--fix: ENV/TIMEOUT failures are reported, never stubbed" || no "--fix lacks the never-stub rule"
+  grep -q 'after 5 runs' <<<"$fxflat" && grep -q 'same failure twice' <<<"$fxflat" && grep -q '/investigate' <<<"$fxflat" \
+    && ok "--fix: stops after 5 runs or a repeated failure, hands to /investigate" || no "--fix lacks the stop rule"
+fi
+grep -q 'Read-only outside `--fix`' "$SKILL" && ok "rule 2: read-only except in --fix mode" || no "rule 2 contradicts --fix"
+
 echo
 echo "== summary =="
 echo "  passed: $pass"

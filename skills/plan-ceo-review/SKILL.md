@@ -18,6 +18,9 @@ triggers:
   - rethink this plan
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when asked to "think bigger", "expand scope", "strategy review", "rethink this", or "is this ambitious enough".

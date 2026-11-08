@@ -113,6 +113,28 @@ PYTRIM
 LAST_REPO=$(python3 -c 'import json,sys;print(json.loads(open(sys.argv[1]).read().strip().split(chr(10))[-1]).get("repo",""))' "$LEDGER")
 [ -n "$LAST_REPO" ] && ok "a record carries the repo it was taken in" || no "record has no repo field"
 
+echo "ship Step 5 accepts a /health --fix pass"
+# /ship Step 5 may take a lane as passed from a health ledger entry of the exact
+# lane command at the current tree. Run the line as ship documents it.
+SHIP_SRC="$ROOT/skills/ship/SKILL.md"
+ACCEPT=$(sed -n '/^## Step 5: Run tests/,/^## Test Failure Ownership Triage/p' "$SHIP_SRC" \
+  | grep -o '`[^`]*check --skill health --expect-cmd [^`]*`' | head -1 | tr -d '`')
+if [ -z "$ACCEPT" ]; then
+  no "ship Step 5 names the health ledger check"
+else
+  SH5="$TMP/ship5"; mkdir -p "$SH5"; ln -s "$BIN" "$SH5/bin"
+  accept() { (cd "$REPO" && VIBESTACK_HOME="$SH5" bash -c "${ACCEPT//<lane command>/${1}}" >/dev/null 2>&1); echo $?; }
+  chk "no health record: the lane still runs" "$(accept 'true')" "1"
+  (cd "$REPO" && VIBESTACK_HOME="$SH5" "$E" run --skill health --label test -- 'true' >/dev/null 2>&1)
+  chk "a health pass of the exact command at this tree is accepted" "$(accept 'true')" "0"
+  chk "a health pass of another command is not" "$(accept 'true && true')" "1"
+  (cd "$REPO" && VIBESTACK_HOME="$SH5" "$E" run --skill ship --label test -- 'echo x' >/dev/null 2>&1)
+  chk "a non-health record is not a health pass" "$(accept 'echo x')" "1"
+  printf 'moved\n' >> "$REPO/a.txt"
+  chk "a health pass at another tree is not accepted" "$(accept 'true')" "1"
+  git -C "$REPO" checkout -q -- a.txt
+fi
+
 echo "vibe-version-bump"
 V="$BIN/vibe-version-bump"
 PROJ="$TMP/proj"; mkdir -p "$PROJ"

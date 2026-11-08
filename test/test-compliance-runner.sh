@@ -3,7 +3,10 @@
 #
 # Covers (test/evals/compliance/compliance.test.ts, fake claude on PATH):
 #   - every shipped spec validates; git, claude-code-usage, style, careful and
-#     freeze each have one;
+#     freeze each have one, and so do the investigate, ship and review iron laws
+#     (no fix before a test run, no push without a fresh test run, no clean
+#     verdict over an unreviewed fix), on fixtures that really are red, pushable
+#     and carrying the planted finding;
 #   - supportive / neutral / competing prompts are built from one task, and a
 #     skill spec still opens with its slash command;
 #   - forbidden, required, judge and order steps grade deterministically;
@@ -30,5 +33,8 @@ bun test "$ROOT/test/evals/compliance/"
 
 grep -q '"test:compliance": "bun run test/evals/compliance/run.ts"' "$ROOT/package.json" \
   || { echo "FAIL: package.json lacks the test:compliance script"; exit 1; }
+
+grep -q 'bun run test:compliance --spec <id>' "$ROOT/CLAUDE.md" \
+  || { echo "FAIL: CLAUDE.md lacks the run-the-spec-before-and-after rule"; exit 1; }
 
 echo "PASS: compliance runner"

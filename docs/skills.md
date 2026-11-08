@@ -122,6 +122,8 @@ Iron Law: **never implement a fix until the root cause is confirmed.** Four phas
 
 When the failing component is an LLM agent, it replays the same prompt, tools and memory state first, then triages layer by layer.
 
+When the failure is intermittent or red only in CI, it follows the `flake.md` sub-doc: failure rates measured on base and branch, a forced probe before any cause is named, order-dependent failures and races, and never a loosened timeout, retry or skip.
+
 If `/freeze` is active, edits are restricted to the frozen directory during investigation.
 
 Triggers: `debug this`, `fix this bug`, `why is this broken`, `root cause analysis`, `investigate this error`
@@ -132,6 +134,8 @@ Triggers: `debug this`, `fix this bug`, `why is this broken`, `root cause analys
 Security audit — OWASP Top 10 + STRIDE threat model.
 
 Covers: injection, authentication, authorization, cryptography, data exposure, configuration, dependencies, and — when AWS is detected — the live account posture via read-only calls (IAM, CloudTrail, S3 exposure, security groups). Outputs findings ranked by severity with recommended remediations.
+
+`/cso --paths <p,q>` limits every phase to those paths (combinable with any flag except `--recheck`); the status is then at most `partial`, with a gap line naming the top-level directories it did not cover.
 
 Triggers: `security audit`, `check for vulnerabilities`, `owasp review`, `audit my AWS account`, `cloud posture review`, `IAM review`
 
@@ -237,6 +241,8 @@ Generate three distinct design variants side-by-side.
 
 Produces three meaningfully different approaches (not color swaps) for the same feature. Useful for early-stage direction-finding when you're not sure which design pattern fits.
 
+Image generation runs through `vibe-design`, which picks its provider from the environment: `OPENAI_API_KEY` selects OpenAI (`VIBE_DESIGN_MODEL`, default `gpt-image-1`); with no OpenAI key, `GEMINI_API_KEY` selects Gemini (`VIBE_DESIGN_GEMINI_MODEL`). With neither, it reports `DESIGN_NOT_AVAILABLE` and the design skills fall back to text. `vibe-design status` prints the provider in use.
+
 Triggers: `design shotgun`, `three designs`, `design variants`
 
 ---
@@ -303,6 +309,8 @@ Triggers: `devex review`, `dx review`, `review developer experience`
 Code quality dashboard.
 
 Reports: type errors, lint warnings, test count and pass rate, coverage percentage, known security advisories, and a composite health score. Use as a quick project health snapshot. The verdict is READY only when every category was actually checked; partial coverage is INCOMPLETE.
+
+`/health --fix` runs the checks the dashboard detected and fixes the source until they pass. It asks before the first run in a repo with no health record, and in a spawned or headless session runs only as `/health --fix --yes`. Only exit 0 counts as green, a test, checker config or script is never edited to get there, and it stops after 5 runs or the same failure twice and hands off to `/investigate`. It finishes from the evidence ledger, not a fresh run: `READY at tree <hash>` or `NOT READY` with the checks still red. It writes no score.
 
 `/health skills` reports on the installed skills instead: how often each was used (subagent transcripts included; a skill with no data is reported as unmeasured, not as zero) and how much of the description budget each takes.
 
@@ -423,6 +431,8 @@ Triggers: `full safety mode`, `guard against mistakes`, `maximum safety`, `guard
 ### `/vibe`
 Router for the suite — name the task, get pointed at the right skill. Mostly for Codex and other hosts with no slash-command picker, where a skill is referenced as `$vibe` inside an ordinary message; `agents/openai.yaml` names it as the pack's entry point. Routes on intent rather than listing every skill, and hands off to this file for the full index.
 
+For a failure it makes one read-only check of the cause you named (or one triage pass over the evidence when the cause is unknown) and fixes it only when that alone proves the root cause; otherwise it hands off to `/investigate`. Typed-only skills (`/land-and-deploy`, `/vibe-upgrade`) are named for you to type, never invoked.
+
 Triggers: `which vibestack skill`, `list vibestack skills`, `vibe help`
 
 ---
@@ -464,7 +474,7 @@ Triggers: `configure deploy`, `setup deployment`, `set deploy platform`
 ### `/browse`
 Fast headless browser for QA testing and site dogfooding.
 
-Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. Requires a browse daemon binary at `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
+Navigate any URL, interact with elements, verify page state, diff before/after actions, take annotated screenshots, check responsive layouts, test forms and uploads, handle dialogs, and assert element states. ~100ms per command. The browse daemon ships with vibestack under `browse/` and the launcher sits at `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse`; `./install` prepares its dependencies and Chromium is fetched on first use. See [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `browse a page`, `headless browser`, `take page screenshot`
 
@@ -484,7 +494,7 @@ Triggers: `claude review`, `claude challenge`, `ask claude`
 ### `/open-browser`
 Launch vibestack Browser — AI-controlled Chromium with sidebar extension.
 
-Opens a visible browser window where every action is visible in real time. The sidebar shows a live activity feed and chat. Anti-bot stealth built in. Guides user through Side Panel setup and runs a live demo. Requires a browse daemon binary at `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse` — vibestack does not bundle the browse daemon; see [`external-tools.md`](external-tools.md#browse-daemon).
+Opens a visible browser window where every action is visible in real time. Guides you through Side Panel setup, runs a live demo, then hands over the sidebar terminal (Cleanup, Screenshot and Cookies buttons; Activity, Refs and Inspector tabs). Anti-bot stealth built in. The headed browser needs the full daemon, which runs on bun; when it cannot start, the skill names the cause the launcher printed. The browse daemon ships with vibestack under `browse/` and the launcher sits at `${CLAUDE_SKILL_DIR}/../browse/bin/vibe-browse`; `./install` prepares its dependencies and Chromium is fetched on first use. See [`external-tools.md`](external-tools.md#browse-daemon).
 
 Triggers: `open browser`, `launch chromium`, `show me the browser`
 
@@ -552,6 +562,8 @@ Triggers: `connect to chrome`, `use my chrome session`, `import chrome cookies`
 ### `/vibe-upgrade`
 Update the installed vibestack pack to the latest release — pull the repo (ff-only, never forces), re-run install, and summarize the CHANGELOG delta.
 
+Typed only: it runs when you type `/vibe-upgrade`, never from conversation (the `/vibe` router tells you to type it).
+
 Triggers: `upgrade vibestack`, `update vibestack`, `pull latest skills`
 
 ---
@@ -569,6 +581,8 @@ Triggers: `vibe gc`, `clean up skills`, `garbage collect config`, `prune unused 
 Read-only cost review of the AWS account at hand.
 
 Where the money went last month, what changed against the month before, and the three actions worth taking. Uses the AWS billing MCP tools when the session has them and falls back to the `aws` CLI (`ce`, `compute-optimizer`, `budgets`) otherwise. Covers waste, Savings Plans and RI coverage. Use when someone asks why the bill went up, wants a FinOps pass, or needs commitment coverage checked.
+
+`/aws-cost --estimate <plan>` prices a change before it deploys: it reads what a Terraform plan JSON or a `cdk diff` adds or changes and prints a monthly delta table with its usage assumptions. A resource it cannot price is N-A, never zero.
 
 Triggers: `aws cost`, `aws bill`, `why did aws cost go up`, `finops review`, `cost explorer`, `savings plans coverage`, `cloud spend review`
 
@@ -625,3 +639,12 @@ Review an MCP server — Python FastMCP or the TypeScript SDK.
 Covers tool design, scope, auth, input validation, error shape, transport and prompt-injection exposure. Produces a findings table with severities and proposed tool schema changes; never modifies the server or its credentials. Use before publishing a server, before wiring one into an agent, or when someone asks whether an MCP server is safe to run. It maps trust boundaries and checks containment: what a tool can reach and what limits a compromised call.
 
 Triggers: `mcp review`, `review my mcp server`, `mcp tool schema`, `mcp auth`, `mcp security`, `is this mcp server safe`
+
+---
+
+### `/iac-review`
+Read-only review of a Terraform plan or a `cdk diff` before it is applied.
+
+Uses the plan you already have (`terraform show -json`, a binary plan file, or `cdk diff` output) and generates one only after asking, since planning runs the providers with your credentials. Ranks destroys and replacements, address churn from `count` indexing, stateful resources being replaced, state backend encryption and locking, unpinned providers and modules, and sensitive values reaching state. Static scanners (checkov, tfsec, trivy, tflint, kube-linter, kubeconform) run only when installed; their absence is reported. An `## EKS` section runs when the plan or the repo holds EKS resources, manifests or Helm values: endpoint exposure, IRSA or Pod Identity against node-role sprawl, Pod Security admission, NetworkPolicies, requests and limits, PDBs and add-on version lag, with read-only `kubectl` / `aws eks` calls only after one confirmation. A check that could not run is N-A and keeps the verdict at INCOMPLETE; the verdict is BLOCK, FIX FIRST, INCOMPLETE or OK. It never applies, deploys or moves state, and deletes a plan it generated. Points to `/aws-cost --estimate` for the cost of the change and `/cso` for wider security.
+
+Triggers: `review the terraform plan`, `iac review`, `review the cdk diff`, `is this plan safe to apply`, `eks review`

@@ -124,17 +124,20 @@ d=$(mkfix posprose); printf '# demo\n\nA service up more than $500 is HIGH.\n' >
 out=$(bash "$LINT" "$d" 2>&1); rc=$?
 [ "$rc" -eq 0 ] && grep -q 'warn: .*SKILL.md:3: bare \$500 ' <<<"$out" && ok "a prose positional warns without failing" || no "prose positional (rc=$rc): $out"
 
-# 10. pyisolate (warning): a fenced python3 -c / python3 - without -I imports
-#     from the current directory first.
+# 10. pyisolate: a fenced python3 -c / python3 - without -I imports from the
+#     current directory first — a finding.
 d=$(mkfix pyc); printf '# demo\n```bash\npython3 -c "print(1)"\npython3 - <<EOF\nEOF\npython3 -I -c "print(1)"\npython3 -Ic "print(1)"\npython3 -I - x <<EOF\nEOF\npython3 script.py\n```\n\nRun python3 -c in prose.\n' > "$d/skills/demo/SKILL.md"
 out=$(bash "$LINT" "$d" 2>&1); rc=$?
-[ "$rc" -eq 0 ] && ok "python isolation warning does not fail the lint" || no "python warning failed the lint (rc=$rc)"
-grep -q 'warn: .*SKILL.md:3: python3 -c without -I' <<<"$out" && grep -q 'warn: .*SKILL.md:4: python3 - without -I' <<<"$out" \
-  && ok "python3 -c and python3 - without -I warn with file:line" || no "unisolated python not warned: $out"
-[ "$(grep -c 'without -I' <<<"$out")" -eq 2 ] && ok "-I, -Ic, a script path and prose do not warn" || no "isolated python warned: $out"
+[ "$rc" -eq 1 ] && ok "python3 without -I fails the lint" || no "python3 without -I did not fail the lint (rc=$rc)"
+grep -q '^[^w].*SKILL.md:3: python3 -c without -I' <<<"$out" && grep -q '^[^w].*SKILL.md:4: python3 - without -I' <<<"$out" \
+  && ok "python3 -c and python3 - without -I are findings with file:line" || no "unisolated python not reported as a finding: $out"
+[ "$(grep -c 'without -I' <<<"$out")" -eq 2 ] && ok "-I, -Ic, a script path and prose are not flagged" || no "isolated python flagged: $out"
+d=$(mkfix pyok); printf '# demo\n```bash\npython3 -I -c "print(1)"\npython3 -I - <<EOF\nEOF\n```\n' > "$d/skills/demo/SKILL.md"
+out=$(bash "$LINT" "$d" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "isolated python3 lints clean" || no "isolated python3 failed the lint (rc=$rc): $out"
 
 # 11. hostpath: a file read through a Claude Code install path resolves on no
-#     other host. Warns by default; --strict makes it a finding.
+#     other host — a finding, with or without --strict.
 d=$(mkfix hostpath); printf '%s\n' '# demo' \
   'Read `~/.claude/skills/review/checklist.md`.' \
   '```bash' 'cat ~/.claude/skills/review/specialists/testing.md' '```' \
@@ -142,15 +145,15 @@ d=$(mkfix hostpath); printf '%s\n' '# demo' \
   'Copy `qa/templates/qa-report-template.md` and see (qa/references/issue-taxonomy.md).' \
   'Follow `review/TODOS-format.md`.' > "$d/skills/demo/SKILL.md"
 out=$(bash "$LINT" "$d" 2>&1); rc=$?
-[ "$rc" -eq 0 ] && ok "hostpath warning does not fail the lint" || no "hostpath warning failed the lint (rc=$rc): $out"
+[ "$rc" -eq 1 ] && ok "a hostpath fails the lint without --strict" || no "hostpath did not fail the lint (rc=$rc): $out"
 for n in 2 4 6 7 8; do
-  grep -q "^warn: .*SKILL.md:$n: hard-coded host path" <<<"$out" \
-    && ok "hostpath form on line $n warns with file:line" || no "hostpath line $n not warned: $out"
+  grep -q "^[^w].*SKILL.md:$n: hard-coded host path" <<<"$out" \
+    && ok "hostpath form on line $n is a finding with file:line" || no "hostpath line $n not reported as a finding: $out"
 done
-[ "$(grep -c 'hard-coded host path' <<<"$out")" -eq 5 ] && ok "one hostpath warning per line" || no "hostpath warning count: $out"
+[ "$(grep -c 'hard-coded host path' <<<"$out")" -eq 5 ] && ok "one hostpath finding per line" || no "hostpath finding count: $out"
 out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
 [ "$rc" -eq 1 ] && grep -q '^[^w].*SKILL.md:6: hard-coded host path' <<<"$out" \
-  && ok "--strict turns a hostpath warning into a finding" || no "--strict did not fail on hostpath (rc=$rc): $out"
+  && ok "--strict keeps a hostpath a finding" || no "--strict did not fail on hostpath (rc=$rc): $out"
 
 d=$(mkfix hostpathok); printf '%s\n' '# demo' \
   'Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/demo}/checklist.md`.' \
@@ -163,7 +166,7 @@ out=$(bash "$LINT" --strict "$d" 2>&1); rc=$?
 
 d=$(mkfix hostpathsnip); printf '# snip\n\nRead `~/.claude/skills/review/checklist.md`.\n' > "$d/lib/snippets/hp.md"
 out=$(bash "$LINT" "$d" 2>&1)
-grep -q '^warn: .*hp.md:3: hard-coded host path' <<<"$out" && ok "snippets are checked for host paths" || no "snippet host path missed: $out"
+grep -q '^[^w].*hp.md:3: hard-coded host path' <<<"$out" && ok "snippets are checked for host paths" || no "snippet host path missed: $out"
 
 # 12. --strict fails closed: a run that checked nothing is never "clean".
 out=$(bash "$LINT" --strict "$TMP/no-such-root" 2>&1); rc=$?

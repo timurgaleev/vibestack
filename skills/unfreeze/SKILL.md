@@ -12,6 +12,9 @@ triggers:
   - allow all edits
 ---
 
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
 ## When to invoke
 
 Use when you want to widen edit scope. Ending the session does not lift the boundary: it persists in `~/.vibestack/freeze-dir.txt` until this runs. Use when asked to "unfreeze", "unlock edits", "remove freeze", or "allow all edits".

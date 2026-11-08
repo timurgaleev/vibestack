@@ -2,10 +2,10 @@
 
 **Generated:** 2026-05-09 (Day 0 Track A of v1.4.0 multi-target install)
 **Track B verified:** 2026-05-09 (Cursor 2026.05.07-42ddaca, Kiro CLI 2.2.2)
-**Skills audited:** 61. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent.
+**Skills audited:** 62. `/spec` reads the Claude-Code `CLAUDE_PLAN_FILE` env var for plan-mode detection and degrades to "inactive" when absent.
 **Spec reference:** [agentskills.io/specification](https://agentskills.io/specification)
 
-This audit verifies vibestack's 61 skills against the Agent Skills open standard,
+This audit verifies vibestack's 62 skills against the Agent Skills open standard,
 which Claude Code, Cursor (`~/.cursor/skills/`), and Kiro (`~/.kiro/skills/`) all
 implement. The spec standardizes the SKILL.md **file shape** — frontmatter +
 markdown body. It does **not** standardize runtime behavior (hooks, env vars,
@@ -21,7 +21,7 @@ Codex-specific unknowns: invocation is `$name` inside a message, or implicit fro
 the `description`, rather than `/name`,
 and Codex caps its initial skill list at 2% of the context window (or 8,000
 chars), shortening descriptions and possibly omitting skills beyond that — with
-61 skills, some may not surface in the initial list.
+62 skills, some may not surface in the initial list.
 
 **GitHub Copilot CLI** is the fifth target, at `${COPILOT_HOME:-~/.copilot}/skills/`
 (user) and `.github/skills` (repo, its highest-priority project location). It
@@ -52,17 +52,18 @@ results are in the new "Track B — Empirical Verification" section near the end
 
 | Audit dimension | Pass/Fail | Skills affected |
 |---|---|---|
-| Required `name` field present | 61/61 PASS | — |
-| `name` matches directory basename | 61/61 PASS | — |
-| Required `description` field present | 61/61 PASS | — |
-| Description ≤ 1024 chars (spec limit) | 61/61 PASS | — |
-| YAML frontmatter parseable | 61/61 PASS | — |
+| Required `name` field present | 62/62 PASS | — |
+| `name` matches directory basename | 62/62 PASS | — |
+| Required `description` field present | 62/62 PASS | — |
+| Description ≤ 1024 chars (spec limit) | 62/62 PASS | — |
+| YAML frontmatter parseable | 62/62 PASS | — |
 | Skills with `hooks:` (Claude-Code-specific) | 4 skills | careful, freeze, guard, investigate |
-| Skills using `${CLAUDE_SKILL_DIR}` substitution | 32 skills | address-pr-review, autoplan, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, plan-ceo-review, plan-devex-review, plan-eng-review, qa, qa-only, review, scrape, setup-browser-cookies, ship, telegram, vibe. Twenty carry the token in their own SKILL.md (the plan reviews and `autoplan` read sibling skills through it, `review` its checklists and specialists, `vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
+| Skills using `${CLAUDE_SKILL_DIR}` substitution | 35 skills | address-pr-review, autoplan, benchmark, browse, canary, careful, connect-chrome, design-consultation, design-html, design-review, design-shotgun, devex-review, diagram, document-release, freeze, guard, investigate, land-and-deploy, make-pdf, office-hours, open-browser, pair-agent, plan-ceo-review, plan-devex-review, plan-eng-review, qa, qa-only, review, scrape, setup-browser-cookies, ship, skillify, telegram, unfreeze, vibe. Twenty-three carry the token in their own SKILL.md (the plan reviews and `autoplan` read sibling skills through it, `review` its checklists and specialists, `document-release` the review skill's TODOS format, `vibe` resolves its skills index, `open-browser` its bundled extension, `diagram` its offline renderer, `skillify` the browse launcher, `unfreeze` the freeze skill's state script, `address-pr-review` and `telegram` their own `bin/` scripts); the other 12 inherit it from the `browse-detect` / `browse-setup` snippets' `../browse/bin/vibe-browse` reference. |
 | Skills reading `CLAUDE_PLAN_FILE` (Claude-Code plan-mode) | 1 skill | spec (degrades to "inactive" when unset) |
-| Skills needing an external daemon/toolchain | 4 skills | browse family — interaction/CDP daemon NOT bundled: browse, open-browser, pair-agent, setup-browser-cookies. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
+| Skills needing the full browse daemon | 4 skills | browse family: browse, open-browser, pair-agent, setup-browser-cookies. The daemon source ships under `browse/` and `./install` prepares it; it runs on bun and fetches Chromium on first use. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
-| Skills using `AskUserQuestion` (Claude-specific) | ~61 skills | most of the pack |
+| Skills using `AskUserQuestion` (Claude-specific) | ~62 skills | most of the pack |
+| Skills with `disable-model-invocation: true` (typed-only) | 2 skills | land-and-deploy, vibe-upgrade. Claude Code honors the key; Codex and Kiro ignore it, so there the model can still invoke them, and the `/vibe` router's "type `/name`" rows are the remaining guard. |
 
 The `${CLAUDE_SKILL_DIR}` row above and the matrix column below are derived
 mechanically rather than hand-maintained — the token often arrives through an
@@ -79,7 +80,7 @@ done
 rm -rf "$tmp"
 ```
 
-**Verdict:** All 61 skills are **spec-compliant for file shape**. Cross-target
+**Verdict:** All 62 skills are **spec-compliant for file shape**. Cross-target
 install is safe to ship. **Behavioral parity is partial**, gated on Day 0 Track B
 runtime verification (manual, requires Cursor/Kiro running on the user's machine).
 
@@ -111,10 +112,11 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | devex-review | — | yes | — | full / full / full |
 | diagram | — | yes | — | full / full / full |
 | document-generate | — | — | — | full / full / full |
-| document-release | — | — | yes | full / instr-only / instr-only |
+| document-release | — | yes | yes | full / instr-only / instr-only |
 | freeze | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | guard | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | health | — | — | — | full / full / full |
+| iac-review | — | — | — | full / full / full |
 | improve-arch | — | — | — | full / full / full |
 | investigate | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | kb-review | — | — | — | full / full / full |
@@ -140,12 +142,12 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | setup-browser-cookies | — | yes | — | full / full / full |
 | setup-deploy | — | — | — | full / full / full |
 | ship | — | yes (in body, not hook) | — | full / full / full |
-| skillify | — | — | — | full / full / full |
+| skillify | — | yes | — | full / full / full |
 | spec | — | — | — | full / full / full |
 | telegram | — | yes | — | full / full / full (needs `uv`; `voice` needs whisper + ffmpeg) |
-| unfreeze | — | — | — | full / full / full |
+| unfreeze | — | yes | — | full / full / full |
 | unslop | — | — | — | full / full / full |
-| vibe-upgrade | — | — | — | full / full / full |
+| vibe-upgrade | — | — | — | full / full / full (typed-only through `disable-model-invocation: true`; Codex and Kiro ignore the key, so there the skill can still be invoked by the model) |
 | vibe-gc | — | — | — | full / full / full |
 | vibe | — | yes | — | full / full / full |
 
@@ -160,7 +162,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 
 ## Findings
 
-### F1 — All 61 skills are spec-compliant on file shape (PASS)
+### F1 — All 62 skills are spec-compliant on file shape (PASS)
 
 Every skill has a parseable YAML frontmatter block, a required `name` matching
 its directory basename, a required `description` under the spec's 1024-char
@@ -189,13 +191,16 @@ sibling skill directory exists at runtime. Day 0 Track B must verify whether
 Cursor and Kiro keep skills in per-skill directories (where the relative path
 resolves) or in some other layout.
 
-### F3 — 26 skills use `${CLAUDE_SKILL_DIR}` env var substitution
+### F3 — 35 skills use `${CLAUDE_SKILL_DIR}` env var substitution
 
-Fourteen name the token in their own SKILL.md. `careful`, `freeze`, `guard` and
-`investigate` use it in `hooks:` commands; `address-pr-review`, `make-pdf` and
-`ship` use it in their bodies to reach their own `bin/` and a sibling skill's
-sub-doc; `browse`, `design-html`, `pair-agent` and `setup-browser-cookies` use
-it to reach the browse runtime directly; `diagram` resolves its vendored offline
+Twenty-three name the token in their own SKILL.md. `careful`, `freeze`, `guard`
+and `investigate` use it in `hooks:` commands; `address-pr-review`, `make-pdf`,
+`ship` and `telegram` use it in their bodies to reach their own `bin/` and a
+sibling skill's sub-doc; `autoplan` and the plan reviews read sibling skills,
+`review` its checklists and specialists, `document-release` the review skill's
+TODOS format, and `unfreeze` the freeze skill's state script; `browse`,
+`design-html`, `pair-agent`, `setup-browser-cookies` and `skillify` use it to
+reach the browse runtime directly; `diagram` resolves its vendored offline
 renderer, `open-browser` its bundled extension, and `vibe` its skills index. The
 other 12 — `benchmark`, `canary`, `connect-chrome`, `design-consultation`,
 `design-review`, `design-shotgun`, `devex-review`, `land-and-deploy`,
@@ -257,7 +262,7 @@ Direct quotes:
   installed Kiro skills at `/Users/timurgaleev/.kiro/skills/office-hours/SKILL.md`."_
 
 Verdict: **all 46 skills the pack shipped on 2026-05-09 were discoverable in
-both targets.** No source-file changes required. The pack ships 61 skills today;
+both targets.** No source-file changes required. The pack ships 62 skills today;
 Track B has not been re-run since, and every count in this section is the count
 as it stood on that date.
 
