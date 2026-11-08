@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.57.2 — 2026-11-08
+
+### Fixed
+
+- `/ship` recognises the test count from Node's spec reporter (`ℹ tests 0`)
+  under gawk with a UTF-8 locale. The leading `ℹ` counts as a letter there, so
+  a zero-test lane was reported as `tests_ran=unknown` instead of `0` and the
+  zero-test gate could not stop it.
+
 ## 1.57.1 — 2026-11-08
 
 ### Fixed
