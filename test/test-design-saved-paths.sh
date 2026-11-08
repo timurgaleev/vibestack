@@ -12,9 +12,11 @@
 #     path, or stages into a shared /tmp/variant-<letter>/ directory;
 #   - every skill that calls `$D variants` tells the model to use `saved:` paths;
 #   - every skill that writes approved.json records the image in approved_path;
-#   - design-shotgun's per-variant agent block, run with a stub designer, stages
-#     into a fresh mktemp directory, copies the printed `saved:` path, and leaves
-#     no staging directory behind on success, failure or exhausted retries;
+#   - design-shotgun Step 3c generates every variant with one
+#     `vibe-design variants --briefs-file` call (run here with a stub designer:
+#     one call, briefs never executed), with no subagent fan-out or cp; Step 3d
+#     retries failed letters once, caps regeneration, and sets a discarded
+#     variant aside without overwriting an earlier one;
 #   - the vibe-design row in docs/internals.md documents the output contract.
 #
 # Usage: test/test-design-saved-paths.sh [repo-root]
@@ -66,77 +68,73 @@ while read -r name has; do
   [ "$has" = yes ] && ok "$name records approved_path" || no "$name writes approved.json without approved_path"
 done <<<"$writers"
 
-echo "design-shotgun staging"
+echo "design-shotgun generation"
 SHOT="$SRC/skills/design-shotgun/SKILL.md"
-grep -qE 'STAGE=\$\(mktemp -d /tmp/variant-\{letter\}\.XXXXXX\)' "$SHOT" \
-  && ok "each agent stages into a fresh mktemp dir" || no "agents share a fixed staging dir"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-# The per-variant agent block with its placeholders filled. The letter is unique
-# to this run, so any /tmp staging dir it leaves behind is ours alone.
-L="t$$x"
-DDIR="$TMP/designs"; mkdir -p "$DDIR" "$TMP/bin"
-if python3 -I - "$SHOT" "$TMP/stub-design" "$DDIR" "$L" > "$TMP/agent.sh" <<'PY'
-import re, sys
-text = open(sys.argv[1], encoding="utf-8").read()
-at = text.find("**Agent prompt template**")
-m = re.search(r"```bash\n(.*?)\n```", text[at:], re.S) if at >= 0 else None
-if not m:
-    sys.exit("no bash block in the agent prompt template")
-block = m.group(1)
-for k, v in (("{absolute path to $D binary}", sys.argv[2]),
-             ("{_DESIGN_DIR absolute path}", sys.argv[3]), ("{letter}", sys.argv[4])):
-    block = block.replace(k, v)
-sys.stdout.write(block + "\n")
-PY
-then ok "the agent prompt carries a runnable staging block"
-else no "the agent prompt carries no runnable staging block"; fi
-cat > "$TMP/stub-design" <<'EOF'
-#!/usr/bin/env bash
-out="."; brief=""
-while [ $# -gt 0 ]; do
-  case "$1" in --output-dir) out="$2"; shift 2 ;; --brief) brief="$2"; shift 2 ;; *) shift ;; esac
+sect() { awk -v s="$2" -v e="$3" '$0 ~ s {on=1; next} on && $0 ~ e {on=0} on' "$1"; }
+sect "$SHOT" '^### Step 3c' '^### Step 3d' > "$TMP/3c.md"
+sect "$SHOT" '^### Step 3d' '^## Step 4' > "$TMP/3d.md"
+[ -s "$TMP/3c.md" ] && [ -s "$TMP/3d.md" ] || { no "Step 3c/3d not found in design-shotgun"; echo "$pass passed, $fail failed"; exit 1; }
+grep -qF -- '--briefs-file' "$TMP/3c.md" && ok "Step 3c generates every variant with one --briefs-file call" \
+  || no "Step 3c does not use --briefs-file"
+grep -qF 'timeout: 600000' "$TMP/3c.md" && ok "the one Bash call carries timeout: 600000" || no "no timeout: 600000 on the batch call"
+grep -qF 'With your Write tool, write' "$TMP/3c.md" && grep -qF 'briefs.json' "$TMP/3c.md" \
+  && ok "briefs.json is written with the Write tool" || no "briefs.json is not written with the Write tool"
+for gone in 'subagent_type' 'Agent prompt template' 'cp "$SAVED"' 'mktemp -d /tmp/variant'; do
+  grep -qF -- "$gone" "$TMP/3c.md" && no "Step 3c still has '$gone'" || ok "Step 3c has no '$gone'"
 done
-echo x >> "$STUB_CALLS"
-case "$STUB_MODE" in
-  ok) printf '%s' "$brief" > "$out/variant-A.png"; echo "saved: $out/variant-A.png" ;;
-  fail) echo "DESIGN_ERROR: request failed (HTTP 500): boom"; exit 2 ;;
-  limit) echo "DESIGN_ERROR: request failed (HTTP 429): Rate limit reached"; exit 2 ;;
-esac
-EOF
-printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/sleep"   # retries without the wait
-chmod +x "$TMP/stub-design" "$TMP/bin/sleep"
-printf '%s\n' 'Hero "quoted" $(touch pwned) `touch pwned2`' > "$DDIR/brief-$L.txt"
+grep -qF '_IMAGES' "$TMP/3d.md" && no "Step 3d keeps the dead _IMAGES list" || ok "Step 3d has no _IMAGES list"
+tr '\n' ' ' < "$TMP/3d.md" | grep -qiE 'retry (each )?failed letters? once' \
+  && ok "Step 3d retries failed letters once" || no "Step 3d has no single retry of failed letters"
+tr '\n' ' ' < "$TMP/3d.md" | grep -qiE 'regenerat[a-z]* .{0,60}at most 2|2 regenerations' \
+  && ok "Step 3d caps regeneration at 2" || no "Step 3d has no regeneration cap"
 
-run_agent() {  # run_agent MODE -> exit code; output in $TMP/out-MODE
+# The batch block, run with a stub designer: one call, the briefs file and the
+# round dir as written, and the brief text never on the command line.
+python3 -I - "$TMP/3c.md" > "$TMP/batch.sh" <<'PY'
+import re, sys
+blocks = re.findall(r"```bash\n(.*?)\n```", open(sys.argv[1], encoding="utf-8").read(), re.S)
+hit = [b for b in blocks if "--briefs-file" in b]
+sys.stdout.write(hit[0] + "\n" if hit else "")
+PY
+mkdir -p "$TMP/home/bin" "$TMP/round"
+cat > "$TMP/home/bin/vibe-design" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STUB_CALLS"
+echo "requested: 2"; echo "saved: $4/variant-A.png"; echo "saved: $4/variant-B.png"; echo "failures: 0"
+SH
+chmod +x "$TMP/home/bin/vibe-design"
+printf '[{"brief": "Hero $(touch %s/pwned) `touch %s/pwned2`"}, {"brief": "Two"}]\n' "$TMP" "$TMP" > "$TMP/round/briefs.json"
+if [ -s "$TMP/batch.sh" ]; then
+  sed -i.bak "s|<ROUND_DIR>|$TMP/round|g" "$TMP/batch.sh"
   : > "$TMP/calls"
-  (cd "$TMP" && STUB_MODE="$1" STUB_CALLS="$TMP/calls" PATH="$TMP/bin:$PATH" bash "$TMP/agent.sh") \
-    > "$TMP/out-$1" 2>&1
-}
-leftover() { ls -d /tmp/variant-"$L".* 2>/dev/null || true; }
-calls() { wc -l < "$TMP/calls" | tr -d ' '; }
+  (cd "$TMP" && VIBESTACK_HOME="$TMP/home" STUB_CALLS="$TMP/calls" bash "$TMP/batch.sh") > "$TMP/batch.out" 2>&1
+  { [ "$(wc -l < "$TMP/calls" | tr -d ' ')" = 1 ] \
+    && grep -qx -- "variants --briefs-file $TMP/round/briefs.json --output-dir $TMP/round" "$TMP/calls"; } \
+    && ok "the block makes one designer call on the round's briefs file" || no "batch call: $(cat "$TMP/calls") / $(cat "$TMP/batch.out")"
+  ls "$TMP" | grep -q pwned && no "a brief ran as a command" || ok "the briefs never execute"
+else
+  no "Step 3c carries no runnable --briefs-file block"
+fi
 
-rc=0; run_agent ok || rc=$?
-[ "$rc" -eq 0 ] && grep -q "^VARIANT_${L}_DONE:" "$TMP/out-ok" \
-  && cmp -s "$DDIR/brief-$L.txt" <(printf '%s\n' "$(cat "$DDIR/variant-$L.png")") \
-  && ok "a saved variant is copied from the printed saved: path" || no "success run: rc=$rc $(cat "$TMP/out-ok")"
-[ -z "$(leftover)" ] && ok "no staging dir is left after a success" || no "staging dir left after success: $(leftover)"
-rc=0; run_agent fail || rc=$?
-[ "$rc" -ne 0 ] && grep -q "^VARIANT_${L}_FAILED: DESIGN_ERROR" "$TMP/out-fail" && [ "$(calls)" = 1 ] \
-  && ok "a failed generation reports FAILED without retrying" || no "failure run: rc=$rc $(cat "$TMP/out-fail")"
-[ -z "$(leftover)" ] && ok "no staging dir is left after a failure" || no "staging dir left after failure: $(leftover)"
-rc=0; run_agent limit || rc=$?
-[ "$rc" -ne 0 ] && grep -q "^VARIANT_${L}_RATE_LIMITED:" "$TMP/out-limit" && [ "$(calls)" = 4 ] \
-  && ok "a rate limit is retried 3 times, then reported" || no "rate-limit run: rc=$rc calls=$(calls) $(cat "$TMP/out-limit")"
-[ -z "$(leftover)" ] && ok "no staging dir is left after retries run out" || no "staging dir left after retries: $(leftover)"
-rm -f "$DDIR/brief-$L.txt"
-rc=0; run_agent ok || rc=$?
-[ "$rc" -ne 0 ] && grep -q "^VARIANT_${L}_FAILED: brief not written" "$TMP/out-ok" && [ "$(calls)" = 0 ] \
-  && ok "a missing brief fails before the designer runs" || no "missing brief: rc=$rc $(cat "$TMP/out-ok")"
-ls "$TMP" | grep -q pwned && no "the brief ran as a command" || ok "the brief never executes"
-grep -qF 'With your Write tool, write the brief below verbatim' "$SHOT" \
-  && ok "agents write the brief with the Write tool" || no "agents do not write the brief with the Write tool"
-for d in $(leftover); do rm -rf "$d"; done
+# Setting a discarded variant aside frees its name for the regeneration, and
+# never overwrites an earlier rejection.
+python3 -I - "$TMP/3d.md" > "$TMP/aside.sh" <<'PY'
+import re, sys
+blocks = re.findall(r"```bash\n(.*?)\n```", open(sys.argv[1], encoding="utf-8").read(), re.S)
+hit = [b for b in blocks if "rejected-" in b]
+sys.stdout.write(hit[0] + "\n" if hit else "")
+PY
+if [ -s "$TMP/aside.sh" ]; then
+  R="$TMP/aside"; mkdir -p "$R"; echo first > "$R/variant-B.png"
+  sed -e "s|<ROUND_DIR>|$R|g" -e "s|<LETTER>|B|g" "$TMP/aside.sh" > "$TMP/aside-run.sh"
+  bash "$TMP/aside-run.sh" > /dev/null 2>&1; echo second > "$R/variant-B.png"; bash "$TMP/aside-run.sh" > /dev/null 2>&1
+  { [ ! -e "$R/variant-B.png" ] && [ "$(cat "$R/rejected-B-1.png")" = first ] && [ "$(cat "$R/rejected-B-2.png")" = second ]; } \
+    && ok "a discarded variant is set aside without overwriting an earlier one" || no "set-aside: $(ls "$R")"
+else
+  no "Step 3d carries no set-aside block for a discarded variant"
+fi
 
 echo "documented contract"
 row="$(grep -F '| `vibe-design` |' "$SRC/docs/internals.md" || true)"

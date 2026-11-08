@@ -61,3 +61,9 @@ Name what the simpler version would be and what it costs to keep the current sha
 replacement (the stdlib call, the collapsed layer, the deleted flag) or drop the
 finding. When the extra structure is load-bearing for something already in the diff,
 that is not a finding at all.
+
+Put `lines_removable: N` (your estimate of lines the simpler shape deletes) in each finding's
+`evidence`, and end the output with one footer line, `net: -N lines`, summing them.
+
+Never propose deleting, merging or weakening tests, fixtures or assertions — test volume is the
+testing specialist's call, not a simplification.

@@ -80,7 +80,62 @@ else
   printf '#!/usr/bin/env bash\nexit 0\n' > "$DS/bin/shellcheck"; chmod +x "$DS/bin/shellcheck"
   out=$(cd "$DS" && PATH="$DS/bin:/usr/bin:/bin" bash -o pipefail "$TMP/detect.sh" 2>/dev/null)
   grep -qx 'SHELL: shellcheck' <<<"$out" && ok "shell lint detected under pipefail" || no "shell lint detection: $out"
+
+  # scripts.test: only a non-empty single-line script is a test command.
+  # python3 alone, so linters installed on this machine stay off the fixture PATH.
+  PYDIR="$TMP/py"; mkdir -p "$PYDIR"; ln -s "$(command -v python3)" "$PYDIR/python3"
+  detect_in() { (cd "${1}" && PATH="${2:-}:$PYDIR:/usr/bin:/bin" bash "$TMP/detect.sh" 2>/dev/null); }
+  DT="$TMP/files-test"; mkdir -p "$DT"
+  printf '{"name":"x","files":["test"]}\n' > "$DT/package.json"
+  out=$(detect_in "$DT")
+  grep -q '^TEST:' <<<"$out" && no "a \"test\" string outside scripts yields a TEST line: $(grep '^TEST:' <<<"$out")" \
+    || ok "\"files\":[\"test\"] is not a test script"
+  grep -q '^MISSING: test (.\{1,\})$' <<<"$out" && ok "undetected test category prints MISSING with a reason" \
+    || no "no MISSING: test line: $out"
+  printf '{"scripts":{"test":"bun test\\nbun test:e2e"}}\n' > "$DT/package.json"
+  out=$(detect_in "$DT")
+  grep -qx 'TEST: none (multi-line test script; add it to a ## Health Stack section)' <<<"$out" \
+    && ok "multi-line scripts.test reports TEST: none with the reason" || no "multi-line script: $out"
+  grep -qx 'MISSING: test (multi-line test script; add it to a ## Health Stack section)' <<<"$out" \
+    && ok "multi-line scripts.test carries its reason into MISSING" || no "multi-line MISSING: $out"
+  printf '{"scripts":{"test":"bun test"}}\n' > "$DT/package.json"
+  out=$(detect_in "$DT")
+  grep -qx 'TEST: bun test' <<<"$out" && ! grep -q '^MISSING: test' <<<"$out" \
+    && ok "single-line scripts.test is the test command" || no "single-line script: $out"
+  printf '{"scripts":{"test":"  "}}\n' > "$DT/package.json"
+  out=$(detect_in "$DT")
+  grep -q '^TEST:' <<<"$out" && no "blank scripts.test yields a TEST line" || ok "blank scripts.test is not a test command"
+
+  # MISSING: one line per undetected category, none for a detected one.
+  DE="$TMP/empty"; mkdir -p "$DE"
+  out=$(detect_in "$DE")
+  for c in typecheck lint test deadcode shell; do
+    grep -q "^MISSING: $c (.\{1,\})$" <<<"$out" || no "empty repo: no MISSING line for $c: $out"
+  done
+  [ "$(grep -c '^MISSING: ' <<<"$out")" -eq 5 ] && ok "empty repo: five MISSING lines with reasons" \
+    || no "empty repo MISSING lines: $out"
+  : > "$DE/tsconfig.json"
+  out=$(detect_in "$DE")
+  grep -q '^MISSING: typecheck' <<<"$out" && no "detected typecheck still MISSING" || ok "detected category has no MISSING line"
+
+  # IaC and workflow linters, each detected only with its files and its binary.
+  DI="$TMP/iac"; FB="$TMP/iacbin"; mkdir -p "$DI/infra" "$DI/.github/workflows" "$FB"
+  : > "$DI/infra/main.tf"; : > "$DI/.github/workflows/ci.yml"
+  printf 'AWSTemplateFormatVersion: "2010-09-09"\nResources: {}\n' > "$DI/template.yaml"
+  out=$(detect_in "$DI")
+  grep -q '^LINT: \(terraform\|actionlint\|cfn-lint\)' <<<"$out" && no "IaC linter detected without its binary: $out" \
+    || ok "IaC linters need their binary on PATH"
+  for t in terraform actionlint cfn-lint; do printf '#!/usr/bin/env bash\nexit 0\n' > "$FB/$t"; chmod +x "$FB/$t"; done
+  out=$(detect_in "$DI" "$FB")
+  grep -qx 'LINT: terraform fmt -check -recursive' <<<"$out" && ok "terraform files detected" || no "terraform row: $out"
+  grep -qx 'LINT: actionlint' <<<"$out" && ok "GitHub workflows detected for actionlint" || no "actionlint row: $out"
+  grep -qx 'LINT: cfn-lint ./template.yaml' <<<"$out" && ok "CloudFormation template detected for cfn-lint" || no "cfn-lint row: $out"
+  grep -q '^MISSING: lint' <<<"$out" && no "lint MISSING despite IaC linters" || ok "IaC linters fill the lint category"
 fi
+s1=$(section "## Step 1: Detect Health Stack" "## Step 2")
+s1flat=$(tr -s '[:space:]' ' ' <<<"$s1")
+grep -q 'not listed in ## Health Stack' <<<"$s1flat" \
+  && ok "Step 1: a Health Stack that omits a category reports it MISSING" || no "Step 1 lacks the Health Stack omission rule"
 
 echo "Step 2: capture"
 if ! block "## Step 2: Run Tools" > "$TMP/capture.sh"; then
@@ -213,6 +268,8 @@ grep -q 'never `READY` with partial coverage' <<<"$s4flat" \
 # auto-detected stack with one tool that passed is still 1/5 coverage.
 grep -q 'exited 0 and all five categories were checked' <<<"$s4flat" \
   && ok "READY needs all five categories checked" || no "READY bullet allows partial coverage"
+grep -q 'reason from its Step 1 `MISSING:` line' <<<"$s4flat" \
+  && ok "Step 4: Unavailable line carries the MISSING reasons" || no "Step 4 drops the MISSING reasons"
 grep -q 'or fewer than five categories were checked' <<<"$s4flat" \
   && ok "partial coverage is INCOMPLETE" || no "INCOMPLETE bullet misses partial coverage"
 sk=$(section "## Target: skills" "## Important Rules")

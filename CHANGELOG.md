@@ -1,5 +1,113 @@
 # Changelog
 
+## 1.56.0 — 2026-11-08
+
+### Added
+
+- **`/ship` runs a bounded review-fix loop.** Review fixes go through up to 3
+  in-session cycles, with a diff-size and Codex-quota ceiling, instead of
+  stopping for a manual rerun; Codex runs once, on the final cycle. Review and
+  ship share one copy of the specialist and adversarial passes, and generated
+  coverage tests must prove they fail under their own mutation.
+- **`/review` checks gate integrity.** A new critical category with grep
+  probes and a four-option disposition, a sideways sweep with forced-critical
+  classes, a targeted money/gate/secret specialist, lead judgment in the merge,
+  red proof before test-backed fixes, safe validator runs, new Scope Check
+  fields and report-only smoke probes.
+- **`/devex-review` captures CLI error paths through the new
+  `vibe-error-capture`**: an isolated environment, scratch HOME and cwd, no
+  stdin, a timeout and redacted JSON, with output drained to a 64 KiB scan cap
+  rather than buffered. It asks before any run that could do work, fills an
+  error-path matrix, and records `dx_rubric` so a baseline scored on another
+  rubric is reported as not comparable.
+- **`vibe-design variants --briefs-file`** generates one image per brief in a
+  single call (staggered requests, Retry-After, one empty-image regeneration, a
+  deadline, never overwrites). A Gemini provider is used when only
+  `GEMINI_API_KEY` is set, with `--size` mapped to the nearest aspect ratio,
+  and a rejected model names `VIBE_DESIGN_MODEL`. `/design-shotgun` generates
+  all variants with that one call and retries failed letters once.
+- **`/browse` emulates devices**: `device <name>|off|--list` with `tap`,
+  `text [selector|@ref]`, `type --selector`, `viewport auto` and a complete
+  cleanup usage line. The sidebar terminal gets a text-size picker.
+- **`/diagram` writes an editable `.excalidraw` scene** and can re-render an
+  edited one.
+- **The `/vibe` router triages a failure report** before handing it to
+  `/investigate`: one read-only check when the user names the cause, or one
+  bounded triage pass when the cause is unknown. It routes the execution of an
+  approved multi-step plan.
+
+### Changed
+
+- **`/plan-devex-review` asks before it edits the plan**: one question per gap
+  or confusion point, only approved scope is applied, scores are never raised
+  by adding unapproved work, and DX TRIAGE covers all 8 passes for blockers
+  plus every error-contract cap. Errors are rated against an agent-ready
+  contract (what, fix, recovery, code, context, trace, redaction, channel) with
+  CAP4/CAP6 caps, an error path matrix and an AI coding agent persona, and
+  `dx_rubric` is logged so trends compare only like-for-like scores. Step 0
+  drafts stay in chat until the target tier is chosen, magical-moment vehicles
+  come from the product instead of canned effort numbers, and the office-hours
+  offer is skipped in spawned or headless sessions.
+- **`/plan-tune` no longer shows an observed profile** or gap that nothing
+  derives; stats report whether there are enough logged events to start
+  deriving and always say not calibrated.
+- **`/benchmark` measures each page from a single load repeated 5 times**,
+  reports medians with their min-max range, treats a delta inside the baseline
+  range as noise, opens the report with a verdict line, fails non-2xx loads,
+  grades the budget by share under budget, and names reports by UTC timestamp.
+- **`/context-save` and `/context-restore` track the repository.** Checkpoints
+  record the HEAD commit (and the worktree, if linked); restore reports how far
+  the repository moved and moves every step under Verify first when it
+  changed. Markers stay literal with a scan, decisions about file contents need
+  backing, a save can name the next focus plus suggested skills and
+  references, and saved files are scanned for credentials.
+- **`/learn` and `/retro`**: prune removes every entry for a key and type
+  through a deterministic `vibe-learnings-log --forget`, and never removes
+  without an explicit yes. Retro history moves to the shared project store,
+  snapshots carry recommendations that the next retro scores, and a
+  questions-by-skill row reads the question log.
+- **Reviewer agents verify each finding.** A HIGH or CRITICAL finding from
+  code-reviewer or quality-guard must show the line, a failure scenario and why
+  existing guards miss it; the review stays read-only and code-reviewer closes
+  with a Ready to merge verdict. task-planner steps carry interfaces and a
+  Verify command, with tests planned first and a short self-review.
+- **`/vibe-upgrade` is typed-only**, and the router names it and
+  `/land-and-deploy` for the user to type instead of invoking them.
+- **The browse daemon pins Playwright ~1.64.1 (Chromium 156)**, and the shim's
+  Playwright floor is raised to match. Local checkouts need
+  `bunx playwright install chromium chromium-headless-shell` once.
+- **`/open-browser` describes the side panel that actually ships**, `/browse`
+  ends with a Report block and checks for silent failures, and
+  `/setup-browser-cookies` drops a branch the daemon could never reach.
+
+### Fixed
+
+- **Review, ship, address-pr-review and landing-report are more honest about
+  their inputs.** The Greptile fetch pages and reports fetch errors, replies
+  cite the current diff, the PR lookup stops on any gh error other than "no
+  pull requests found", the PR title is read from a file, and the PR body gains
+  a Blast radius section. `/address-pr-review` applies a flake rerun rule and
+  reads every thread before editing; `/landing-report` flags a possibly
+  incomplete queue.
+- **`/health` test detection** accepts only a non-empty single-line
+  `scripts.test`, every undetected category gets a `MISSING:` reason that
+  reaches the dashboard's Unavailable line, and terraform, cfn-lint and
+  actionlint are detected as linters.
+- **The browse daemon picks its port below 49152 after Chromium launches**,
+  logs its proxy mode (`direct://` on Linux when none is set), and prints a
+  quarantine hint when macOS kills Chromium at launch.
+- **`/scrape` no longer looks up browser-skills that nothing in the pack
+  creates**, so it no longer asks a consent question that can never apply, and
+  the unused browser-skill writer is removed.
+- **diagram-render pins a matched set of excalidraw and mermaid packages** with
+  security overrides (dompurify, nanoid, lodash-es, chokidar, source-map-js).
+  The bundle holds one patched DOMPurify and drops from 9.2 MB to 7.5 MB, and a
+  new check script verifies dist, pins and overrides.
+- **`/document-release` Step 8** sorts the version state the way `/ship` does
+  and says `VERSION: not applicable (<reason>)` instead of skipping silently;
+  the documentation review runs through the shared outside-voice body, and the
+  TODOS format path resolves from the skill directory.
+
 ## 1.55.39 — 2026-11-08
 
 ### Fixed

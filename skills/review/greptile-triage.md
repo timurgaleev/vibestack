@@ -6,32 +6,50 @@ Shared reference for fetching, filtering, and classifying Greptile review commen
 
 ## Fetch
 
-Run this block to detect the PR and fetch comments. Both API calls run in parallel into a
-private per-run directory — never a fixed `/tmp` name, which another user or a concurrent
-run can pre-create, read, or overwrite.
+Run this block to detect the PR and fetch comments. The three API calls run in parallel
+into a private per-run directory — never a fixed `/tmp` name, which another user or a
+concurrent run can pre-create, read, or overwrite. Every call pages (`--paginate`,
+100 per page): an unpaged call stops at the first 30 and silently drops the rest.
 
 ```bash
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 PR_NUMBER=$(gh pr view --json number --jq '.number' 2>/dev/null)
 [ -n "$REPO" ] && [ -n "$PR_NUMBER" ] || { echo "GREPTILE: skip (no PR, or gh unavailable)"; exit 0; }
-GREPTILE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-greptile.XXXXXXXX") || { echo "GREPTILE: skip (mktemp failed)"; exit 0; }
-gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
-  --jq '.[] | select(.user.login == "greptile-apps[bot]") | select(.position != null) | {id: .id, path: .path, line: .line, body: .body, html_url: .html_url, source: "line-level"}' > "$GREPTILE_DIR/line.json" &
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-  --jq '.[] | select(.user.login == "greptile-apps[bot]") | {id: .id, body: .body, html_url: .html_url, source: "top-level"}' > "$GREPTILE_DIR/top.json" &
-wait
+GREPTILE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-greptile.XXXXXXXX") || { echo "GREPTILE: error (mktemp failed)"; exit 0; }
+_BOT='select(.user.login == "greptile-apps[bot]")'
+gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" \
+  --jq ".[] | $_BOT | select(.in_reply_to_id == null) | select(.position != null) | {id: .id, path: .path, line: .line, body: .body, html_url: .html_url, source: \"line-level\"}" > "$GREPTILE_DIR/line.json" 2>"$GREPTILE_DIR/line.err" & _P1=$!
+gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+  --jq ".[] | $_BOT | {id: .id, body: .body, html_url: .html_url, source: \"top-level\"}" > "$GREPTILE_DIR/top.json" 2>"$GREPTILE_DIR/top.err" & _P2=$!
+gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" \
+  --jq ".[] | $_BOT | select((.body // \"\") != \"\") | {id: .id, body: .body, html_url: .html_url, source: \"review\"}" > "$GREPTILE_DIR/review.json" 2>"$GREPTILE_DIR/review.err" & _P3=$!
+_FAIL=""
+wait "$_P1" || _FAIL="$_FAIL line-level"
+wait "$_P2" || _FAIL="$_FAIL top-level"
+wait "$_P3" || _FAIL="$_FAIL reviews"
 echo "GREPTILE_DIR: $GREPTILE_DIR"
+if [ -n "$_FAIL" ]; then
+  echo "GREPTILE: error (fetch failed:$_FAIL — $(cat "$GREPTILE_DIR"/*.err 2>/dev/null | head -1))"
+else
+  echo "GREPTILE: $(cat "$GREPTILE_DIR/line.json" "$GREPTILE_DIR/top.json" "$GREPTILE_DIR/review.json" | grep -c .) comment(s)"
+fi
 ```
 
-**If it prints `GREPTILE: skip`:** Skip Greptile triage silently. This integration is additive — the workflow works without it.
+**`GREPTILE: skip`** (no PR, or no `gh`): skip Greptile triage silently. This integration is additive — the workflow works without it.
+
+**`GREPTILE: error (<reason>)`**: the fetch failed, which is not the same as no comments.
+Report `GREPTILE: error (<reason>)` to the caller (`/ship` puts it in the PR body as
+`Review bot triage: UNAVAILABLE (<reason>)`) and do not classify a partial set.
+
+**`GREPTILE: 0 comment(s)`**: nothing to triage — the caller reports `Review bot triage: none`.
 
 Every Bash call is a fresh shell, so later blocks do not inherit `GREPTILE_DIR`:
 substitute the printed path for `<greptile-dir>`. Remove the directory
 (`rm -rf <greptile-dir>`) once triage and replies are done.
 
-**If API errors or zero Greptile comments across both endpoints:** Skip silently.
-
-The `position != null` filter on line-level comments automatically skips outdated comments from force-pushed code.
+`in_reply_to_id == null` keeps thread roots only (a reply in a thread is not a new
+comment); `position != null` skips comments outdated by a force-push; the reviews call
+picks up review summaries the bot posts outside any thread.
 
 ---
 
@@ -62,7 +80,7 @@ for path in sys.argv[1:]:
         c = json.loads(line)
         print("--- comment %s (%s)" % (c.get("id"), c.get("path") or "top-level"))
         print(c.get("body", ""))
-' "$GREPTILE_DIR/line.json" "$GREPTILE_DIR/top.json" \
+' "$GREPTILE_DIR/line.json" "$GREPTILE_DIR/top.json" "$GREPTILE_DIR/review.json" \
   | "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-untrusted" --source greptile-comments
 ```
 
@@ -112,7 +130,7 @@ For each non-suppressed comment:
 3. Cross-reference the comment against the full diff (`git diff origin/<base>`, using the base branch the calling skill detected) and the review checklist
 4. Classify:
    - **VALID & ACTIONABLE** — a real bug, race condition, security issue, or correctness problem that exists in the current code
-   - **VALID BUT ALREADY FIXED** — a real issue that was addressed in a subsequent commit on the branch. Identify the fixing commit SHA.
+   - **VALID BUT ALREADY FIXED** — a real issue the current code already handles. Cite where, as `file:line` in the current diff — not a commit, which a later rebase or squash can make unreachable.
    - **FALSE POSITIVE** — the comment misunderstands the code, flags something handled elsewhere, or is stylistic noise
    - **SUPPRESSED** — already filtered in the suppressions check above
 
@@ -120,7 +138,7 @@ For each non-suppressed comment:
 
 ## Reply APIs
 
-Reply text quotes commit SHAs, diff lines and reviewer text, so it never goes into a
+Reply text quotes diff lines and reviewer text, so it never goes into a
 shell command. Inside double quotes the shell runs every backtick span and `$(...)`: a
 reply quoting `` `rm -rf ~` `` from the diff, or a Greptile body carrying `$(curl ...)`,
 would execute on this machine, and the posted reply would silently lose the quoted text.
@@ -195,7 +213,7 @@ Use these templates for every Greptile reply. Always include concrete evidence �
 **For FIXES (user chose to fix the issue):**
 
 ```
-**Fixed** in `<commit-sha>`.
+**Fixed** — `<file:line>` in the current diff.
 
 \`\`\`diff
 - <old problematic line(s)>
@@ -205,12 +223,12 @@ Use these templates for every Greptile reply. Always include concrete evidence �
 **Why:** <1-sentence explanation of what was wrong and how the fix addresses it>
 ```
 
-**For ALREADY FIXED (issue addressed in a prior commit on the branch):**
+**For ALREADY FIXED (the current code already handles it):**
 
 ```
-**Already fixed** in `<commit-sha>`.
+**Already fixed** — the current code at `<file:line>`.
 
-**What was done:** <1-2 sentences describing how the existing commit addresses this issue>
+**What was done:** <1-2 sentences describing how that code addresses this issue>
 ```
 
 **For FALSE POSITIVES (the comment is incorrect):**
@@ -238,7 +256,7 @@ Use Tier 2 when escalation detection (below) identifies a prior vibestack reply 
 
 **Evidence chain:**
 1. <file:line permalink showing the safe pattern or fix>
-2. <commit SHA where it was addressed, if applicable>
+2. <file:line in the current diff where it was addressed, if applicable>
 3. <architecture rationale or design decision, if applicable>
 
 **Suggested re-rank:** Please recalibrate — this is a `<actual category>` issue, not `<claimed category>`. [Link to specific file change permalink if helpful]

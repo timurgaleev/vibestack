@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
-# vibe-design — design-mockup generation via OpenAI's image model. Detect-and-use:
-# needs OPENAI_API_KEY and curl, otherwise prints DESIGN_NOT_AVAILABLE so a skill
+# vibe-design — design-mockup generation via an image model. Detect-and-use:
+# OPENAI_API_KEY selects OpenAI (needs curl for --brief); with no OpenAI key,
+# GEMINI_API_KEY selects Gemini. Neither prints DESIGN_NOT_AVAILABLE so a skill
 # degrades to text.
 #
 # Usage:
 #   vibe-design status
 #   vibe-design variants --brief "<prompt>" [--count N] [--output-dir <dir>] [--size WxH]
 #   vibe-design variants --brief-file <path> [--count N] [--output-dir <dir>] [--size WxH]
+#   vibe-design variants --briefs-file <json> [--output-dir <dir>] [--size WxH]
+#
+# status prints DESIGN_AVAILABLE or DESIGN_NOT_AVAILABLE on stdout and the
+# provider and model on stderr (`DESIGN_PROVIDER: openai gpt-image-1`).
 #
 # --brief-file reads the brief from a file, so a brief written from plan or user
-# text never has to appear in shell source. --brief and --brief-file are exclusive.
+# text never has to appear in shell source. --briefs-file takes a JSON array of
+# 1-10 objects `{"brief": "...", "screenshot-description": "...", "label": "C"}`
+# (only "brief" required) and generates one image per entry in one call, under
+# its label or, without labels, variant-A for the first entry, B for the next.
+# Requests start 1.5 s apart, a 429 waits Retry-After (at most 60 s) and is
+# tried at most 3 times, an empty image is regenerated once, and the whole batch
+# stops at a 540 s deadline. The brief flags are exclusive.
 #
 # variants never overwrites: when variant-A.png already exists (an earlier round,
 # an approved mockup) the image is saved as variant-A-2.png, -3, and so on. Every
@@ -23,6 +34,10 @@
 # Exit codes: 0 every requested image was saved; 2 nothing was saved (a
 # `DESIGN_ERROR: <reason>` line says why); 3 some were saved and some were not;
 # 1 usage error. DESIGN_NOT_AVAILABLE still exits 0.
+#
+# Env: VIBE_DESIGN_MODEL (OpenAI model, default gpt-image-1),
+# VIBE_DESIGN_GEMINI_MODEL (default gemini-2.5-flash-image), VIBE_DESIGN_TIMEOUT
+# (per request, default 180 s), VIBE_DESIGN_DEADLINE (batch, default 540 s).
 set -euo pipefail
 # bash 5.2+ writes a heredoc under 64 KiB into a pipe and can hang on a small macOS pipe;
 # compat 5.0 keeps the temp file (test/test-heredoc-compat.sh).
@@ -30,41 +45,266 @@ set -euo pipefail
 
 KEY="${OPENAI_API_KEY:-}"
 MODEL="${VIBE_DESIGN_MODEL:-gpt-image-1}"
+GEMINI_MODEL="${VIBE_DESIGN_GEMINI_MODEL:-gemini-2.5-flash-image}"
 TIMEOUT="${VIBE_DESIGN_TIMEOUT:-180}"
+DEADLINE="${VIBE_DESIGN_DEADLINE:-540}"
+OPENAI_URL="${VIBE_DESIGN_OPENAI_URL:-https://api.openai.com/v1/images/generations}"
+GEMINI_URL="${VIBE_DESIGN_GEMINI_URL:-https://generativelanguage.googleapis.com/v1beta}"
+
+PROVIDER=""
+if [ -n "$KEY" ]; then PROVIDER=openai
+elif [ -n "${GEMINI_API_KEY:-}" ]; then PROVIDER=gemini
+fi
+
+# Shared by both Python passes: the no-overwrite claim, the model-rejection
+# hint and the accounting printout.
+read -r -d '' COMMON_PY <<'PY' || true
+import os, sys, tempfile
+
+LABELS = "ABCDEFGHIJ"
+
+
+def claim(outdir, label, png):
+    """Write png under the first free variant-<label>[-N].png; never overwrite.
+
+    The image is written in full to a private temp file first and then published
+    with link(), which fails rather than replace an existing name. A failed write
+    therefore leaves no variant file behind for a later run to step around.
+    """
+    fd, tmp = tempfile.mkstemp(prefix=f".variant-{label}.", suffix=".tmp", dir=outdir)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(png)
+        os.chmod(tmp, 0o644)
+        n = 1
+        while True:
+            name = f"variant-{label}.png" if n == 1 else f"variant-{label}-{n}.png"
+            path = os.path.join(outdir, name)
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                n += 1
+                continue
+            if n > 1:
+                sys.stderr.write(f"note: variant-{label}.png exists; saved to {name} (existing file kept)\n")
+            return path
+    finally:
+        os.unlink(tmp)
+
+
+def model_hint(status, detail, var, model):
+    """A rejected model gets a pointer to the variable that picks another one."""
+    d = (detail or "").lower()
+    if str(status) in ("400", "403", "404") and "model" in d:
+        return f" (the API rejected model {model}; set {var} to an image model this key can use)"
+    return ""
+
+
+def report(count, saved, failures, reason=None):
+    if not saved:
+        print("DESIGN_ERROR:", reason or failures[0][1])
+    print(f"requested: {count}")
+    for p in saved:
+        print(f"saved: {p}")
+    print(f"failures: {len(failures)}")
+    for label, why in failures:
+        print(f"failed: variant-{label}: {why}")
+    sys.exit(0 if not failures else (2 if not saved else 3))
+PY
+
+# One image per job, each in its own thread: OpenAI or Gemini over urllib.
+read -r -d '' BATCH_PY <<'PY' || true
+import base64, binascii, json, math, threading, time, urllib.error, urllib.request
+
+(jobs_file, outdir, provider, model, size, timeout, deadline, openai_url,
+ gemini_url) = sys.argv[1:10]
+timeout, deadline = int(timeout), time.monotonic() + int(deadline)
+jobs = json.load(open(jobs_file, encoding="utf-8"))
+var = "VIBE_DESIGN_MODEL" if provider == "openai" else "VIBE_DESIGN_GEMINI_MODEL"
+GEMINI_RATIOS = ("1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9")
+
+
+def gemini_aspect(size):
+    # Gemini takes an aspect ratio, not pixel dimensions: send the closest one.
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+    except ValueError:
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    ratio = lambda r: int(r.split(":")[0]) / int(r.split(":")[1])
+    return min(GEMINI_RATIOS, key=lambda r: abs(math.log((w / h) / ratio(r))))
+
+
+def request(prompt, budget):
+    if provider == "openai":
+        url = openai_url
+        body = {"model": model, "prompt": prompt, "n": 1, "size": size}
+        headers = {"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]}
+    else:
+        url = f"{gemini_url.rstrip('/')}/models/{model}:generateContent"
+        body = {"contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseModalities": ["IMAGE"]}}
+        aspect = gemini_aspect(size)
+        if aspect:
+            body["generationConfig"]["imageConfig"] = {"aspectRatio": aspect}
+        headers = {"x-goog-api-key": os.environ["GEMINI_API_KEY"]}
+    headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=budget) as r:
+        return json.loads(r.read() or b"null")
+
+
+def image_of(resp):
+    b64 = None
+    try:
+        if provider == "openai":
+            b64 = resp["data"][0].get("b64_json")
+        else:
+            for part in resp["candidates"][0]["content"]["parts"]:
+                b64 = (part.get("inlineData") or part.get("inline_data") or {}).get("data") or b64
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return b""
+    try:
+        return base64.b64decode(b64, validate=True) if b64 else b""
+    except (binascii.Error, ValueError):
+        return b""
+
+
+def api_message(raw):
+    try:
+        err = json.loads(raw)
+        err = err.get("error", err) if isinstance(err, dict) else err
+        msg = err.get("message") if isinstance(err, dict) else None
+        return str(msg if msg else err)[:300]
+    except ValueError:
+        return raw.decode("utf-8", "replace").strip()[:300]
+
+
+def run(i, job, results):
+    time.sleep(1.5 * i)
+    prompt = job["brief"]
+    if job.get("screenshot-description"):
+        prompt += "\n\nCurrent design to move away from: " + job["screenshot-description"]
+    tries, regenerated = 0, False
+    while True:
+        budget = min(timeout, deadline - time.monotonic())
+        if budget <= 0:
+            results[i] = (None, "batch deadline reached")
+            return
+        tries += 1
+        try:
+            png = image_of(request(prompt, budget))
+        except urllib.error.HTTPError as e:
+            detail = api_message(e.read())
+            if e.code == 429 and tries < 3:
+                try:
+                    wait = float(e.headers.get("Retry-After") or 5 * tries)
+                except ValueError:
+                    wait = 5 * tries
+                time.sleep(max(0, min(wait, 60, deadline - time.monotonic())))
+                continue
+            results[i] = (None, f"request failed (HTTP {e.code}): {detail}" + model_hint(e.code, detail, var, model))
+            return
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            why = getattr(e, "reason", e)
+            timed = "timed out" in str(why) or isinstance(why, TimeoutError)
+            results[i] = (None, "batch deadline reached" if timed and time.monotonic() >= deadline - 0.5
+                          else f"request failed: {why}")
+            return
+        if png:
+            results[i] = (png, None)
+            return
+        if regenerated:
+            results[i] = (None, "API returned an empty image")
+            return
+        regenerated = True
+
+
+results = [None] * len(jobs)
+threads = [threading.Thread(target=run, args=(i, j, results), daemon=True) for i, j in enumerate(jobs)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join(max(0, deadline - time.monotonic()) + 5)
+saved, failures = [], []
+for i, res in enumerate(results):
+    label = jobs[i].get("label") or LABELS[i]
+    png, why = res if res else (None, "batch deadline reached")
+    if png is None:
+        failures.append((label, why))
+        continue
+    try:
+        saved.append(claim(outdir, label, png))
+    except OSError as e:
+        failures.append((label, f"cannot write to {outdir}: {e.strerror or e}"))
+report(len(jobs), saved, failures)
+PY
 
 case "${1:-}" in
   status)
-    if [ -n "$KEY" ] && command -v curl >/dev/null 2>&1; then echo "DESIGN_AVAILABLE"; else echo "DESIGN_NOT_AVAILABLE"; fi
+    if [ "$PROVIDER" = openai ] && command -v curl >/dev/null 2>&1; then
+      echo "DESIGN_AVAILABLE"; echo "DESIGN_PROVIDER: openai $MODEL" >&2
+    elif [ "$PROVIDER" = gemini ]; then
+      echo "DESIGN_AVAILABLE"; echo "DESIGN_PROVIDER: gemini $GEMINI_MODEL" >&2
+    else
+      echo "DESIGN_NOT_AVAILABLE"
+    fi
     exit 0 ;;
   variants)
-    [ -n "$KEY" ] || { echo "DESIGN_NOT_AVAILABLE: set OPENAI_API_KEY"; exit 0; }
-    command -v curl >/dev/null 2>&1 || { echo "DESIGN_NOT_AVAILABLE: curl not found"; exit 0; }
+    [ -n "$PROVIDER" ] || { echo "DESIGN_NOT_AVAILABLE: set OPENAI_API_KEY or GEMINI_API_KEY"; exit 0; }
+    if [ "$PROVIDER" = openai ]; then
+      command -v curl >/dev/null 2>&1 || { echo "DESIGN_NOT_AVAILABLE: curl not found"; exit 0; }
+    fi
     shift
-    brief=""; brief_file=""; brief_set=0; count=1; outdir="."; size="1024x1024"
+    brief=""; brief_file=""; briefs_file=""; brief_set=0; count=1; count_set=0; outdir="."; size="1024x1024"
     while [ $# -gt 0 ]; do
       case "$1" in
         --brief) brief="${2:-}"; brief_set=1; shift 2 ;;
         --brief-file) brief_file="${2:-}"; shift 2 ;;
-        --count) count="${2:-1}"; shift 2 ;;
+        --briefs-file) briefs_file="${2:-}"; shift 2 ;;
+        --count) count="${2:-1}"; count_set=1; shift 2 ;;
         --output-dir) outdir="${2:-.}"; shift 2 ;;
         --size) size="${2:-1024x1024}"; shift 2 ;;
         *) shift ;;
       esac
     done
-    if [ -n "$brief_file" ]; then
-      [ "$brief_set" = 0 ] || { echo "vibe-design: use --brief or --brief-file, not both"; exit 1; }
-      { [ -f "$brief_file" ] && [ -r "$brief_file" ]; } || { echo "vibe-design: cannot read brief file '$brief_file'"; exit 1; }
-      brief="$(cat "$brief_file")"
-      [ -n "$brief" ] || { echo "vibe-design: brief file '$brief_file' is empty"; exit 1; }
+    case "$TIMEOUT" in ''|*[!0-9]*) TIMEOUT=180 ;; esac
+    case "$DEADLINE" in ''|*[!0-9]*) DEADLINE=540 ;; esac
+    if [ -n "$briefs_file" ]; then
+      { [ "$brief_set" = 0 ] && [ -z "$brief_file" ] && [ "$count_set" = 0 ]; } \
+        || { echo "vibe-design: --briefs-file takes no --brief, --brief-file or --count"; exit 1; }
+      { [ -f "$briefs_file" ] && [ -r "$briefs_file" ]; } || { echo "vibe-design: cannot read briefs file '$briefs_file'"; exit 1; }
+      count="$(python3 -I -c '
+import json, sys
+try:
+    jobs = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError) as e:
+    sys.exit("vibe-design: briefs file is not JSON: %s" % e)
+ok = isinstance(jobs, list) and 1 <= len(jobs) <= 10 and all(
+    isinstance(j, dict) and isinstance(j.get("brief"), str) and j["brief"].strip()
+    and isinstance(j.get("screenshot-description", ""), str) for j in jobs)
+if not ok:
+    sys.exit("vibe-design: briefs file must be a JSON array of 1-10 objects with a non-empty \"brief\"")
+labels = [j.get("label") for j in jobs]
+if any(l is not None for l in labels) and (
+        not all(isinstance(l, str) and len(l) == 1 and l in "ABCDEFGHIJ" for l in labels)
+        or len(set(labels)) != len(labels)):
+    sys.exit("vibe-design: \"label\" must be a distinct letter A-J on every entry, or on none")
+print(len(jobs))' "$briefs_file" 2>&1)" || { echo "$count"; exit 1; }
+    else
+      if [ -n "$brief_file" ]; then
+        [ "$brief_set" = 0 ] || { echo "vibe-design: use --brief or --brief-file, not both"; exit 1; }
+        { [ -f "$brief_file" ] && [ -r "$brief_file" ]; } || { echo "vibe-design: cannot read brief file '$brief_file'"; exit 1; }
+        brief="$(cat "$brief_file")"
+        [ -n "$brief" ] || { echo "vibe-design: brief file '$brief_file' is empty"; exit 1; }
+      fi
+      [ -n "$brief" ] || { echo "usage: vibe-design variants --brief <prompt> | --brief-file <path> [--count N] [--output-dir <dir>] | --briefs-file <json>"; exit 1; }
+      case "$count" in
+        [1-9]|10) ;;
+        *) echo "vibe-design: --count must be 1-10, got '$count'"; exit 1 ;;
+      esac
     fi
-    [ -n "$brief" ] || { echo "usage: vibe-design variants --brief <prompt> | --brief-file <path> [--count N] [--output-dir <dir>]"; exit 1; }
-    case "$count" in
-      [1-9]|10) ;;
-      *) echo "vibe-design: --count must be 1-10, got '$count'"; exit 1 ;;
-    esac
-    case "$TIMEOUT" in
-      ''|*[!0-9]*) TIMEOUT=180 ;;
-    esac
     # A setup failure saves nothing, so it reports like any other empty round:
     # DESIGN_ERROR, the accounting lines, exit 2. Exit 1 stays for usage errors.
     setup_failed() {
@@ -86,21 +326,40 @@ case "${1:-}" in
     stage="$(mktemp -d "${tmp_root%/}/vibe-design.XXXXXX" 2>/dev/null)" \
       || setup_failed "cannot create a staging dir under $tmp_root"
     trap 'rm -rf "$stage"' EXIT
+
+    # Gemini takes one image per request, and a briefs file is one job per
+    # entry: both run through the threaded batch.
+    if [ -n "$briefs_file" ] || [ "$PROVIDER" = gemini ]; then
+      if [ -n "$briefs_file" ]; then
+        cp "$briefs_file" "$stage/jobs.json" || setup_failed "cannot stage the briefs file under $stage"
+      else
+        python3 -I -c 'import json,sys; json.dump([{"brief": sys.argv[1]}] * int(sys.argv[2]), open(sys.argv[3], "w"))' \
+          "$brief" "$count" "$stage/jobs.json" 2>/dev/null || setup_failed "cannot write the request under $stage"
+      fi
+      use_model="$MODEL"; [ "$PROVIDER" = gemini ] && use_model="$GEMINI_MODEL"
+      exec_rc=0
+      python3 -I -c "$COMMON_PY
+$BATCH_PY" "$stage/jobs.json" "$outdir" "$PROVIDER" "$use_model" "$size" "$TIMEOUT" "$DEADLINE" \
+        "$OPENAI_URL" "$GEMINI_URL" || exec_rc=$?
+      exit "$exec_rc"
+    fi
+
     python3 -I -c 'import json,sys; json.dump({"model":sys.argv[1],"prompt":sys.argv[2],"n":int(sys.argv[3]),"size":sys.argv[4]}, open(sys.argv[5],"w"))' \
       "$MODEL" "$brief" "$count" "$size" "$stage/request.json" 2>/dev/null \
       || setup_failed "cannot write the request under $stage"
     http_code=""; curl_rc=0
     http_code="$(curl -sS --fail-with-body --max-time "$TIMEOUT" \
       -o "$stage/response.json" -w '%{http_code}' \
-      https://api.openai.com/v1/images/generations \
+      "$OPENAI_URL" \
       -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
       -d @"$stage/request.json" 2>"$stage/curl.err")" || curl_rc=$?
-    python3 -I - "$stage" "$outdir" "$count" "$curl_rc" "$http_code" "$TIMEOUT" <<'PY'
-import base64, binascii, json, os, sys, tempfile
+    exec_rc=0
+    python3 -I -c "$COMMON_PY
+$(cat <<'PY'
+import base64, binascii, json
 
-stage, outdir, count, curl_rc, http_code, timeout = sys.argv[1:7]
+stage, outdir, count, curl_rc, http_code, timeout, model = sys.argv[1:8]
 count, curl_rc = int(count), int(curl_rc)
-labels = "ABCDEFGHIJ"
 
 
 def read(name):
@@ -130,6 +389,7 @@ elif curl_rc != 0:
     detail = api_message(resp) if resp is not None else read("curl.err").decode("utf-8", "replace").strip()[:300]
     status = f"HTTP {http_code}" if http_code and http_code != "000" else f"curl exit {curl_rc}"
     reason = f"request failed ({status}): {detail}" if detail else f"request failed ({status})"
+    reason += model_hint(http_code, detail, "VIBE_DESIGN_MODEL", model)
     if curl_rc == 2:
         reason += " (curl 7.76 or later is required for --fail-with-body)"
 elif resp is None:
@@ -137,39 +397,10 @@ elif resp is None:
 elif not isinstance(resp, dict) or not resp.get("data"):
     reason = api_message(resp)
 
-
-def claim(label, png):
-    """Write png under the first free variant-<label>[-N].png; never overwrite.
-
-    The image is written in full to a private temp file first and then published
-    with link(), which fails rather than replace an existing name. A failed write
-    therefore leaves no variant file behind for a later run to step around.
-    """
-    fd, tmp = tempfile.mkstemp(prefix=f".variant-{label}.", suffix=".tmp", dir=outdir)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(png)
-        os.chmod(tmp, 0o644)
-        n = 1
-        while True:
-            name = f"variant-{label}.png" if n == 1 else f"variant-{label}-{n}.png"
-            path = os.path.join(outdir, name)
-            try:
-                os.link(tmp, path)
-            except FileExistsError:
-                n += 1
-                continue
-            if n > 1:
-                sys.stderr.write(f"note: variant-{label}.png exists; saved to {name} (existing file kept)\n")
-            return path
-    finally:
-        os.unlink(tmp)
-
-
 saved, failures = [], []
 data = [] if reason else resp["data"]
 for i in range(count):
-    label = labels[i]
+    label = LABELS[i]
     if reason:
         failures.append((label, reason))
         continue
@@ -185,20 +416,13 @@ for i in range(count):
         failures.append((label, "API returned an empty image"))
         continue
     try:
-        saved.append(claim(label, png))
+        saved.append(claim(outdir, label, png))
     except OSError as e:
         failures.append((label, f"cannot write to {outdir}: {e.strerror or e}"))
-
-if not saved:
-    print("DESIGN_ERROR:", reason or failures[0][1])
-print(f"requested: {count}")
-for p in saved:
-    print(f"saved: {p}")
-print(f"failures: {len(failures)}")
-for label, why in failures:
-    print(f"failed: variant-{label}: {why}")
-sys.exit(0 if not failures else (2 if not saved else 3))
+report(count, saved, failures, reason)
 PY
+)" "$stage" "$outdir" "$count" "$curl_rc" "$http_code" "$TIMEOUT" "$MODEL" || exec_rc=$?
+    exit "$exec_rc"
     ;;
   check | compare | serve | approve)
     # The comparison-board / vision-critique verbs are not built into vibe-design,
@@ -207,6 +431,6 @@ PY
     echo "DESIGN_${1}_NOT_SUPPORTED: vibestack generates design variants only"
     exit 0 ;;
   *)
-    echo "usage: vibe-design status | variants --brief <prompt> | --brief-file <path> [--count N] [--output-dir <dir>] [--size WxH]"
+    echo "usage: vibe-design status | variants --brief <prompt> | --brief-file <path> [--count N] | --briefs-file <json> [--output-dir <dir>] [--size WxH]"
     exit 1 ;;
 esac

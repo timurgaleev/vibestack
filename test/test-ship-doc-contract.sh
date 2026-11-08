@@ -94,6 +94,50 @@ else
 fi
 grep -q 'git diff origin/<base>\.\.\.HEAD' "$SKILL" && ok "ranges read origin/<base>" || no "no origin/<base> range found"
 
+sec() { awk -v a="$1" -v b="$2" 'index($0,a)==1{on=1} on&&index($0,b)==1&&index($0,a)!=1{exit} on' "$SKILL"; }
+
+echo "Step 10: review bot triage reports its own failure"
+S10=$(sec '## Step 10: Address Greptile' '## Step 10b:')
+printf '%s' "$S10" | grep -q '"status"' && ok "triage JSON carries a status" || no "triage JSON has no status"
+printf '%s' "$S10" | grep -qF 'Review bot triage: UNAVAILABLE (' && ok "a failed fetch says UNAVAILABLE" || no "a failed fetch reads as zero comments"
+printf '%s' "$S10" | grep -qF 'Review bot triage: none' && ok "zero comments says none" || no "no green-path line for zero comments"
+printf '%s' "$S10" | grep -qi 'fixing commit SHA' && no "already-fixed replies still cite a fixing commit SHA" || ok "already-fixed replies cite the current diff"
+grep -qF 'Review bot triage:' "$SKILL" && sec '## Step 19: Create PR/MR' '## Step 19.5' | grep -qF 'Review bot triage:' \
+  && ok "PR body carries the triage line" || no "PR body has no triage line"
+
+echo "Step 19: PR lookup is honest"
+LB="$TMP/lookup.sh"
+awk '/\*\*Idempotency check:\*\* Check if a PR\/MR already exists/{s=1} s&&/^```bash$/{on=1;next} on&&/^```$/{exit} on' "$SKILL" > "$LB"
+mkdir -p "$TMP/stub"
+cat > "$TMP/stub/gh" <<'SH'
+#!/usr/bin/env bash
+[ "$1 $2" = "pr view" ] || exit 1
+[ -n "${STUB_ERR:-}" ] && { printf '%s\n' "$STUB_ERR" >&2; exit 1; }
+echo "PR #7: https://x/pull/7"
+SH
+chmod +x "$TMP/stub/gh"
+look() { ( cd "$TMP" && PATH="$TMP/stub:$PATH" STUB_ERR="$1" bash "$LB" 2>&1 ); }
+out=$(look 'no pull requests found for branch "feat/x"'); rc=$?
+case "$out" in *NO_PR*) ok "'no pull requests found' -> NO_PR" ;; *) no "no-PR stderr reads as: $out" ;; esac
+out=$(look 'HTTP 401: Bad credentials (https://api.github.com/graphql)'); rc=$?
+case "$out" in *NO_PR*) no "a failed lookup reads as NO_PR (a duplicate PR would be opened): $out" ;;
+  *PR_LOOKUP_FAILED*) [ "$rc" -ne 0 ] && ok "any other gh error -> PR_LOOKUP_FAILED, non-zero" || no "lookup failure exits 0" ;;
+  *) no "auth failure reads as: $out" ;; esac
+out=$(look ''); case "$out" in "PR #7"*) ok "an open PR still reads as open" ;; *) no "open PR reads as: $out" ;; esac
+
+echo "Step 19: title and body"
+S19=$(sec '## Step 19: Create PR/MR' '## Step 19.5')
+printf '%s' "$S19" | grep -qF -- '--title "v$NEW_VERSION' && no "the PR title is still spliced into shell source" || ok "no title spliced into shell source"
+printf '%s' "$S19" | grep -qF -- '--title "$(cat "$TITLE_FILE")"' && ok "gh reads the title from a written file" || no "gh title not read from a file"
+printf '%s' "$S19" | grep -qF '## Blast radius' && ok "PR body has a Blast radius section" || no "no Blast radius section"
+printf '%s' "$S19" | grep -qi "problem in the user's words" && ok "Summary opens with the problem" || no "Summary does not open with the problem"
+
+echo "Step 14: follow-ups are real"
+S14=$(sec '## Step 14: TODOS.md' '## Step 14.5')
+printf '%s' "$S14" | grep -qi 'never invent' && ok "Step 14 never invents follow-ups" || no "no never-invent rule"
+printf '%s' "$S14" | grep -qi 'already in TODOS.md' && ok "Step 14 dedupes" || no "no dedupe rule"
+printf '%s' "$S14" | grep -qi 'cannot be written.*PR body\|PR body.*cannot be written' && ok "a failed write carries items in the PR body" || no "a failed TODOS write drops the items"
+
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

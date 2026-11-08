@@ -33,6 +33,13 @@ If no findings: output `NO FINDINGS` and nothing else.
 - Assertions on ordering of unordered results (hash keys, Set iteration, async resolution order)
 - Tests that depend on external services (APIs, databases) without fallback
 - Randomized test data without seed control
+- A diff that raises a timing bound or adds a retry to make a flaky test pass
+
+### Gate integrity
+- Tests removed, disabled or narrowed (`.skip`, `.only`, `xit`, `@pytest.mark.skip`, `t.Skip`, `#[ignore]`, `@Disabled`), assertions deleted, a snapshot regenerated with no test change, a threshold lowered or a timeout raised. CRITICAL unless the diff states why; the main pass's Gate integrity category owns the disposition.
+
+### Negative Assertions
+- A test that only asserts absence (`not.toContain`, `assertNotIn`, `! grep -q`, an empty-findings check) passes just as well when the code under test crashed, printed nothing or never ran. Pair it with a positive assertion that proves the code ran on the input
 
 ### Security Enforcement Tests Missing
 - Auth/authz checks in controllers with no test for the "unauthorized" case
@@ -62,7 +69,7 @@ A new or changed test passes the value bar only when all four answers exist (rea
 
 Patterns:
 - Assertion-free tests: the test calls the code and asserts nothing, or only that it did not throw
-- Self-comparisons: the expected value is computed by the code under test, or is a copy of the
+- Self-comparisons: the expected value is computed by the code under test, or recomputed the way the code computes it, or is a copy of the
   actual value (`expect(f(x)).toEqual(f(x))`, a snapshot of a fixture the test also builds)
 - Copied fixtures, inventories or export lists that restate the source instead of checking behavior
 - Exact source, import or string greps that are not a declared contract

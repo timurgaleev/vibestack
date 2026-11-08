@@ -6,20 +6,15 @@ allowed-tools:
   - Bash
   - Read
   - AskUserQuestion
-triggers:
-  - upgrade vibestack
-  - update vibestack
-  - update the skills
-  - pull latest skills
-  - get the latest vibestack
+disable-model-invocation: true
 ---
 
 ## When to invoke
 
-Use when asked to "upgrade", "update vibestack", "get the latest skills", or
-after `vibe-update-check` reports a newer version is available (a preamble that
-sees `UPDATE:` in the update-check output runs the **Inline upgrade flow** below;
-a direct `/vibe-upgrade` runs **Standalone usage**).
+Only when the user types `/vibe-upgrade`. Upgrading rewrites the installed pack, so a
+passing "update" in conversation, or an `UPDATE:` line from `vibe-update-check`, is not a
+request to run it — point to the command instead. A typed run that starts from an
+`UPDATE:` line follows the **Inline upgrade flow** below; otherwise **Standalone usage**.
 
 # /vibe-upgrade — Update vibestack to the latest release
 

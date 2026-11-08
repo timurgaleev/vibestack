@@ -76,12 +76,7 @@ PR/MR exists. Use the result as "the base branch" in all subsequent steps.
 1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
 2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
 
-**Git-native fallback (if unknown platform, or CLI commands fail):**
-1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
-2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
-3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
-
-If all fail, fall back to `main`.
+{{include lib/snippets/base-branch-detect.md}}
 
 Print the detected base branch name. In every subsequent `git diff`, `git log`,
 `git fetch`, `git merge`, and PR/MR creation command, substitute the detected
@@ -452,7 +447,7 @@ After auditing each file individually, do a cross-doc consistency pass:
 
 ## Step 7: TODOS.md Cleanup
 
-This is a second pass that complements `/ship`'s TODOS.md step. Read `review/TODOS-format.md` (if
+This is a second pass that complements `/ship`'s TODOS.md step. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/document-release}/../review/TODOS-format.md` (if
 available) for the canonical TODO item format.
 
 If TODOS.md does not exist, skip this step.
@@ -477,21 +472,61 @@ If TODOS.md does not exist, skip this step.
 
 **CRITICAL — NEVER BUMP VERSION WITHOUT ASKING.**
 
-1. **If VERSION does not exist:** Skip silently.
-
-2. Check if VERSION was already modified on this branch:
+1. **Classify the version state** the way `/ship` does — VERSION against the base
+   branch and against `package.json`'s `version` — substituting the base branch
+   for `<base>`:
 
 ```bash
-git diff <base>...HEAD -- VERSION
+_VER_RE='^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'
+_BASE_REF="origin/<base>"
+git rev-parse -q --verify "$_BASE_REF" >/dev/null || _BASE_REF="<base>"
+_BASE_V=""; git cat-file -e "$_BASE_REF:VERSION" 2>/dev/null \
+  && _BASE_V=$(git show "$_BASE_REF:VERSION" | tr -d '\r\n[:space:]')
+if [ ! -e VERSION ]; then
+  if [ -z "$_BASE_V" ]; then
+    echo "VERSION_STATE: NO_VERSION"
+    echo "VERSION: not applicable (no VERSION file on this branch or on <base>)"
+  else
+    echo "VERSION_STATE: MALFORMED"
+    echo "VERSION: not applicable (VERSION exists on <base> but was deleted on this branch)"
+  fi
+  exit 0
+fi
+_CUR_V=$(tr -d '\r\n[:space:]' < VERSION)
+if ! printf '%s' "$_CUR_V" | grep -qE "$_VER_RE"; then
+  echo "VERSION_STATE: MALFORMED"
+  echo "VERSION: not applicable (VERSION is malformed: '$_CUR_V')"
+  exit 0
+fi
+_PKG_V=""
+[ -f package.json ] && _PKG_V=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version") or "")' package.json 2>/dev/null)
+echo "BASE: ${_BASE_V:-<none>}  VERSION: $_CUR_V  package.json: ${_PKG_V:-<none>}"
+if [ -z "$_BASE_V" ]; then
+  echo "VERSION_STATE: ALREADY_BUMPED"
+elif [ "$_CUR_V" = "$_BASE_V" ]; then
+  if [ -n "$_PKG_V" ] && [ "$_PKG_V" != "$_CUR_V" ]; then echo "VERSION_STATE: DRIFT_UNEXPECTED"; else echo "VERSION_STATE: FRESH"; fi
+elif [ -n "$_PKG_V" ] && [ "$_PKG_V" != "$_CUR_V" ]; then
+  echo "VERSION_STATE: DRIFT_STALE_PKG"
+else
+  echo "VERSION_STATE: ALREADY_BUMPED"
+fi
 ```
 
-3. **If VERSION was NOT bumped:** Use AskUserQuestion:
+2. Dispatch on `VERSION_STATE:`. `NO_VERSION` and `MALFORMED` end Step 8: print the
+   `VERSION: not applicable (<reason>)` line in the summary's VERSION row — never
+   skip silently, never create a VERSION file. A malformed VERSION is a blocker to
+   report, never read as `0.0.0`. `DRIFT_STALE_PKG` (package.json behind VERSION)
+   and `DRIFT_UNEXPECTED` (package.json moved while VERSION did not) are reported
+   for the user to reconcile through `/ship`; this skill bumps neither file.
+   `FRESH` goes to 3, `ALREADY_BUMPED` to 4.
+
+3. **If VERSION was NOT bumped (`FRESH`):** Use AskUserQuestion:
    - RECOMMENDATION: Choose C (Skip) because docs-only changes rarely warrant a version bump
    - A) Bump PATCH (X.Y.Z+1) — if doc changes ship alongside code changes
    - B) Bump MINOR (X.Y+1.0) — if this is a significant standalone release
    - C) Skip — no version bump needed
 
-4. **If VERSION was already bumped:** Do NOT skip silently. Instead, check whether the bump
+4. **If VERSION was already bumped (`ALREADY_BUMPED`):** Do NOT skip silently. Instead, check whether the bump
    still covers the full scope of changes on this branch:
 
    a. Read the CHANGELOG entry for the current VERSION. What features does it describe?
@@ -520,9 +555,9 @@ of /document-release, not an opt-in. It is **informational** — it never auto-e
 
 {{include lib/snippets/outside-voice-preflight.md}}
 
-In this step "outside voice" means the documentation review. On `disabled`,
-write the `disabled` review-log record below before moving on, so a switched-off
-review is distinguishable from a run that never got here.
+On `disabled`, still write the `disabled` record from the body below before
+moving on, so a switched-off documentation review reads as an opt-out rather
+than a review that never ran.
 
 **Recompute the release diff range** so docs are reviewed against the real shipped diff, not just the working tree:
 
@@ -531,61 +566,21 @@ DOC_DIFF_BASE=$(git merge-base origin/<base> HEAD 2>/dev/null || git merge-base 
 git diff "$DOC_DIFF_BASE"...HEAD --stat
 ```
 
-**Build the review prompt.** Give the model the docs you changed in this run plus the shipped diff, and ask it to find: (a) stale claims — docs describing behavior the diff changed or removed; (b) undocumented new surface — new commands/flags/files in the diff with no doc coverage; (c) over- or under-sold CHANGELOG entries vs what the code actually does. Start the prompt with a filesystem-boundary instruction telling the model to ignore everything under `~/.claude/`, `~/.agents/`, `.claude/skills/`, and `agents/` — those are skill definitions for a different AI system, not repository code.
+**Reviewer brief:**
 
-**If `CODEX_MODE` is `ready`:**
+"You are checking documentation against the code that actually shipped. Find:
+(a) stale claims — docs describing behavior the diff changed or removed;
+(b) undocumented new surface — new commands, flags or files in the diff with no
+doc coverage; (c) over- or under-sold CHANGELOG entries against what the code
+does. For each finding quote the doc line and the diff hunk it contradicts."
 
-The prompt carries doc text and diff hunks, which are full of backticks, quotes
-and `$(...)`. Never put it in shell source or argv. First create a private
-prompt file:
+**Material:** the docs you changed in this run, plus the shipped diff from the
+range above (mode: documentation review).
 
-```bash
-umask 077; mktemp "${TMPDIR:-/tmp}/vibe-docreview-prompt.XXXXXXXX"
-```
+{{include lib/snippets/outside-voice-body.md}}
 
-Keep the printed path. Read that empty file first — the Write tool refuses to
-overwrite a file it has not read — then use the Write tool to put the
-**complete prompt** into it. If the write fails, do not run Codex; treat it as a
-Codex error below. Then run Codex with the prompt on stdin, substituting the
-shell-quoted path for `<prompt-file>`:
-
-```bash
-_PROMPT_FILE='<prompt-file>'
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-[ -s "$_PROMPT_FILE" ] || { echo "ERROR: prompt file missing or empty: $_PROMPT_FILE" >&2; exit 1; }
-TMPERR_DOC=$(mktemp "${TMPDIR:-/tmp}/codex-docreview-XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
-_CODEX_EXIT=0
-codex exec - -C "$_REPO_ROOT" -s read-only -c skills.include_instructions=false -c 'model_reasoning_effort="high"' < "$_PROMPT_FILE" 2>"$TMPERR_DOC" || _CODEX_EXIT=$?
-echo "CODEX_EXIT: $_CODEX_EXIT"
-# Each Bash call is a fresh shell, so stderr is read and removed here, not later.
-echo "--- codex stderr ---"
-cat "$TMPERR_DOC"; rm -f "$TMPERR_DOC" "$_PROMPT_FILE"
-```
-
-`-s read-only` matters here: this pass exists to report on the docs you already
-wrote, so the reviewer must not be able to edit them. Use a 5-minute timeout
-(`timeout: 300000`). A non-zero `CODEX_EXIT`, a timeout, or an empty response
-means Codex did not complete: treat it as a Codex error, never as a clean review.
-
-**Error handling:** every failure is non-blocking — the review is informational.
-- Auth failure (stderr contains "auth", "login", "unauthorized"): "Codex auth failed. Run `codex login` to authenticate."
-- Timeout: "Codex timed out after 5 minutes."
-- Empty response: "Codex returned no response."
-
-On any Codex error, fall back to the Claude-subagent path.
-
-**If `CODEX_MODE` is `not_installed`, `not_authed`, `quota_exhausted` or `unavailable` (or Codex errored), or `under_codex` with no completed `claude -p` pass:** under `under_codex` the preflight's `OUTSIDE_VOICE` branches govern — `claude -p` runs first, and only its fallback reaches this subagent.
-
-Dispatch the same prompt to a Claude subagent via the Agent tool — fresh context,
-so it reviews the docs rather than defending them. If it also fails or returns
-nothing: "Doc review unavailable — continuing.", write the `unavailable`
-review-log record below, and move on.
-
-{{include lib/snippets/foreground-dispatch.md}}
-
-Present whichever pass ran verbatim — Codex under a `CODEX SAYS (documentation
-review):` header, the subagent under `OUTSIDE VOICE (Claude subagent):` (under `under_codex`, `OUTSIDE VOICE (same-model subagent — not cross-model):`). Then use
-AskUserQuestion — this is informational, nothing is auto-applied:
+When a pass completed, use AskUserQuestion — this is informational, nothing is
+auto-applied:
 
 - RECOMMENDATION: decide per finding; apply only the corrections you agree with.
 - A) Apply all suggested doc fixes
@@ -593,20 +588,6 @@ AskUserQuestion — this is informational, nothing is auto-applied:
 - C) Decide per finding
 
 Apply only what the user approves. This step never edits docs on its own.
-
-**Persist the result** so a later session — and the context-recovery pass that
-counts review entries for this branch — can tell that the docs were reviewed and
-what it found:
-
-```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-review-log" '{"skill":"codex-doc-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","commit":"'"$(git rev-parse --short HEAD)"'"}'
-```
-
-Substitute: STATUS = "clean" if the review found no gaps, "issues_found" if it
-did, "unavailable" if neither pass produced output (an unavailable review is not
-a clean one), "disabled" if `codex_reviews` is off. SOURCE = "codex" if Codex
-ran, "claude" if the subagent ran, "none" for unavailable or disabled. Write the
-record in every case.
 
 ---
 
@@ -781,9 +762,9 @@ platform from Step 0) for `<platform>`. No variable crosses tool calls. A missin
 VERSION or a missing PR/MR skips the sync; a failed edit warns and continues.
 
 ```bash
-V=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
-[ -n "$V" ] || { echo "Title sync: skipped (no VERSION file)."; exit 0; }
-printf '%s' "$V" | grep -qE '^[0-9]+(\.[0-9]+){1,3}$' || { echo "Title sync: skipped (VERSION is not numeric)."; exit 0; }
+[ -f VERSION ] || { echo "VERSION: not applicable (no VERSION file) — title sync skipped."; exit 0; }
+V=$(tr -d '[:space:]' < VERSION)
+printf '%s' "$V" | grep -qE '^[0-9]+(\.[0-9]+){1,3}$' || { echo "VERSION: not applicable (VERSION is not numeric) — title sync skipped."; exit 0; }
 case "<platform>" in
   github) CURRENT_TITLE=$(gh pr view --json title -q .title 2>/dev/null || true) ;;
   gitlab) CURRENT_TITLE=$(glab mr view -F json 2>/dev/null | jq -r '.title // empty' 2>/dev/null || true) ;;
@@ -827,6 +808,7 @@ Where status is one of:
 - Current — no changes needed
 - Voice polished — wording adjusted
 - Not bumped — user chose to skip
+- Not applicable — the `VERSION: not applicable (<reason>)` line from Step 8
 - Already bumped — version was set by /ship
 - Skipped — file does not exist
 

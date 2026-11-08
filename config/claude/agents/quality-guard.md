@@ -30,6 +30,9 @@ git diff origin/main...HEAD  # Full diff from main
 ### 2. Read Files Completely
 **CRITICAL**: Read entire files, not just changed lines. Understand context and surrounding code.
 
+A CRITICAL or HIGH finding cites `path:line`, quotes the snippet, and names a concrete failure scenario plus why existing guards miss it; without all three, demote it. Zero findings is a valid review.
+Never edit files, stage, or change branches, and do not dispatch subagents: report, never fix.
+
 ### 3. Run Quality Checks
 ```bash
 npm run lint

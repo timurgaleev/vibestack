@@ -10,6 +10,10 @@ If no findings: output `NO FINDINGS` and nothing else.
 
 ## Categories
 
+### Documented standards
+- Before reviewing, list the style or standards sections the repo documents: `grep -n '^#' CONTRIBUTING* CODING_STANDARDS* CLAUDE.md AGENTS.md 2>/dev/null`. A breach of one cites the file and the rule it breaks (`CONTRIBUTING.md: "<rule>"`).
+- Named smells (long function, deep nesting, god object, feature envy, primitive obsession, shotgun surgery) are an INFORMATIONAL baseline, at most 6 per review, and suppressed when a documented standard or a configured linter already covers them.
+
 ### Dead Code & Unused Imports
 - Variables assigned but never read in the changed files
 - Functions/methods defined but never called (check with Grep across the repo)
@@ -29,8 +33,8 @@ If no findings: output `NO FINDINGS` and nothing else.
 - ASCII diagrams in comments that no longer match the code flow
 
 ### DRY Violations
-- Similar code blocks (3+ lines) appearing multiple times within the diff
-- Copy-paste patterns where a shared helper would be cleaner
+- Duplicated behavior with a demonstrated defect: copies that already diverge (one fixed or extended, the other not) — cite both sites. Similar-looking code with no divergence is not a finding
+- A user-facing string (message, label, help text) repeated at sites where its guard changed in one and not the other
 - Configuration or setup logic duplicated across test files
 - Repeated conditional chains that could be a lookup table or map
 

@@ -1,7 +1,7 @@
 ---
 name: diagram
 description: |
-  Render a Mermaid diagram to self-contained HTML, SVG and PNG with the browse shim; no diagram toolchain.
+  Render Mermaid to self-contained HTML, SVG, PNG and an Excalidraw scene; no diagram toolchain.
 allowed-tools:
   - Bash
   - Read
@@ -27,7 +27,8 @@ self-contained page (`lib/diagram-render/dist/diagram-render.html`, mermaid
 pinned at build time), so the browse shim turns your source into SVG with no
 network at all. The SVG is inlined into the HTML artifact you keep — it opens in
 any browser, on any machine, forever, with nothing to fetch — and the PNG comes
-from the same `$B` you already use for QA.
+from the same `$B` you already use for QA. The same page also converts the
+source into an editable `.excalidraw` scene.
 
 {{include lib/snippets/browse-setup.md}}
 
@@ -66,7 +67,7 @@ versions never clobber each other:
 
 ```bash
 B='<BROWSE_BIN>'
-OUT="${OUT:-./diagram}"            # base path; produces $OUT.mmd, $OUT.html, $OUT.png
+OUT="${OUT:-./diagram}"            # base path; produces $OUT.mmd/.svg/.html/.png/.excalidraw
 mkdir -p "$(dirname "$OUT")"
 echo "OUT: $OUT"
 
@@ -124,15 +125,38 @@ touches the Mermaid text. The blocks below start from fresh shells: replace
 B='<BROWSE_BIN>'
 OUT='<OUT>'
 TAB='<TAB>'
-"$B" js "__renderMermaid('diagram-1', $(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$OUT.mmd"))" \
+SRC=$(python3 -I -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$OUT.mmd")
+"$B" js "__renderMermaid('diagram-1', $SRC)" --tab-id "$TAB" --out "$OUT.svg"
+"$B" js "__mermaidToExcalidraw($SRC)" --tab-id "$TAB" --out "$OUT.excalidraw"
+"$B" closetab "$TAB" >/dev/null 2>&1 || true
+```
+
+If the first call errors, the Mermaid has a syntax problem — read the error, fix
+`$OUT.mmd`, and re-render. If only the scene call errors, keep the SVG and
+report the scene as not produced; it is a bonus artifact, not a gate. Do not fall back to a CDN page: rendering is offline
+by design, and a silent network fallback turns an air-gapped failure into a
+blank diagram nobody notices.
+
+#### Re-render an edited scene
+
+When the user edits `$OUT.excalidraw` (excalidraw.com, the VS Code extension)
+and wants the picture back, open a render tab exactly as above and swap the
+render block for the scene call, then continue with Step 3:
+
+```bash
+B='<BROWSE_BIN>'
+OUT='<OUT>'
+TAB='<TAB>'
+"$B" js "__excalidrawToSvg($(python3 -I -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$OUT.excalidraw"))" \
   --tab-id "$TAB" --out "$OUT.svg"
 "$B" closetab "$TAB" >/dev/null 2>&1 || true
 ```
 
-If the call errors, the Mermaid has a syntax problem — read the error, fix
-`$OUT.mmd`, and re-render. Do not fall back to a CDN page: rendering is offline
-by design, and a silent network fallback turns an air-gapped failure into a
-blank diagram nobody notices.
+Image elements render only from the scene's own embedded `files`; an image that
+points at a URL stays blank, because the page never fetches. Flowcharts convert
+shape by shape; a diagram type the converter does not support comes back as one
+image element, so the scene opens but is not editable piece by piece — say so
+when it happens.
 
 ### 3. Inline the SVG into the HTML artifact, then screenshot it
 
@@ -152,7 +176,7 @@ if [ -n "${B:-}" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]
   # pipe-separated argument; the shim's one-argument-per-step form would run
   # only the goto here.
   "$B" chain "goto \"file://$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT").html\" | wait --load | screenshot \"$OUT.png\""
-  echo "DIAGRAM: $OUT.png (and $OUT.html, $OUT.svg, $OUT.mmd)"
+  echo "DIAGRAM: $OUT.png (and $OUT.html, $OUT.svg, $OUT.mmd, $OUT.excalidraw)"
 else
   echo "DIAGRAM_HTML_ONLY: $OUT.html — open it in a browser (no shim for PNG)"
 fi
@@ -164,13 +188,14 @@ fixed timer — nothing is still rendering when the screenshot fires.
 ### 4. Report
 
 List the artifacts: `.mmd` (the source to edit), `.svg` (vector for docs),
-`.html` (opens anywhere, offline), `.png` (for chat and READMEs).
+`.html` (opens anywhere, offline), `.png` (for chat and READMEs), `.excalidraw`
+(a scene to hand-edit, then re-render as above).
 
 ## Notes
 
-- **Mermaid is the supported format.** Excalidraw, DOCX, and multi-page exports
-  are not rendered here — for those, hand the user the HTML or use a dedicated
-  tool.
+- **Mermaid is the source format.** The Excalidraw scene is derived from it and
+  can be edited and re-rendered here; DOCX and multi-page exports are not — hand
+  the user the HTML or use a dedicated tool.
 - **Fully offline.** The renderer is vendored in the repo, and the HTML artifact
   carries the finished SVG inline — no CDN, no network, at render time or later.
 - **PDF-bound diagrams belong to `/make-pdf`.** It renders a ```` ```mermaid ````

@@ -1,6 +1,6 @@
 {
   "name": "vibestack",
-  "version": "1.55.39",
+  "version": "1.56.0",
   "description": "vibestack \u2014 AI coding skills + a fast headless browser daemon. One repo, one install, the whole workflow.",
   "license": "MIT",
   "type": "module",
@@ -23,7 +23,7 @@
     "diff": "^7.0.0",
     "html-to-docx": "1.8.0",
     "marked": "^18.0.2",
-    "playwright": "^1.58.2",
+    "playwright": "~1.64.1",
     "socks": "^2.8.8"
   },
   "optionalDependencies": {

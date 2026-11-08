@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # vibe-learnings-log — append a learning entry to the project's learnings.jsonl
 # Usage: vibe-learnings-log '<json>'
+#        vibe-learnings-log --forget KEY TYPE   remove every entry for KEY of TYPE
 # JSON schema: {"skill":"<name>","type":"<type>","key":"<key>","insight":"<text>","confidence":<1-10>,"source":"<src>","files":[...]}
 set -euo pipefail
 # bash 5.2+ writes a heredoc under 64 KiB into a pipe and can hang on a small macOS pipe;
@@ -22,6 +23,40 @@ LEARN_DIR="$VIBESTACK_HOME/projects/$SLUG"
 mkdir -p "$LEARN_DIR"
 
 LEARN_FILE="$LEARN_DIR/learnings.jsonl"
+
+# /learn prune removes through here, so the rewrite is a filter, not a file the
+# model retypes. Updates are appended, so one key+type can hold several lines;
+# every one goes. Lines that do not parse are kept as they are.
+if [ "$JSON" = "--forget" ]; then
+  [ $# -eq 3 ] || { echo "Usage: vibe-learnings-log --forget KEY TYPE" >&2; exit 1; }
+  [ -f "$LEARN_FILE" ] || { echo "Forgot 0 entries (no learnings file)"; exit 0; }
+  python3 -I - "$LEARN_FILE" "$2" "$3" <<'PYEOF'
+import json, os, re, sys, tempfile
+path, key, etype = sys.argv[1:4]
+if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", key) or not re.fullmatch(r"[a-z-]{1,40}", etype):
+    sys.stderr.write("Error: KEY must be 1-80 of [A-Za-z0-9._-], TYPE a lowercase type name\n")
+    sys.exit(1)
+kept, dropped = [], 0
+with open(path, encoding="utf-8", errors="surrogateescape") as f:
+    for line in f:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            e = None
+        if isinstance(e, dict) and e.get("key") == key and e.get("type") == etype:
+            dropped += 1
+        else:
+            kept.append(line if line.endswith("\n") else line + "\n")
+if dropped:
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".learnings.")
+    with os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape") as out:
+        out.writelines(kept)
+    os.chmod(tmp, os.stat(path).st_mode & 0o777)
+    os.replace(tmp, path)
+print(f"Forgot {dropped} entries ({etype} / {key})")
+PYEOF
+  exit $?
+fi
 
 # Inject timestamp, branch, commit if not present
 BRANCH=$(git branch --show-current 2>/dev/null || echo "")

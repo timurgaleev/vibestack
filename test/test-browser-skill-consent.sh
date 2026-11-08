@@ -12,6 +12,7 @@
 #                          report dir with a real prior baseline, red tests kept,
 #                          and (/qa) the regression test before the commit
 #   /canary                an SSE endpoint behind a login is unknown, not silent
+#   /scrape                Step 0 matches installed slash skills, nothing else
 #
 # The /open-browser probe is also executed against a stub `$B`, so a probe that
 # boots a daemon, misreads the status, or kills a process fails here.
@@ -95,6 +96,14 @@ for mode in none headed live; do
   fi
 done
 
+echo "open-browser: describes the side panel that ships"
+refute "no removed sidebar chat or child agent" 'chat tab|[Ss]idebar chat|sidebar agent' "$OB"
+refute "never calls the bundled daemon unbundled" 'does not bundle' "$OB"
+for part in 'Cleanup' 'Screenshot' 'Cookies' 'Activity' 'Refs' 'Inspector'; do
+  check "side panel walk-through names $part" "\\*\\*$part\\*\\*" "$OB"
+done
+check "NEEDS_SETUP names the real launcher failures" 'bun install' "$OB"
+
 # ── /pair-agent ──────────────────────────────────────────────────────────────
 echo "pair-agent: relaunch consent and tunnel enforcement"
 PA="$(render pair-agent)"
@@ -129,6 +138,8 @@ for state in 'Not checked' 'Not verified' 'Verified'; do
   check "names the '$state' state" "\*\*$state\*\*" "$SC"
 done
 check "counts never prove login" 'never proves a login' "$SC"
+refute "no CDP-mode branch the daemon can never report" 'Mode: cdp' "$SC"
+check "says imported cookies cover the whole context" 'whole browser context' "$SC"
 
 # ── /browse ──────────────────────────────────────────────────────────────────
 echo "browse: driving rules"
@@ -152,6 +163,12 @@ check "never prints session material" 'Never print session material' "$RULES"
 check "js/eval output is unwrapped but untrusted" '`\$B js` and `\$B eval` output is NOT wrapped' "$RULES"
 check "untrusted-content block covers js/eval" '^> 5\. `js` and `eval` output is NOT wrapped' "$BR"
 refute "no QA example types a bare \"password\"" 'fill @e[0-9]+ "password"' "$BR"
+check "browse: stays on the origin it was given" '[Ss]tay on the origin' "$RULES"
+check "browse: ends with a ## Report block" '^## Report' "$BR"
+for field in 'URL' 'Console errors' 'snapshot -D' 'Screenshots' 'Verdict'; do
+  check "browse: the report carries $field" "$field" <(section "$BR" '^## Report' '^## [^R]')
+done
+check "browse: names silent failures" 'Silent failures' "$BR"
 
 # ── /qa and /qa-only ─────────────────────────────────────────────────────────
 for name in qa qa-only; do
@@ -234,19 +251,16 @@ fi
 kill "$SSE_PID" 2>/dev/null; wait "$SSE_PID" 2>/dev/null
 
 # ── /scrape ──────────────────────────────────────────────────────────────────
-# A browser-skill script runs with a read+write daemon token (it can click, fill
-# and submit), so the read-only /scrape may only run one on an explicit yes.
-echo "scrape: a browser-skill runs only with consent"
+# Nothing in the pack writes browser-skills, so a lookup there can never match;
+# it only asked a consent question about a read+write script that never exists.
+echo "scrape: Step 0 matches installed slash skills only"
 SR="$(render scrape)"
 MATCH="$TMP/sr-match.md"
 section "$SR" '^### 0\. Match' '^### 1\. ' > "$MATCH"
 [ -s "$MATCH" ] || { echo "Step 0 not found in scrape" >&2; exit 1; }
-MATCH1="$(tr '\n' ' ' < "$MATCH")"
-check "scrape: says a browser-skill gets a read+write token" 'read\+write' <(printf '%s\n' "$MATCH1")
-check "scrape: asks before running a browser-skill" 'AskUserQuestion' "$MATCH"
-check "scrape: runs it only on an explicit A" 'Only an explicit A runs' <(printf '%s\n' "$MATCH1")
-check "scrape: never runs one in spawned/headless sessions" 'spawned.*headless.*do not run' <(printf '%s\n' "$MATCH1")
-refute "scrape: no bash block runs a browser-skill unasked" 'skill run' <(fenced_bash "$MATCH")
+check "scrape: lists the installed skill roots" 'ls -1 ~/\.claude/skills' <(fenced_bash "$MATCH")
+refute "scrape: no browser-skill lookup" 'skill (list|show|run)' "$MATCH"
+refute "scrape: no consent question for a script that never exists" 'read\+write|AskUserQuestion' "$MATCH"
 
 echo
 echo "passed: $pass  failed: $fail"

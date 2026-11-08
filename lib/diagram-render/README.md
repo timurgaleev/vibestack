@@ -8,8 +8,10 @@ back with `js --out`.
 
 The built page is **committed** (eng-review D2): rendering works with zero
 network at install time and render time, and there is no npm supply-chain
-surface in `./setup`. The drift test (`test/diagram-render-drift.test.ts`)
-fails CI if `dist/` is edited by hand or falls out of sync with `BUILD_INFO.json`.
+surface in `./setup`. `scripts/check-bundle.ts` (run by `test/check-bundle.test.ts`)
+fails if `dist/` is edited by hand or falls out of sync with `BUILD_INFO.json`,
+if a security override in `package.json` did not take, or if the bundle carries
+more than one DOMPurify.
 
 ## Page API (window functions)
 
@@ -34,8 +36,15 @@ Page errors accumulate in `window.__errors`.
 cd lib/diagram-render && bun install
 # 2. rebuild (deterministic; build twice → same sha)
 bun run build
-# 3. commit package.json + bun.lock + dist/ together
+# 3. verify, then commit package.json + bun.lock + dist/ together
+bun run scripts/check-bundle.ts
 ```
+
+Keep the excalidraw triplet coherent: `@excalidraw/excalidraw` pins its own
+`@excalidraw/mermaid-to-excalidraw`, and that one names a mermaid range. Pin all
+three so bun.lock holds one copy of each — a mismatch nests a second, older
+mermaid (with its own DOMPurify) inside the bundle. `overrides` force one
+patched version of the transitive packages with published advisories.
 
 Render contract details (securityLevel strict, htmlLabels false, print-css font
 lock, `<base href>` + `</scri` escaping) are documented in `src/entry.ts` and

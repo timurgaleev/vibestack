@@ -178,9 +178,13 @@ Before reviewing code quality, check: **did they build what was requested — no
    Scope Check: [CLEAN / DRIFT DETECTED / REQUIREMENTS MISSING]
    Intent: <1-line summary of what was requested>
    Delivered: <1-line summary of what the diff actually does>
+   Diff read: full|partial
+   Undeclared behavior changes: <behavior the diff changes that no intent source mentions> | none
    [If drift: list each out-of-scope change]
    [If missing: list each unaddressed requirement]
    \`\`\`
+
+   `Diff read: partial` is itself DRIFT DETECTED: name every path you did not read.
 
 6. This is **INFORMATIONAL** — does not block the review. Proceed to the next step.
 
@@ -242,7 +246,7 @@ Before judging completion, classify HOW each item can be verified. The diff alon
 
 **Path concreteness rule.** If a plan item names a *concrete filesystem path* (absolute, `~/...`, or `<sibling-repo>/<file>`), it MUST be classified DONE or NOT DONE based on `[ -f <path> ]`. UNVERIFIABLE is only valid when the path is genuinely abstract ("DNS record", "managed-DB allowlist") or the sibling root is unreachable on this machine. "I don't want to check" is not unreachable.
 
-**Validator detection.** Before falling back to UNVERIFIABLE on a CONTENT-SHAPE item, scan the target repo's `package.json` for a script matching `validate-*`, `check-docs`, `lint-*`, or similar. If found, invoke it with the relevant path argument. A passing validator promotes the item from UNVERIFIABLE to DONE; a failing one demotes it to NOT DONE.
+**Validator detection.** Before falling back to UNVERIFIABLE on a CONTENT-SHAPE item, scan the target repo's `package.json` for a script matching `validate-*`, `check-docs`, `lint-*`, or similar. Read the script and any hooks it triggers (`pre`/`post` scripts) before running it: run it only when its effects are verified read-only — no app launch, API call or state mutation — and never in plan mode; otherwise the item stays UNVERIFIABLE. If it is safe, invoke it with the relevant path argument. A passing validator promotes the item from UNVERIFIABLE to DONE; a failing one demotes it to NOT DONE.
 
 **Honesty rule.** Do NOT classify an item DONE just because related code shipped. Code that *handles* a deliverable is not the deliverable. When in doubt between DONE and UNVERIFIABLE, prefer UNVERIFIABLE — better to surface a confirmation prompt than silently miss a deliverable.
 
@@ -350,7 +354,7 @@ The plan completion results augment the existing Scope Drift Detection. If a pla
 
 - **NOT DONE items** become additional evidence for **MISSING REQUIREMENTS** in the scope drift report.
 - **Items in the diff that don't match any plan item** become evidence for **SCOPE CREEP** detection.
-- **HIGH-impact discrepancies** trigger AskUserQuestion:
+- **HIGH-impact discrepancies against the plan file** (never commit-message or TODOS-derived ones) trigger AskUserQuestion — a spawned or headless run reports them and continues:
   - Show the investigation findings
   - Options: A) Stop and implement missing items, B) Ship anyway + create P1 TODOs, C) Intentionally dropped
 
@@ -363,6 +367,8 @@ Scope Check: [CLEAN / DRIFT DETECTED / REQUIREMENTS MISSING]
 Intent: <from plan file — 1-line summary>
 Plan: <plan file path>
 Delivered: <1-line summary of what the diff actually does>
+Diff read: full|partial
+Undeclared behavior changes: <...> | none
 Plan items: N DONE, M PARTIAL, K NOT DONE
 [If NOT DONE: list each missing item with investigation]
 [If scope creep: list each out-of-scope change not in the plan]
@@ -382,7 +388,7 @@ Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/checklist.md`.
 
 Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/greptile-triage.md` and follow the fetch, filter, classify, and **escalation detection** steps.
 
-**If no PR exists, `gh` fails, API returns an error, or there are zero Greptile comments:** Skip this step silently. Greptile integration is additive — the review works without it.
+**If no PR exists or there are zero Greptile comments:** skip this step silently. Greptile integration is additive — the review works without it. **If the fetch prints `GREPTILE: error (<reason>)`:** say so in the output header — a failed fetch is not zero comments.
 
 **If Greptile comments are found:** Store the classifications (VALID & ACTIONABLE, VALID BUT ALREADY FIXED, FALSE POSITIVE, SUPPRESSED) — you will need them in Step 5.
 
@@ -473,9 +479,9 @@ available (e.g., slop-scan not installed), skip this step silently.
 ## Step 4: Critical pass (core review)
 
 Apply the CRITICAL categories from the checklist against the diff:
-SQL & Data Safety, Race Conditions & Concurrency, LLM Output Trust Boundary, Shell Injection, Enum & Value Completeness.
+SQL & Data Safety, Race Conditions & Concurrency, LLM Output Trust Boundary, Production Failure Modes, Gate Integrity, Shell Injection, Enum & Value Completeness. Run the checklist's Sideways sweep on every finding.
 
-Also apply the remaining INFORMATIONAL categories that are still in the checklist (Async/Sync Mixing, Column/Field Name Safety, LLM Prompt Issues, Type Coercion, View/Frontend, Time Window Safety, Completeness Gaps, Distribution & CI/CD).
+Also apply the remaining INFORMATIONAL categories that are still in the checklist (Async/Sync Mixing, Column/Field Name Safety, LLM Prompt Issues, Type Coercion, View/Frontend, Time Window Safety, Completeness Gaps, Test Reliability, Repo Conventions & Platform Fit, Distribution & CI/CD).
 
 **Enum & Value Completeness requires reading code OUTSIDE the diff.** When the diff introduces a new enum value, status, tier, or type constant, use Grep to find all files that reference sibling values, then Read those files to check if the new value is handled. This is the one category where within-diff review is insufficient.
 
@@ -484,7 +490,9 @@ Also apply the remaining INFORMATIONAL categories that are still in the checklis
 - Check if a built-in solution exists in newer versions before recommending a workaround
 - Verify API signatures against current docs (APIs change between versions)
 
-Takes seconds, prevents recommending outdated patterns. If WebSearch is unavailable, note it and proceed with in-distribution knowledge.
+Takes seconds, prevents recommending outdated patterns. If WebSearch is unavailable, note it and proceed with in-distribution knowledge. Search queries name the library and the pattern only: strip hostnames, IPs, internal paths, SQL, identifiers and secrets.
+
+**Documented standards:** read the style or standards sections of CONTRIBUTING, CODING_STANDARDS and CLAUDE.md and check the diff against them; a breach cites the file and the rule. The maintainability specialist skips diffs under 50 lines, so on a small diff this is the only standards check.
 
 Follow the output format specified in the checklist. Respect the suppressions — do NOT flag items listed in the "DO NOT flag" section.
 
@@ -521,246 +529,19 @@ higher confidence.
 
 ## Step 4.5: Review Army — Specialist Dispatch
 
-### Detect stack and scope
-
-```bash
-# Compute SCOPE_* signals from the diff (drives conditional specialist dispatch).
-# Cleared first: a flag left in the environment must never select. A failed or
-# missing scope reads SCOPE_UNAVAILABLE=true, never all-false.
-unset SCOPE_FRONTEND SCOPE_BACKEND SCOPE_PROMPTS SCOPE_TESTS SCOPE_DOCS SCOPE_CONFIG SCOPE_MIGRATIONS SCOPE_API SCOPE_AUTH SCOPE_UNAVAILABLE
-eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-diff-scope" <base> 2>/dev/null || true)"
-[ -n "${SCOPE_FRONTEND:-}${SCOPE_UNAVAILABLE:-}" ] || SCOPE_UNAVAILABLE=true
-echo "SCOPE_FRONTEND=${SCOPE_FRONTEND:-false} SCOPE_BACKEND=${SCOPE_BACKEND:-false} SCOPE_AUTH=${SCOPE_AUTH:-false} SCOPE_MIGRATIONS=${SCOPE_MIGRATIONS:-false} SCOPE_API=${SCOPE_API:-false} SCOPE_UNAVAILABLE=${SCOPE_UNAVAILABLE:-false}"
-# Detect stack for specialist context
-STACK=""
-[ -f Gemfile ] && STACK="${STACK}ruby "
-[ -f package.json ] && STACK="${STACK}node "
-[ -f requirements.txt ] || [ -f pyproject.toml ] && STACK="${STACK}python "
-[ -f go.mod ] && STACK="${STACK}go "
-[ -f Cargo.toml ] && STACK="${STACK}rust "
-echo "STACK: ${STACK:-unknown}"
-DIFF_INS=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
-DIFF_DEL=$(git diff $(git merge-base origin/<base> HEAD) --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
-# New files not yet added are invisible to git diff --stat; count their lines too.
-UNTRACKED_LINES=$(git ls-files -z --others --exclude-standard | xargs -0 cat 2>/dev/null | wc -l | tr -d ' ')
-DIFF_LINES=$((DIFF_INS + DIFF_DEL + ${UNTRACKED_LINES:-0}))
-echo "DIFF_LINES: $DIFF_LINES"
-# Detect test framework for specialist test stub generation
-TEST_FW=""
-{ [ -f jest.config.ts ] || [ -f jest.config.js ]; } && TEST_FW="jest"
-[ -f vitest.config.ts ] && TEST_FW="vitest"
-{ [ -f spec/spec_helper.rb ] || [ -f .rspec ]; } && TEST_FW="rspec"
-{ [ -f pytest.ini ] || [ -f conftest.py ]; } && TEST_FW="pytest"
-[ -f go.mod ] && TEST_FW="go-test"
-echo "TEST_FW: ${TEST_FW:-unknown}"
-```
-
-### Read specialist hit rates (adaptive gating)
-
-```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-specialist-stats" 2>/dev/null || true
-```
-
-Each line tags a specialist `GATE_CANDIDATE` (dispatched 10+ times, never found
-anything — safe to skip), `NEVER_GATE` (security / data-migration insurance —
-always run), or `active`. Fresh project with no history → everything is `active`,
-so the full scope-selected set runs.
-
-### Select specialists
-
-Based on the scope signals above, select which specialists to dispatch.
-
-**If `SCOPE_UNAVAILABLE=true`:** the scope could not be computed, so dispatch every specialist below: neither the small-diff skip nor adaptive gating applies. An unknown scope is not an empty one.
-
-**Always-on (dispatch on every review with 50+ changed lines):**
-1. **Testing** — read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/testing.md`
-2. **Maintainability** — read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/maintainability.md`
-
-**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to Step 4.8.
-
-**Conditional (dispatch if the matching scope signal is true):**
-3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/security.md`
-4. **Performance** — if SCOPE_BACKEND=true OR SCOPE_FRONTEND=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/performance.md`
-5. **Data Migration** — if SCOPE_MIGRATIONS=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/data-migration.md`
-6. **API Contract** — if SCOPE_API=true. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/api-contract.md`
-7. **Design** — if SCOPE_FRONTEND=true. Use the existing design review checklist at `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/design-checklist.md`
-8. **Simplification** — if DIFF_LINES > 100. Read `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/simplification.md`. Advisory-only lens: it hunts structure nobody asked for (hand-rolled stdlib, one-implementation abstractions, dependencies duplicating platform features), never missing coverage.
-
-### Adaptive gating
-
-After scope-based selection, apply adaptive gating based on specialist hit rates:
-
-For each conditional specialist that passed scope gating, check the specialist stats output above:
-- If tagged `[GATE_CANDIDATE]` (0 findings in 10+ dispatches): skip it. Print: "[specialist] auto-gated (0 findings in N reviews)."
-- If tagged `[NEVER_GATE]`: always dispatch regardless of hit rate. Security and data-migration are insurance policy specialists — they should run even when silent.
-
-**Force flags:** If the user's prompt includes `--security`, `--performance`, `--testing`, `--maintainability`, `--data-migration`, `--api-contract`, `--design`, `--simplification`, or `--all-specialists`, force-include that specialist regardless of gating.
-
-Note which specialists were selected, gated, and skipped. Print the selection:
-"Dispatching N specialists: [names]. Skipped: [names] (scope not detected). Gated: [names] (0 findings in N+ reviews)."
+{{include lib/snippets/review-army.md}}
 
 ---
 
-### Dispatch specialists in parallel
+## Step 4.7: Exploratory smoke probes (report-only)
 
-For each selected specialist, launch an independent subagent via the Agent tool with `run_in_background: false`.
-**Launch ALL selected specialists in a single message** (multiple Agent tool calls)
-so they run in parallel. Each subagent has fresh context — no prior review bias.
-
-**Each specialist subagent prompt:**
-
-Construct the prompt for each specialist. The prompt includes:
-
-1. The specialist's checklist content (you already read the file above)
-2. Stack context: "This is a {STACK} project."
-3. Past learnings for this domain (if any exist):
-
-```bash
-"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
-```
-
-If learnings are found, include them: "Past learnings for this domain: {learnings}"
-
-4. Instructions:
-
-"You are a specialist code reviewer. Read the checklist below, then run
-`git diff $(git merge-base origin/<base> HEAD)` to get the full diff. Then run `git ls-files --others --exclude-standard` and read each listed source file in full — new files not yet added are part of the change and git diff does not show them. Apply the checklist against the diff and those files.
-
-For each finding, output a JSON object on its own line:
-{\"severity\":\"CRITICAL|INFORMATIONAL\",\"confidence\":N,\"path\":\"file\",\"line\":N,\"category\":\"category\",\"summary\":\"description\",\"fix\":\"recommended fix\",\"fingerprint\":\"path:line:category\",\"specialist\":\"name\"}
-
-Required fields: severity, confidence, path, category, summary, specialist.
-Optional: line, fix, fingerprint, evidence, test_stub.
-
-If you can write a test that would catch this issue, include it in the `test_stub` field.
-Use the detected test framework ({TEST_FW}). Write a minimal skeleton — describe/it/test
-blocks with clear intent. Skip test_stub for architectural or design-only findings.
-
-If no findings: output `NO FINDINGS` and nothing else.
-Do not output anything else — no preamble, no summary, no commentary.
-
-Stack context: {STACK}
-Past learnings: {learnings or 'none'}
-
-CHECKLIST:
-{checklist content}"
-
-**Subagent configuration:**
-- Use `subagent_type: "general-purpose"`
-- Pass `run_in_background: false` on every specialist Agent call — subagents run
-  in the BACKGROUND by default since Claude Code v2.1.198, and all specialists
-  must complete before the merge step reads their findings. Merely omitting the
-  flag no longer produces a foreground run: the calls return immediately with
-  nothing, the merge sees an empty set, and the run reports a clean review it
-  never performed.
-- If any specialist subagent fails, times out, or returns output that is neither JSON
-  findings nor `NO FINDINGS`, keep the findings from the specialists that did finish, but
-  name the failed specialist in the output (`Specialist <name>: NO COVERAGE — <reason>`)
-  and mark the run **incomplete**: its `specialists` entry gets `"completed":false` and
-  Step 5.8 records `completed:false`. Missing or unusable output is incomplete coverage,
-  never an empty success.
-
----
-
-### Step 4.6: Collect and merge findings
-
-After all specialist subagents complete, collect their outputs.
-
-**Parse findings:**
-For each specialist's output:
-1. If output is "NO FINDINGS" — skip, this specialist found nothing
-2. Otherwise, parse each line as a JSON object. Skip lines that are not valid JSON.
-3. Collect all parsed findings into a single list, tagged with their specialist name.
-
-**Fingerprint and deduplicate:**
-For each finding, compute its fingerprint:
-- If `fingerprint` field is present, use it
-- Otherwise: `{path}:{line}:{category}` (if line is present) or `{path}:{category}`
-
-Group findings by fingerprint. For findings sharing the same fingerprint:
-- Keep the finding with the highest confidence score
-- Tag it: "MULTI-SPECIALIST CONFIRMED ({specialist1} + {specialist2})"
-- Boost confidence by +1 (cap at 10)
-- Note the confirming specialists in the output
-
-**Keep advisory findings advisory:**
-Simplification findings are taste, not defects. Force every one of them to
-`INFORMATIONAL` no matter what severity the subagent emitted, keep them out of the
-critical count, and never route them through Fix-First auto-fix — they are proposals
-the user accepts or ignores. A multi-specialist match that includes simplification
-takes the other specialist's severity, not a boosted one. Leave them out of the PR
-Quality Score as well — a score that drops because the diff was offered a simpler
-shape would teach the next run to stop offering.
-
-**Apply confidence gates:**
-- Confidence 7+: show normally in the findings output
-- Confidence 5-6: show with caveat "Medium confidence — verify this is actually an issue"
-- Confidence 3-4: move to appendix (suppress from main findings)
-- Confidence 1-2: suppress entirely
-
-**Compute PR Quality Score:**
-After merging, compute the quality score:
-`quality_score = max(0, 10 - (critical_count * 2 + informational_count * 0.5))`
-Cap at 10. Log this in the review result at the end.
-
-**Output merged findings:**
-Present the merged findings in the same format as the current review:
-
-```
-SPECIALIST REVIEW: N findings (X critical, Y informational) from Z specialists
-
-[For each finding, in order: CRITICAL first, then INFORMATIONAL, sorted by confidence descending]
-[SEVERITY] (confidence: N/10, specialist: name) path:line — summary
-  Fix: recommended fix
-  [If MULTI-SPECIALIST CONFIRMED: show confirmation note]
-
-PR Quality Score: X/10
-[If simplification ran: "Simplification: N advisory notes — suggestions, not blockers."]
-```
-
-These findings flow into Step 5 Fix-First alongside the CRITICAL pass findings from Step 4.
-The Fix-First heuristic applies identically — specialist findings follow the same AUTO-FIX vs ASK classification.
-
-**Compile per-specialist stats:**
-After merging findings, compile a `specialists` object for the review-log entry in Step 5.8.
-For each specialist (testing, maintainability, security, performance, data-migration, api-contract, design, simplification, red-team):
-- If dispatched: `{"dispatched": true, "completed": true, "findings": N, "critical": N, "informational": N}` — `"completed": false` when it failed, timed out or returned unusable output (its counts are then 0 and mean nothing)
-- If skipped by scope: `{"dispatched": false, "reason": "scope"}`
-- If skipped by gating: `{"dispatched": false, "reason": "gated"}`
-- If not applicable (e.g., red-team not activated): omit from the object
-
-Include the Design specialist even though it uses `design-checklist.md` instead of the specialist schema files.
-Remember these stats — you will need them for the review-log entry in Step 5.8.
-
----
-
-### Red Team dispatch (conditional)
-
-**Activation:** Only if DIFF_LINES > 200 OR any specialist produced a CRITICAL finding.
-
-If activated, dispatch one more subagent via the Agent tool with `run_in_background: false` — the same foreground rule as the specialists above, for the same reason.
-
-The Red Team subagent receives:
-1. The red-team checklist from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/review}/specialists/red-team.md`
-2. The merged specialist findings from Step 4.6 (so it knows what was already caught)
-3. The git diff command
-
-Prompt: "You are a red team reviewer. The code has already been reviewed by N specialists
-who found the following issues: {merged findings summary}. Your job is to find what they
-MISSED. Read the checklist, run `git diff $(git merge-base origin/<base> HEAD)`, read the
-untracked files listed by `git ls-files --others --exclude-standard`, and look for gaps.
-Output findings as JSON objects (same schema as the specialists). Focus on cross-cutting
-concerns, integration boundary issues, and failure modes that specialist checklists
-don't cover."
-
-If the Red Team finds additional issues, merge them into the findings list before
-Step 5 Fix-First. Red Team findings are tagged with `"specialist":"red-team"`.
-
-If the Red Team returns NO FINDINGS, note: "Red Team review: no additional issues found."
-If the Red Team subagent fails, times out, or returns unusable output, say so —
-`Red Team: NO COVERAGE — <reason>` — and continue. An activated Red Team that did not
-finish makes the run incomplete (Step 5.8 `completed:false`); it is never reported as
-"no additional issues found".
+For each changed CLI command, exported function or route that can run locally without
+credentials, a network service or state mutation, run two probes: one success case and the
+riskiest edge (empty input, a missing file, the boundary value). Give every probe a finite
+timeout (`timeout 30`, or the runner's own); never in plan mode. Edit nothing. A probe that
+shows a defect becomes a finding with the probe as its `test_stub`; a probe that cannot run is
+reported as not run, with the reason. Plan behavioral checks stay pending execution — a diff
+that looks right never marks one DONE.
 
 ---
 
@@ -840,94 +621,7 @@ failed Codex pass is *missing coverage*, never a silent pass.
 
 ---
 
-### Claude adversarial subagent (always runs)
-
-Dispatch via the Agent tool with `run_in_background: false`. Subagents run in the
-BACKGROUND by default since Claude Code v2.1.198: without the flag the call returns
-immediately with nothing, Step 5 sees no adversarial findings, and the review reports a
-pass that never ran. If the call still comes back as a launch receipt rather than the
-subagent's output, wait for its completion notice before moving on. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
-
-Split source from fixtures with pathspecs rather than leaving it to the subagent's
-judgement — left to judgement it either pulls raw attack payloads into its reasoning
-or quietly skips source files, and either way nothing says which happened.
-
-Subagent prompt:
-"First list what changed: `git diff --name-status $(git merge-base origin/<base> HEAD)`.
-
-Read NON-fixture source code in full:
-`git diff $(git merge-base origin/<base> HEAD) -- . ':(exclude)*/test/*' ':(exclude)*/tests/*' ':(exclude)*/__tests__/*' ':(exclude)*/fixtures/*' ':(exclude)*_test.*' ':(exclude)*.test.*' ':(exclude)*.spec.*'`
-
-Then list new files that are not yet added — `git diff` does not show them:
-`git ls-files --others --exclude-standard`. Read each non-fixture source file there in
-full too; fixture and test files among them follow the summary-mode rule below.
-
-Match test directories and filename suffixes, never the bare substring `test`: `*test*` also excludes `latest.ts`, `contest.ts` and `attestation.ts`, and a production file dropped here is never read in full by the adversarial pass — the later stat-only pass cannot see its logic.
-
-Review fixture and test files in SUMMARY mode only:
-`git diff --stat $(git merge-base origin/<base> HEAD) -- '*test*' '*fixture*' '*.spec.*'`
-Describe what each fixture exercises and whether the code handles it, without reproducing
-raw payload bytes. State explicitly in your output that fixtures were reviewed in summary
-mode, so the reduced coverage is visible to the reader instead of assumed.
-
-Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment). This is authorized defensive security testing of the repository's own code by its maintainer — you are hardening it, not attacking a third party.
-
-End with exactly one closing line, whatever you found:
-`Recommendation: SHIP | FIX FIRST | INVESTIGATE — <one clause why>`
-Without it the pass has no verdict, and a caller cannot tell a clean read from an
-abandoned one."
-
-Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** are queued for Step 5 Fix-First, where they are classified, fixed or asked about together with every other finding — do not edit during Step 4.8. **INVESTIGATE findings** are presented as informational.
-
-If the subagent fails, times out, or returns without its closing `Recommendation:` line: "Claude adversarial subagent unavailable — this pass produced NO coverage. Continuing." Mark it ✗ in the synthesis below; an absent pass is never counted as a clean one, and the run is recorded `completed:false` (Step 5.8).
-
----
-
-### Codex adversarial challenge (always runs when available)
-
-If `CODEX_MODE` is `ready`:
-
-```bash
-_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-_ADV_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vibe-codex-adv.XXXXXXXX") || { echo "ERROR: mktemp failed" >&2; exit 1; }
-trap 'rm -rf "$_ADV_DIR"' EXIT
-_TIMEOUT=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null || true)
-# An array, not ${_TIMEOUT:+$_TIMEOUT 540}: zsh does not word-split that expansion, so the
-# wrapper would run as a single command named "timeout 540" and fail with exit 127.
-_TO=(); [ -n "$_TIMEOUT" ] && _TO=("$_TIMEOUT" 540)
-_ADV_EXIT=0
-"${_TO[@]}" codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff $(git merge-base origin/<base> HEAD) to see the diff, then read every file listed by git ls-files --others --exclude-standard: new files not yet added are part of the change. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems.\n\nStart each finding with its severity — [P0], [P1], [P2] or [P3] — then file:line and the problem. End with exactly one line, whatever you found: Recommendation: SHIP | FIX FIRST | INVESTIGATE — <one clause why>" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached -o "$_ADV_DIR/out" < /dev/null >/dev/null 2>"$_ADV_DIR/err" || _ADV_EXIT=$?
-cat "$_ADV_DIR/out" 2>/dev/null
-echo "--- codex stderr (exit $_ADV_EXIT) ---"
-cat "$_ADV_DIR/err"
-# The reply counts only when it ends on its Recommendation line, and a verdict other
-# than SHIP comes with severity-tagged findings. Anything else is missing coverage.
-_ADV_LAST=$(awk 'NF { l = $(0) } END { print l }' "$_ADV_DIR/out" 2>/dev/null | sed 's/\*\*//g; s/^[[:space:]>_#-]*//')
-_ADV_TAGS=$(grep -Ec '^[[:space:]>*_#|-]*([0-9]+[.)][[:space:]]*)?[*_]*\[P[0-3]\]' "$_ADV_DIR/out" 2>/dev/null || true)
-if [ "$_ADV_EXIT" -eq 124 ]; then _ADV="MISSING_COVERAGE (timed out after 540s)"
-elif [ "$_ADV_EXIT" -ne 0 ]; then _ADV="MISSING_COVERAGE (codex exited $_ADV_EXIT)"
-elif ! printf '%s\n' "$_ADV_LAST" | grep -Eq '^Recommendation:[[:space:]]*(SHIP|FIX FIRST|INVESTIGATE)'; then
-  _ADV="MISSING_COVERAGE (no closing Recommendation line)"
-elif [ "${_ADV_TAGS:-0}" -gt 0 ]; then _ADV="COVERED ($_ADV_TAGS finding(s))"
-elif printf '%s\n' "$_ADV_LAST" | grep -Eq '^Recommendation:[[:space:]]*SHIP' \
-  && ! printf '%s\n' "$_ADV_LAST" | grep -Eiq "cannot|can.t|could not|couldn.t|unable to"; then
-  _ADV="COVERED (no findings)"
-else _ADV="MISSING_COVERAGE (verdict without severity-tagged findings)"
-fi
-echo "ADVERSARIAL: $_ADV"
-```
-
-Set the Bash tool's `timeout` parameter to `600000` (10 minutes), above the 540-second
-wrapper, so a stall surfaces as exit 124 with whatever Codex had written. The block
-prints the reply, its stderr and an `ADVERSARIAL:` line; use that line, never a
-judgement of your own from the text:
-
-- **`COVERED`** — present the reply verbatim. This pass never blocks on its own, but queue each finding for Step 5 Fix-First alongside the Claude findings.
-- **`MISSING_COVERAGE (<why>)`** — say "Codex adversarial pass produced NO coverage
-  (<why>)" and mark Codex ✗ in the synthesis; never count it as a clean pass. Name the
-  cause from stderr: "auth", "login", "unauthorized" or "API key" means "Run `codex login`."
-
-If `CODEX_MODE` is `not_installed`: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
+{{include lib/snippets/adversarial-review.md}}
 
 ---
 
@@ -1115,7 +809,7 @@ For each current finding (from the Step 4 critical pass, the Step 4.5-4.6 specia
 - Does its fingerprint match a previously skipped finding?
 - Is the finding's file path NOT in the changed-files set?
 
-If both conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+If both conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed. A forced-CRITICAL finding (checklist Sideways sweep) is never suppressed this way.
 
 Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
@@ -1123,7 +817,8 @@ Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
 If no prior reviews exist or none have a `findings` array, skip this step silently.
 
-Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`
+Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`, then
+`Gate edits: <N — file:line each, with its disposition> | none`.
 
 ### Step 5a: Classify each finding
 
@@ -1137,7 +832,12 @@ item, show the proposed test file path and the test code. The user approves or s
 test creation. If approved, write the fix + test file. Derive the test file path from
 the finding's `path` using project conventions (`spec/` for RSpec, `__tests__/` for
 Jest/Vitest, `test_` prefix for pytest, `_test.go` suffix for Go). If the test file
-already exists, append the new test. Output: `[FIXED + TEST] [file:line] Problem -> fix + test at [test_path]`
+already exists, append the new test. Regression before repair: write the test, run it
+against the unfixed code and confirm it fails on its own assertion (an import or fixture
+error is not red), apply the fix, run it green, then run the full suite. Output:
+`[FIXED + TEST] [file:line] Problem -> fix + test at [test_path]` followed by
+`Regression proof — fails before fix: yes · passes after fix: yes · suite: green`
+(or the step that could not run, and why).
 
 ### Step 5b: Auto-fix all AUTO-FIX items
 
@@ -1168,6 +868,11 @@ RECOMMENDATION: Fix both — #1 is a real race condition, #2 prevents silent dat
 ```
 
 If 3 or fewer ASK items, you may use individual AskUserQuestion calls instead of batching.
+
+**Gate integrity findings** are always asked, never auto-fixed, with four options instead
+of Fix/Skip: A) Restore the gate, B) Keep-justified (the diff's stated reason holds),
+C) Keep-other (record the user's reason), D) Leave open. A spawned or headless run records
+each as Leave open. Each one appears in the `Gate edits:` line with its disposition.
 
 ### Step 5d: Apply user-approved fixes
 
@@ -1215,14 +920,14 @@ After outputting your own findings, if Greptile comments were classified in Step
 
 Before replying to any comment, run the **Escalation Detection** algorithm from greptile-triage.md to determine whether to use Tier 1 (friendly) or Tier 2 (firm) reply templates.
 
-1. **VALID & ACTIONABLE comments:** These are included in your findings — they follow the Fix-First flow (auto-fixed if mechanical, batched into ASK if not) (A: Fix it now, B: Acknowledge, C: False positive). If the user chooses A (fix), reply using the **Fix reply template** from greptile-triage.md (include inline diff + explanation). If the user chooses C (false positive), reply using the **False Positive reply template** (include evidence + suggested re-rank), save to both per-project and global greptile-history.
+1. **VALID & ACTIONABLE comments:** These are findings like any other, with one disposition — Step 5's (auto-fixed if mechanical, otherwise Fix/Skip in Step 5c). Fixed → reply with the **Fix reply template** from greptile-triage.md (inline diff + explanation, citing `file:line` in the current diff). Skipped → no reply; list it as open in the output.
 
 2. **FALSE POSITIVE comments:** Present each one via AskUserQuestion:
    - Show the Greptile comment: file:line (or [top-level]) + body summary + permalink URL
    - Explain concisely why it's a false positive
    - Options:
      - A) Reply to Greptile explaining why this is incorrect (recommended if clearly wrong)
-     - B) Fix it anyway (if low-effort and harmless)
+     - B) Fix it anyway — it goes back through Step 5c as an ASK item
      - C) Ignore — don't reply, don't fix
 
    If the user chooses A, reply using the **False Positive reply template** from greptile-triage.md (include evidence + suggested re-rank), save to both per-project and global greptile-history.
@@ -1230,7 +935,7 @@ Before replying to any comment, run the **Escalation Detection** algorithm from 
    A Greptile fix (1-A, or 2-B) edits files after Step 5e, and nothing has reviewed it. Run it through Step 5e as another fix pass; if the cycle bound is already spent, Step 5.8 records `converged:false` and status `issues_found`, naming the Greptile-fixed files as unreviewed.
 
 3. **VALID BUT ALREADY FIXED comments:** Reply using the **Already Fixed reply template** from greptile-triage.md — no AskUserQuestion needed:
-   - Include what was done and the fixing commit SHA
+   - Include what was done, citing `file:line` in the current diff
    - Save to both per-project and global greptile-history
 
 4. **SUPPRESSED comments:** Skip silently — these are known false positives from previous triage.

@@ -193,6 +193,21 @@ awk '/^### Step 5d:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.m
 contains "$TMP/review-5d" "$SRC/lib/snippets/test-value-bar.md" \
   && ok "review Step 5d carries the test value bar" || no "review Step 5d lacks the test value bar"
 
+echo "review/ship army and adversarial bodies"
+# One copy of the specialist dispatch/merge and the adversarial passes: a fix
+# landed in one skill's copy left the other reviewing with the old rules.
+for s in review ship; do
+  for snip in review-army adversarial-review; do
+    grep -qx "{{include lib/snippets/$snip.md}}" "$SRC/skills/$s/SKILL.md" \
+      && ok "$s includes $snip" || no "$s does not include $snip"
+    sed "s/{SKILL_NAME}/$s/g" "$SRC/lib/snippets/$snip.md" > "$TMP/$snip.$s.md"
+    contains "$TMP/$s.md" "$TMP/$snip.$s.md" && ok "$s renders $snip verbatim" \
+      || no "$s does not render $snip verbatim"
+  done
+done
+grep -qF 'partial results are better than no results' "$TMP/ship.md" \
+  && no "ship still treats a failed specialist as partial results" || ok "ship has no partial-results sentence"
+
 echo "review/ship host paths"
 hp="$("$SRC/bin/vibe-lint-sources" "$SRC" 2>&1 | grep -E 'skills/(review|ship)/SKILL\.md:[0-9]+: hard-coded host path' || true)"
 [ -z "$hp" ] && ok "no hard-coded host path in review or ship" || no "host-only paths remain: $(printf '%s' "$hp" | sed 's/^warn: //; s/: [^0-9].*//' | tr '\n' ' ')"
@@ -218,8 +233,9 @@ run_scope() { # FILE STUB_OUTPUT STUB_EXIT -> block output, with a stale SCOPE_A
   chmod +x "$TMP/vh/bin/vibe-diff-scope"
   (cd "$SR" && SCOPE_AUTH=true SCOPE_UNAVAILABLE=true VIBESTACK_HOME="$TMP/vh" bash -c "$(scope_block "$1")" 2>&1)
 }
-for f in "$RV" "$SHIP"; do
-  n=$(basename "$(dirname "$f")")
+# The scope block lives in a shared snippet, so read the rendered skills.
+for n in review ship; do
+  f="$TMP/$n.md"
   out="$(run_scope "$f" "SCOPE_UNAVAILABLE=true" 2)"
   printf '%s\n' "$out" | grep -q 'SCOPE_UNAVAILABLE=true' && ok "$n prints SCOPE_UNAVAILABLE=true on a failed scope" \
     || no "$n hides a failed scope ($(printf '%s' "$out" | head -1))"
@@ -235,6 +251,152 @@ done
 DR="$(sed -n '/^## Design Review (conditional/,/^## Step 9.1:/p' "$SHIP")"
 printf '%s\n' "$DR" | grep -q 'SCOPE_UNAVAILABLE=true' && ok "ship design review runs on an unavailable scope" \
   || no "ship design review skips on an unavailable scope"
+
+echo "Gate integrity"
+GI="$(section "$CL" '#### Gate integrity')"
+printf '%s\n' "$P1" | grep -qx '#### Gate integrity' && ok "Gate integrity sits in Pass 1" || no "Gate integrity not a CRITICAL category"
+grep -q '^- \*\*Pass 1 (CRITICAL):\*\*.*Gate Integrity' "$CL" && ok "Pass 1 list names Gate Integrity" || no "Pass 1 list omits Gate Integrity"
+# Every backticked `grep -E…` probe runs over a diff hunk that holds each weakened gate.
+cat > "$TMP/gate.diff" <<'DIFF'
++  it.skip('charges once', () => {
++  @pytest.mark.skip(reason="flaky")
++  t.Skip("later")
++#[ignore]
++  @Disabled
++  // eslint-disable-next-line no-unused-vars
++  // @ts-ignore
++x = 1  # noqa
++    continue-on-error: true
++  allow_failure: true
++git commit -m "wip [skip ci]"
++git push --no-verify
++  timeout: 600000
++  retries: 3
++  threshold: 0.5
+-  expect(total).toBe(3)
+DIFF
+gprobes="$(printf '%s\n' "$GI" | grep -o '`grep -E[^`]*`' | tr -d '`')"
+g=0
+while IFS= read -r probe; do
+  [ -n "$probe" ] || continue
+  g=$((g+1))
+  out="$(eval "$probe" < "$TMP/gate.diff" 2>&1)"; rc=$?
+  [ "$rc" -eq 0 ] && [ -n "$out" ] && ok "gate probe matches: ${probe:0:60}" || no "gate probe rc=$rc: $probe"
+done <<< "$gprobes"
+[ "$g" -ge 3 ] && ok "found $g gate probes" || no "expected at least 3 gate probes, found $g"
+for marker in '@pytest.mark.skip' 't.Skip' '#\[ignore\]' '@Disabled' 'eslint-disable' '@ts-ignore' 'noqa' 'nolint' \
+              'continue-on-error' 'allow_failure' 'skip ci' 'no-verify'; do
+  printf '%s\n' "$GI" | grep -q -- "$marker" && ok "gate integrity names $marker" || no "gate integrity misses $marker"
+done
+grep -E '^- Eval threshold changes' "$CL" | grep -q 'code-quality' \
+  && ok "eval-threshold suppression covers code-quality comments only" || no "eval-threshold suppression still blanket"
+grep -q 'Gate edits:' "$CL" && grep -q 'Gate edits:' "$TMP/review.md" \
+  && ok "checklist and review output carry a Gate edits: line" || no "no Gate edits: line"
+for opt in 'Restore' 'Keep-justified' 'Keep-other' 'Leave open'; do
+  grep -q "$opt" "$TMP/review.md" && ok "review gate disposition: $opt" || no "review gate disposition missing: $opt"
+done
+grep -q 'Gate integrity' "$SRC/skills/review/specialists/testing.md" && ok "testing specialist has Gate integrity" || no "testing specialist lacks Gate integrity"
+sed -n '/^## Step 9:/,/^## Step 10:/p' "$TMP/ship.md" | grep -q 'Gate integrity findings take' && ok "ship Step 9 points at the gate disposition" || no "ship Step 9 has no gate-integrity pointer"
+
+echo "Sideways sweep"
+SW="$(awk '/^## Sideways sweep \(every finding\)/{on=1;next} on && /^## /{exit} on{print}' "$CL")"
+[ -n "$SW" ] && ok "checklist has the sideways sweep" || no "no sideways sweep section"
+for c in 'data loss' 'trust-boundary bypass' 'uncapped spend' 'cache in front of a guarded call' 'dynamic import' 'parity twin' 'transaction'; do
+  printf '%s\n' "$SW" | grep -qi "$c" && ok "forced-CRITICAL class: $c" || no "forced-CRITICAL class missing: $c"
+done
+awk '/^### Step 5.0:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" | grep -qi 'forced-CRITICAL' \
+  && ok "Step 5.0 never suppresses a forced-CRITICAL finding" || no "Step 5.0 lacks the forced-CRITICAL exemption"
+step "$TMP/review.md" '## Step 4:' | grep -q 'Sideways sweep' && ok "Step 4 points at the sweep" || no "Step 4 has no sweep pointer"
+
+echo "Checklist additions"
+for want in 'Not applicable' 'Loosened acceptance' 'preview-first' 'keyboard' 'raises a timing bound' 'strict mode' 'pinned' \
+            '#### Repo Conventions & Platform Fit' 'Severity glossary' 'cut fix growth first' 'Zero findings is a valid' \
+            'exhaustive over its enum' 'Math.random' 'kind × owner'; do
+  grep -qF -- "$want" "$CL" && ok "checklist: $want" || no "checklist missing: $want"
+done
+SP="$SRC/skills/review/specialists"
+grep -q '^### Negative Assertions' "$SP/testing.md" && ok "testing: Negative Assertions" || no "testing: no Negative Assertions"
+grep -q 'recomputed the way the code computes it' "$SP/testing.md" && ok "testing: recomputed expectation is a self-comparison" || no "testing: no recomputed-expectation rule"
+grep -q 'demonstrated defect' "$SP/maintainability.md" && grep -q 'guard changed' "$SP/maintainability.md" \
+  && ok "maintainability: DRY needs a demonstrated defect; guarded strings" || no "maintainability DRY rule not updated"
+grep -q 'lines_removable' "$SP/simplification.md" && grep -q 'net: -N lines' "$SP/simplification.md" \
+  && grep -qi 'never.*delet.*test' "$SP/simplification.md" && ok "simplification: removable lines, net footer, tests kept" \
+  || no "simplification reporting not updated"
+[ "$(grep -c '^### ' "$SP/security.md")" -ge 8 ] && grep -q 'Open redirect' "$SP/security.md" \
+  && ok "security specialist gained its bullets" || no "security specialist bullets missing"
+DC="$SRC/skills/review/design-checklist.md"
+ids=$(grep -oE '\[slop-[a-z-]+\]' "$DC" | sort -u | wc -l | tr -d ' ')
+[ "$ids" -ge 4 ] && [ "$ids" -le 10 ] && ok "design checklist has $ids rule-id'd slop items (4-10)" || no "design checklist slop ids: $ids, want 4-10"
+for id in layout-transition justified-text tiny-text all-caps-body; do
+  grep -qF "[slop-$id]" "$DC" && ok "design id slop-$id" || no "design id slop-$id missing"
+done
+
+echo "Targeted pass and lead judgment"
+[ -f "$SP/targeted.md" ] && grep -qi 'deleted lines' "$SP/targeted.md" && ok "targeted specialist exists" || no "no targeted specialist"
+for s in review ship; do
+  grep -q 'targeted.md' "$TMP/$s.md" && grep -qi 'regardless of DIFF_LINES' "$TMP/$s.md" \
+    && ok "$s dispatches the targeted pass regardless of size" || no "$s does not dispatch the targeted pass"
+  grep -q 'Lead judgment' "$TMP/$s.md" && grep -q 'test_stub, cause' "$TMP/$s.md" \
+    && ok "$s merge has lead judgment and an optional cause" || no "$s merge lacks lead judgment / cause"
+done
+
+echo "Review red proof, validator safety, scope fields, smoke probes"
+grep -q 'Regression proof' "$TMP/review.md" && awk '/^### Step 5a:/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md" | grep -qi 'against the unfixed code' \
+  && ok "test-stub fixes are proven red first" || no "test-stub fix has no red proof"
+grep -qi 'read-only' "$TMP/review.md" && grep -q 'never in plan mode\|never run it in plan mode' "$TMP/review.md" \
+  && ok "validators are inspected before running" || no "no validator safety rule"
+grep -q 'Diff read: full|partial' "$TMP/review.md" && grep -q 'Undeclared behavior changes:' "$TMP/review.md" \
+  && ok "Scope Check reports diff coverage and undeclared changes" || no "Scope Check fields missing"
+step "$TMP/review.md" '## Step 4:' | grep -qi 'strip hostnames' && ok "WebSearch queries are sanitized" || no "no search sanitize rule"
+S47="$(step "$TMP/review.md" '## Step 4.7:')"
+printf '%s\n' "$S47" | grep -qi 'riskiest' && printf '%s\n' "$S47" | grep -qi 'timeout' && printf '%s\n' "$S47" | grep -q 'test_stub' \
+  && printf '%s\n' "$S47" | grep -qi 'pending execution' && ok "Step 4.7 runs bounded smoke probes" || no "no Step 4.7 smoke probes"
+grep -q '9.2.1' "$TMP/ship.md" && ok "ship points at the smoke probes" || no "ship has no smoke-probe pointer"
+grep -qi 'validator.*read-only\|read-only.*validator' "$TMP/ship.md" && ok "ship Step 8 inspects validators" || no "ship Step 8 runs validators blind"
+
+echo "Greptile fetch and resolution"
+GT_FETCH="$TMP/gt-fetch.sh"
+awk '/^## Fetch/{s=1} s&&/^```bash$/{on=1;next} on&&/^```$/{exit} on' "$GT" > "$GT_FETCH"
+for want in -- '--paginate' 'per_page=100' 'in_reply_to_id == null' 'pulls/$PR_NUMBER/reviews'; do
+  [ "$want" = "--" ] && continue
+  grep -qF -- "$want" "$GT_FETCH" && ok "greptile fetch: $want" || no "greptile fetch missing: $want"
+done
+mkdir -p "$TMP/gtstub"
+cat > "$TMP/gtstub/gh" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "repo view") echo "o/r"; exit 0 ;;
+  "pr view") echo "7"; exit 0 ;;
+esac
+[ "$1" = api ] || exit 1
+[ -n "${GT_FAIL:-}" ] && { echo "HTTP 403: rate limit exceeded" >&2; exit 1; }
+q=""; prev=""; for a in "$@"; do [ "$prev" = "--jq" ] && q="$a"; prev="$a"; done
+case "$*" in *pulls/7/comments*) f="$GT_FX/line.json" ;; *issues/7/comments*) f="$GT_FX/top.json" ;; *reviews*) f="$GT_FX/rev.json" ;; *) exit 1 ;; esac
+jq -c "$q" "$f"
+SH
+chmod +x "$TMP/gtstub/gh"
+mkdir -p "$TMP/gtfx"
+printf '%s\n' '[{"id":1,"user":{"login":"greptile-apps[bot]"},"position":3,"in_reply_to_id":null,"path":"a.py","line":3,"body":"bug","html_url":"u1"},{"id":2,"user":{"login":"greptile-apps[bot]"},"position":3,"in_reply_to_id":1,"path":"a.py","line":3,"body":"reply","html_url":"u2"}]' > "$TMP/gtfx/line.json"
+printf '[]\n' > "$TMP/gtfx/top.json"
+printf '%s\n' '[{"id":9,"user":{"login":"greptile-apps[bot]"},"body":"summary","html_url":"u9"}]' > "$TMP/gtfx/rev.json"
+gt_run() { ( cd "$TMP" && PATH="$TMP/gtstub:$PATH" GT_FX="$TMP/gtfx" GT_FAIL="${1:-}" bash "$GT_FETCH" 2>&1 ); }
+if command -v jq >/dev/null 2>&1; then
+  out=$(gt_run); dir=$(printf '%s\n' "$out" | sed -n 's/^GREPTILE_DIR: //p')
+  [ -n "$dir" ] && [ "$(grep -c . "$dir/line.json" 2>/dev/null)" = 1 ] && [ "$(grep -c . "$dir/review.json" 2>/dev/null)" = 1 ] \
+    && ok "fetch keeps thread roots and review bodies, drops replies" || no "fetch output: $out"
+  out=$(gt_run 1)
+  case "$out" in *"GREPTILE: error ("*) ok "an API failure is GREPTILE: error, not a skip" ;; *) no "API failure reads as: $out" ;; esac
+fi
+grep -qi 'fixing commit SHA' "$GT" && no "greptile triage still asks for a fixing commit SHA" || ok "already-fixed cites the current diff"
+grep -qF '<commit-sha>' "$GT" && no "reply templates still cite a commit SHA" || ok "reply templates cite file:line in the current diff"
+GR="$(awk '/^### Greptile comment resolution/{on=1;next} on && /^#{1,3} /{exit} on{print}' "$TMP/review.md")"
+printf '%s\n' "$GR" | grep -q 'A: Fix it now, B: Acknowledge' && no "review gives VALID comments two dispositions" || ok "VALID comments have one disposition"
+printf '%s\n' "$GR" | grep -qi 'back through Step 5c' && ok "FP fix-anyway goes back through ASK" || no "FP fix-anyway skips ASK"
+
+echo "Documented standards"
+grep -q '^### Documented standards' "$SP/maintainability.md" && grep -q 'CONTRIBUTING' "$SP/maintainability.md" \
+  && grep -q '6' "$SP/maintainability.md" && ok "maintainability checks documented standards" || no "no Documented standards section"
+step "$TMP/review.md" '## Step 4:' | grep -q 'Documented standards' && ok "review main pass checks standards" || no "review main pass skips standards"
 
 echo "connect-review Step 3"
 S3="$(awk '/^## Step 3:/{on=1;next} on && /^## /{exit} on{print}' "$CR")"

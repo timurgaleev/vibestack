@@ -25,18 +25,21 @@ out=$(bash "$ROOT/bin/vibe-certify" no-such-target 2>&1); rc=$?
 # it, or that hand-off silently stops working.
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fm() { awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit } on' "$1"; }
-bash "$ROOT/bin/vibe-render-skill" "$ROOT/skills/land-and-deploy/SKILL.md" "$TMP/land.md" >/dev/null 2>&1
-fm "$TMP/land.md" | grep -qx 'disable-model-invocation: true' \
-  && ok "land-and-deploy renders as typed-only" || no "land-and-deploy is model-invocable after rendering"
-fm "$ROOT/skills/land-and-deploy/SKILL.md" | grep -q '^triggers:' \
-  && no "land-and-deploy still declares auto-invoke triggers" || ok "land-and-deploy declares no auto-invoke triggers"
+TYPED_ONLY="land-and-deploy vibe-upgrade"
+for s in $TYPED_ONLY; do
+  bash "$ROOT/bin/vibe-render-skill" "$ROOT/skills/$s/SKILL.md" "$TMP/$s.md" >/dev/null 2>&1
+  fm "$TMP/$s.md" | grep -qx 'disable-model-invocation: true' \
+    && ok "$s renders as typed-only" || no "$s is model-invocable after rendering"
+  fm "$ROOT/skills/$s/SKILL.md" | grep -q '^triggers:' \
+    && no "$s still declares auto-invoke triggers" || ok "$s declares no auto-invoke triggers"
+done
 marked=""
 for f in "$ROOT"/skills/*/SKILL.md; do
   fm "$f" | grep -qx 'disable-model-invocation: true' && marked="$marked $(basename "$(dirname "$f")")"
 done
 bad=""
 for s in $marked; do
-  case "$s" in land-and-deploy) ;; *) bad="$bad $s(not allowed)" ;; esac
+  case " $TYPED_ONLY " in *" $s "*) ;; *) bad="$bad $s(not allowed)" ;; esac
   for caller in autoplan ship; do
     grep -qE "/$s([^[:alnum:]_-]|\$)" "$ROOT/skills/$caller/SKILL.md" && bad="$bad $s(named by $caller)"
   done

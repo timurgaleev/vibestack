@@ -220,7 +220,12 @@ export async function handleReadCommand(
 
   switch (command) {
     case 'text': {
-      return getCleanText(target);
+      const selector = args[0];
+      if (!selector) return getCleanText(target);
+      const resolved = await session.resolveRef(selector);
+      const locator = 'locator' in resolved ? resolved.locator : target.locator(resolved.selector);
+      const raw = await locator.innerText({ timeout: 5000 });
+      return stripLoneSurrogates(raw.split('\n').map(line => line.trim()).filter(Boolean).join('\n'));
     }
 
     case 'html': {

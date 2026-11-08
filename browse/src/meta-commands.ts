@@ -559,6 +559,10 @@ export async function handleMetaCommand(
     }
 
     case 'responsive': {
+      const device = bm.getDeviceName();
+      if (device) {
+        throw new Error(`responsive is refused while device ${device} is emulated — run \`device off\` first.`);
+      }
       const page = bm.getPage();
       const prefix = args[0] || `${TEMP_DIR}/browse-responsive`;
       validateOutputPath(prefix);

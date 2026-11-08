@@ -286,7 +286,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   const ALLOWED_TYPES = new Set([
     'getPort', 'setPort', 'getServerUrl', 'getToken', 'fetchRefs',
-    'openSidePanel', 'sidebarOpened', 'command', 'sidebar-command',
+    'openSidePanel', 'sidebarOpened', 'command',
     'getTabState',
     // Inspector message types
     'startInspector', 'stopInspector', 'elementPicked', 'pickerCancelled',
@@ -301,7 +301,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // The token, the port it is sent to and every token-bearing proxy belong to
   // this extension's own pages (side panel, popup). Content scripts run inside
   // arbitrary web pages and carry sender.tab, so they get none of them.
-  if (sender.tab && ['getPort', 'command', 'setPort', 'fetchRefs', 'sidebar-command'].includes(msg.type)) {
+  if (sender.tab && ['getPort', 'command', 'setPort', 'fetchRefs'].includes(msg.type)) {
     console.warn(`[vibestack] Rejected ${msg.type} from content script context`);
     sendResponse({ error: 'Not available to content scripts' });
     return true;
@@ -442,42 +442,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sidebar → browse server command proxy
   if (msg.type === 'command') {
     executeCommand(msg.command, msg.args).then(result => sendResponse(result));
-    return true;
-  }
-
-  // Sidebar → Claude Code (file-based message queue)
-  if (msg.type === 'sidebar-command') {
-    const base = getBaseUrl();
-    if (!base || !authToken) {
-      sendResponse({ error: 'Not connected' });
-      return true;
-    }
-    // Capture the active tab's URL so the sidebar agent knows what page
-    // the user is actually looking at (Playwright's page.url() can be stale
-    // if the user navigated manually in headed mode).
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const activeTabUrl = tabs?.[0]?.url || null;
-      fetch(`${base}/sidebar-command`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ message: msg.message, activeTabUrl }),
-      })
-        .then(r => {
-          if (!r.ok) {
-            console.error(`[vibestack bg] sidebar-command failed: ${r.status} ${r.statusText}`);
-            return r.json().catch(() => ({ error: `Server returned ${r.status}` }));
-          }
-          return r.json();
-        })
-        .then(data => sendResponse(data))
-        .catch(err => {
-          console.error('[vibestack bg] sidebar-command error:', err.message);
-          sendResponse({ error: err.message });
-        });
-    });
     return true;
   }
 });

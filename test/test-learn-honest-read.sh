@@ -86,6 +86,32 @@ out="$(cd "$TMP/w/projbeta" && "$BIN/vibe-learnings-search" --query mango --cros
   && ok "--cross-project brings the trusted entry over, tagged" || no "--cross-project: rc=$rc '$out'"
 echo "$out" | grep -q 'guessed' && no "untrusted entry crossed projects" || ok "untrusted entry stays in its project"
 
+# 5. Prune removal is deterministic: --forget drops EVERY line for key+type
+#    (append-only updates leave several), keeps other types of the same key,
+#    other keys, and lines it cannot parse.
+STORE="$VIBESTACK_HOME/projects/$ALPHA/learnings.jsonl"
+cat > "$STORE" <<'EOF'
+{"type":"pattern","key":"dup","insight":"first","confidence":5}
+{"type":"pitfall","key":"dup","insight":"same key, other type","confidence":5}
+not json at all
+{"type":"pattern","key":"dup","insight":"second","confidence":6}
+{"type":"pattern","key":"other","insight":"keep me","confidence":5}
+EOF
+out="$(cd "$TMP/w/projalpha" && "$BIN/vibe-learnings-log" --forget dup pattern 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ! grep -q '"insight":"first"\|"insight":"second"' "$STORE" \
+  && ok "--forget removes every line for that key and type" || no "--forget: rc=$rc '$out' store: $(cat "$STORE")"
+grep -q 'same key, other type' "$STORE" && grep -q 'keep me' "$STORE" && grep -qx 'not json at all' "$STORE" \
+  && ok "--forget keeps other types, other keys and unparsable lines" || no "--forget dropped too much: $(cat "$STORE")"
+echo "$out" | grep -q 'Forgot 2' && ok "--forget reports how many lines it removed" || no "--forget output: '$out'"
+out="$(cd "$TMP/w/projalpha" && "$BIN/vibe-learnings-log" --forget 'bad key!' pattern 2>&1)"; rc=$?
+[ "$rc" -ne 0 ] && ok "--forget rejects a malformed key" || no "--forget accepted a malformed key"
+
+grep -q 'vibe-learnings-log" --forget' "$SKILL" \
+  && ok "Prune removes through --forget, not a model-written rewrite" || no "Prune does not use --forget"
+grep -qi 'never infer approval' "$SKILL" && ok "Prune never infers approval for removal" || no "Prune lacks the approval rule"
+tr '\n' ' ' < "$SKILL" | grep -qiE 'contradiction check.{0,250}(any type|across types|cross-type)' \
+  && ok "contradiction check spans types" || no "contradiction check is not stated as cross-type"
+
 echo
 echo "test-learn-honest-read: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

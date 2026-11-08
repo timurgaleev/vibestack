@@ -10,7 +10,7 @@
  * State:
  *   State file: <project-root>/.vibestack/browse.json (set via BROWSE_STATE_FILE env)
  *   Log files:  <project-root>/.vibestack/browse-{console,network,dialog}.log
- *   Port:       random 10000-60000 (or BROWSE_PORT env for debug override)
+ *   Port:       random 10000-49151 (or BROWSE_PORT env for debug override)
  */
 
 import { BrowserManager } from './browser-manager';
@@ -49,7 +49,7 @@ import { readAgentRecord, killAgentByRecord, clearAgentRecord, agentRecordPath, 
 import { isProcessAlive } from './error-handling';
 import { sanitizeBody, stripLoneSurrogateEscapes } from './sanitize';
 import { startSocksBridge, testReference, type BridgeHandle } from './socks-bridge';
-import { parseProxyConfig, toReferenceConfig, ProxyConfigError } from './proxy-config';
+import { parseProxyConfig, toReferenceConfig, ProxyConfigError, describeProxyMode } from './proxy-config';
 import { redactProxyUrl } from './proxy-redact';
 import { shouldSpawnXvfb, pickFreeDisplay, spawnXvfb, xvfbInstallHint, type XvfbHandle } from './xvfb';
 import { logTunnelDenial } from './tunnel-denial-log';
@@ -793,7 +793,8 @@ type FailedPortAttempt = {
 };
 
 const RANDOM_PORT_MIN = 10000;
-const RANDOM_PORT_MAX = 60000;
+// 49152+ is the macOS ephemeral range; short-lived test servers expect to get it.
+const RANDOM_PORT_MAX = 49151;
 const RANDOM_PORT_RETRIES = 5;
 
 function normalizePortError(err: unknown): Extract<PortCheckResult, { available: false }> {
@@ -879,7 +880,7 @@ function isPortAvailable(port: number, hostname: string = '127.0.0.1'): Promise<
   return checkPortAvailable(port, hostname).then((result) => result.available);
 }
 
-// Find port: explicit BROWSE_PORT, or random in 10000-60000
+// Find port: explicit BROWSE_PORT, or random in 10000-49151
 async function findPort(): Promise<number> {
   // Explicit port override (for debugging)
   if (BROWSE_PORT) {
@@ -2924,9 +2925,6 @@ export async function start() {
   safeUnlink(NETWORK_LOG_PATH);
   safeUnlink(DIALOG_LOG_PATH);
 
-  const port = await findPort();
-  LOCAL_LISTEN_PORT = port;
-
   // ─── Proxy config (D8 + codex F5) ──────────────────────────────
   // BROWSE_PROXY_URL is set by the CLI when --proxy was passed. For SOCKS5
   // with auth, we run a local 127.0.0.1 bridge that relays to the
@@ -2991,6 +2989,8 @@ export async function start() {
     });
   }
 
+  console.log(describeProxyMode(browserManager.getProxyConfig()));
+
   // ─── Xvfb auto-spawn (Linux + headed + no DISPLAY) ─────────────
   // codex F2: walk display range to pick a free one (never hardcode :99);
   // record start-time alongside PID so cleanup can validate ownership and
@@ -3034,8 +3034,14 @@ export async function start() {
       console.log(`[browse] Launched headed Chromium with extension`);
     } else {
       await browserManager.launch();
+      console.log(`[browse] Launched headless Chromium`);
     }
   }
+
+  // Picked after the (slow) browser launch so the sampled port cannot be
+  // taken by someone else in the meantime.
+  const port = await findPort();
+  LOCAL_LISTEN_PORT = port;
 
   const startTime = Date.now();
 

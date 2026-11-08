@@ -70,7 +70,8 @@ If neither gate fires, route on plain-English intent (not keywords):
    run `Set a preference`.
 5. **"Update my profile" / "I'm more boil-the-ocean than that" / "I've changed
    my mind"** → run `Edit declared profile` (confirm before writing).
-6. **"Show the gap" / "how far off is my profile"** → run `Show gap`.
+6. **"Show the gap" / "how far off is my profile"** → run `Show gap` (it
+   reports that no observed profile exists).
 7. **"Turn it off" / "disable"** → `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set question_tuning false`
 8. **"Turn it on" / "enable"** → `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set question_tuning true`
    followed by `touch "${VIBESTACK_HOME:-$HOME/.vibestack}/.question-tuning-prompted"`.
@@ -221,11 +222,8 @@ PYEOF
 
 ## Inspect profile
 
-```bash
-# developer-profile not available — read developer-profile.json directly
-```
-
-Parse the JSON. Present in **plain English**, not raw floats:
+Read `${VIBESTACK_HOME:-$HOME/.vibestack}/developer-profile.json` with the Read
+tool (absent = nothing declared yet). Present in **plain English**, not raw floats:
 
 - For each dimension where `declared[dim]` is set, translate to a plain-English
   statement. Use these bands:
@@ -236,27 +234,13 @@ Parse the JSON. Present in **plain English**, not raw floats:
   Format: "**scope_appetite:** 0.8 (boil the ocean — you prefer the complete
   version with edge cases covered)"
 
-- If `inferred.diversity` passes the calibration gate (`sample_size >= 20 AND
-  skills_covered >= 3 AND question_ids_covered >= 8 AND days_span >= 7`), show
-  the inferred column next to declared:
-  "**scope_appetite:** declared 0.8 (boil the ocean) ↔ observed 0.72 (close)"
-  Use words for the gap: 0.0-0.1 "close", 0.1-0.3 "drift", 0.3+ "mismatch".
+- For the observed side, print exactly: "not available: vibestack does not
+  derive an observed profile". The question log is recorded, but nothing turns
+  it into per-dimension values, so never show, estimate or compare an observed
+  number — not even one an older file carries under `inferred`.
 
-- If the calibration gate isn't met, say: "Not enough observed data yet —
-  need N more events across M more skills before we can show your observed
-  profile."
-
-- Show the vibe (archetype) from the developer-profile.json `declared` section — the
-  one-word label + one-line description. Only if calibration gate met OR
-  if declared is filled (so there's something to match against).
-
-- **The calibration gate is a *display* threshold, not a promotion threshold.**
-  It is intentionally low — showing inferred values next to declared is a UI
-  affordance. Shipping behavior-adapting defaults based on the profile is
-  consequential and needs a far higher bar (durable stability over a long
-  window across several skills). Do NOT read "the observed profile is now
-  displayable" as a green light to start adapting skill behavior — the profile
-  never changes a skill's defaults.
+- Show the vibe (archetype) from the `declared` section — the one-word label +
+  one-line description — only when declared is filled.
 
 ---
 
@@ -430,20 +414,10 @@ PYEOF
 
 ## Show gap
 
-```bash
-# developer-profile gap not available — compare declared vs inferred manually
-```
-
-Parse the JSON. For each dimension where both declared and inferred exist:
-
-- `gap < 0.1` → "close — your actions match what you said"
-- `gap 0.1-0.3` → "drift — some mismatch, not dramatic"
-- `gap > 0.3` → "mismatch — your behavior disagrees with your self-description.
-  Consider updating your declared value, or reflect on whether your behavior
-  is actually what you want."
-
-Never auto-update declared based on the gap. The gap is reporting only —
-the user decides whether declared is wrong or behavior is wrong.
+A gap needs an observed profile, and there is none. Say: "not available:
+vibestack does not derive an observed profile", then offer what does exist:
+`Review question log` (which questions they follow or override) and `Stats`.
+Never compute or describe a gap from declared values alone.
 
 ---
 
@@ -483,8 +457,9 @@ print("TOTAL_LOGGED: %d" % len(entries))
 print("SKILLS_COVERED: %d" % len(skills))
 print("QUESTIONS_COVERED: %d" % len(qids))
 print("DAYS_SPAN: %d" % span)
-print("CALIBRATED: %s" % (len(entries) >= 20 and len(skills) >= 3
-                          and len(qids) >= 8 and span >= 7))
+print("ENOUGH_EVENTS_TO_START_DERIVING: %s" % (len(entries) >= 20 and len(skills) >= 3
+                                              and len(qids) >= 8 and span >= 7))
+print("CALIBRATION: not calibrated: no derivation")
 for name, count in skills.most_common():
     print("SKILL_%s: %d" % (name, count))
 
@@ -505,17 +480,16 @@ print("DECLARED_DIMENSIONS: %d/5" % len(declared))
 PYEOF
 ```
 
-The four diversity counters are exactly what the calibration gate reads
+`ENOUGH_EVENTS_TO_START_DERIVING` reads the four diversity counters
 (`TOTAL_LOGGED >= 20`, `SKILLS_COVERED >= 3`, `QUESTIONS_COVERED >= 8`,
-`DAYS_SPAN >= 7`). Present a compact summary with plain-English calibration
-status — "5 more events across 2 more skills and you'll be calibrated", or
-"you're calibrated" — and read the shortfall off those numbers rather than
-estimating it.
+`DAYS_SPAN >= 7`): whether the log is broad enough to start deriving from. Read
+any shortfall off those numbers rather than estimating it. Always print the
+`CALIBRATION: not calibrated: no derivation` line as given — nothing derives a
+profile from the log, so no event count makes it calibrated.
 
 Show the per-skill breakdown too. It is the only evidence the user has that
 capture is real: if every logged event comes from one skill, the rest of the pack
-is not logging and the observed profile will stay empty no matter how long they
-wait.
+is not logging.
 
 ---
 
@@ -536,10 +510,10 @@ wait.
 - **Preferences act; the profile does not.** This skill inspects and
   configures. A `never-ask` preference auto-decides a two-way question with
   the skill's recommendation — that skipping is explicit, set by the user, and
-  one-way doors still ask. The declared/inferred profile is advisory only: no
-  skill skips a question or changes a default because of it.
+  one-way doors still ask. The declared profile is advisory only: no skill
+  skips a question or changes a default because of it.
 - **Completion status:**
   - DONE — did what the user asked (enable/inspect/set/update/disable)
-  - DONE_WITH_CONCERNS — action taken but flagging something (e.g., "your
-    profile shows a large gap — worth reviewing")
+  - DONE_WITH_CONCERNS — action taken but flagging something (e.g., "every
+    logged question comes from one skill — the rest are not logging")
   - NEEDS_CONTEXT — couldn't disambiguate the user's intent

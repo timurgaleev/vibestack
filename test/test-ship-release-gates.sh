@@ -465,6 +465,34 @@ printf '%s' "$S4" | grep -q 'git status --porcelain' && printf '%s' "$S4" | grep
 printf '%s' "$S4" | grep -q 'git add -- ' && printf '%s' "$S4" | grep -q 'git diff --cached --name-only' \
   && ok "B8 stages by name and checks the index" || no "B8 does not stage by name"
 
+echo "Steps 9-11: in-session fix loop with a ceiling"
+FL=$(section '## Step 9: Pre-Landing Review' '## Step 12:')
+LOOP=$(section '## Step 11.1:' '## Step 12:')
+printf '%s' "$FL" | grep -qF 'tell the user to run `/ship` again to re-test' \
+  && no "review fixes still end the run with an unconditional STOP" || ok "no unconditional rerun-/ship STOP"
+[ -n "$LOOP" ] && ok "Step 11.1 fix loop exists" || no "no Step 11.1 fix loop"
+printf '%s' "$LOOP" | grep -q 'CYCLES' && printf '%s' "$LOOP" | grep -q 'reaches 3' \
+  && ok "the loop is capped at 3 cycles" || no "no cycle cap"
+printf '%s' "$LOOP" | grep -qF '1,500 changed lines' && printf '%s' "$LOOP" | grep -q 'quota_exhausted' \
+  && printf '%s' "$LOOP" | grep -q 'rate_limited' && ok "ceiling: diff size and Codex quota degrade to a rerun" \
+  || no "no loop ceiling"
+printf '%s' "$FL" | grep -qi 'codex passes run once' && ok "Codex runs once, on the final cycle" || no "Codex not limited to the final cycle"
+printf '%s' "$LOOP" | grep -qF 'carried as `skipped`' && ok "Skips are carried between cycles" || no "Skips not carried"
+S10=$(section '## Step 10: Address Greptile' '## Step 10b:')
+printf '%s' "$S10" | grep -qF 'git commit -m "fix: address Greptile' \
+  && no "Step 10 still edits and commits inside the triage" || ok "Step 10 commits nothing itself"
+printf '%s' "$S10" | grep -qi 'queue' && ok "Step 10 queues approved fixes" || no "Step 10 does not queue fixes"
+grep -qF '## Deferred findings' "$SKILL" && grep -qF '## Review notes' "$SKILL" \
+  && ok "PR body carries deferred findings and review notes" || no "no Deferred findings / Review notes sections"
+
+echo "Step 7: generated tests prove themselves"
+S7=$(section '## Step 7: Test Coverage Audit' '## Step 8:')
+printf '%s' "$S7" | grep -q 'product_failures' && ok "a test red on its own assertion is a product failure" || no "no product_failures route"
+printf '%s' "$S7" | grep -q 'mutation proof' && printf '%s' "$S7" | grep -q 'cmp' \
+  && ok "each kept test carries a mutation proof restored with cmp" || no "no mutation proof"
+printf '%s' "$S7" | grep -Eq 'git (checkout|restore)' \
+  && no "Step 7 restores files through git" || ok "Step 7 never restores through git"
+
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

@@ -16,7 +16,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page, type Locator, type Cookie } from 'playwright';
+import { chromium, devices, type Browser, type BrowserContext, type BrowserContextOptions, type Page, type Locator, type Cookie } from 'playwright';
 import { writeSecureFile, mkdirSecure } from './file-permissions';
 import { addConsoleEntry, addNetworkEntry, addDialogEntry, networkBuffer, type DialogEntry } from './buffers';
 import { emitActivity } from './activity';
@@ -24,6 +24,8 @@ import { validateNavigationUrl, blockedNavigationReason } from './url-validation
 import { TabSession, type RefEntry } from './tab-session';
 import { resolveChromiumProfile, cleanSingletonLocks } from './config';
 import { withCdpSession } from './cdp-bridge';
+import { directProxyArgs } from './proxy-config';
+import { launchKillHint } from './error-handling';
 import type { MemorySnapshot, MemoryStructureStats, MemoryTabSnapshot, MemoryProcess } from './memory-snapshot';
 
 /**
@@ -32,6 +34,14 @@ import type { MemorySnapshot, MemoryStructureStats, MemoryTabSnapshot, MemoryPro
  */
 export const TAB_PROBE_TIMEOUT_MS = 1000;
 const TAB_TIMED_OUT = Symbol('tab-timed-out');
+
+export const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
+
+function reportLaunchKill(err: unknown): never {
+  const hint = launchKillHint(err);
+  if (hint) console.error(hint);
+  throw err;
+}
 
 function withTabTimeout<T>(work: Promise<T>): Promise<T | typeof TAB_TIMED_OUT> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -190,7 +200,9 @@ export class BrowserManager {
   // require recreateContext(). Viewport width/height can change on-page, but we
   // track the latest so context recreation restores it instead of hardcoding 1280x720.
   private deviceScaleFactor: number = 1;
-  private currentViewport: { width: number; height: number } = { width: 1280, height: 720 };
+  private currentViewport: { width: number; height: number } = { ...DEFAULT_VIEWPORT };
+  // Playwright devices[] profile applied to the context (`device <name>`), or null.
+  private deviceName: string | null = null;
 
   /** Server port — set after server starts, used by cookie-import-browser command */
   public serverPort: number = 0;
@@ -357,6 +369,10 @@ export class BrowserManager {
     this.proxyConfig = cfg;
   }
 
+  getProxyConfig(): { server: string; username?: string; password?: string } | null {
+    return this.proxyConfig;
+  }
+
   /**
    * Get the ref map for external consumers (e.g., /refs endpoint).
    */
@@ -384,6 +400,7 @@ export class BrowserManager {
     if (process.env.CI || process.env.CONTAINER || isRoot) {
       launchArgs.push('--no-sandbox');
     }
+    launchArgs.push(...directProxyArgs(this.proxyConfig));
 
     if (extensionsDir) {
       // Skip --load-extension when running against a custom Chromium build that
@@ -410,7 +427,7 @@ export class BrowserManager {
       chromiumSandbox: shouldEnableChromiumSandbox(),
       ...(launchArgs.length > 0 ? { args: launchArgs } : {}),
       ...(this.proxyConfig ? { proxy: this.proxyConfig } : {}),
-    });
+    }).catch(reportLaunchKill);
 
     // Chromium disconnect → distinguish clean user-quit from crash. Both
     // events look identical to Playwright (one 'disconnected' fires), but
@@ -425,14 +442,7 @@ export class BrowserManager {
       void handleChromiumDisconnect(this.browser);
     });
 
-    const contextOptions: BrowserContextOptions = {
-      viewport: { width: this.currentViewport.width, height: this.currentViewport.height },
-      deviceScaleFactor: this.deviceScaleFactor,
-    };
-    if (this.customUserAgent) {
-      contextOptions.userAgent = this.customUserAgent;
-    }
-    this.context = await this.browser.newContext(contextOptions);
+    this.context = await this.browser.newContext(this.buildContextOptions());
 
     if (Object.keys(this.extraHeaders).length > 0) {
       await this.context.setExtraHTTPHeaders(this.extraHeaders);
@@ -481,6 +491,7 @@ export class BrowserManager {
       // empty-fallback returns native), so this is safe on stock Playwright
       // Chromium too.
       ...buildvibestackLaunchArgs(),
+      ...directProxyArgs(this.proxyConfig),
     ];
     if (extensionPath) {
       // Skip --load-extension when running against a custom Chromium build
@@ -619,7 +630,7 @@ export class BrowserManager {
       ...(executablePath ? { executablePath } : {}),
       ...(this.proxyConfig ? { proxy: this.proxyConfig } : {}),
       ignoreDefaultArgs: STEALTH_IGNORE_DEFAULT_ARGS,
-    });
+    }).catch(reportLaunchKill);
     this.browser = this.context.browser();
     this.connectionMode = 'headed';
     this.intentionalDisconnect = false;
@@ -1503,14 +1514,7 @@ export class BrowserManager {
       await this.context.close().catch(() => {});
 
       // 3. Create new context with updated settings
-      const contextOptions: BrowserContextOptions = {
-        viewport: { width: this.currentViewport.width, height: this.currentViewport.height },
-        deviceScaleFactor: this.deviceScaleFactor,
-      };
-      if (this.customUserAgent) {
-        contextOptions.userAgent = this.customUserAgent;
-      }
-      this.context = await this.browser.newContext(contextOptions);
+      this.context = await this.browser.newContext(this.buildContextOptions());
 
       // Re-apply stealth: newContext() is a fresh context with no init scripts,
       // so a useragent / viewport --scale rebuild would otherwise drop the
@@ -1535,14 +1539,7 @@ export class BrowserManager {
         this.tabSessions.clear();
         if (this.context) await this.context.close().catch(() => {});
 
-        const contextOptions: BrowserContextOptions = {
-          viewport: { width: this.currentViewport.width, height: this.currentViewport.height },
-          deviceScaleFactor: this.deviceScaleFactor,
-        };
-        if (this.customUserAgent) {
-          contextOptions.userAgent = this.customUserAgent;
-        }
-        this.context = await this.browser!.newContext(contextOptions);
+        this.context = await this.browser!.newContext(this.buildContextOptions());
         // Stealth applies to the fallback blank context too.
         const { applyStealth } = await import('./stealth');
         await applyStealth(this.context);
@@ -1602,6 +1599,66 @@ export class BrowserManager {
     return null;
   }
 
+  /** Context options for a headless (re)launch: viewport, scale, device profile, UA. */
+  private buildContextOptions(): BrowserContextOptions {
+    const options: BrowserContextOptions = {
+      viewport: { width: this.currentViewport.width, height: this.currentViewport.height },
+      deviceScaleFactor: this.deviceScaleFactor,
+    };
+    const device = this.deviceName ? devices[this.deviceName] : null;
+    if (device) {
+      options.isMobile = device.isMobile;
+      options.hasTouch = device.hasTouch;
+      options.userAgent = device.userAgent;
+    }
+    if (this.customUserAgent) {
+      options.userAgent = this.customUserAgent;
+    }
+    return options;
+  }
+
+  listDevices(): string[] {
+    return Object.keys(devices);
+  }
+
+  getDeviceName(): string | null {
+    return this.deviceName;
+  }
+
+  /**
+   * Apply a Playwright devices[] profile (viewport, scale, mobile, touch, UA) to
+   * the context, or null to return to the desktop defaults. A context option,
+   * so it rebuilds the context; rolls back on failure like setDeviceScaleFactor.
+   */
+  async setDevice(name: string | null): Promise<string | null> {
+    if (this.connectionMode === 'headed') {
+      throw new Error('device emulation is not supported in headed mode — the real window decides.');
+    }
+    let resolved: string | null = null;
+    if (name !== null) {
+      resolved = this.listDevices().find(d => d.toLowerCase() === name.toLowerCase()) ?? null;
+      if (!resolved) throw new Error(`Unknown device: ${name}. Run \`device --list\` for the names.`);
+    }
+    const prev = { deviceName: this.deviceName, viewport: { ...this.currentViewport }, scale: this.deviceScaleFactor };
+    this.deviceName = resolved;
+    if (resolved) {
+      this.currentViewport = { ...devices[resolved].viewport };
+      this.deviceScaleFactor = devices[resolved].deviceScaleFactor;
+    } else {
+      this.currentViewport = { ...DEFAULT_VIEWPORT };
+      this.deviceScaleFactor = 1;
+    }
+    const err = await this.recreateContext();
+    if (err !== null) {
+      this.deviceName = prev.deviceName;
+      this.currentViewport = prev.viewport;
+      this.deviceScaleFactor = prev.scale;
+      const rollbackErr = await this.recreateContext();
+      return rollbackErr ? `${err} (rollback also encountered: ${rollbackErr})` : err;
+    }
+    return null;
+  }
+
   /** Read current deviceScaleFactor (for tests + debug). */
   getDeviceScaleFactor(): number {
     return this.deviceScaleFactor;
@@ -1645,7 +1702,7 @@ export class BrowserManager {
       // Same blink-level stealth flags as launch()/launchHeaded(). Without
       // STEALTH_LAUNCH_ARGS the handed-off browser kept the AutomationControlled
       // tell that the other two paths strip.
-      const launchArgs: string[] = ['--hide-crash-restore-bubble', ...STEALTH_LAUNCH_ARGS, ...buildvibestackLaunchArgs()];
+      const launchArgs: string[] = ['--hide-crash-restore-bubble', ...STEALTH_LAUNCH_ARGS, ...buildvibestackLaunchArgs(), ...directProxyArgs(this.proxyConfig)];
       if (extensionPath) {
         // Same rule as launchHeaded(): a custom build already carries the
         // extension, and loading it twice crashes the service worker.
@@ -1686,7 +1743,8 @@ export class BrowserManager {
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      return `ERROR: Cannot open headed browser — ${msg}. Headless browser still running.`;
+      const hint = launchKillHint(err);
+      return `ERROR: Cannot open headed browser — ${msg}. Headless browser still running.${hint ? `\n${hint}` : ''}`;
     }
 
     // 3. Restore state into new headed browser

@@ -44,16 +44,6 @@ fi
 
 Import logged-in sessions from your real Chromium browser into the headless browse session.
 
-## CDP mode check
-
-First, check if browse is already connected to the user's real browser:
-```bash
-B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/setup-browser-cookies}/../browse/bin/vibe-browse"
-[ -x "$B" ] || B="$(command -v vibe-browse || true)"
-$B status 2>/dev/null | grep -q "Mode: cdp" && echo "CDP_MODE=true" || echo "CDP_MODE=false"
-```
-If `CDP_MODE=true`: tell the user "Not needed — you're connected to your real browser via CDP. Your cookies and sessions are already available." and stop. No cookie import needed.
-
 ## How it works
 
 1. Find the browse binary
@@ -158,3 +148,4 @@ Stop at **Not checked** unless the user asked you to check.
 - Cookie picker is served on the same port as the browse server (no extra process)
 - Only domain names and cookie counts are shown in the UI — no cookie values are exposed
 - The browse session persists cookies between commands, so imported cookies work immediately
+- Imported cookies apply to the whole browser context: every tab, and any agent paired into this daemon, sends them

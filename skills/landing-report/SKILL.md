@@ -97,7 +97,7 @@ for LEVEL in patch minor major; do
     --base "$BASE_BRANCH" \
     --bump "$LEVEL" \
     --current-version "$BASE_VERSION" \
-    > "$LANDING_DIR/$LEVEL.json" 2>/dev/null || echo '{"offline":true,"reason":"vibe-next-version failed","claimed":[],"warnings":[]}' > "$LANDING_DIR/$LEVEL.json"
+    > "$LANDING_DIR/$LEVEL.json" 2>/dev/null || echo '{"offline":true,"complete":false,"reason":"vibe-next-version failed","claimed":[],"warnings":[]}' > "$LANDING_DIR/$LEVEL.json"
 done
 ```
 
@@ -120,6 +120,8 @@ differs).
   whose head `VERSION` is ahead of the base version. Read from each PR's head
   `VERSION` file, not its title.
 - `.warnings` — PRs whose head `VERSION` could not be read or is malformed
+- `.complete` — `true` only when every open PR's `VERSION` was read; `false` when the PR
+  list was truncated or any read failed
 - `.version` — the slot `/ship` would claim at this bump level
 
 Sibling worktree detection is not supported: `.active_siblings` is always an
@@ -136,7 +138,7 @@ Render in this exact format:
 ║ Repo:    <owner/repo>                                            ║
 ║ Base:    <.base> @ v<base-version>                               ║
 ║ Host:    <.host>                                                 ║
-║ Status:  ONLINE                                                  ║
+║ Status:  ONLINE  (or: ONLINE — queue may be incomplete)          ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 Open PRs claiming versions on <.base>:
@@ -151,6 +153,10 @@ If you ran /ship right now, you'd claim:
   minor bump:  v<minor .version>   (<minor .reason>)
   major bump:  v<major .version>   (<major .reason>)
 ```
+
+When `.complete` is `false`, the Status line reads `ONLINE — queue may be incomplete` and
+Step 5 gives suggestion 2: a slot that looks free may already be claimed by a PR the read
+missed. When `.complete` is `true`, the output is unchanged.
 
 A collision is two entries in `.claimed` with the same `version`. When
 `.claimed` is empty, print `Open PRs claiming versions on <.base>: none`.
@@ -179,7 +185,7 @@ After rendering the table, suggest ONE of:
    the first's CHANGELOG entry or land a duplicate. Consider asking one author
    to rerun /ship to pick up the next free slot."
 
-2. **If `.warnings` is non-empty:**
+2. **If `.warnings` is non-empty or `.complete` is `false`:**
    "Some open PRs' VERSION could not be read (listed above), so the queue may be
    incomplete. Check those PRs before trusting the next slot."
 

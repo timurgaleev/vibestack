@@ -78,6 +78,29 @@ has "Codex hand-off uses \$name" "$ROUTER" 'Use $<name>'
 has "answer-directly criteria are present" "$ROUTER" "Answer directly instead"
 grep -qE '^  - Skill$' "$ROUTER" && ok "Skill is an allowed tool" || no "Skill missing from allowed-tools"
 
+echo "router: typed-only skills are named, never invoked"
+# A skill marked `disable-model-invocation: true` starts only from the user's own
+# command. The router may point to it, but a bare `name` cell reads as "invoke it".
+fm() { awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit } on' "$1"; }
+typed=""
+for f in "$ROOT"/skills/*/SKILL.md; do
+  fm "$f" | grep -qx 'disable-model-invocation: true' && typed="$typed $(basename "$(dirname "$f")")"
+done
+[ -n "$typed" ] && ok "typed-only skills found:$typed" || no "no typed-only skill found to check"
+for s in $typed; do
+  grep -qF "\`$s\`" "$ROUTER" && no "router lists typed-only $s as a skill to invoke" \
+    || ok "router never lists typed-only $s as invocable"
+  has "router tells the user to type /$s" "$ROUTER" "type \`/$s\`"
+done
+has "the invoke rule excepts typed-only skills" "$ROUTER" "never invoke a typed-only skill"
+
+echo "router: failures and plan execution"
+has "failures rule: a supplied cause gets one read-only check" "$ROUTER" "one read-only check"
+has "failures rule: an unknown cause gets one triage pass, no repro" "$ROUTER" \
+    "one read-only triage pass, with no reproduction and no wider search"
+has "failures rule: anything unproven goes to investigate" "$ROUTER" "otherwise invoke \`investigate\`"
+has "an approved plan has an executor route" "$ROUTER" "Execute an approved multi-step plan"
+
 echo "outside-voice preflight under a Codex host"
 PF="$TMP/preflight.sh"
 awk '/^```bash$/{f=1;next} /^```$/{f=0} f' "$PRE" > "$PF"

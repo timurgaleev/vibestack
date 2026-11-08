@@ -34,10 +34,13 @@ Create detailed steps with:
 - Clear, specific actions
 - File paths and locations
 - Dependencies between steps
+- Interfaces: the exact names and signatures each step consumes and produces
+- A check: `Verify: <command> → <expected>`
 - Estimated complexity
 - Potential risks
 
 ### 4. Implementation Order
+- Test first: a step that changes behavior starts with the failing test, then the change
 - Prioritize by dependencies
 - Group related changes
 - Minimize context switching
@@ -66,6 +69,8 @@ Create detailed steps with:
    - Action: Specific action to take
    - Why: Reason for this step
    - Dependencies: None / Requires step X
+   - Interfaces: consumes `[name(signature)]`; produces `[name(signature)]`
+   - Verify: `[command]` → [expected output]
    - Risk: Low/Medium/High
 
 2. **[Step Name]** (File: path/to/file.ts)
@@ -96,6 +101,13 @@ Create detailed steps with:
 5. **Enable Testing**: Structure changes to be easily testable
 6. **Think Incrementally**: Each step should be verifiable
 7. **Document Decisions**: Explain why, not just what
+
+## Self-review
+
+Before handing the plan over, check three things:
+1. Every step has a `Verify:` line a reader can run, and its expected result.
+2. Every name a step consumes is produced by an earlier step or already exists, spelled the same way.
+3. Nothing in the plan is a placeholder ("TBD", "handle errors appropriately").
 
 ## When Planning Refactors
 

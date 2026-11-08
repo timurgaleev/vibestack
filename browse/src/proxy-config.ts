@@ -153,3 +153,24 @@ function canonicalizeProxyUrl(input: string | null | undefined): string | null {
     return '<unparseable>';
   }
 }
+
+/** The proxy object handed to chromium.launch (creds kept separate from the server URL). */
+export type ChromiumProxy = { server: string; username?: string; password?: string } | null;
+
+/**
+ * Chromium on Linux reads HTTPS_PROXY/ALL_PROXY from the environment when no
+ * proxy option is passed, so a stray env var would route traffic while browse
+ * reports a direct connection. Pin it to direct there.
+ */
+export function directProxyArgs(proxy: ChromiumProxy, platform: string = process.platform): string[] {
+  return !proxy && platform === 'linux' ? ['--proxy-server=direct://'] : [];
+}
+
+/** One start-up log line naming the effective proxy mode. Never prints credentials. */
+export function describeProxyMode(proxy: ChromiumProxy, platform: string = process.platform): string {
+  if (!proxy) {
+    const pinned = directProxyArgs(proxy, platform);
+    return `[browse] [proxy] mode: direct${pinned.length ? ` (${pinned[0]})` : ''}`;
+  }
+  return `[browse] [proxy] mode: ${proxy.server}${proxy.username ? ' (authenticated)' : ''}`;
+}

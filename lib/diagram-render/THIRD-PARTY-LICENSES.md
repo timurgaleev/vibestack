@@ -5,9 +5,9 @@
 
 | Package | Version | License | Source |
 |---|---|---|---|
-| mermaid | 11.12.2 | MIT | https://github.com/mermaid-js/mermaid |
-| @excalidraw/excalidraw | 0.18.0 | MIT | https://github.com/excalidraw/excalidraw |
-| @excalidraw/mermaid-to-excalidraw | 1.1.2 | MIT | https://github.com/excalidraw/mermaid-to-excalidraw |
+| mermaid | 11.17.2 | MIT | https://github.com/mermaid-js/mermaid |
+| @excalidraw/excalidraw | 0.18.1 | MIT | https://github.com/excalidraw/excalidraw |
+| @excalidraw/mermaid-to-excalidraw | 2.2.2 | MIT | https://github.com/excalidraw/mermaid-to-excalidraw |
 | react | 18.3.1 | MIT | https://github.com/facebook/react |
 | react-dom | 18.3.1 | MIT | https://github.com/facebook/react |
 

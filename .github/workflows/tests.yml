@@ -35,6 +35,8 @@ jobs:
           - test-python-isolation.sh
           - test-heredoc-compat.sh
           - test-vibe-bins.sh
+          - test-vibe-error-capture.sh
+          - test-vibe-design-batch.sh
           - test-certify.sh
           - test-first-task-detect.sh
           - test-learn-sync.sh
@@ -67,9 +69,11 @@ jobs:
           - test-investigate-contract.sh
           - test-improve-arch-contract.sh
           - test-review-checklist.sh
+          - test-address-pr-review.sh
           - test-ship-doc-contract.sh
           - test-ship-release-gates.sh
           - test-release-after-merge.sh
+          - test-landing-report.sh
           - test-review-log.sh
           - test-test-value-bar.sh
           - test-test-bootstrap.sh
@@ -87,6 +91,7 @@ jobs:
           - test-land-deploy-gates.sh
           - test-browser-skill-consent.sh
           - test-health-scoring.sh
+          - test-benchmark-schema.sh
           - test-retro-prs.sh
           - test-context-budget.sh
           - test-context-identity.sh

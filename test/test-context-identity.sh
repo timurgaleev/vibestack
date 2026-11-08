@@ -107,9 +107,71 @@ printf '%s\n' "$OUT" | grep -q '20260103-090000-carol.md$' \
 printf '%s\n' "$OUT" | grep -q '20260104-090000-whose.md' \
   && no "an unstamped checkpoint from the shared old bucket is offered as this project's" || ok "an unstamped checkpoint from the old bucket is not offered"
 
+# --- save: the stamp records HEAD (and the worktree of a linked one) ----------
+
+echo "stamp records head and worktree"
+HREPO="$TMP/work3/svc"
+mkdir -p "$HREPO" && git -C "$HREPO" init -q -b main \
+  && git -C "$HREPO" remote add origin git@github.com:dave/svc.git
+gcommit() { git -C "$1" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "$2"; }
+gcommit "$HREPO" one
+in_h() { ( cd "$1" && HOME="$FAKE_HOME" VIBESTACK_HOME="$FAKE_HOME/.vibestack" bash "$2" ); }
+HCK="$TMP/h.md"
+printf -- '---\nstatus: in-progress\nbranch: main\nhead: stale\n---\n\n## Working on: h\n' > "$HCK"
+sed "s|{FILE}|$HCK|g" "$TMP/stamp.sh" > "$TMP/stamp-h.sh"
+in_h "$HREPO" "$TMP/stamp-h.sh" >/dev/null 2>&1
+HEAD1=$(git -C "$HREPO" rev-parse HEAD)
+[ "$(grep -c '^head:' "$HCK")" = 1 ] && grep -qx "head: $HEAD1" "$HCK" \
+  && ok "stamp writes head: once, replacing a stale one" || no "head: wrong after stamp: $(grep '^head:' "$HCK")"
+grep -q '^worktree:' "$HCK" \
+  && no "main checkout stamped worktree:" || ok "main checkout carries no worktree:"
+git -C "$HREPO" worktree add -q "$TMP/work3/svc-wt" -b side 2>/dev/null
+printf -- '---\nstatus: in-progress\nbranch: side\n---\n\n## Working on: w\n' > "$HCK"
+in_h "$TMP/work3/svc-wt" "$TMP/stamp-h.sh" >/dev/null 2>&1
+WT_REAL=$(cd "$TMP/work3/svc-wt" && git rev-parse --show-toplevel)
+grep -qx "worktree: $WT_REAL" "$HCK" \
+  && ok "linked worktree stamps worktree:" || no "worktree: missing in a linked worktree: $(cat "$HCK")"
+
+# --- restore: the head check ---------------------------------------------
+
+block_after '#### Head check' "$RESTORE" > "$TMP/headcheck.sh"
+if [ ! -s "$TMP/headcheck.sh" ]; then
+  no "restore has no '#### Head check' block"
+else
+  hc() { # hc <checkpoint-file>
+    sed "s|<CHECKPOINT_FILE>|$1|g" "$TMP/headcheck.sh" > "$TMP/hc-run.sh"
+    ( cd "$HREPO" && bash "$TMP/hc-run.sh" 2>/dev/null )
+  }
+  ck_head() { printf -- '---\nstatus: in-progress\nbranch: main\nhead: %s\n---\n' "$1" > "$TMP/c.md"; }
+  echo "restore head check"
+  ck_head "$HEAD1"
+  hc "$TMP/c.md" | grep -qx 'HEAD_UNCHANGED' && ok "same commit: HEAD_UNCHANGED" || no "HEAD_UNCHANGED missing: $(hc "$TMP/c.md")"
+  gcommit "$HREPO" two; gcommit "$HREPO" three
+  OUT=$(hc "$TMP/c.md")
+  printf '%s\n' "$OUT" | grep -qx 'HEAD_MOVED 2' && printf '%s\n' "$OUT" | grep -q ' three$' \
+    && ok "fast-forward: HEAD_MOVED 2 with the new commits listed" || no "HEAD_MOVED wrong: $OUT"
+  git -C "$HREPO" checkout -q -b other "$HEAD1" && gcommit "$HREPO" fork
+  ck_head "$(git -C "$HREPO" rev-parse main)"
+  OUT=$(hc "$TMP/c.md")
+  printf '%s\n' "$OUT" | grep -qx 'HEAD_DIVERGED' && printf '%s\n' "$OUT" | grep -q ' fork$' \
+    && ok "saved commit not an ancestor: HEAD_DIVERGED with commits listed" || no "HEAD_DIVERGED wrong: $OUT"
+  ck_head "0123456789abcdef0123456789abcdef01234567"
+  hc "$TMP/c.md" | grep -qx 'HEAD_UNKNOWN' && ok "commit absent from this clone: HEAD_UNKNOWN" || no "HEAD_UNKNOWN missing"
+  ck_head "--output=/tmp/x"
+  hc "$TMP/c.md" | grep -qx 'HEAD_UNKNOWN' && ok "a non-hex head is never handed to git" || no "malformed head not rejected"
+  printf -- '---\nstatus: in-progress\nbranch: main\n---\n' > "$TMP/c.md"
+  hc "$TMP/c.md" | grep -qx 'HEAD_UNTRACKED' && ok "no head: field: HEAD_UNTRACKED" || no "HEAD_UNTRACKED missing"
+fi
+
 # --- prose contract -------------------------------------------------------
 
 echo "prose"
+tr '\n' ' ' < "$RESTORE" | grep -qE 'HEAD_MOVED.{0,120}HEAD_DIVERGED.{0,160}HEAD_UNKNOWN.{0,200}every Remaining Work item under \*\*Verify first' \
+  && ok "moved/diverged/unknown put every item under Verify first" || no "head states do not force Verify first"
+tr '\n' ' ' < "$RESTORE" | grep -qiE 'translated.{0,120}\(path assumed\)' \
+  && ok "restore reads an unknown or translated marker as (path assumed)" || no "restore lacks the unknown-marker rule"
+tr '\n' ' ' < "$RESTORE" | grep -qE 'titles differ.{0,160}AskUserQuestion' \
+  && ok "no usable branch and differing titles asks the user" || no "restore lacks the no-branch ask"
 tr '\n' ' ' < "$RESTORE" | grep -qF 'line to the user **before any summary' \
   && ok "restore reports PROJECT MISMATCH before any summary" || no "restore ordering rule missing"
 grep -q 'never hand-write `remote:` or `project_root:`' "$SAVE" \

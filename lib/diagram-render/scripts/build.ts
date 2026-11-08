@@ -4,8 +4,8 @@
  * One command updates everything: `bun run build` (in this directory) or
  * `bun run build:diagram-render` (repo root). To bump a dependency: edit the
  * exact pin in package.json, `bun install`, rebuild, commit src + dist +
- * BUILD_INFO.json together. The drift test (test/diagram-render-drift.test.ts)
- * fails CI when dist and BUILD_INFO disagree.
+ * BUILD_INFO.json together, then `bun run scripts/check-bundle.ts` — it fails
+ * when dist and BUILD_INFO disagree or a security override did not take.
  *
  * Page assembly notes (learned in the spike, do not "simplify" away):
  *  - The script MUST be `type="module"` — mermaid's bundle contains
@@ -26,6 +26,7 @@ const BUILD_INFO = path.join(DIST_DIR, "BUILD_INFO.json");
 
 const pkg = await Bun.file(path.join(ROOT, "package.json")).json();
 const deps: Record<string, string> = pkg.dependencies;
+const overrides: Record<string, string> = pkg.overrides ?? {};
 
 const result = await Bun.build({
   entrypoints: [ENTRY],
@@ -95,6 +96,7 @@ const info = {
   bytes: Buffer.byteLength(html),
   bunVersion: Bun.version,
   deps,
+  overrides,
 };
 await Bun.write(BUILD_INFO, JSON.stringify(info, null, 2) + "\n");
 
