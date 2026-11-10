@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.58.2 — 2026-11-10
+
+### Changed
+
+- `/land-and-deploy` also starts when you explicitly ask the agent to land and
+  deploy a specific PR, not only when you type the command. A passing mention
+  of merge, land or deploy still does not start it, and the readiness gate
+  still asks before the merge. `/vibe-upgrade` stays typed-only.
+
 ## 1.58.1 — 2026-11-08
 
 ### Fixed
