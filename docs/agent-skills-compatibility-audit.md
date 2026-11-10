@@ -63,7 +63,7 @@ results are in the new "Track B — Empirical Verification" section near the end
 | Skills needing the full browse daemon | 4 skills | browse family: browse, open-browser, pair-agent, setup-browser-cookies. The daemon source ships under `browse/` and `./install` prepares it; it runs on bun and fetches Chromium on first use. **NOTE:** `design-review` now uses the **bundled** stateless Playwright shim (`skills/browse/runtime/vibe-browse.mjs`, needs Node ≥18; self-installs Chromium on first use). It degrades to text-only if Node/Playwright is absent, so it is not counted here. |
 | Skills using `Agent` tool (Claude-specific subagent dispatch) | ~15 skills | autoplan, cso, design-*, etc. |
 | Skills using `AskUserQuestion` (Claude-specific) | ~62 skills | most of the pack |
-| Skills with `disable-model-invocation: true` (typed-only) | 2 skills | land-and-deploy, vibe-upgrade. Claude Code honors the key; Codex and Kiro ignore it, so there the model can still invoke them, and the `/vibe` router's "type `/name`" rows are the remaining guard. |
+| Skills with `disable-model-invocation: true` (typed-only) | 1 skill | vibe-upgrade. Claude Code honors the key; Codex and Kiro ignore it, so there the model can still invoke it, and the `/vibe` router's "type `/name`" row is the remaining guard. land-and-deploy runs on an explicit request to land a specific PR; its own readiness gate asks before the merge. |
 
 The `${CLAUDE_SKILL_DIR}` row above and the matrix column below are derived
 mechanically rather than hand-maintained — the token often arrives through an
@@ -126,7 +126,7 @@ runtime verification (manual, requires Cursor/Kiro running on the user's machine
 | improve-arch | — | — | — | full / full / full |
 | investigate | yes | yes | — | full / soft / soft (Track B verified 2026-05-09) |
 | kb-review | — | — | — | full / full / full |
-| land-and-deploy | — | yes | — | full / full / full (typed-only through `disable-model-invocation: true`; Codex and Kiro ignore the key, so there the skill can still be invoked by the model) |
+| land-and-deploy | — | yes | — | full / full / full (runs on `/land-and-deploy` or an explicit request to land a specific PR; its readiness gate asks before the merge) |
 | landing-report | — | — | — | full / full / full |
 | learn | — | — | — | full / full / full (`sync` needs memrain MCP; degrades to "not connected" without it) |
 | make-pdf | — | yes | — | full / full / full |

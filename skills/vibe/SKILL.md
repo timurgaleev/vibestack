@@ -62,7 +62,7 @@ implementing, investigate before fixing, review before shipping.
 | Ship: tests, version, changelog, PR | `ship` |
 | See which VERSION slots open PRs already claim | `landing-report` |
 | Address PR review threads and failing CI | `address-pr-review` |
-| Merge, deploy, and confirm production health | type `/land-and-deploy` (typed-only), then `canary` (`setup-deploy` configures it once) |
+| Merge, deploy, and confirm production health | `land-and-deploy` when the user explicitly asks to land a specific PR, then `canary` (`setup-deploy` configures it once) |
 | Measure page performance against a baseline | `benchmark` |
 | Update docs after shipping | `document-release`, `document-generate` |
 | Strip machine-sounding prose | `unslop` |

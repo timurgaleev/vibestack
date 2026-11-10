@@ -8,7 +8,6 @@ allowed-tools:
   - Write
   - Glob
   - AskUserQuestion
-disable-model-invocation: true
 ---
 
 If this session was compacted, the copy of this skill in context may be cut off.
@@ -16,9 +15,9 @@ Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
 
 ## When to invoke
 
-Only when the user types `/land-and-deploy`. A merge to production is a one-way door: a
-passing "merge", "land" or "deploy" in conversation is not a request to run it — point to
-the command instead.
+When the user types `/land-and-deploy`, or explicitly asks the agent to land and deploy a
+specific PR. A merge to production is a one-way door: a passing mention of "merge", "land"
+or "deploy" in conversation is not such a request — ask before running it.
 
 ## Preamble
 
@@ -108,7 +107,8 @@ You are a **Release Engineer** who has deployed to production thousands of times
 This skill picks up where `/ship` left off. `/ship` creates the PR. You merge it, wait for deploy, and verify production.
 
 ## User-invocable
-When the user types `/land-and-deploy`, run this skill.
+When the user types `/land-and-deploy`, or explicitly asks the agent to land and deploy a
+specific PR, run this skill. Treat that PR number as the `#NNN` argument below.
 
 ## Arguments
 - `/land-and-deploy` — auto-detect PR from current branch, no post-deploy URL
@@ -119,8 +119,8 @@ When the user types `/land-and-deploy`, run this skill.
 ## Non-interactive philosophy (like /ship) — with one critical gate
 
 This is a **mostly automated** workflow. Do NOT ask for confirmation at any step except
-the ones listed below. The user said `/land-and-deploy` which means DO IT — but verify
-readiness first.
+the ones listed below. The user asked for this run (typed `/land-and-deploy`, or asked
+to land and deploy a specific PR), which means DO IT — but verify readiness first.
 
 **Always stop for:**
 - **First-run dry-run validation (Step 1.5)** — shows deploy infrastructure and confirms setup

@@ -25,7 +25,7 @@ out=$(bash "$ROOT/bin/vibe-certify" no-such-target 2>&1); rc=$?
 # it, or that hand-off silently stops working.
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fm() { awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit } on' "$1"; }
-TYPED_ONLY="land-and-deploy vibe-upgrade"
+TYPED_ONLY="vibe-upgrade"
 for s in $TYPED_ONLY; do
   bash "$ROOT/bin/vibe-render-skill" "$ROOT/skills/$s/SKILL.md" "$TMP/$s.md" >/dev/null 2>&1
   fm "$TMP/$s.md" | grep -qx 'disable-model-invocation: true' \
@@ -33,6 +33,17 @@ for s in $TYPED_ONLY; do
   fm "$ROOT/skills/$s/SKILL.md" | grep -q '^triggers:' \
     && no "$s still declares auto-invoke triggers" || ok "$s declares no auto-invoke triggers"
 done
+# land-and-deploy runs when the user asks for it — typed, or an explicit request
+# to land a specific PR — so it must stay model-invocable, keep no auto-invoke
+# triggers, and keep saying that a passing mention is not such a request.
+LAND="$ROOT/skills/land-and-deploy/SKILL.md"
+fm "$LAND" | grep -qx 'disable-model-invocation: true' \
+  && no "land-and-deploy is typed-only; an explicit request could not start it" \
+  || ok "land-and-deploy can start from an explicit request"
+fm "$LAND" | grep -q '^triggers:' \
+  && no "land-and-deploy declares auto-invoke triggers" || ok "land-and-deploy declares no auto-invoke triggers"
+grep -q 'explicitly asks the agent to land and deploy a' "$LAND" && grep -q 'passing mention' "$LAND" \
+  && ok "land-and-deploy names the explicit-request rule" || no "land-and-deploy lost its explicit-request rule"
 marked=""
 for f in "$ROOT"/skills/*/SKILL.md; do
   fm "$f" | grep -qx 'disable-model-invocation: true' && marked="$marked $(basename "$(dirname "$f")")"
