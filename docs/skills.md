@@ -201,7 +201,7 @@ Merges only when every check on the approved head is green (optional ones includ
 
 Right after the merge it tags the merge commit with the VERSION it carries and publishes the release with that version's CHANGELOG section (the same step `/ship` defers). An existing tag elsewhere is refused, never moved; a repo with no VERSION file is skipped.
 
-Typed only: it runs when you type `/land-and-deploy`, never from "merge" or "deploy" in conversation.
+It runs when you type `/land-and-deploy` or explicitly ask the agent to land and deploy a specific PR — never from a passing "merge" or "deploy" in conversation.
 
 ---
 
@@ -431,7 +431,7 @@ Triggers: `full safety mode`, `guard against mistakes`, `maximum safety`, `guard
 ### `/vibe`
 Router for the suite — name the task, get pointed at the right skill. Mostly for Codex and other hosts with no slash-command picker, where a skill is referenced as `$vibe` inside an ordinary message; `agents/openai.yaml` names it as the pack's entry point. Routes on intent rather than listing every skill, and hands off to this file for the full index.
 
-For a failure it makes one read-only check of the cause you named (or one triage pass over the evidence when the cause is unknown) and fixes it only when that alone proves the root cause; otherwise it hands off to `/investigate`. An approved multi-step plan goes to an installed plan-execution skill, or else to the `/plan-eng-review` cold-start briefs lane by lane, then `/review` and `/ship`. Typed-only skills (`/land-and-deploy`, `/vibe-upgrade`) are named for you to type, never invoked.
+For a failure it makes one read-only check of the cause you named (or one triage pass over the evidence when the cause is unknown) and fixes it only when that alone proves the root cause; otherwise it hands off to `/investigate`. An approved multi-step plan goes to an installed plan-execution skill, or else to the `/plan-eng-review` cold-start briefs lane by lane, then `/review` and `/ship`. The typed-only skill (`/vibe-upgrade`) is named for you to type, never invoked; `/land-and-deploy` runs only on an explicit request to land a specific PR.
 
 Triggers: `which vibestack skill`, `list vibestack skills`, `vibe help`
 
